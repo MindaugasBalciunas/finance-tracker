@@ -139,13 +139,15 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
+  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
+
   const data = trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date }
     row['total'] = trend.totals[i]
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
-      // Convert BTC to EUR using live price
-      if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice > 0) {
+      // Convert BTC to EUR using live price only if price is valid
+      if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_PRICE) {
         value = value * btcPrice
       }
       row[acc] = value

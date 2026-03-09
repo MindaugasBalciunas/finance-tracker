@@ -10,19 +10,32 @@ import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
 
 // Return EUR value of BTC fields for a given snapshot row using live price (preferred) or snapshot price
+// Only uses prices that are reasonable (> 100 EUR/BTC)
 function btcEurValue(b: Balance, liveBtcPrice: number | null): { r: number; m: number } {
-  // Always prefer live price for visualization
-  if (liveBtcPrice && liveBtcPrice > 0) {
-    return { r: b.r_btc * liveBtcPrice, m: b.m_btc * liveBtcPrice }
+  const rBtc = b.r_btc ?? 0
+  const mBtc = b.m_btc ?? 0
+  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
+  
+  // Check if this balance has a snapshot BTC price (new format: BTC units stored)
+  const hasSnapshotPrice = b.btc_price && b.btc_price >= MIN_VALID_PRICE
+  
+  // If new format (has valid snapshot price), always convert using available price
+  if (hasSnapshotPrice) {
+    // Prefer live price if valid, fall back to snapshot price
+    const isLivePriceValid = liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE
+    const priceToUse = isLivePriceValid ? liveBtcPrice : b.btc_price
+    return { r: rBtc * priceToUse, m: mBtc * priceToUse }
   }
   
-  // Fall back to snapshot price if available
-  if (b.btc_price && b.btc_price > 0) {
-    return { r: b.r_btc * b.btc_price, m: b.m_btc * b.btc_price }
+  // Legacy format or no valid snapshot price - check if values look like BTC (small numbers)
+  const isBtcFormat = (rBtc < 1 && rBtc > 0) || (mBtc < 1 && mBtc > 0)
+  if (isBtcFormat && liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE) {
+    // Convert BTC to EUR using live price if values look like BTC amounts
+    return { r: rBtc * liveBtcPrice, m: mBtc * liveBtcPrice }
   }
   
-  // Legacy format - assume already in EUR
-  return { r: b.r_btc, m: b.m_btc }
+  // Return as-is (assume already in EUR or zero) - don't use invalid prices
+  return { r: rBtc, m: mBtc }
 }
 
 export default function Balances() {
@@ -154,7 +167,7 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc * (latest.btc_price || 1) + latest.m_btc * (latest.btc_price || 1))}
+            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc * (latest.btc_price && latest.btc_price >= 100 ? latest.btc_price : 1) + latest.m_btc * (latest.btc_price && latest.btc_price >= 100 ? latest.btc_price : 1))}
             subtitle={btc.price != null
               ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}

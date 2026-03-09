@@ -35,20 +35,30 @@ function getDateRange(period: Period): { date_from?: string; date_to?: string } 
 }
 
 // Convert BTC amounts to EUR using live price (preferred) or snapshot price
+// Only uses prices that are reasonable (> 100 EUR/BTC)
 function getBtcEurValue(balance: any, liveBtcPrice: number | null): number {
-  const btcAmount = balance.r_btc + balance.m_btc
+  const btcAmount = (balance.r_btc ?? 0) + (balance.m_btc ?? 0)
+  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
   
-  // Always prefer live price for visualization
-  if (liveBtcPrice && liveBtcPrice > 0) {
+  // Check if this balance has a snapshot BTC price (new format: BTC units stored)
+  const hasSnapshotPrice = balance.btc_price && balance.btc_price >= MIN_VALID_PRICE
+  
+  // If new format (has valid snapshot price), always convert using available price
+  if (hasSnapshotPrice) {
+    // Prefer live price if valid, fall back to snapshot price
+    const isLivePriceValid = liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE
+    const priceToUse = isLivePriceValid ? liveBtcPrice : balance.btc_price
+    return btcAmount * priceToUse
+  }
+  
+  // Legacy format or no valid snapshot price - check if values look like BTC (small numbers)
+  const isBtcFormat = (btcAmount < 1 && btcAmount > 0)
+  if (isBtcFormat && liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE) {
+    // Convert BTC to EUR using live price if values look like BTC amounts
     return btcAmount * liveBtcPrice
   }
   
-  // Fall back to snapshot price if available
-  if (balance.btc_price && balance.btc_price > 0) {
-    return btcAmount * balance.btc_price
-  }
-  
-  // Legacy format - assume already in EUR
+  // Return as-is (assume already in EUR or zero) - don't use invalid prices
   return btcAmount
 }
 
