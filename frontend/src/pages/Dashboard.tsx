@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useTransactionSummary } from '../hooks/useTransactions'
+import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import StatCard from '../components/ui/StatCard'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
+import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
 
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance()
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(trendRange)
   const { data: allocations, isLoading: allocLoading } = useAccountAllocation()
+  const { data: allExpenses } = useAllExpenses()
 
   const isLoading = summaryLoading || balanceLoading || trendLoading || allocLoading
 
@@ -61,6 +63,15 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Over Time</h3>
           <BalanceTrendChart trend={trend} />
+        </div>
+      )}
+
+      {/* Cumulative spending comparison */}
+      {allExpenses && allExpenses.data.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Spending Pace</h3>
+          <p className="text-xs text-gray-400 mb-4">Cumulative expenses by day — compare spending speed across months</p>
+          <CumulativeSpendingChart transactions={allExpenses.data} />
         </div>
       )}
 

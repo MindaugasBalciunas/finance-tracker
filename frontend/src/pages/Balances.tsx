@@ -90,33 +90,43 @@ export default function Balances() {
           <h3 className="text-sm font-semibold text-gray-700">Snapshot History</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-2 font-semibold text-gray-600">Date</th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">ETF</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Pension</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Luminor</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Art</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev R</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev Stocks</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {balances?.map((b) => (
                 <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
+                  <td className="px-3 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
                   <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_pen)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.luminor)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => handleDelete(b.id)}
@@ -129,7 +139,7 @@ export default function Balances() {
               ))}
               {!balances?.length && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={15} className="px-4 py-12 text-center text-gray-400">
                     No balance snapshots yet. Add one above.
                   </td>
                 </tr>

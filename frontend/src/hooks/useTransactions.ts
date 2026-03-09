@@ -16,6 +16,13 @@ export function useTransactions(filter: TransactionFilter = {}) {
   })
 }
 
+export function useAllExpenses() {
+  return useQuery({
+    queryKey: [TRANSACTIONS_KEY, 'all-expenses'],
+    queryFn: () => transactionsApi.list({ type: 'expense', page: 1, page_size: 1000 }),
+  })
+}
+
 export function useTransactionSummary(filter: Pick<TransactionFilter, 'date_from' | 'date_to'> = {}) {
   return useQuery({
     queryKey: [SUMMARY_KEY, filter],

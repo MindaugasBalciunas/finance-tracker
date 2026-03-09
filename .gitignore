@@ -1,5 +1,6 @@
 # Backend
 backend/bin/
+backend/tmp/
 backend/finance.db
 backend/docs/swagger.json
 backend/docs/swagger.yaml
@@ -7,6 +8,9 @@ backend/docs/swagger.yaml
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Claude Code
+.claude/settings.local.json
 
 # OS
 .DS_Store

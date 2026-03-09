@@ -9,9 +9,9 @@ install:
 swagger:
 	cd backend && swag init -g cmd/api/main.go --output docs
 
-# Run backend
+# Run backend (with live reload via air)
 backend:
-	cd backend && go run ./cmd/api/main.go
+	cd backend && air
 
 # Run frontend dev server
 frontend:
