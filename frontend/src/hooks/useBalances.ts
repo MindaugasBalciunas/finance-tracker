@@ -49,6 +49,20 @@ export function useCreateBalance() {
   })
 }
 
+export function useUpdateBalance() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: CreateBalanceInput }) =>
+      balancesApi.update(id, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [BALANCES_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_LATEST_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_TREND_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_ALLOCATION_KEY] })
+    },
+  })
+}
+
 export function useDeleteBalance() {
   const qc = useQueryClient()
   return useMutation({

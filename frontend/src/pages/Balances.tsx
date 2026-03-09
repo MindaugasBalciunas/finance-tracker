@@ -1,26 +1,36 @@
 import { useState } from 'react'
-import { useBalances, useCreateBalance, useDeleteBalance, useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
+import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import StatCard from '../components/ui/StatCard'
 import { formatEuro, formatDate } from '../utils/format'
-import type { CreateBalanceInput } from '../types'
+import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
+import type { Balance, CreateBalanceInput } from '../types'
 
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
+  const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
 
   const { data: balances, isLoading } = useBalances()
   const { data: latest } = useLatestBalance()
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()
+  const updateMutation = useUpdateBalance()
   const deleteMutation = useDeleteBalance()
+  const btc = useBtcEur()
 
   const handleCreate = async (input: CreateBalanceInput) => {
     await createMutation.mutateAsync(input)
     setShowForm(false)
+  }
+
+  const handleUpdate = async (input: CreateBalanceInput) => {
+    if (!editingBalance) return
+    await updateMutation.mutateAsync({ id: editingBalance.id, input })
+    setEditingBalance(null)
   }
 
   const handleDelete = async (id: number) => {
@@ -46,6 +56,37 @@ export default function Balances() {
         </button>
       </div>
 
+      {/* Edit form modal */}
+      {editingBalance && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Snapshot — {formatDate(editingBalance.date)}</h3>
+            <BalanceForm
+              key={editingBalance.id}
+              onSubmit={handleUpdate}
+              onCancel={() => setEditingBalance(null)}
+              isSubmitting={updateMutation.isPending}
+              defaultValues={{
+                date: editingBalance.date.slice(0, 10),
+                seb: editingBalance.seb,
+                swed: editingBalance.swed,
+                swed_etf: editingBalance.swed_etf,
+                swed_pen: editingBalance.swed_pen,
+                luminor: editingBalance.luminor,
+                art: editingBalance.art,
+                cash: editingBalance.cash,
+                rev_m: editingBalance.rev_m,
+                rev_r: editingBalance.rev_r,
+                rev_stocks: editingBalance.rev_stocks,
+              }}
+              defaultBtc={btc.price
+                ? { r_btc: editingBalance.r_btc / btc.price, m_btc: editingBalance.m_btc / btc.price }
+                : { r_btc: BTC_HOLDINGS.rev_r, m_btc: BTC_HOLDINGS.rev_m }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Add form modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
@@ -55,6 +96,19 @@ export default function Balances() {
               onSubmit={handleCreate}
               onCancel={() => setShowForm(false)}
               isSubmitting={createMutation.isPending}
+              defaultValues={latest ? {
+                seb: latest.seb,
+                swed: latest.swed,
+                swed_etf: latest.swed_etf,
+                swed_pen: latest.swed_pen,
+                luminor: latest.luminor,
+                art: latest.art,
+                cash: latest.cash,
+                rev_m: latest.rev_m,
+                rev_r: latest.rev_r,
+                rev_stocks: latest.rev_stocks,
+              } : undefined}
+              defaultBtc={{ r_btc: BTC_HOLDINGS.rev_r, m_btc: BTC_HOLDINGS.rev_m }}
             />
           </div>
         </div>
@@ -62,11 +116,34 @@ export default function Balances() {
 
       {/* Latest stats */}
       {latest && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard title="Total Net Worth" value={formatEuro(latest.total)} color="blue" />
-          <StatCard title="SEB + Swed" value={formatEuro(latest.seb + latest.swed)} color="green" />
-          <StatCard title="Investments (ETF + Pen)" value={formatEuro(latest.swed_etf + latest.swed_pen)} color="purple" />
-          <StatCard title="Cash + Revolut" value={formatEuro(latest.cash + latest.rev_m + latest.rev_r)} color="yellow" />
+          <StatCard
+            title="Free Cash"
+            value={formatEuro(latest.seb + latest.swed + latest.luminor + latest.cash + latest.rev_m + latest.rev_r)}
+            subtitle="Banks + Cash + Revolut"
+            color="green"
+          />
+          <StatCard
+            title="Investments"
+            value={formatEuro(latest.swed_etf + latest.rev_stocks)}
+            subtitle="ETF + Revolut Stocks"
+            color="blue"
+          />
+          <StatCard
+            title="Pensions"
+            value={formatEuro(latest.swed_pen + latest.art)}
+            subtitle="2nd + 3rd Pillar"
+            color="purple"
+          />
+          <StatCard
+            title="Crypto"
+            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc + latest.m_btc)}
+            subtitle={btc.price != null
+              ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
+              : 'Revolut R & M BTC'}
+            color="yellow"
+          />
         </div>
       )}
 
@@ -96,17 +173,17 @@ export default function Balances() {
                 <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Pension</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed ETF</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed 2nd Pillar</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Luminor</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Art</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea 3rd Pillar</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev R</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev Stocks</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R ETF</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M Stocks</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -128,12 +205,20 @@ export default function Balances() {
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc)}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => handleDelete(b.id)}
-                      className="text-gray-400 hover:text-red-600 text-xs"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setEditingBalance(b)}
+                        className="text-gray-400 hover:text-blue-600 text-xs"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={() => handleDelete(b.id)}
+                        className="text-gray-400 hover:text-red-600 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

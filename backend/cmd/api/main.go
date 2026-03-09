@@ -34,20 +34,23 @@ func main() {
 	// Repositories
 	txRepo := repository.NewTransactionRepository(db)
 	balRepo := repository.NewBalanceRepository(db)
+	insightRepo := repository.NewInsightRepository(db)
 
 	// Services
 	txSvc := service.NewTransactionService(txRepo)
 	balSvc := service.NewBalanceService(balRepo)
+	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
 
 	// Handlers
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
+	insightHandler := handler.NewInsightHandler(insightSvc)
 
 	r := gin.Default()
 
 	// CORS — allow frontend dev server
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000"},
+		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		AllowCredentials: true,
@@ -60,6 +63,7 @@ func main() {
 	v1 := r.Group("/api/v1")
 	txHandler.RegisterRoutes(v1)
 	balHandler.RegisterRoutes(v1)
+	insightHandler.RegisterRoutes(v1)
 
 	// Health check
 	v1.GET("/health", func(c *gin.Context) {

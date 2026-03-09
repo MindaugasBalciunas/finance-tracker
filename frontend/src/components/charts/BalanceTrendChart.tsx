@@ -1,12 +1,6 @@
+import { useState } from 'react'
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type { BalanceTrend } from '../../types'
 import { formatEuro } from '../../utils/format'
@@ -16,36 +10,134 @@ interface Props {
 }
 
 const ACCOUNT_COLORS: Record<string, string> = {
-  seb: '#3b82f6',
-  swed: '#10b981',
-  swed_etf: '#6366f1',
-  swed_pen: '#8b5cf6',
-  luminor: '#f59e0b',
-  art: '#ec4899',
-  cash: '#14b8a6',
-  rev_m: '#f97316',
-  rev_r: '#ef4444',
-  r_btc: '#f59e0b',
-  m_btc: '#d97706',
-  rev_stocks: '#06b6d4',
+  seb:        '#3b82f6',
+  swed:       '#60a5fa',
+  luminor:    '#93c5fd',
+  cash:       '#bfdbfe',
+  swed_etf:   '#7c3aed',
+  swed_pen:   '#a78bfa',
+  art:        '#c4b5fd',
+  rev_m:      '#f97316',
+  rev_r:      '#fb923c',
+  r_btc:      '#fbbf24',
+  m_btc:      '#fcd34d',
+  rev_stocks: '#10b981',
 }
 
 const ACCOUNT_LABELS: Record<string, string> = {
-  seb: 'SEB',
-  swed: 'Swedbank',
-  swed_etf: 'Swed ETF',
-  swed_pen: 'Swed Pension',
-  luminor: 'Luminor',
-  art: 'Art',
-  cash: 'Cash',
-  rev_m: 'Revolut M',
-  rev_r: 'Revolut R',
-  r_btc: 'R BTC',
-  m_btc: 'M BTC',
-  rev_stocks: 'Rev Stocks',
+  seb:        'SEB',
+  swed:       'Swedbank',
+  luminor:    'Luminor',
+  cash:       'Cash',
+  swed_etf:   'Swed ETF',
+  swed_pen:   'Swed 2nd Pillar',
+  art:        'Artea 3rd Pillar',
+  rev_m:      'Revolut M',
+  rev_r:      'Revolut R ETF',
+  r_btc:      'Revolut R BTC',
+  m_btc:      'Revolut M BTC',
+  rev_stocks: 'Revolut M Stocks',
+}
+
+const ACCOUNT_DASH: Record<string, string> = {
+  seb:        '0',
+  swed:       '0',
+  luminor:    '0',
+  cash:       '0',
+  swed_etf:   '6 2',
+  swed_pen:   '6 2',
+  art:        '6 2',
+  rev_m:      '3 3',
+  rev_r:      '3 3',
+  r_btc:      '3 3',
+  m_btc:      '3 3',
+  rev_stocks: '3 3',
+}
+
+function buildYTicks(maxVal: number): number[] {
+  const candidates = [0, 1000, 5000, 10000, 25000, 50000, 75000, 100000, 125000, 150000, 175000, 200000, 250000, 300000, 400000, 500000]
+  return candidates.filter((v) => v <= maxVal * 1.05)
+}
+
+interface TooltipPayloadItem {
+  dataKey: string
+  name: string
+  value: number
+  color: string
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: TooltipPayloadItem[]
+  label?: string
+  activeKey: string | null
+  hiddenKeys: Set<string>
+}
+
+function CustomTooltip({ active, payload, label, activeKey, hiddenKeys }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null
+  const visible = payload.filter((p) => !hiddenKeys.has(p.dataKey))
+  const items = activeKey ? visible.filter((p) => p.dataKey === activeKey) : visible
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <p className="font-semibold text-gray-700 mb-1">{label}</p>
+      {items.map((p) => (
+        <p key={p.dataKey} style={{ color: p.color }}>
+          {p.name}: {formatEuro(p.value)}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+interface LegendEntry {
+  dataKey: string
+  value: string
+  color: string
+}
+
+interface CustomLegendProps {
+  payload?: LegendEntry[]
+  hiddenKeys: Set<string>
+  latestValues: Record<string, number>
+  onToggle: (key: string) => void
+}
+
+function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLegendProps) {
+  if (!payload) return null
+  return (
+    <ul className="flex flex-col gap-1 text-xs pl-2 max-h-80 overflow-y-auto">
+      {payload.map((entry) => {
+        const hidden = hiddenKeys.has(entry.dataKey)
+        const latest = latestValues[entry.dataKey]
+        return (
+          <li
+            key={entry.dataKey}
+            onClick={() => onToggle(entry.dataKey)}
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+            style={{ opacity: hidden ? 0.35 : 1 }}
+          >
+            <span
+              className="inline-block w-5 h-0.5 flex-shrink-0"
+              style={{ backgroundColor: entry.color }}
+            />
+            <span className={hidden ? 'line-through text-gray-400' : 'text-gray-700'}>
+              {entry.value}
+              {latest != null && (
+                <span className="ml-1 text-gray-400">({formatEuro(latest)})</span>
+              )}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 export default function BalanceTrendChart({ trend }: Props) {
+  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+
   const data = trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date }
     row['total'] = trend.totals[i]
@@ -59,21 +151,63 @@ export default function BalanceTrendChart({ trend }: Props) {
     trend.accounts[acc].some((v) => v > 0)
   )
 
+  // Latest non-zero value per key for legend
+  const latestValues: Record<string, number> = {}
+  latestValues['total'] = trend.totals[trend.totals.length - 1] ?? 0
+  for (const acc of activeAccounts) {
+    const vals = trend.accounts[acc]
+    const last = [...vals].reverse().find((v) => v != null && v > 0) ?? 0
+    latestValues[acc] = last
+  }
+
+  // Dynamic Y-axis ticks based on actual max
+  const maxTotal = Math.max(...trend.totals.filter((v) => v != null))
+  const yTicks = buildYTicks(maxTotal)
+
+  const toggleKey = (key: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const lineOpacity = (key: string) => {
+    if (hiddenKeys.has(key)) return 0
+    return activeKey === null || activeKey === key ? 1 : 0.15
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={380}>
+    <ResponsiveContainer width="100%" height={400}>
       <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-        <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-        <Tooltip formatter={(v: number) => formatEuro(v)} />
-        <Legend />
+        <YAxis
+          domain={[0, 'auto']}
+          ticks={yTicks}
+          tickFormatter={(v) => v === 0 ? '€0' : `€${(v / 1000).toFixed(0)}k`}
+          tick={{ fontSize: 11 }}
+          width={52}
+        />
+        <Tooltip content={<CustomTooltip activeKey={activeKey} hiddenKeys={hiddenKeys} />} />
+        <Legend
+          layout="vertical"
+          align="right"
+          verticalAlign="middle"
+          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} />}
+        />
         <Line
           type="monotone"
           dataKey="total"
           stroke="#1d4ed8"
-          strokeWidth={2.5}
+          strokeWidth={activeKey === 'total' ? 3 : 2.5}
+          strokeOpacity={lineOpacity('total')}
           dot={false}
           name="Total"
+          hide={hiddenKeys.has('total')}
+          onMouseEnter={() => setActiveKey('total')}
+          onMouseLeave={() => setActiveKey(null)}
         />
         {activeAccounts.map((acc) => (
           <Line
@@ -81,10 +215,14 @@ export default function BalanceTrendChart({ trend }: Props) {
             type="monotone"
             dataKey={acc}
             stroke={ACCOUNT_COLORS[acc] ?? '#94a3b8'}
-            strokeWidth={1.5}
+            strokeWidth={activeKey === acc ? 2.5 : 1.5}
+            strokeOpacity={lineOpacity(acc)}
             dot={false}
             name={ACCOUNT_LABELS[acc] ?? acc}
-            strokeDasharray="4 2"
+            strokeDasharray={ACCOUNT_DASH[acc] ?? '4 2'}
+            hide={hiddenKeys.has(acc)}
+            onMouseEnter={() => setActiveKey(acc)}
+            onMouseLeave={() => setActiveKey(null)}
           />
         ))}
       </LineChart>

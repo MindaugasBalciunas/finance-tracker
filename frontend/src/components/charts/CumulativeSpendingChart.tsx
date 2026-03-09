@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -13,7 +14,85 @@ const MONTH_COLORS = [
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
 ]
 
+interface TooltipPayloadItem {
+  dataKey: string
+  name: string
+  value: number
+  color: string
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: TooltipPayloadItem[]
+  label?: number
+  activeKey: string | null
+  hiddenKeys: Set<string>
+}
+
+function CustomTooltip({ active, payload, label, activeKey, hiddenKeys }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null
+  const visible = payload.filter((p) => !hiddenKeys.has(p.dataKey))
+  const items = activeKey ? visible.filter((p) => p.dataKey === activeKey) : visible
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <p className="font-semibold text-gray-700 mb-1">Day {label}</p>
+      {items.map((p) => (
+        <p key={p.dataKey} style={{ color: p.color }}>
+          {p.name}: {formatEuro(p.value)}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+interface LegendEntry {
+  dataKey: string
+  value: string
+  color: string
+}
+
+interface CustomLegendProps {
+  payload?: LegendEntry[]
+  hiddenKeys: Set<string>
+  latestValues: Record<string, number>
+  onToggle: (key: string) => void
+}
+
+function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLegendProps) {
+  if (!payload) return null
+  return (
+    <ul className="flex flex-col gap-1 text-xs pl-2 max-h-72 overflow-y-auto">
+      {payload.map((entry) => {
+        const hidden = hiddenKeys.has(entry.dataKey)
+        const latest = latestValues[entry.dataKey]
+        return (
+          <li
+            key={entry.dataKey}
+            onClick={() => onToggle(entry.dataKey)}
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+            style={{ opacity: hidden ? 0.35 : 1 }}
+          >
+            <span
+              className="inline-block w-5 h-0.5 flex-shrink-0"
+              style={{ backgroundColor: entry.color }}
+            />
+            <span className={hidden ? 'line-through text-gray-400' : 'text-gray-700'}>
+              {entry.value}
+              {latest != null && (
+                <span className="ml-1 text-gray-400">({formatEuro(latest)})</span>
+              )}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export default function CumulativeSpendingChart({ transactions }: Props) {
+  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+
   // Group expenses by "YYYY-MM" month key
   const byMonth: Record<string, Record<number, number>> = {}
 
@@ -34,8 +113,7 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     const day = i + 1
     const row: Record<string, number> = { day }
     for (const mk of monthKeys) {
-      const prev = day > 1 ? (row[mk] ?? 0) : 0  // will be filled below
-      void prev
+      void mk
       row[mk] = 0
     }
     return row
@@ -51,7 +129,6 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     let running = 0
     for (let day = 1; day <= 31; day++) {
       if (mk === todayKey && day > todayDay) {
-        // Don't set value — Recharts will render a gap / stop the line
         chartData[day - 1][mk] = undefined as unknown as number
         continue
       }
@@ -60,7 +137,7 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     }
   }
 
-  // Remove trailing all-zero rows (days beyond any month's last entry)
+  // Remove trailing all-zero rows
   const lastNonZero = chartData.reduce((last, row, i) => {
     const hasData = monthKeys.some((mk) => row[mk] > 0)
     return hasData ? i : last
@@ -72,18 +149,40 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     return new Date(Number(year), Number(month) - 1).toLocaleString('default', { month: 'short', year: '2-digit' })
   }
 
+  // Latest cumulative total per month (last defined value)
+  const latestValues: Record<string, number> = {}
+  for (const mk of monthKeys) {
+    const lastDefined = [...trimmed].reverse().find((row) => row[mk] != null && row[mk] > 0)
+    latestValues[mk] = lastDefined?.[mk] ?? 0
+  }
+
+  const toggleKey = (key: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const lineOpacity = (key: string) => {
+    if (hiddenKeys.has(key)) return 0
+    return activeKey === null || activeKey === key ? 1 : 0.15
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={320}>
+    <ResponsiveContainer width="100%" height={340}>
       <LineChart data={trimmed} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis
-          dataKey="day"
-          tickFormatter={(v) => `Day ${v}`}
-          tick={{ fontSize: 11 }}
+        <XAxis dataKey="day" tickFormatter={(v) => `Day ${v}`} tick={{ fontSize: 11 }} />
+        <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} tick={{ fontSize: 11 }} width={52} />
+        <Tooltip content={<CustomTooltip activeKey={activeKey} hiddenKeys={hiddenKeys} />} />
+        <Legend
+          layout="vertical"
+          align="right"
+          verticalAlign="middle"
+          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} />}
         />
-        <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} tick={{ fontSize: 11 }} />
-        <Tooltip formatter={(v: number) => formatEuro(v)} labelFormatter={(l) => `Day ${l}`} />
-        <Legend />
         {monthKeys.map((mk, i) => (
           <Line
             key={mk}
@@ -91,9 +190,13 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
             dataKey={mk}
             name={monthLabel(mk)}
             stroke={MONTH_COLORS[i % MONTH_COLORS.length]}
-            strokeWidth={2}
+            strokeWidth={activeKey === mk ? 3 : 2}
+            strokeOpacity={lineOpacity(mk)}
             dot={false}
             connectNulls={false}
+            hide={hiddenKeys.has(mk)}
+            onMouseEnter={() => setActiveKey(mk)}
+            onMouseLeave={() => setActiveKey(null)}
           />
         ))}
       </LineChart>
