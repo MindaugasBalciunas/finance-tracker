@@ -159,13 +159,20 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
     trend.accounts[acc].some((v) => v > 0)
   )
 
-  // Latest non-zero value per key for legend
+  // Latest non-zero value per key for legend - use converted data so BTC shows in EUR
   const latestValues: Record<string, number> = {}
-  latestValues['total'] = trend.totals[trend.totals.length - 1] ?? 0
-  for (const acc of activeAccounts) {
-    const vals = trend.accounts[acc]
-    const last = [...vals].reverse().find((v) => v != null && v > 0) ?? 0
-    latestValues[acc] = last
+  if (data.length > 0) {
+    const lastRow = data[data.length - 1]
+    latestValues['total'] = lastRow['total'] ?? 0
+    for (const acc of activeAccounts) {
+      const val = lastRow[acc]
+      latestValues[acc] = typeof val === 'number' ? val : 0
+    }
+  } else {
+    latestValues['total'] = 0
+    for (const acc of activeAccounts) {
+      latestValues[acc] = 0
+    }
   }
 
   // Dynamic Y-axis ticks based on actual max
