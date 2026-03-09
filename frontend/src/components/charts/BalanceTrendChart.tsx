@@ -143,15 +143,25 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
 
   const data = trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date }
-    row['total'] = trend.totals[i]
+    let total = trend.totals[i] ?? 0
+    
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
+      
       // Convert BTC to EUR using live price only if price is valid
       if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_PRICE) {
-        value = value * btcPrice
+        const originalBtcValue = value
+        const convertedValue = originalBtcValue * btcPrice
+        
+        // Update total: remove raw BTC, add converted EUR
+        total = total - originalBtcValue + convertedValue
+        value = convertedValue
       }
+      
       row[acc] = value
     })
+    
+    row['total'] = total
     return row
   })
 
@@ -175,8 +185,8 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
     }
   }
 
-  // Dynamic Y-axis ticks based on actual max
-  const maxTotal = Math.max(...trend.totals.filter((v) => v != null))
+  // Dynamic Y-axis ticks based on actual max from converted data
+  const maxTotal = Math.max(...data.map((d) => typeof d['total'] === 'number' ? d['total'] : 0).filter((v) => v != null))
   const yTicks = buildYTicks(maxTotal)
 
   const toggleKey = (key: string) => {
