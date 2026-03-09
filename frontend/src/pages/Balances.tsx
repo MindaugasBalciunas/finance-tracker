@@ -9,13 +9,19 @@ import { formatEuro, formatDate } from '../utils/format'
 import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
 
-// Return EUR value of BTC fields for a given snapshot row
+// Return EUR value of BTC fields for a given snapshot row using live price (preferred) or snapshot price
 function btcEurValue(b: Balance, liveBtcPrice: number | null): { r: number; m: number } {
-  if (b.btc_price > 0) {
-    // New format: r_btc/m_btc are BTC units, use stored snapshot price
+  // Always prefer live price for visualization
+  if (liveBtcPrice && liveBtcPrice > 0) {
+    return { r: b.r_btc * liveBtcPrice, m: b.m_btc * liveBtcPrice }
+  }
+  
+  // Fall back to snapshot price if available
+  if (b.btc_price && b.btc_price > 0) {
     return { r: b.r_btc * b.btc_price, m: b.m_btc * b.btc_price }
   }
-  // Legacy: r_btc/m_btc stored as EUR already
+  
+  // Legacy format - assume already in EUR
   return { r: b.r_btc, m: b.m_btc }
 }
 

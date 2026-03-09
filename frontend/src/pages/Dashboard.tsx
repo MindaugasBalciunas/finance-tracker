@@ -34,18 +34,22 @@ function getDateRange(period: Period): { date_from?: string; date_to?: string } 
   return { date_from: from.toISOString().slice(0, 10) }
 }
 
-// Convert BTC amounts to EUR using snapshot or live price
+// Convert BTC amounts to EUR using live price (preferred) or snapshot price
 function getBtcEurValue(balance: any, liveBtcPrice: number | null): number {
-  if (balance.btc_price > 0) {
-    // New format: r_btc/m_btc are BTC units, use stored snapshot price
-    return (balance.r_btc + balance.m_btc) * balance.btc_price
+  const btcAmount = balance.r_btc + balance.m_btc
+  
+  // Always prefer live price for visualization
+  if (liveBtcPrice && liveBtcPrice > 0) {
+    return btcAmount * liveBtcPrice
   }
-  if (liveBtcPrice) {
-    // Fallback to live price if available
-    return (balance.r_btc + balance.m_btc) * liveBtcPrice
+  
+  // Fall back to snapshot price if available
+  if (balance.btc_price && balance.btc_price > 0) {
+    return btcAmount * balance.btc_price
   }
-  // Legacy: r_btc/m_btc stored as EUR already
-  return balance.r_btc + balance.m_btc
+  
+  // Legacy format - assume already in EUR
+  return btcAmount
 }
 
 export default function Dashboard() {
