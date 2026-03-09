@@ -167,7 +167,12 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc * (latest.btc_price && latest.btc_price >= 100 ? latest.btc_price : 1) + latest.m_btc * (latest.btc_price && latest.btc_price >= 100 ? latest.btc_price : 1))}
+            value={formatEuro(
+              latest ? (() => {
+                const converted = btcEurValue(latest, btc.price ?? null)
+                return converted.r + converted.m
+              })() : btc.total ?? 0
+            )}
             subtitle={btc.price != null
               ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}
