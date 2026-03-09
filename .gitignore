@@ -1,0 +1,13 @@
+# Backend
+backend/bin/
+backend/finance.db
+backend/docs/swagger.json
+backend/docs/swagger.yaml
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+*.swp
