@@ -34,6 +34,20 @@ function getDateRange(period: Period): { date_from?: string; date_to?: string } 
   return { date_from: from.toISOString().slice(0, 10) }
 }
 
+// Convert BTC amounts to EUR using snapshot or live price
+function getBtcEurValue(balance: any, liveBtcPrice: number | null): number {
+  if (balance.btc_price > 0) {
+    // New format: r_btc/m_btc are BTC units, use stored snapshot price
+    return (balance.r_btc + balance.m_btc) * balance.btc_price
+  }
+  if (liveBtcPrice) {
+    // Fallback to live price if available
+    return (balance.r_btc + balance.m_btc) * liveBtcPrice
+  }
+  // Legacy: r_btc/m_btc stored as EUR already
+  return balance.r_btc + balance.m_btc
+}
+
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>('all')
   const dateRange = useMemo(() => getDateRange(period), [period])
@@ -128,10 +142,10 @@ export default function Dashboard() {
           />
           <StatCard
             title="Crypto"
-            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latestBalance.r_btc + latestBalance.m_btc)}
+            value={formatEuro(getBtcEurValue(latestBalance, btc.price))}
             subtitle={btc.price != null
-              ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
-              : 'Revolut R & M BTC'}
+              ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
+              : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}
             color="yellow"
           />
         </div>

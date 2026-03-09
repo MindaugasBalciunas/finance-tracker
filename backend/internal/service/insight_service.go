@@ -22,9 +22,9 @@ type InsightService interface {
 }
 
 type insightService struct {
-	repo    repository.InsightRepository
-	txSvc   TransactionService
-	balSvc  BalanceService
+	repo   repository.InsightRepository
+	txSvc  TransactionService
+	balSvc BalanceService
 }
 
 func NewInsightService(repo repository.InsightRepository, txSvc TransactionService, balSvc BalanceService) InsightService {
@@ -108,7 +108,15 @@ func (s *insightService) buildPrompt() (string, error) {
 	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR
 	investments := latest.SwedETF + latest.RevStocks
 	pensions := latest.SwedPen + latest.Art
-	crypto := latest.RBTC + latest.MBTC
+
+	// Convert BTC to EUR using snapshot price or 0 for legacy entries
+	cryptoEur := 0.0
+	if latest.BtcPrice > 0 {
+		cryptoEur = (latest.RBTC + latest.MBTC) * latest.BtcPrice
+	} else {
+		// Legacy format where RBTC/MBTC were stored as EUR
+		cryptoEur = latest.RBTC + latest.MBTC
+	}
 
 	prompt := fmt.Sprintf(`You are a personal finance advisor reviewing real financial data for a private individual in Lithuania.
 
@@ -140,7 +148,7 @@ Please write a concise personal finance overview covering:
 
 Keep it direct, personal, and under 350 words. Write in plain paragraphs and bullet points — no section headers or markdown formatting. Address the person directly as "you".`,
 		latest.Date.Format("2006-01-02"),
-		latest.Total, freeCash, investments, pensions, crypto,
+		latest.Total, freeCash, investments, pensions, cryptoEur,
 		summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
 		summary.TotalIncome-summary.TotalExpenses, savingsRate,
 		strings.Join(topExpenses, "\n"),

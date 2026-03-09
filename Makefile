@@ -9,12 +9,18 @@ install:
 swagger:
 	cd backend && swag init -g cmd/api/main.go --output docs
 
+AIR := $(shell which air 2>/dev/null || echo $(HOME)/go/bin/air)
+
 # Run backend (with live reload via air)
 # Loads .env from project root if present
 backend:
-	cd backend && \
-	  [ -f ../.env ] && export $$(grep -v '^#' ../.env | xargs) ; \
-	  air
+	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
+	  cd backend && $(AIR)
+
+# Run backend without live reload (no air needed)
+run-backend:
+	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
+	  cd backend && go run ./cmd/api/main.go
 
 # Run frontend dev server
 frontend:
