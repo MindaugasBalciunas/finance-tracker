@@ -75,8 +75,9 @@ export interface Balance {
   cash: number
   rev_m: number
   rev_r: number
-  r_btc: number
-  m_btc: number
+  r_btc: number      // stored in BTC units
+  m_btc: number      // stored in BTC units
+  btc_price: number  // EUR/BTC at snapshot time (0 = legacy row)
   rev_stocks: number
   created_at: string
   updated_at: string
@@ -94,8 +95,9 @@ export interface CreateBalanceInput {
   cash?: number
   rev_m?: number
   rev_r?: number
-  r_btc?: number
-  m_btc?: number
+  r_btc?: number      // BTC units
+  m_btc?: number      // BTC units
+  btc_price?: number  // EUR/BTC at snapshot time
   rev_stocks?: number
 }
 

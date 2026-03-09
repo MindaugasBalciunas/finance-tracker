@@ -10,8 +10,11 @@ swagger:
 	cd backend && swag init -g cmd/api/main.go --output docs
 
 # Run backend (with live reload via air)
+# Loads .env from project root if present
 backend:
-	cd backend && air
+	cd backend && \
+	  [ -f ../.env ] && export $$(grep -v '^#' ../.env | xargs) ; \
+	  air
 
 # Run frontend dev server
 frontend:

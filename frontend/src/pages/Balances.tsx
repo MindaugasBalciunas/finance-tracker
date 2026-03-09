@@ -9,6 +9,16 @@ import { formatEuro, formatDate } from '../utils/format'
 import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
 
+// Return EUR value of BTC fields for a given snapshot row
+function btcEurValue(b: Balance, liveBtcPrice: number | null): { r: number; m: number } {
+  if (b.btc_price > 0) {
+    // New format: r_btc/m_btc are BTC units, use stored snapshot price
+    return { r: b.r_btc * b.btc_price, m: b.m_btc * b.btc_price }
+  }
+  // Legacy: r_btc/m_btc stored as EUR already
+  return { r: b.r_btc, m: b.m_btc }
+}
+
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
@@ -77,11 +87,10 @@ export default function Balances() {
                 cash: editingBalance.cash,
                 rev_m: editingBalance.rev_m,
                 rev_r: editingBalance.rev_r,
+                r_btc: editingBalance.r_btc,
+                m_btc: editingBalance.m_btc,
                 rev_stocks: editingBalance.rev_stocks,
               }}
-              defaultBtc={btc.price
-                ? { r_btc: editingBalance.r_btc / btc.price, m_btc: editingBalance.m_btc / btc.price }
-                : { r_btc: BTC_HOLDINGS.rev_r, m_btc: BTC_HOLDINGS.rev_m }}
             />
           </div>
         </div>
@@ -106,9 +115,10 @@ export default function Balances() {
                 cash: latest.cash,
                 rev_m: latest.rev_m,
                 rev_r: latest.rev_r,
+                r_btc: latest.r_btc,
+                m_btc: latest.m_btc,
                 rev_stocks: latest.rev_stocks,
               } : undefined}
-              defaultBtc={{ r_btc: BTC_HOLDINGS.rev_r, m_btc: BTC_HOLDINGS.rev_m }}
             />
           </div>
         </div>
@@ -138,7 +148,7 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc + latest.m_btc)}
+            value={btc.total != null ? formatEuro(btc.total) : formatEuro(latest.r_btc * (latest.btc_price || 1) + latest.m_btc * (latest.btc_price || 1))}
             subtitle={btc.price != null
               ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}
@@ -172,56 +182,59 @@ export default function Balances() {
               <tr>
                 <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Seb</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swed 2nd Pillar</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">SwedBank 2nd pillar pension</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Luminor</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea 3rd Pillar</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea 3rd pillar pension</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M Stocks</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R account</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R account BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account BTC</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account stocks</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {balances?.map((b) => (
-                <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
-                  <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_pen)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.luminor)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc)}</td>
-                  <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => setEditingBalance(b)}
-                        className="text-gray-400 hover:text-blue-600 text-xs"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        onClick={() => handleDelete(b.id)}
-                        className="text-gray-400 hover:text-red-600 text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {balances?.map((b) => {
+                const btcVal = btcEurValue(b, btc.price)
+                return (
+                  <tr key={b.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_pen)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.luminor)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcVal.r)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcVal.m)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setEditingBalance(b)}
+                          className="text-gray-400 hover:text-blue-600 text-xs"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => handleDelete(b.id)}
+                          className="text-gray-400 hover:text-red-600 text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
               {!balances?.length && (
                 <tr>
                   <td colSpan={15} className="px-4 py-12 text-center text-gray-400">

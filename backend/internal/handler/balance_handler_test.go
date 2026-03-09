@@ -142,7 +142,7 @@ func TestBalanceHandler_GetAllocation(t *testing.T) {
 	r := setupBalanceRouter(svc)
 
 	allocations := []domain.AccountAllocation{
-		{Account: "SEB", Amount: 208.86, Percentage: 0.57},
+		{Account: "Seb", Amount: 208.86, Percentage: 0.57},
 		{Account: "Cash", Amount: 13890, Percentage: 37.96},
 	}
 	svc.On("GetAllocation").Return(allocations, nil)

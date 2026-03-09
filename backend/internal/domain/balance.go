@@ -16,8 +16,9 @@ type Balance struct {
 	Cash      float64   `json:"cash"`
 	RevM      float64   `json:"rev_m"`
 	RevR      float64   `json:"rev_r"`
-	RBTC      float64   `json:"r_btc"`
-	MBTC      float64   `json:"m_btc"`
+	RBTC      float64   `json:"r_btc"`      // stored in BTC units
+	MBTC      float64   `json:"m_btc"`      // stored in BTC units
+	BtcPrice  float64   `json:"btc_price"`  // EUR/BTC rate at snapshot time (0 = legacy EUR row)
 	RevStocks float64   `json:"rev_stocks"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

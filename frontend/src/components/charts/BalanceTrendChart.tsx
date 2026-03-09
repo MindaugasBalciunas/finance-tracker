@@ -25,18 +25,18 @@ const ACCOUNT_COLORS: Record<string, string> = {
 }
 
 const ACCOUNT_LABELS: Record<string, string> = {
-  seb:        'SEB',
+  seb:        'Seb',
   swed:       'Swedbank',
   luminor:    'Luminor',
   cash:       'Cash',
-  swed_etf:   'Swed ETF',
-  swed_pen:   'Swed 2nd Pillar',
-  art:        'Artea 3rd Pillar',
-  rev_m:      'Revolut M',
-  rev_r:      'Revolut R ETF',
-  r_btc:      'Revolut R BTC',
-  m_btc:      'Revolut M BTC',
-  rev_stocks: 'Revolut M Stocks',
+  swed_etf:   'Swedbank ETF',
+  swed_pen:   'SwedBank 2nd pillar pension',
+  art:        'Artea 3rd pillar pension',
+  rev_m:      'Revolut M account',
+  rev_r:      'Revolut R account',
+  r_btc:      'Revolut R account BTC',
+  m_btc:      'Revolut M account BTC',
+  rev_stocks: 'Revolut M account stocks',
 }
 
 const ACCOUNT_DASH: Record<string, string> = {

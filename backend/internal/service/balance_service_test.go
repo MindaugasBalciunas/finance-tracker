@@ -89,7 +89,7 @@ func TestBalanceService_GetAllocation(t *testing.T) {
 	assert.Len(t, allocations, 2) // only non-zero accounts
 
 	for _, a := range allocations {
-		if a.Account == "SEB" {
+		if a.Account == "Seb" {
 			assert.Equal(t, 600.0, a.Amount)
 			assert.Equal(t, 60.0, a.Percentage)
 		}

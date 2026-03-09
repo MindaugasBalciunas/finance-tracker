@@ -1,20 +1,20 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import type { CreateBalanceInput } from '../../types'
-import { useBtcPrice } from '../../hooks/useBtcPrice'
+import { useBtcPrice, BTC_HOLDINGS } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
-  { key: 'seb',       label: 'SEB' },
+  { key: 'seb',       label: 'Seb' },
   { key: 'swed',      label: 'Swedbank' },
-  { key: 'swed_etf',  label: 'Swed ETF' },
-  { key: 'swed_pen',  label: 'Swed 2nd Pillar' },
+  { key: 'swed_etf',  label: 'Swedbank ETF' },
+  { key: 'swed_pen',  label: 'SwedBank 2nd pillar pension' },
   { key: 'luminor',   label: 'Luminor' },
-  { key: 'art',       label: 'Artea 3rd Pillar' },
+  { key: 'art',       label: 'Artea 3rd pillar pension' },
   { key: 'cash',      label: 'Cash' },
-  { key: 'rev_m',     label: 'Revolut M' },
-  { key: 'rev_r',     label: 'Revolut R ETF' },
-  { key: 'rev_stocks', label: 'Revolut M Stocks' },
+  { key: 'rev_m',     label: 'Revolut M account' },
+  { key: 'rev_r',     label: 'Revolut R account' },
+  { key: 'rev_stocks', label: 'Revolut M account stocks' },
 ]
 
 interface Props {
@@ -22,14 +22,23 @@ interface Props {
   onCancel: () => void
   isSubmitting?: boolean
   defaultValues?: Partial<CreateBalanceInput>
-  defaultBtc?: { r_btc: number; m_btc: number }
 }
 
-export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultValues, defaultBtc }: Props) {
+export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
   const { data: btcPrice } = useBtcPrice()
 
-  const [rBtc, setRBtc] = useState<string>(defaultBtc ? String(defaultBtc.r_btc) : '')
-  const [mBtc, setMBtc] = useState<string>(defaultBtc ? String(defaultBtc.m_btc) : '')
+  // BTC fields: if editing a new-format row (r_btc < 1 = BTC units), use stored value.
+  // Otherwise default to known fixed holdings.
+  const initRBtc = defaultValues?.r_btc != null && defaultValues.r_btc < 1
+    ? String(defaultValues.r_btc)
+    : String(BTC_HOLDINGS.rev_r)
+
+  const initMBtc = defaultValues?.m_btc != null && defaultValues.m_btc < 1
+    ? String(defaultValues.m_btc)
+    : String(BTC_HOLDINGS.rev_m)
+
+  const [rBtc, setRBtc] = useState<string>(initRBtc)
+  const [mBtc, setMBtc] = useState<string>(initMBtc)
 
   const { register, handleSubmit, formState: { errors } } = useForm<CreateBalanceInput>({
     defaultValues: { ...defaultValues },
@@ -39,14 +48,10 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   const mBtcEur = btcPrice && mBtc ? parseFloat(mBtc) * btcPrice : null
 
   const handleFormSubmit = (data: CreateBalanceInput) => {
-    if (btcPrice) {
-      data.r_btc = rBtc ? parseFloat(rBtc) * btcPrice : 0
-      data.m_btc = mBtc ? parseFloat(mBtc) * btcPrice : 0
-    } else {
-      // fallback: store BTC amount as-is if price unavailable
-      data.r_btc = rBtc ? parseFloat(rBtc) : 0
-      data.m_btc = mBtc ? parseFloat(mBtc) : 0
-    }
+    // Store BTC amounts directly in BTC units; backend uses btc_price to compute EUR for total
+    data.r_btc = rBtc ? parseFloat(rBtc) : 0
+    data.m_btc = mBtc ? parseFloat(mBtc) : 0
+    data.btc_price = btcPrice ?? 0
     onSubmit(data)
   }
 
@@ -81,7 +86,7 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
           </div>
         ))}
 
-        {/* BTC fields — input in BTC, display EUR equivalent */}
+        {/* BTC fields — stored and edited in BTC units */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Revolut R BTC (₿)</label>
           <input

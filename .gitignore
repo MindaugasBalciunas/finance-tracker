@@ -12,6 +12,9 @@ frontend/dist/
 # Claude Code
 .claude/settings.local.json
 
+# Environment
+.env
+
 # OS
 .DS_Store
 *.swp
