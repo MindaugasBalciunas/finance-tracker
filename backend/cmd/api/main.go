@@ -45,6 +45,7 @@ func main() {
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
+	exportHandler := handler.NewExportHandler(txSvc, balSvc)
 
 	r := gin.Default()
 
@@ -64,6 +65,7 @@ func main() {
 	txHandler.RegisterRoutes(v1)
 	balHandler.RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
+	exportHandler.RegisterRoutes(v1)
 
 	// Health check
 	v1.GET("/health", func(c *gin.Context) {
