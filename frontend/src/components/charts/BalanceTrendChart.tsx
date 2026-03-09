@@ -7,6 +7,7 @@ import { formatEuro } from '../../utils/format'
 
 interface Props {
   trend: BalanceTrend
+  btcPrice?: number | null
 }
 
 const ACCOUNT_COLORS: Record<string, string> = {
@@ -134,7 +135,7 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLeg
   )
 }
 
-export default function BalanceTrendChart({ trend }: Props) {
+export default function BalanceTrendChart({ trend, btcPrice }: Props) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
@@ -142,7 +143,12 @@ export default function BalanceTrendChart({ trend }: Props) {
     const row: Record<string, number | string> = { date }
     row['total'] = trend.totals[i]
     Object.keys(trend.accounts).forEach((acc) => {
-      row[acc] = trend.accounts[acc][i] ?? 0
+      let value = trend.accounts[acc][i] ?? 0
+      // Convert BTC to EUR using live price
+      if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice > 0) {
+        value = value * btcPrice
+      }
+      row[acc] = value
     })
     return row
   })
