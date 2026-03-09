@@ -143,25 +143,25 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
 
   const data = trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date }
-    let total = trend.totals[i] ?? 0
+    let convertedTotal = 0
     
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
       
       // Convert BTC to EUR using live price only if price is valid
       if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_PRICE) {
-        const originalBtcValue = value
-        const convertedValue = originalBtcValue * btcPrice
-        
-        // Update total: remove raw BTC, add converted EUR
-        total = total - originalBtcValue + convertedValue
-        value = convertedValue
+        // Only convert small values that look like BTC amounts
+        if (value > 0 && value < 1) {
+          value = value * btcPrice
+        }
       }
       
       row[acc] = value
+      convertedTotal += value
     })
     
-    row['total'] = total
+    // Use sum of all converted accounts as total (this is more accurate than backend totals)
+    row['total'] = convertedTotal
     return row
   })
 
