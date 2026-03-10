@@ -2,25 +2,38 @@ import { useState } from 'react'
 import {
   useTransactions,
   useCreateTransaction,
+  useUpdateTransaction,
   useDeleteTransaction,
 } from '../hooks/useTransactions'
 import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import DateRangeFilter from '../components/ui/DateRangeFilter'
+import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro, formatDate } from '../utils/format'
-import type { TransactionFilter, TransactionType, Category, CreateTransactionInput } from '../types'
+import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput } from '../types'
+import { CATEGORIES } from '../constants/categories'
 
 export default function Transactions() {
   const [showForm, setShowForm] = useState(false)
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20 })
+  const [filterKey, setFilterKey] = useState(0)
 
   const { data, isLoading } = useTransactions(filter)
   const createMutation = useCreateTransaction()
+  const updateMutation = useUpdateTransaction()
   const deleteMutation = useDeleteTransaction()
 
   const handleCreate = async (input: CreateTransactionInput) => {
     await createMutation.mutateAsync(input)
     setShowForm(false)
+  }
+
+  const handleUpdate = async (input: CreateTransactionInput) => {
+    if (!editingTx) return
+    await updateMutation.mutateAsync({ id: editingTx.id, input })
+    setEditingTx(null)
   }
 
   const handleDelete = async (id: number) => {
@@ -60,21 +73,34 @@ export default function Transactions() {
         </div>
       )}
 
+      {/* Edit form modal */}
+      {editingTx && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Transaction</h3>
+            <TransactionForm
+              key={editingTx.id}
+              onSubmit={handleUpdate}
+              onCancel={() => setEditingTx(null)}
+              isSubmitting={updateMutation.isPending}
+              defaultValues={{
+                date: editingTx.date.slice(0, 10),
+                type: editingTx.type,
+                amount: editingTx.amount,
+                category: editingTx.category,
+                comment: editingTx.comment,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3">
-        <input
-          type="date"
-          placeholder="From"
-          value={filter.date_from ?? ''}
-          onChange={(e) => setFilter((f) => ({ ...f, date_from: e.target.value || undefined, page: 1 }))}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-        />
-        <input
-          type="date"
-          placeholder="To"
-          value={filter.date_to ?? ''}
-          onChange={(e) => setFilter((f) => ({ ...f, date_to: e.target.value || undefined, page: 1 }))}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
+        <DateRangeFilter
+          key={filterKey}
+          value={{ date_from: filter.date_from, date_to: filter.date_to }}
+          onChange={(range: DateRange) => setFilter((f) => ({ ...f, ...range, page: 1 }))}
         />
         <select
           value={filter.type ?? ''}
@@ -92,12 +118,12 @@ export default function Transactions() {
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
         >
           <option value="">All categories</option>
-          {['Food','Kids','Kids(food)','Health','Finance','Investment','Entertainment','House expense','Credit','Car','Income','Clothes','Kids school','Kids (Entertainment)','Divorce'].map((c) => (
+          {CATEGORIES.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
         <button
-          onClick={() => setFilter({ page: 1, page_size: 20 })}
+          onClick={() => { setFilter({ page: 1, page_size: 20 }); setFilterKey((k) => k + 1) }}
           className="text-sm text-gray-500 hover:text-gray-800 underline"
         >
           Clear
@@ -133,12 +159,20 @@ export default function Transactions() {
                     {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(tx.id)}
-                      className="text-gray-400 hover:text-red-600 text-xs"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setEditingTx(tx)}
+                        className="text-gray-400 hover:text-blue-600 text-xs"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={() => handleDelete(tx.id)}
+                        className="text-gray-400 hover:text-red-600 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

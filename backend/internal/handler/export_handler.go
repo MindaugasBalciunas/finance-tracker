@@ -33,7 +33,7 @@ func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // @Success      200  {string}  string  "CSV file"
 // @Router       /export/transactions.csv [get]
 func (h *ExportHandler) ExportTransactions(c *gin.Context) {
-	result, err := h.txSvc.List(domain.TransactionFilter{Page: 1, PageSize: 1000000})
+	transactions, err := h.txSvc.ListAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -44,7 +44,7 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 
 	w := csv.NewWriter(c.Writer)
 	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment"})
-	for _, tx := range result.Data {
+	for _, tx := range transactions {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(tx.ID), 10),
 			tx.Date.Format("2006-01-02"),
@@ -64,7 +64,7 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 // @Success      200  {string}  string  "CSV file"
 // @Router       /export/balances.csv [get]
 func (h *ExportHandler) ExportBalances(c *gin.Context) {
-	balances, err := h.balSvc.List(domain.BalanceFilter{})
+	balances, err := h.balSvc.List(domain.BalanceFilter{}, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

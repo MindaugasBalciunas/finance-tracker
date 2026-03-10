@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import type { BalanceTrend } from '../../types'
 import { formatEuro } from '../../utils/format'
+import { MIN_VALID_BTC_PRICE } from '../../utils/btc'
 
 interface Props {
   trend: BalanceTrend
@@ -139,17 +140,15 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
-  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
-
   const data = trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date }
     let convertedTotal = 0
-    
+
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
-      
+
       // Convert BTC to EUR using live price only if price is valid
-      if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_PRICE) {
+      if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_BTC_PRICE) {
         // Only convert small values that look like BTC amounts
         if (value > 0 && value < 1) {
           value = value * btcPrice
@@ -173,7 +172,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
   const latestValues: Record<string, number> = {}
   if (data.length > 0) {
     const lastRow = data[data.length - 1]
-    latestValues['total'] = lastRow['total'] ?? 0
+    latestValues['total'] = typeof lastRow['total'] === 'number' ? lastRow['total'] : 0
     for (const acc of activeAccounts) {
       const val = lastRow[acc]
       latestValues[acc] = typeof val === 'number' ? val : 0

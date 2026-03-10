@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Balances from './pages/Balances'
 import Reports from './pages/Reports'
+import Stocks from './pages/Stocks'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="balances" element={<Balances />} />
+            <Route path="stocks" element={<Stocks />} />
             <Route path="reports" element={<Reports />} />
           </Route>
         </Routes>

@@ -7,17 +7,17 @@ export const BALANCE_LATEST_KEY = 'balance-latest'
 export const BALANCE_TREND_KEY = 'balance-trend'
 export const BALANCE_ALLOCATION_KEY = 'balance-allocation'
 
-export function useBalances(filter: BalanceFilter = {}) {
+export function useBalances(filter: BalanceFilter = {}, btcPrice?: number | null) {
   return useQuery({
-    queryKey: [BALANCES_KEY, filter],
-    queryFn: () => balancesApi.list(filter),
+    queryKey: [BALANCES_KEY, filter, btcPrice ?? 0],
+    queryFn: () => balancesApi.list(filter, btcPrice ?? undefined),
   })
 }
 
-export function useLatestBalance() {
+export function useLatestBalance(btcPrice?: number | null) {
   return useQuery({
-    queryKey: [BALANCE_LATEST_KEY],
-    queryFn: () => balancesApi.getLatest(),
+    queryKey: [BALANCE_LATEST_KEY, btcPrice ?? 0],
+    queryFn: () => balancesApi.getLatest(btcPrice ?? undefined),
     retry: false,
   })
 }

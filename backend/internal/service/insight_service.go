@@ -70,7 +70,7 @@ func (s *insightService) buildPrompt() (string, error) {
 	}
 
 	// Latest balance snapshot
-	latest, err := s.balSvc.GetLatest()
+	latest, err := s.balSvc.GetLatest(0)
 	if err != nil {
 		return "", err
 	}
@@ -179,9 +179,11 @@ type claudeResponse struct {
 	} `json:"error,omitempty"`
 }
 
+const claudeModel = "claude-haiku-4-5-20251001"
+
 func callClaude(apiKey, prompt string) (string, error) {
 	reqBody := claudeRequest{
-		Model:     "claude-haiku-4-5-20251001",
+		Model:     claudeModel,
 		MaxTokens: 1024,
 		Messages: []claudeMessage{
 			{Role: "user", Content: prompt},

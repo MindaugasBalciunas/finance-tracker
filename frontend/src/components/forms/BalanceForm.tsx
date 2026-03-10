@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import type { CreateBalanceInput } from '../../types'
-import { useBtcPrice, BTC_HOLDINGS } from '../../hooks/useBtcPrice'
+import { useBtcPrice } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
@@ -27,15 +27,8 @@ interface Props {
 export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
   const { data: btcPrice } = useBtcPrice()
 
-  // BTC fields: if editing a new-format row (r_btc < 1 = BTC units), use stored value.
-  // Otherwise default to known fixed holdings.
-  const initRBtc = defaultValues?.r_btc != null && defaultValues.r_btc < 1
-    ? String(defaultValues.r_btc)
-    : String(BTC_HOLDINGS.rev_r)
-
-  const initMBtc = defaultValues?.m_btc != null && defaultValues.m_btc < 1
-    ? String(defaultValues.m_btc)
-    : String(BTC_HOLDINGS.rev_m)
+  const initRBtc = defaultValues?.r_btc != null ? String(defaultValues.r_btc) : ''
+  const initMBtc = defaultValues?.m_btc != null ? String(defaultValues.m_btc) : ''
 
   const [rBtc, setRBtc] = useState<string>(initRBtc)
   const [mBtc, setMBtc] = useState<string>(initMBtc)

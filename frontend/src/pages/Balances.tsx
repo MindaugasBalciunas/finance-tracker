@@ -6,50 +6,22 @@ import AllocationPieChart from '../components/charts/AllocationPieChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import StatCard from '../components/ui/StatCard'
 import { formatEuro, formatDate } from '../utils/format'
-import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
+import { useBtcEur } from '../hooks/useBtcPrice'
+import { balanceBtcEur } from '../utils/btc'
 import type { Balance, CreateBalanceInput } from '../types'
-
-// Return EUR value of BTC fields for a given snapshot row using live price (preferred) or snapshot price
-// Only uses prices that are reasonable (> 100 EUR/BTC)
-function btcEurValue(b: Balance, liveBtcPrice: number | null): { r: number; m: number } {
-  const rBtc = b.r_btc ?? 0
-  const mBtc = b.m_btc ?? 0
-  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
-  
-  // Check if this balance has a snapshot BTC price (new format: BTC units stored)
-  const hasSnapshotPrice = b.btc_price && b.btc_price >= MIN_VALID_PRICE
-  
-  // If new format (has valid snapshot price), always convert using available price
-  if (hasSnapshotPrice) {
-    // Prefer live price if valid, fall back to snapshot price
-    const isLivePriceValid = liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE
-    const priceToUse = isLivePriceValid ? liveBtcPrice : b.btc_price
-    return { r: rBtc * priceToUse, m: mBtc * priceToUse }
-  }
-  
-  // Legacy format or no valid snapshot price - check if values look like BTC (small numbers)
-  const isBtcFormat = (rBtc < 1 && rBtc > 0) || (mBtc < 1 && mBtc > 0)
-  if (isBtcFormat && liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE) {
-    // Convert BTC to EUR using live price if values look like BTC amounts
-    return { r: rBtc * liveBtcPrice, m: mBtc * liveBtcPrice }
-  }
-  
-  // Return as-is (assume already in EUR or zero) - don't use invalid prices
-  return { r: rBtc, m: mBtc }
-}
 
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
 
-  const { data: balances, isLoading } = useBalances()
-  const { data: latest } = useLatestBalance()
+  const btc = useBtcEur()
+  const { data: balances, isLoading } = useBalances({}, btc.price)
+  const { data: latest } = useLatestBalance(btc.price)
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()
   const updateMutation = useUpdateBalance()
   const deleteMutation = useDeleteBalance()
-  const btc = useBtcEur()
 
   const handleCreate = async (input: CreateBalanceInput) => {
     await createMutation.mutateAsync(input)
@@ -167,14 +139,9 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(
-              latest ? (() => {
-                const converted = btcEurValue(latest, btc.price ?? null)
-                return converted.r + converted.m
-              })() : btc.total ?? 0
-            )}
+            value={formatEuro(balanceBtcEur(latest, btc.price ?? null))}
             subtitle={btc.price != null
-              ? `${BTC_HOLDINGS.rev_r + BTC_HOLDINGS.rev_m} BTC · €${btc.price.toLocaleString()} /BTC`
+              ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}
             color="yellow"
           />
@@ -223,7 +190,6 @@ export default function Balances() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {balances?.map((b) => {
-                const btcVal = btcEurValue(b, btc.price)
                 return (
                   <tr key={b.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
@@ -237,8 +203,8 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcVal.r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcVal.m)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">

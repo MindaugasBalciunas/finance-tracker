@@ -16,6 +16,7 @@ type TransactionRepository interface {
 	Update(tx *domain.Transaction) error
 	Delete(id uint) error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
+	ListAll() ([]domain.Transaction, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -80,6 +81,14 @@ func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.P
 		PageSize:   pageSize,
 		TotalPages: totalPages,
 	}, nil
+}
+
+func (r *transactionRepository) ListAll() ([]domain.Transaction, error) {
+	var transactions []domain.Transaction
+	if err := r.db.Order("date DESC").Find(&transactions).Error; err != nil {
+		return nil, err
+	}
+	return transactions, nil
 }
 
 func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {

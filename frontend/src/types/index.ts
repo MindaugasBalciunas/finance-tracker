@@ -78,6 +78,8 @@ export interface Balance {
   r_btc: number      // stored in BTC units
   m_btc: number      // stored in BTC units
   btc_price: number  // EUR/BTC at snapshot time (0 = legacy row)
+  r_btc_eur: number  // BTC → EUR (computed by backend)
+  m_btc_eur: number  // BTC → EUR (computed by backend)
   rev_stocks: number
   created_at: string
   updated_at: string
@@ -111,6 +113,48 @@ export interface AccountAllocation {
   account: string
   amount: number
   percentage: number
+}
+
+// --- Stocks ---
+
+export type StockAction = 'buy' | 'sell'
+
+export interface StockTrade {
+  id: number
+  date: string
+  action: StockAction
+  ticker: string
+  shares: number
+  price_per_share: number
+  currency: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateStockTradeInput {
+  date: string
+  action: StockAction
+  ticker: string
+  shares: number
+  price_per_share: number
+  currency?: string
+  notes?: string
+}
+
+export interface StockHolding {
+  ticker: string
+  currency: string
+  shares: number
+  avg_cost_usd: number
+  total_cost_usd: number
+  realized_gain: number
+}
+
+export interface StockPortfolio {
+  holdings: StockHolding[]
+  total_cost_usd: number
+  total_realized_gain: number
 }
 
 export interface TransactionFilter {
