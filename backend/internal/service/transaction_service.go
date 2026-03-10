@@ -45,6 +45,23 @@ func NewTransactionService(repo repository.TransactionRepository) TransactionSer
 	return &transactionService{repo: repo}
 }
 
+// populateTransactionMoney adds Money type fields to a transaction
+func populateTransactionMoney(tx *domain.Transaction) {
+	if tx != nil {
+		tx.AmountMoney = domain.Money{
+			Value:    tx.Amount,
+			Currency: domain.CurrencyEUR,
+		}
+	}
+}
+
+// populateTransactionsMoney adds Money type fields to multiple transactions
+func populateTransactionsMoney(txs []domain.Transaction) {
+	for i := range txs {
+		populateTransactionMoney(&txs[i])
+	}
+}
+
 func (s *transactionService) Create(input CreateTransactionInput) (*domain.Transaction, error) {
 	date, err := timeutil.ParseDate(input.Date)
 	if err != nil {
@@ -62,11 +79,17 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 	if err := s.repo.Create(tx); err != nil {
 		return nil, err
 	}
+	populateTransactionMoney(tx)
 	return tx, nil
 }
 
 func (s *transactionService) GetByID(id uint) (*domain.Transaction, error) {
-	return s.repo.GetByID(id)
+	tx, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	populateTransactionMoney(tx)
+	return tx, nil
 }
 
 func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*domain.Transaction, error) {
@@ -98,6 +121,7 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if err := s.repo.Update(tx); err != nil {
 		return nil, err
 	}
+	populateTransactionMoney(tx)
 	return tx, nil
 }
 
@@ -109,14 +133,23 @@ func (s *transactionService) Delete(id uint) error {
 }
 
 func (s *transactionService) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {
-	return s.repo.List(filter)
+	result, err := s.repo.List(filter)
+	if err != nil {
+		return nil, err
+	}
+	populateTransactionsMoney(result.Data)
+	return result, nil
 }
 
 func (s *transactionService) ListAll() ([]domain.Transaction, error) {
-	return s.repo.ListAll()
+	txs, err := s.repo.ListAll()
+	if err != nil {
+		return nil, err
+	}
+	populateTransactionsMoney(txs)
+	return txs, nil
 }
 
 func (s *transactionService) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {
 	return s.repo.GetSummary(filter)
 }
-

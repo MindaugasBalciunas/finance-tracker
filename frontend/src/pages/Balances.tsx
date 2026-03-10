@@ -203,8 +203,8 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">

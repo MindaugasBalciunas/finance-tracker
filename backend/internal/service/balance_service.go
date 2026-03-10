@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -67,13 +68,39 @@ func btcToEur(btcAmount, snapshotPrice, livePrice float64) float64 {
 }
 
 // applyBtcEur populates the computed RBtcEur/MBtcEur fields and recalculates Total.
+// Also populates enhanced Money-based computed fields.
 func applyBtcEur(b *domain.Balance, livePrice float64) {
 	if livePrice <= 0 {
 		return
 	}
+
+	// Legacy fields (kept for backward compatibility)
 	b.RBtcEur = btcToEur(b.RBTC, b.BtcPrice, livePrice)
 	b.MBtcEur = btcToEur(b.MBTC, b.BtcPrice, livePrice)
 	b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + b.RBtcEur + b.MBtcEur + b.RevStocks
+
+	// Enhanced computed fields with Money types
+	var now = time.Now()
+	b.RBtcComputed = &domain.CryptoAmount{
+		Amount:            b.RBTC,
+		Unit:              domain.CurrencyBTC,
+		PricePerUnit:      livePrice,
+		PriceValidAt:      &now,
+		ConvertedValue:    b.RBtcEur,
+		ConvertedCurrency: domain.CurrencyEUR,
+	}
+	b.MBtcComputed = &domain.CryptoAmount{
+		Amount:            b.MBTC,
+		Unit:              domain.CurrencyBTC,
+		PricePerUnit:      livePrice,
+		PriceValidAt:      &now,
+		ConvertedValue:    b.MBtcEur,
+		ConvertedCurrency: domain.CurrencyEUR,
+	}
+	b.TotalEUR = domain.Money{
+		Value:    b.Total,
+		Currency: domain.CurrencyEUR,
+	}
 }
 
 //go:generate mockery --name=BalanceService --output=../handler/mock --outpkg=mock
