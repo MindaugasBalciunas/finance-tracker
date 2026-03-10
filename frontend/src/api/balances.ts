@@ -8,8 +8,9 @@ import type {
 } from '../types'
 
 export const balancesApi = {
-  list: async (filter: BalanceFilter = {}): Promise<Balance[]> => {
-    const { data } = await client.get<Balance[]>('/balances', { params: filter })
+  list: async (filter: BalanceFilter = {}, btcPrice?: number): Promise<Balance[]> => {
+    const params = btcPrice ? { ...filter, btc_price: btcPrice } : filter
+    const { data } = await client.get<Balance[]>('/balances', { params })
     return data
   },
 
@@ -32,8 +33,9 @@ export const balancesApi = {
     await client.delete(`/balances/${id}`)
   },
 
-  getLatest: async (): Promise<Balance> => {
-    const { data } = await client.get<Balance>('/balances/latest')
+  getLatest: async (btcPrice?: number): Promise<Balance> => {
+    const params = btcPrice ? { btc_price: btcPrice } : undefined
+    const { data } = await client.get<Balance>('/balances/latest', { params })
     return data
   },
 

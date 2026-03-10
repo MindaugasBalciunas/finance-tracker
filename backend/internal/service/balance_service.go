@@ -5,6 +5,7 @@ import (
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/pkg/timeutil"
 )
 
 // CreateBalanceInput is the input DTO for creating a balance snapshot
@@ -45,14 +46,44 @@ type UpdateBalanceInput struct {
 	RevStocks float64 `json:"rev_stocks"`
 }
 
+const minValidBtcPrice = 100.0
+
+// btcToEur converts a BTC amount to EUR using snapshot and live prices.
+// Mirrors the same logic used on the frontend (btcToEur in utils/btc.ts).
+func btcToEur(btcAmount, snapshotPrice, livePrice float64) float64 {
+	if snapshotPrice >= minValidBtcPrice {
+		price := snapshotPrice
+		if livePrice >= minValidBtcPrice {
+			price = livePrice
+		}
+		return btcAmount * price
+	}
+	// Legacy: btcAmount stored as BTC units, convert with live price
+	if btcAmount > 0 && btcAmount < 1 && livePrice >= minValidBtcPrice {
+		return btcAmount * livePrice
+	}
+	// Already in EUR or zero
+	return btcAmount
+}
+
+// applyBtcEur populates the computed RBtcEur/MBtcEur fields and recalculates Total.
+func applyBtcEur(b *domain.Balance, livePrice float64) {
+	if livePrice <= 0 {
+		return
+	}
+	b.RBtcEur = btcToEur(b.RBTC, b.BtcPrice, livePrice)
+	b.MBtcEur = btcToEur(b.MBTC, b.BtcPrice, livePrice)
+	b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + b.RBtcEur + b.MBtcEur + b.RevStocks
+}
+
 //go:generate mockery --name=BalanceService --output=../handler/mock --outpkg=mock
 type BalanceService interface {
 	Create(input CreateBalanceInput) (*domain.Balance, error)
 	GetByID(id uint) (*domain.Balance, error)
 	Update(id uint, input UpdateBalanceInput) (*domain.Balance, error)
 	Delete(id uint) error
-	List(filter domain.BalanceFilter) ([]domain.Balance, error)
-	GetLatest() (*domain.Balance, error)
+	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
+	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -66,7 +97,7 @@ func NewBalanceService(repo repository.BalanceRepository) BalanceService {
 }
 
 func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, error) {
-	date, err := parseDate(input.Date)
+	date, err := timeutil.ParseDate(input.Date)
 	if err != nil {
 		return nil, errors.New("invalid date format, use YYYY-MM-DD")
 	}
@@ -113,7 +144,7 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	}
 
 	if input.Date != "" {
-		date, err := parseDate(input.Date)
+		date, err := timeutil.ParseDate(input.Date)
 		if err != nil {
 			return nil, errors.New("invalid date format, use YYYY-MM-DD")
 		}
@@ -156,12 +187,24 @@ func (s *balanceService) Delete(id uint) error {
 	return s.repo.Delete(id)
 }
 
-func (s *balanceService) List(filter domain.BalanceFilter) ([]domain.Balance, error) {
-	return s.repo.List(filter)
+func (s *balanceService) List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error) {
+	balances, err := s.repo.List(filter)
+	if err != nil {
+		return nil, err
+	}
+	for i := range balances {
+		applyBtcEur(&balances[i], liveBtcPrice)
+	}
+	return balances, nil
 }
 
-func (s *balanceService) GetLatest() (*domain.Balance, error) {
-	return s.repo.GetLatest()
+func (s *balanceService) GetLatest(liveBtcPrice float64) (*domain.Balance, error) {
+	b, err := s.repo.GetLatest()
+	if err != nil {
+		return nil, err
+	}
+	applyBtcEur(b, liveBtcPrice)
+	return b, nil
 }
 
 func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {

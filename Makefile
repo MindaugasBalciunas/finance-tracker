@@ -14,6 +14,7 @@ AIR := $(shell which air 2>/dev/null || echo $(HOME)/go/bin/air)
 # Run backend (with live reload via air)
 # Loads .env from project root if present
 backend:
+	@lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
 	  cd backend && $(AIR)
 

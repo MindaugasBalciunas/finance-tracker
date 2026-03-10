@@ -41,15 +41,15 @@ func (m *mockBalanceService) Update(id uint, input service.UpdateBalanceInput) (
 	return args.Get(0).(*domain.Balance), args.Error(1)
 }
 func (m *mockBalanceService) Delete(id uint) error { return m.Called(id).Error(0) }
-func (m *mockBalanceService) List(filter domain.BalanceFilter) ([]domain.Balance, error) {
-	args := m.Called(filter)
+func (m *mockBalanceService) List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error) {
+	args := m.Called(filter, liveBtcPrice)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]domain.Balance), args.Error(1)
 }
-func (m *mockBalanceService) GetLatest() (*domain.Balance, error) {
-	args := m.Called()
+func (m *mockBalanceService) GetLatest(liveBtcPrice float64) (*domain.Balance, error) {
+	args := m.Called(liveBtcPrice)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -109,7 +109,7 @@ func TestBalanceHandler_GetLatest(t *testing.T) {
 		r := setupBalanceRouter(svc)
 
 		latest := &domain.Balance{ID: 31, Total: 36562.48}
-		svc.On("GetLatest").Return(latest, nil)
+		svc.On("GetLatest", float64(0)).Return(latest, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/balances/latest", nil)
 		w := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestBalanceHandler_GetLatest(t *testing.T) {
 		svc := &mockBalanceService{}
 		r := setupBalanceRouter(svc)
 
-		svc.On("GetLatest").Return(nil, assert.AnError)
+		svc.On("GetLatest", float64(0)).Return(nil, assert.AnError)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/balances/latest", nil)
 		w := httptest.NewRecorder()

@@ -35,17 +35,20 @@ func main() {
 	txRepo := repository.NewTransactionRepository(db)
 	balRepo := repository.NewBalanceRepository(db)
 	insightRepo := repository.NewInsightRepository(db)
+	stockRepo := repository.NewStockRepository(db)
 
 	// Services
 	txSvc := service.NewTransactionService(txRepo)
 	balSvc := service.NewBalanceService(balRepo)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
+	stockSvc := service.NewStockService(stockRepo)
 
 	// Handlers
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
 	exportHandler := handler.NewExportHandler(txSvc, balSvc)
+	stockHandler := handler.NewStockHandler(stockSvc)
 
 	r := gin.Default()
 
@@ -66,6 +69,7 @@ func main() {
 	balHandler.RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
 	exportHandler.RegisterRoutes(v1)
+	stockHandler.RegisterRoutes(v1)
 
 	// Health check
 	v1.GET("/health", func(c *gin.Context) {

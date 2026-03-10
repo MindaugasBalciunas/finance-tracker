@@ -20,6 +20,8 @@ type Balance struct {
 	MBTC      float64   `json:"m_btc"`      // stored in BTC units
 	BtcPrice  float64   `json:"btc_price"`  // EUR/BTC rate at snapshot time (0 = legacy EUR row)
 	RevStocks float64   `json:"rev_stocks"`
+	RBtcEur   float64   `json:"r_btc_eur" gorm:"-"` // BTC → EUR (computed, not stored)
+	MBtcEur   float64   `json:"m_btc_eur" gorm:"-"` // BTC → EUR (computed, not stored)
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

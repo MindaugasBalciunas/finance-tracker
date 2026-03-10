@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
-import { useBtcEur, BTC_HOLDINGS } from '../hooks/useBtcPrice'
+import { useBtcEur } from '../hooks/useBtcPrice'
 import StatCard from '../components/ui/StatCard'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
@@ -10,61 +10,13 @@ import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import AIInsightCard from '../components/ui/AIInsightCard'
+import DateRangeFilter from '../components/ui/DateRangeFilter'
+import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro } from '../utils/format'
-import clsx from 'clsx'
-
-type Period = 'all' | '1y' | '6m' | '3m' | '1m'
-
-const PERIODS: { key: Period; label: string }[] = [
-  { key: 'all', label: 'All time' },
-  { key: '1y',  label: '1 Year' },
-  { key: '6m',  label: '6 Months' },
-  { key: '3m',  label: '3 Months' },
-  { key: '1m',  label: '1 Month' },
-]
-
-function getDateRange(period: Period): { date_from?: string; date_to?: string } {
-  if (period === 'all') return {}
-  const now = new Date()
-  const from = new Date(now)
-  if (period === '1y') from.setFullYear(now.getFullYear() - 1)
-  else if (period === '6m') from.setMonth(now.getMonth() - 6)
-  else if (period === '3m') from.setMonth(now.getMonth() - 3)
-  else if (period === '1m') from.setMonth(now.getMonth() - 1)
-  return { date_from: from.toISOString().slice(0, 10) }
-}
-
-// Convert BTC amounts to EUR using live price (preferred) or snapshot price
-// Only uses prices that are reasonable (> 100 EUR/BTC)
-function getBtcEurValue(balance: any, liveBtcPrice: number | null): number {
-  const btcAmount = (balance.r_btc ?? 0) + (balance.m_btc ?? 0)
-  const MIN_VALID_PRICE = 100 // BTC price must be at least €100 to be reasonable
-  
-  // Check if this balance has a snapshot BTC price (new format: BTC units stored)
-  const hasSnapshotPrice = balance.btc_price && balance.btc_price >= MIN_VALID_PRICE
-  
-  // If new format (has valid snapshot price), always convert using available price
-  if (hasSnapshotPrice) {
-    // Prefer live price if valid, fall back to snapshot price
-    const isLivePriceValid = liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE
-    const priceToUse = isLivePriceValid ? liveBtcPrice : balance.btc_price
-    return btcAmount * priceToUse
-  }
-  
-  // Legacy format or no valid snapshot price - check if values look like BTC (small numbers)
-  const isBtcFormat = (btcAmount < 1 && btcAmount > 0)
-  if (isBtcFormat && liveBtcPrice && liveBtcPrice >= MIN_VALID_PRICE) {
-    // Convert BTC to EUR using live price if values look like BTC amounts
-    return btcAmount * liveBtcPrice
-  }
-  
-  // Return as-is (assume already in EUR or zero) - don't use invalid prices
-  return btcAmount
-}
+import { balanceBtcEur } from '../utils/btc'
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState<Period>('all')
-  const dateRange = useMemo(() => getDateRange(period), [period])
+  const [dateRange, setDateRange] = useState<DateRange>({})
 
   const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance()
@@ -104,27 +56,12 @@ export default function Dashboard() {
     <div className="space-y-8">
 
       {/* Header + period picker */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
           <p className="text-sm text-gray-500 mt-1">Your financial overview</p>
         </div>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              className={clsx(
-                'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                period === p.key
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
       </div>
 
       {/* Balance KPI cards — always from latest snapshot */}
@@ -156,7 +93,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(getBtcEurValue(latestBalance, btc.price))}
+            value={formatEuro(balanceBtcEur(latestBalance, btc.price ?? null))}
             subtitle={btc.price != null
               ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}
@@ -169,7 +106,7 @@ export default function Dashboard() {
       {summary && (
         <div>
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-            {period === 'all' ? 'All-time' : PERIODS.find((p) => p.key === period)?.label} period insights
+            {dateRange.date_from ? `From ${dateRange.date_from}${dateRange.date_to ? ` to ${dateRange.date_to}` : ''}` : 'All-time'} period insights
           </p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard

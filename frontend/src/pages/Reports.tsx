@@ -3,18 +3,14 @@ import { useTransactionSummary } from '../hooks/useTransactions'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import DateRangeFilter from '../components/ui/DateRangeFilter'
+import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro } from '../utils/format'
 
 export default function Reports() {
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange>({})
 
-  const filter = {
-    date_from: dateFrom || undefined,
-    date_to: dateTo || undefined,
-  }
-
-  const { data: summary, isLoading } = useTransactionSummary(filter)
+  const { data: summary, isLoading } = useTransactionSummary(dateRange)
 
   const savings = summary ? summary.total_income - summary.total_expenses : 0
   const savingsRate = summary && summary.total_income > 0
@@ -23,33 +19,12 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Reports</h2>
-        <p className="text-sm text-gray-500 mt-1">Financial analytics and breakdowns</p>
-      </div>
-
-      {/* Date range filter */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
-        <span className="text-sm font-medium text-gray-600">Period:</span>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-        />
-        <span className="text-gray-400">to</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-        />
-        <button
-          onClick={() => { setDateFrom(''); setDateTo('') }}
-          className="text-sm text-gray-500 hover:text-gray-800 underline"
-        >
-          All time
-        </button>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Reports</h2>
+          <p className="text-sm text-gray-500 mt-1">Financial analytics and breakdowns</p>
+        </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
       </div>
 
       {isLoading ? <LoadingSpinner /> : summary ? (

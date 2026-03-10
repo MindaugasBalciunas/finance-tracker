@@ -1,11 +1,6 @@
 import { useForm } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType } from '../../types'
-
-const SUGGESTED_CATEGORIES = [
-  'Food', 'Kids', 'Kids(food)', 'Kids school', 'Kids (Entertainment)',
-  'Health', 'Finance', 'Investment', 'Entertainment', 'House expense',
-  'Credit', 'Car', 'Income', 'Clothes', 'Divorce',
-]
+import { CATEGORIES } from '../../constants/categories'
 
 interface Props {
   onSubmit: (data: CreateTransactionInput) => void
@@ -68,7 +63,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <datalist id="category-options">
-            {SUGGESTED_CATEGORIES.map((c) => (
+            {CATEGORIES.map((c) => (
               <option key={c} value={c} />
             ))}
           </datalist>

@@ -2,10 +2,10 @@ package service
 
 import (
 	"errors"
-	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/pkg/timeutil"
 )
 
 // CreateTransactionInput is the input DTO for creating a transaction
@@ -33,6 +33,7 @@ type TransactionService interface {
 	Update(id uint, input UpdateTransactionInput) (*domain.Transaction, error)
 	Delete(id uint) error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
+	ListAll() ([]domain.Transaction, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -45,7 +46,7 @@ func NewTransactionService(repo repository.TransactionRepository) TransactionSer
 }
 
 func (s *transactionService) Create(input CreateTransactionInput) (*domain.Transaction, error) {
-	date, err := parseDate(input.Date)
+	date, err := timeutil.ParseDate(input.Date)
 	if err != nil {
 		return nil, errors.New("invalid date format, use YYYY-MM-DD")
 	}
@@ -75,7 +76,7 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	}
 
 	if input.Date != "" {
-		date, err := parseDate(input.Date)
+		date, err := timeutil.ParseDate(input.Date)
 		if err != nil {
 			return nil, errors.New("invalid date format, use YYYY-MM-DD")
 		}
@@ -111,10 +112,11 @@ func (s *transactionService) List(filter domain.TransactionFilter) (*domain.Pagi
 	return s.repo.List(filter)
 }
 
+func (s *transactionService) ListAll() ([]domain.Transaction, error) {
+	return s.repo.ListAll()
+}
+
 func (s *transactionService) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {
 	return s.repo.GetSummary(filter)
 }
 
-func parseDate(s string) (time.Time, error) {
-	return time.Parse("2006-01-02", s)
-}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -144,7 +145,7 @@ func (h *BalanceHandler) Delete(c *gin.Context) {
 // @Router       /balances [get]
 func (h *BalanceHandler) List(c *gin.Context) {
 	filter := buildBalanceFilter(c)
-	balances, err := h.svc.List(filter)
+	balances, err := h.svc.List(filter, parseBtcPrice(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -160,12 +161,21 @@ func (h *BalanceHandler) List(c *gin.Context) {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /balances/latest [get]
 func (h *BalanceHandler) GetLatest(c *gin.Context) {
-	b, err := h.svc.GetLatest()
+	b, err := h.svc.GetLatest(parseBtcPrice(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "no balance records found"})
 		return
 	}
 	c.JSON(http.StatusOK, b)
+}
+
+func parseBtcPrice(c *gin.Context) float64 {
+	if v := c.Query("btc_price"); v != "" {
+		if p, err := strconv.ParseFloat(v, 64); err == nil {
+			return p
+		}
+	}
+	return 0
 }
 
 // GetTrend godoc
