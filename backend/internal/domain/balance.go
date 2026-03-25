@@ -14,7 +14,7 @@ type Balance struct {
 	Seb       float64   `json:"seb"`        // EUR
 	Swed      float64   `json:"swed"`       // EUR
 	SwedETF   float64   `json:"swed_etf"`   // EUR
-	SwedPen   float64   `json:"swed_pen"`   // EUR
+	SebPen    float64   `json:"seb_pen"`    // EUR
 	Luminor   float64   `json:"luminor"`    // EUR
 	Art       float64   `json:"art"`        // EUR
 	Cash      float64   `json:"cash"`       // EUR

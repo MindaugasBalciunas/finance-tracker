@@ -82,7 +82,7 @@ export interface Balance {
   seb: number      // EUR
   swed: number     // EUR
   swed_etf: number // EUR
-  swed_pen: number // EUR
+  seb_pen: number // EUR
   luminor: number  // EUR
   art: number      // EUR
   cash: number     // EUR
@@ -105,7 +105,7 @@ export interface CreateBalanceInput {
   seb?: number
   swed?: number
   swed_etf?: number
-  swed_pen?: number
+  seb_pen?: number
   luminor?: number
   art?: number
   cash?: number

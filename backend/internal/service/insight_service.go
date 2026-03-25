@@ -107,7 +107,7 @@ func (s *insightService) buildPrompt() (string, error) {
 
 	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR
 	investments := latest.SwedETF + latest.RevStocks
-	pensions := latest.SwedPen + latest.Art
+	pensions := latest.SebPen + latest.Art
 
 	// Convert BTC to EUR using snapshot price or 0 for legacy entries
 	cryptoEur := 0.0

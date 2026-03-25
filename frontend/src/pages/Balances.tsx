@@ -71,7 +71,7 @@ export default function Balances() {
                 seb: editingBalance.seb,
                 swed: editingBalance.swed,
                 swed_etf: editingBalance.swed_etf,
-                swed_pen: editingBalance.swed_pen,
+                seb_pen: editingBalance.seb_pen,
                 luminor: editingBalance.luminor,
                 art: editingBalance.art,
                 cash: editingBalance.cash,
@@ -99,7 +99,7 @@ export default function Balances() {
                 seb: latest.seb,
                 swed: latest.swed,
                 swed_etf: latest.swed_etf,
-                swed_pen: latest.swed_pen,
+                seb_pen: latest.seb_pen,
                 luminor: latest.luminor,
                 art: latest.art,
                 cash: latest.cash,
@@ -132,7 +132,7 @@ export default function Balances() {
           />
           <StatCard
             title="Pensions"
-            value={formatEuro(latest.swed_pen + latest.art)}
+            value={formatEuro(latest.seb_pen + latest.art)}
             subtitle="2nd + 3rd Pillar"
             color="purple"
           />
@@ -200,7 +200,7 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_pen)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.luminor)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>

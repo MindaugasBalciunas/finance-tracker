@@ -83,7 +83,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Pensions"
-            value={formatEuro(latestBalance.swed_pen + latestBalance.art)}
+            value={formatEuro(latestBalance.seb_pen + latestBalance.art)}
             subtitle="2nd + 3rd Pillar"
             color="purple"
           />

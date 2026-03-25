@@ -81,7 +81,7 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 			"seb":       {},
 			"swed":      {},
 			"swed_etf":  {},
-			"swed_pen":  {},
+			"seb_pen":  {},
 			"luminor":   {},
 			"art":       {},
 			"cash":      {},
@@ -99,7 +99,7 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		trend.Accounts["seb"] = append(trend.Accounts["seb"], b.Seb)
 		trend.Accounts["swed"] = append(trend.Accounts["swed"], b.Swed)
 		trend.Accounts["swed_etf"] = append(trend.Accounts["swed_etf"], b.SwedETF)
-		trend.Accounts["swed_pen"] = append(trend.Accounts["swed_pen"], b.SwedPen)
+		trend.Accounts["seb_pen"] = append(trend.Accounts["seb_pen"], b.SebPen)
 		trend.Accounts["luminor"] = append(trend.Accounts["luminor"], b.Luminor)
 		trend.Accounts["art"] = append(trend.Accounts["art"], b.Art)
 		trend.Accounts["cash"] = append(trend.Accounts["cash"], b.Cash)
