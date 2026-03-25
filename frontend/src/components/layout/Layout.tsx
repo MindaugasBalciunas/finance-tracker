@@ -10,13 +10,19 @@ const navItems = [
   { to: '/reports', label: 'Reports', icon: '📈' },
 ]
 
-const EXPORTS = [
+const CSV_EXPORTS = [
   { label: 'Transactions CSV', href: '/api/v1/export/transactions.csv' },
   { label: 'Balances CSV',     href: '/api/v1/export/balances.csv' },
 ]
 
+type ExportStatusData = {
+  last_full_export: string | null
+  last_partial_export: string | null
+}
+
 function ExportDropdown() {
   const [open, setOpen] = useState(false)
+  const [status, setStatus] = useState<ExportStatusData | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,6 +32,20 @@ function ExportDropdown() {
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
   }, [])
+
+  useEffect(() => {
+    if (open && !status) {
+      fetch('/api/v1/export/status')
+        .then((r) => r.json())
+        .then(setStatus)
+        .catch(() => {})
+    }
+  }, [open, status])
+
+  const handleDownload = () => {
+    setStatus(null) // refresh status after next open
+    setOpen(false)
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -39,8 +59,8 @@ function ExportDropdown() {
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-          {EXPORTS.map((item) => (
+        <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+          {CSV_EXPORTS.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -54,6 +74,40 @@ function ExportDropdown() {
               {item.label}
             </a>
           ))}
+          <div className="border-t border-gray-100 my-1" />
+          <a
+            href="/api/v1/export/finances.json"
+            download
+            onClick={handleDownload}
+            className="flex flex-col px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              All Data for Claude.ai
+            </span>
+            {status?.last_full_export && (
+              <span className="text-gray-400 mt-0.5 pl-5">last: {status.last_full_export}</span>
+            )}
+          </a>
+          <a
+            href="/api/v1/export/finances-partial.json"
+            download
+            onClick={handleDownload}
+            className="flex flex-col px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              New Data Since Last Export
+            </span>
+            {status?.last_full_export
+              ? <span className="text-gray-400 mt-0.5 pl-5">since: {status.last_full_export}</span>
+              : <span className="text-gray-400 mt-0.5 pl-5">export full first</span>
+            }
+          </a>
         </div>
       )}
     </div>

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
 )
@@ -12,6 +14,7 @@ type StockRepository interface {
 	Update(t *domain.StockTrade) error
 	Delete(id uint) error
 	ListAll() ([]domain.StockTrade, error)
+	ListSince(since time.Time) ([]domain.StockTrade, error)
 }
 
 type stockRepository struct {
@@ -45,6 +48,14 @@ func (r *stockRepository) Delete(id uint) error {
 func (r *stockRepository) ListAll() ([]domain.StockTrade, error) {
 	var trades []domain.StockTrade
 	if err := r.db.Order("date ASC, id ASC").Find(&trades).Error; err != nil {
+		return nil, err
+	}
+	return trades, nil
+}
+
+func (r *stockRepository) ListSince(since time.Time) ([]domain.StockTrade, error) {
+	var trades []domain.StockTrade
+	if err := r.db.Where("date >= ?", since).Order("date ASC, id ASC").Find(&trades).Error; err != nil {
 		return nil, err
 	}
 	return trades, nil
