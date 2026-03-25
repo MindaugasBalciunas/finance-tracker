@@ -15,7 +15,7 @@ type CreateBalanceInput struct {
 	Seb       float64 `json:"seb"`
 	Swed      float64 `json:"swed"`
 	SwedETF   float64 `json:"swed_etf"`
-	SwedPen   float64 `json:"swed_pen"`
+	SebPen   float64 `json:"seb_pen"`
 	Luminor   float64 `json:"luminor"`
 	Art       float64 `json:"art"`
 	Cash      float64 `json:"cash"`
@@ -34,7 +34,7 @@ type UpdateBalanceInput struct {
 	Seb       float64 `json:"seb"`
 	Swed      float64 `json:"swed"`
 	SwedETF   float64 `json:"swed_etf"`
-	SwedPen   float64 `json:"swed_pen"`
+	SebPen   float64 `json:"seb_pen"`
 	Luminor   float64 `json:"luminor"`
 	Art       float64 `json:"art"`
 	Cash      float64 `json:"cash"`
@@ -75,7 +75,7 @@ func applyBtcEur(b *domain.Balance, livePrice float64) {
 
 	rBtcEur := btcToEur(b.RBTC, b.BtcPrice, livePrice)
 	mBtcEur := btcToEur(b.MBTC, b.BtcPrice, livePrice)
-	b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks
+	b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks
 	if b.RBTC > 0 {
 		b.RBtcEur = rBtcEur
 	}
@@ -116,7 +116,7 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 		Seb:       input.Seb,
 		Swed:      input.Swed,
 		SwedETF:   input.SwedETF,
-		SwedPen:   input.SwedPen,
+		SebPen:   input.SebPen,
 		Luminor:   input.Luminor,
 		Art:       input.Art,
 		Cash:      input.Cash,
@@ -132,7 +132,7 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 	// BTC fields are stored in BTC units; multiply by btc_price to get EUR contribution
 	if b.Total == 0 {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
+		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
 	}
 
 	if err := s.repo.Create(b); err != nil {
@@ -163,7 +163,7 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	b.Seb = input.Seb
 	b.Swed = input.Swed
 	b.SwedETF = input.SwedETF
-	b.SwedPen = input.SwedPen
+	b.SebPen = input.SebPen
 	b.Luminor = input.Luminor
 	b.Art = input.Art
 	b.Cash = input.Cash
@@ -179,7 +179,7 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 		b.Total = input.Total
 	} else {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
+		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
 	}
 
 	if err := s.repo.Update(b); err != nil {
@@ -233,7 +233,7 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"Seb":                         latest.Seb,
 		"Swedbank":                    latest.Swed,
 		"Swedbank ETF":                latest.SwedETF,
-		"SEB 2nd pillar pension": latest.SwedPen,
+		"SEB 2nd pillar pension": latest.SebPen,
 		"Luminor":                     latest.Luminor,
 		"Artea 3rd pillar pension":    latest.Art,
 		"Cash":                        latest.Cash,

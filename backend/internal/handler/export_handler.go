@@ -84,7 +84,7 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 
 	w := csv.NewWriter(c.Writer)
 	_ = w.Write([]string{
-		"id", "date", "total", "seb", "swed", "swed_etf", "swed_pen",
+		"id", "date", "total", "seb", "swed", "swed_etf", "seb_pen",
 		"luminor", "art", "cash", "rev_m", "rev_r", "rbtc", "mbtc", "btc_price", "rev_stocks",
 	})
 	for _, b := range balances {
@@ -95,7 +95,7 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 			fmt.Sprintf("%.2f", b.Seb),
 			fmt.Sprintf("%.2f", b.Swed),
 			fmt.Sprintf("%.2f", b.SwedETF),
-			fmt.Sprintf("%.2f", b.SwedPen),
+			fmt.Sprintf("%.2f", b.SebPen),
 			fmt.Sprintf("%.2f", b.Luminor),
 			fmt.Sprintf("%.2f", b.Art),
 			fmt.Sprintf("%.2f", b.Cash),
@@ -133,7 +133,7 @@ type balExportRow struct {
 	Seb       float64 `json:"seb,omitempty"`
 	Swed      float64 `json:"swed,omitempty"`
 	SwedETF   float64 `json:"swed_etf,omitempty"`
-	SwedPen   float64 `json:"swed_pension,omitempty"`
+	SebPen   float64 `json:"seb_pension,omitempty"`
 	Luminor   float64 `json:"luminor,omitempty"`
 	Art       float64 `json:"art,omitempty"`
 	Cash      float64 `json:"cash,omitempty"`
@@ -210,7 +210,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 			Seb:       b.Seb,
 			Swed:      b.Swed,
 			SwedETF:   b.SwedETF,
-			SwedPen:   b.SwedPen,
+			SebPen:   b.SebPen,
 			Luminor:   b.Luminor,
 			Art:       b.Art,
 			Cash:      b.Cash,
@@ -303,7 +303,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 			Seb:       b.Seb,
 			Swed:      b.Swed,
 			SwedETF:   b.SwedETF,
-			SwedPen:   b.SwedPen,
+			SebPen:   b.SebPen,
 			Luminor:   b.Luminor,
 			Art:       b.Art,
 			Cash:      b.Cash,
