@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"time"
+
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/stretchr/testify/mock"
 )
@@ -38,6 +40,22 @@ func (m *TransactionRepository) List(filter domain.TransactionFilter) (*domain.P
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.PaginatedTransactions), args.Error(1)
+}
+
+func (m *TransactionRepository) ListAll() ([]domain.Transaction, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Transaction), args.Error(1)
+}
+
+func (m *TransactionRepository) ListSince(since time.Time) ([]domain.Transaction, error) {
+	args := m.Called(since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Transaction), args.Error(1)
 }
 
 func (m *TransactionRepository) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {

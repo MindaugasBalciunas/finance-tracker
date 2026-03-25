@@ -62,6 +62,20 @@ func (m *mockTransactionService) GetSummary(filter domain.TransactionFilter) (*d
 	}
 	return args.Get(0).(*domain.TransactionSummary), args.Error(1)
 }
+func (m *mockTransactionService) ListAll() ([]domain.Transaction, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Transaction), args.Error(1)
+}
+func (m *mockTransactionService) ListSince(since time.Time) ([]domain.Transaction, error) {
+	args := m.Called(since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Transaction), args.Error(1)
+}
 
 func setupTransactionRouter(svc service.TransactionService) *gin.Engine {
 	r := gin.New()
@@ -85,6 +99,7 @@ func TestTransactionHandler_Create(t *testing.T) {
 		returned := &domain.Transaction{
 			ID: 1, Date: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 			Type: domain.TransactionTypeExpense, Amount: 88.91, Category: domain.CategoryFood,
+			AmountMoney: domain.Money{Value: 88.91, Currency: domain.CurrencyEUR},
 		}
 		svc.On("Create", input).Return(returned, nil)
 
@@ -98,7 +113,7 @@ func TestTransactionHandler_Create(t *testing.T) {
 		var tx domain.Transaction
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tx))
 		assert.Equal(t, uint(1), tx.ID)
-		assert.Equal(t, 88.91, tx.Amount)
+		assert.Equal(t, 88.91, tx.AmountMoney.Value)
 		svc.AssertExpectations(t)
 	})
 
