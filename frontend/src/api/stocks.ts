@@ -24,4 +24,15 @@ export const stocksApi = {
     client.get<{ ticker: string; points: { date: string; close: number }[] }>(
       `/stocks/history/${ticker}?range=${range}`
     ).then((r) => r.data),
+
+  getAnalyst: (ticker: string) =>
+    client.get<{
+      ticker: string
+      target_low: number
+      target_mean: number
+      target_high: number
+      recommendation: string
+      num_analysts: number
+      currency: string
+    }>(`/stocks/analyst/${ticker}`).then((r) => r.data),
 }
