@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import clsx from 'clsx'
+import DateRangeFilter from '../ui/DateRangeFilter'
+import { useDateRange } from '../../context/DateRangeContext'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
@@ -115,15 +117,17 @@ function ExportDropdown() {
 }
 
 export default function Layout() {
+  const { dateRange, setDateRange } = useDateRange()
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top nav */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="w-full px-6 flex items-center gap-8 h-14">
+        <div className="w-full px-6 flex items-center gap-4 h-14">
           <div className="flex items-center gap-2 shrink-0">
             <h1 className="text-base font-bold text-gray-900">Finance Tracker</h1>
           </div>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 shrink-0">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -143,7 +147,10 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex-1 flex justify-center">
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
             <ExportDropdown />
             <a
               href="http://localhost:8080/swagger/index.html"

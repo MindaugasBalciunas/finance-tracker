@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { useBtcEur } from '../hooks/useBtcPrice'
@@ -12,12 +11,11 @@ import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import AIInsightCard from '../components/ui/AIInsightCard'
-import DateRangeFilter from '../components/ui/DateRangeFilter'
-import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro } from '../utils/format'
+import { useDateRange } from '../context/DateRangeContext'
 
 export default function Dashboard() {
-  const [dateRange, setDateRange] = useState<DateRange>({})
+  const { dateRange } = useDateRange()
 
   const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance()
@@ -56,13 +54,10 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
 
-      {/* Header + period picker */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-          <p className="text-sm text-gray-500 mt-1">Your financial overview</p>
-        </div>
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+        <p className="text-sm text-gray-500 mt-1">Your financial overview</p>
       </div>
 
       {/* Balance KPI cards — always from latest snapshot */}

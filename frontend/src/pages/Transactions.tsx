@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   useTransactions,
   useCreateTransaction,
@@ -8,17 +8,21 @@ import {
 import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
-import DateRangeFilter from '../components/ui/DateRangeFilter'
-import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro, formatDate } from '../utils/format'
 import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput } from '../types'
 import { CATEGORIES } from '../constants/categories'
+import { useDateRange } from '../context/DateRangeContext'
 
 export default function Transactions() {
+  const { dateRange } = useDateRange()
   const [showForm, setShowForm] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
-  const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20 })
-  const [filterKey, setFilterKey] = useState(0)
+  const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20, ...dateRange })
+
+  // Sync global date range into local filter
+  useEffect(() => {
+    setFilter((f) => ({ ...f, date_from: dateRange.date_from, date_to: dateRange.date_to, page: 1 }))
+  }, [dateRange])
 
   const { data, isLoading } = useTransactions(filter)
   const createMutation = useCreateTransaction()
@@ -97,11 +101,6 @@ export default function Transactions() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
-        <DateRangeFilter
-          key={filterKey}
-          value={{ date_from: filter.date_from, date_to: filter.date_to }}
-          onChange={(range: DateRange) => setFilter((f) => ({ ...f, ...range, page: 1 }))}
-        />
         <select
           value={filter.type ?? ''}
           onChange={(e) => setFilter((f) => ({ ...f, type: (e.target.value as TransactionType) || undefined, page: 1 }))}
@@ -123,7 +122,7 @@ export default function Transactions() {
           ))}
         </select>
         <button
-          onClick={() => { setFilter({ page: 1, page_size: 20 }); setFilterKey((k) => k + 1) }}
+          onClick={() => { setFilter({ page: 1, page_size: 20, ...dateRange }) }}
           className="text-sm text-gray-500 hover:text-gray-800 underline"
         >
           Clear

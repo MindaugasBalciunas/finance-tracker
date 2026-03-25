@@ -138,3 +138,17 @@ finance-tracker/
 |---|---|---|
 | `PORT` | `8080` | Backend port |
 | `DB_PATH` | `finance.db` | SQLite database path |
+
+
+SEB	- bank
+Swedbank - bank
+Swedbank - ETF
+Swedbank - 2 pilar Pension	
+Luminor - Bank
+Artea Bank - 3rd pilar pension
+Cash 
+Revolut M account - bank for investments
+Revolut R account - bank for investments
+Revolut R account BTC	
+Revolut M account BTC 
+Revolut M account Stocks
