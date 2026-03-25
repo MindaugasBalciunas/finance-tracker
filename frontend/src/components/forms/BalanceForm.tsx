@@ -8,7 +8,7 @@ const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
   { key: 'seb',       label: 'Seb' },
   { key: 'swed',      label: 'Swedbank' },
   { key: 'swed_etf',  label: 'Swedbank ETF' },
-  { key: 'swed_pen',  label: 'SwedBank 2nd pillar pension' },
+  { key: 'swed_pen',  label: 'SEB 2nd pillar pension' },
   { key: 'luminor',   label: 'Luminor' },
   { key: 'art',       label: 'Artea 3rd pillar pension' },
   { key: 'cash',      label: 'Cash' },
