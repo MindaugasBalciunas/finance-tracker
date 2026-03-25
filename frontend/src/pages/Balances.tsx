@@ -138,7 +138,11 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro((latest.r_btc_eur ?? 0) + (latest.m_btc_eur ?? 0))}
+            value={formatEuro(
+              btc.price != null
+                ? (latest.r_btc + latest.m_btc) * btc.price
+                : (latest.r_btc_eur ?? 0) + (latest.m_btc_eur ?? 0)
+            )}
             subtitle={btc.price != null
               ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}
@@ -202,8 +206,8 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btc.price != null ? b.r_btc * btc.price : (b.r_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btc.price != null ? b.m_btc * btc.price : (b.m_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">
