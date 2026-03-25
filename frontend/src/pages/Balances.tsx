@@ -179,7 +179,7 @@ export default function Balances() {
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Seb</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">SwedBank 2nd pillar pension</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB 2nd pillar pension</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Luminor</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea 3rd pillar pension</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>

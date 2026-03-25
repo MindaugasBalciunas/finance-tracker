@@ -233,7 +233,7 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"Seb":                         latest.Seb,
 		"Swedbank":                    latest.Swed,
 		"Swedbank ETF":                latest.SwedETF,
-		"SwedBank 2nd pillar pension": latest.SwedPen,
+		"SEB 2nd pillar pension": latest.SwedPen,
 		"Luminor":                     latest.Luminor,
 		"Artea 3rd pillar pension":    latest.Art,
 		"Cash":                        latest.Cash,

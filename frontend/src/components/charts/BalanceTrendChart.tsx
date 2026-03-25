@@ -32,7 +32,7 @@ const ACCOUNT_LABELS: Record<string, string> = {
   luminor:    'Luminor',
   cash:       'Cash',
   swed_etf:   'Swedbank ETF',
-  swed_pen:   'SwedBank 2nd pillar pension',
+  swed_pen:   'SEB 2nd pillar pension',
   art:        'Artea 3rd pillar pension',
   rev_m:      'Revolut M account',
   rev_r:      'Revolut R account',
