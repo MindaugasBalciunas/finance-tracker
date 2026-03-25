@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -67,39 +66,21 @@ func btcToEur(btcAmount, snapshotPrice, livePrice float64) float64 {
 	return btcAmount
 }
 
-// applyBtcEur populates the computed RBtcEur/MBtcEur fields and recalculates Total.
-// Also populates enhanced Money-based computed fields.
+// applyBtcEur recalculates Total using live BTC price and populates BTC computed fields
+// only for rows that actually have BTC holdings.
 func applyBtcEur(b *domain.Balance, livePrice float64) {
 	if livePrice <= 0 {
 		return
 	}
 
-	// Legacy fields (kept for backward compatibility)
-	b.RBtcEur = btcToEur(b.RBTC, b.BtcPrice, livePrice)
-	b.MBtcEur = btcToEur(b.MBTC, b.BtcPrice, livePrice)
-	b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + b.RBtcEur + b.MBtcEur + b.RevStocks
-
-	// Enhanced computed fields with Money types
-	var now = time.Now()
-	b.RBtcComputed = &domain.CryptoAmount{
-		Amount:            b.RBTC,
-		Unit:              domain.CurrencyBTC,
-		PricePerUnit:      livePrice,
-		PriceValidAt:      &now,
-		ConvertedValue:    b.RBtcEur,
-		ConvertedCurrency: domain.CurrencyEUR,
+	rBtcEur := btcToEur(b.RBTC, b.BtcPrice, livePrice)
+	mBtcEur := btcToEur(b.MBTC, b.BtcPrice, livePrice)
+	b.Total = b.Seb + b.Swed + b.SwedETF + b.SwedPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks
+	if b.RBTC > 0 {
+		b.RBtcEur = rBtcEur
 	}
-	b.MBtcComputed = &domain.CryptoAmount{
-		Amount:            b.MBTC,
-		Unit:              domain.CurrencyBTC,
-		PricePerUnit:      livePrice,
-		PriceValidAt:      &now,
-		ConvertedValue:    b.MBtcEur,
-		ConvertedCurrency: domain.CurrencyEUR,
-	}
-	b.TotalEUR = domain.Money{
-		Value:    b.Total,
-		Currency: domain.CurrencyEUR,
+	if b.MBTC > 0 {
+		b.MBtcEur = mBtcEur
 	}
 }
 
@@ -244,6 +225,10 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		return []domain.AccountAllocation{}, nil
 	}
 
+	// BTC fields are stored as BTC units; convert to EUR using snapshot price for allocation
+	rBtcEur := latest.BtcPrice * latest.RBTC
+	mBtcEur := latest.BtcPrice * latest.MBTC
+
 	accounts := map[string]float64{
 		"Seb":                         latest.Seb,
 		"Swedbank":                    latest.Swed,
@@ -254,8 +239,8 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"Cash":                        latest.Cash,
 		"Revolut M account":           latest.RevM,
 		"Revolut R account":           latest.RevR,
-		"Revolut R account BTC":       latest.RBTC,
-		"Revolut M account BTC":       latest.MBTC,
+		"Revolut R account BTC":       rBtcEur,
+		"Revolut M account BTC":       mBtcEur,
 		"Revolut M account stocks":    latest.RevStocks,
 	}
 

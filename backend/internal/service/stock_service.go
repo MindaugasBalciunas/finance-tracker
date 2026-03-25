@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -34,6 +35,7 @@ type StockService interface {
 	Update(id uint, input UpdateStockTradeInput) (*domain.StockTrade, error)
 	Delete(id uint) error
 	ListAll() ([]domain.StockTrade, error)
+	ListSince(since time.Time) ([]domain.StockTrade, error)
 	GetPortfolio() (*domain.StockPortfolio, error)
 }
 
@@ -45,58 +47,30 @@ func NewStockService(repo repository.StockRepository) StockService {
 	return &stockService{repo: repo}
 }
 
-// populateStockTradeMoney adds Money type fields to a stock trade
-func populateStockTradeMoney(t *domain.StockTrade) {
-	if t != nil {
-		currency := domain.Currency(t.Currency)
-		if currency != domain.CurrencyEUR && currency != domain.CurrencyUSD {
-			currency = domain.CurrencyUSD
-		}
-		t.PricePerShareMoney = domain.Money{
-			Value:    t.PricePerShare,
-			Currency: currency,
-		}
-		t.TotalCostMoney = domain.Money{
-			Value:    t.Shares * t.PricePerShare,
-			Currency: currency,
-		}
+func tradeCurrency(t *domain.StockTrade) domain.Currency {
+	if t.Currency == string(domain.CurrencyEUR) {
+		return domain.CurrencyEUR
 	}
+	return domain.CurrencyUSD
 }
 
-// populateStockTradesMoney adds Money type fields to multiple trades
-func populateStockTradesMoney(trades []domain.StockTrade) {
+func populateTrade(t *domain.StockTrade) {
+	ccy := tradeCurrency(t)
+	t.PricePerShareMoney = domain.Money{Value: t.PricePerShare, Currency: ccy}
+}
+
+func populateTrades(trades []domain.StockTrade) {
 	for i := range trades {
-		populateStockTradeMoney(&trades[i])
+		populateTrade(&trades[i])
 	}
 }
 
-// populateStockHoldingMoney adds Money type fields to a stock holding
-func populateStockHoldingMoney(h *domain.StockHolding) {
-	if h != nil {
-		currency := domain.Currency(h.Currency)
-		if currency != domain.CurrencyEUR && currency != domain.CurrencyUSD {
-			currency = domain.CurrencyUSD
-		}
-		h.AvgCostMoney = domain.Money{
-			Value:    h.AvgCostUSD,
-			Currency: currency,
-		}
-		h.TotalCostMoney = domain.Money{
-			Value:    h.TotalCostUSD,
-			Currency: currency,
-		}
-		h.RealizedGainMoney = domain.Money{
-			Value:    h.RealizedGain,
-			Currency: currency,
-		}
+func holdingMoney(value float64, currency string) domain.Money {
+	ccy := domain.CurrencyUSD
+	if currency == string(domain.CurrencyEUR) {
+		ccy = domain.CurrencyEUR
 	}
-}
-
-// populateStockHoldingsMoney adds Money type fields to multiple holdings
-func populateStockHoldingsMoney(holdings []domain.StockHolding) {
-	for i := range holdings {
-		populateStockHoldingMoney(&holdings[i])
-	}
+	return domain.Money{Value: value, Currency: ccy}
 }
 
 func (s *stockService) Create(input CreateStockTradeInput) (*domain.StockTrade, error) {
@@ -120,7 +94,7 @@ func (s *stockService) Create(input CreateStockTradeInput) (*domain.StockTrade, 
 	if err := s.repo.Create(t); err != nil {
 		return nil, err
 	}
-	populateStockTradeMoney(t)
+	populateTrade(t)
 	return t, nil
 }
 
@@ -129,7 +103,7 @@ func (s *stockService) GetByID(id uint) (*domain.StockTrade, error) {
 	if err != nil {
 		return nil, err
 	}
-	populateStockTradeMoney(t)
+	populateTrade(t)
 	return t, nil
 }
 
@@ -164,7 +138,7 @@ func (s *stockService) Update(id uint, input UpdateStockTradeInput) (*domain.Sto
 	if err := s.repo.Update(t); err != nil {
 		return nil, err
 	}
-	populateStockTradeMoney(t)
+	populateTrade(t)
 	return t, nil
 }
 
@@ -180,7 +154,16 @@ func (s *stockService) ListAll() ([]domain.StockTrade, error) {
 	if err != nil {
 		return nil, err
 	}
-	populateStockTradesMoney(trades)
+	populateTrades(trades)
+	return trades, nil
+}
+
+func (s *stockService) ListSince(since time.Time) ([]domain.StockTrade, error) {
+	trades, err := s.repo.ListSince(since)
+	if err != nil {
+		return nil, err
+	}
+	populateTrades(trades)
 	return trades, nil
 }
 
@@ -226,34 +209,28 @@ func (s *stockService) GetPortfolio() (*domain.StockPortfolio, error) {
 	}
 
 	portfolio := &domain.StockPortfolio{}
+	totalCost := 0.0
+	totalGain := 0.0
+
 	for ticker, pos := range positions {
 		avgCost := 0.0
 		if pos.shares > 0 {
 			avgCost = pos.totalCost / pos.shares
 		}
-		holding := domain.StockHolding{
+		portfolio.Holdings = append(portfolio.Holdings, domain.StockHolding{
 			Ticker:       ticker,
 			Currency:     pos.currency,
 			Shares:       pos.shares,
-			AvgCostUSD:   avgCost,
-			TotalCostUSD: pos.totalCost,
-			RealizedGain: pos.realizedGain,
-		}
-		populateStockHoldingMoney(&holding)
-		portfolio.Holdings = append(portfolio.Holdings, holding)
-		portfolio.TotalCostUSD += pos.totalCost
-		portfolio.TotalRealizedGain += pos.realizedGain
+			AvgCost:      holdingMoney(avgCost, pos.currency),
+			TotalCost:    holdingMoney(pos.totalCost, pos.currency),
+			RealizedGain: holdingMoney(pos.realizedGain, pos.currency),
+		})
+		totalCost += pos.totalCost
+		totalGain += pos.realizedGain
 	}
 
-	// Populate Money fields for portfolio totals
-	portfolio.TotalCostMoney = domain.Money{
-		Value:    portfolio.TotalCostUSD,
-		Currency: domain.CurrencyUSD, // Portfolio totals are typically in the primary currency
-	}
-	portfolio.TotalRealizedGainMoney = domain.Money{
-		Value:    portfolio.TotalRealizedGain,
-		Currency: domain.CurrencyUSD,
-	}
+	portfolio.TotalCost = domain.Money{Value: totalCost, Currency: domain.CurrencyUSD}
+	portfolio.TotalRealizedGain = domain.Money{Value: totalGain, Currency: domain.CurrencyUSD}
 
 	return portfolio, nil
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -34,6 +35,7 @@ type TransactionService interface {
 	Delete(id uint) error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
+	ListSince(since time.Time) ([]domain.Transaction, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -45,20 +47,13 @@ func NewTransactionService(repo repository.TransactionRepository) TransactionSer
 	return &transactionService{repo: repo}
 }
 
-// populateTransactionMoney adds Money type fields to a transaction
-func populateTransactionMoney(tx *domain.Transaction) {
-	if tx != nil {
-		tx.AmountMoney = domain.Money{
-			Value:    tx.Amount,
-			Currency: domain.CurrencyEUR,
-		}
-	}
+func populateTx(tx *domain.Transaction) {
+	tx.AmountMoney = domain.Money{Value: tx.Amount, Currency: domain.CurrencyEUR}
 }
 
-// populateTransactionsMoney adds Money type fields to multiple transactions
-func populateTransactionsMoney(txs []domain.Transaction) {
+func populateTxs(txs []domain.Transaction) {
 	for i := range txs {
-		populateTransactionMoney(&txs[i])
+		populateTx(&txs[i])
 	}
 }
 
@@ -79,7 +74,7 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 	if err := s.repo.Create(tx); err != nil {
 		return nil, err
 	}
-	populateTransactionMoney(tx)
+	populateTx(tx)
 	return tx, nil
 }
 
@@ -88,7 +83,7 @@ func (s *transactionService) GetByID(id uint) (*domain.Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	populateTransactionMoney(tx)
+	populateTx(tx)
 	return tx, nil
 }
 
@@ -121,7 +116,7 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if err := s.repo.Update(tx); err != nil {
 		return nil, err
 	}
-	populateTransactionMoney(tx)
+	populateTx(tx)
 	return tx, nil
 }
 
@@ -137,7 +132,7 @@ func (s *transactionService) List(filter domain.TransactionFilter) (*domain.Pagi
 	if err != nil {
 		return nil, err
 	}
-	populateTransactionsMoney(result.Data)
+	populateTxs(result.Data)
 	return result, nil
 }
 
@@ -146,7 +141,16 @@ func (s *transactionService) ListAll() ([]domain.Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	populateTransactionsMoney(txs)
+	populateTxs(txs)
+	return txs, nil
+}
+
+func (s *transactionService) ListSince(since time.Time) ([]domain.Transaction, error) {
+	txs, err := s.repo.ListSince(since)
+	if err != nil {
+		return nil, err
+	}
+	populateTxs(txs)
 	return txs, nil
 }
 
