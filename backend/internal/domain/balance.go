@@ -27,15 +27,9 @@ type Balance struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	// Enhanced computed fields (not persisted, computed on read)
-	// These mirror the legacy RBtcEur/MBtcEur but with metadata
-	RBtcComputed *CryptoAmount `json:"r_btc_computed" gorm:"-"` // Revolut BTC with EUR conversion
-	MBtcComputed *CryptoAmount `json:"m_btc_computed" gorm:"-"` // Mobile BTC with EUR conversion
-	TotalEUR     Money         `json:"total_eur" gorm:"-"`      // Total in EUR with explicit currency
-
-	// Backward compatibility: legacy computed fields
-	RBtcEur float64 `json:"r_btc_eur" gorm:"-"` // BTC → EUR (computed, not stored) - DEPRECATED: use RBtcComputed instead
-	MBtcEur float64 `json:"m_btc_eur" gorm:"-"` // BTC → EUR (computed, not stored) - DEPRECATED: use MBtcComputed instead
+	// Computed EUR values for BTC fields (not persisted, only set when holding > 0)
+	RBtcEur float64 `json:"r_btc_eur,omitempty" gorm:"-"` // r_btc converted to EUR at live price
+	MBtcEur float64 `json:"m_btc_eur,omitempty" gorm:"-"` // m_btc converted to EUR at live price
 }
 
 // BalanceFilter holds filtering options for querying balances

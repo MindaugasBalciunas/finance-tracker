@@ -13,7 +13,6 @@ import AIInsightCard from '../components/ui/AIInsightCard'
 import DateRangeFilter from '../components/ui/DateRangeFilter'
 import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro } from '../utils/format'
-import { balanceBtcEur } from '../utils/btc'
 
 export default function Dashboard() {
   const [dateRange, setDateRange] = useState<DateRange>({})
@@ -93,7 +92,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(balanceBtcEur(latestBalance, btc.price ?? null))}
+            value={formatEuro((latestBalance.r_btc_eur ?? 0) + (latestBalance.m_btc_eur ?? 0))}
             subtitle={btc.price != null
               ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}

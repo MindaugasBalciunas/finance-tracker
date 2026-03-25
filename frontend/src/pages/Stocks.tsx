@@ -68,12 +68,12 @@ function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
   const { data: priceData } = useStockPrice(holding.ticker, holding.shares > 0)
   const currentPrice = priceData?.price ?? null
   const currentValue = currentPrice != null ? holding.shares * currentPrice : null
-  const unrealizedGain = currentValue != null ? currentValue - holding.total_cost_usd : null
-  const returnPct = unrealizedGain != null && holding.total_cost_usd > 0
-    ? (unrealizedGain / holding.total_cost_usd) * 100 : null
+  const unrealizedGain = currentValue != null ? currentValue - holding.total_cost.value : null
+  const returnPct = unrealizedGain != null && holding.total_cost.value > 0
+    ? (unrealizedGain / holding.total_cost.value) * 100 : null
   const isEur = holding.currency === 'EUR'
 
-  const costEur = isEur ? holding.total_cost_usd : usdToEur(holding.total_cost_usd)
+  const costEur = isEur ? holding.total_cost.value : usdToEur(holding.total_cost.value)
   const weightPct = costEur != null && totalCostEur != null && totalCostEur > 0
     ? (costEur / totalCostEur) * 100 : null
 
@@ -109,11 +109,11 @@ function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
         <td className="px-4 py-3 text-right text-gray-500 text-xs">{holding.currency}</td>
         <td className="px-4 py-3 text-right text-gray-700">{holding.shares.toFixed(4)}</td>
         <td className="px-4 py-3 text-right text-gray-700">
-          <AmountCell amount={holding.avg_cost_usd} />
+          <AmountCell amount={holding.avg_cost.value} />
         </td>
         <td className="px-4 py-3 text-right text-gray-700">
           <div>
-            <AmountCell amount={holding.total_cost_usd} />
+            <AmountCell amount={holding.total_cost.value} />
             {weightPct != null && (
               <div className="mt-1 flex items-center gap-1">
                 <div className="h-1.5 bg-gray-100 rounded-full flex-1 overflow-hidden">
@@ -147,8 +147,8 @@ function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
             </div>
           ) : '—'}
         </td>
-        <td className={`px-4 py-3 text-right font-semibold ${gainColor(holding.realized_gain)}`}>
-          {holding.realized_gain !== 0 ? <AmountCell amount={holding.realized_gain} gain /> : '—'}
+        <td className={`px-4 py-3 text-right font-semibold ${gainColor(holding.realized_gain.value)}`}>
+          {holding.realized_gain.value !== 0 ? <AmountCell amount={holding.realized_gain.value} gain /> : '—'}
         </td>
       </tr>
 
@@ -193,8 +193,8 @@ function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
                     formatter={(v: number) => [formatCcy(v), 'Close']}
                     contentStyle={{ fontSize: 11, borderRadius: 6 }}
                   />
-                  <ReferenceLine y={holding.avg_cost_usd} stroke="#6366f1" strokeDasharray="4 2"
-                    label={{ value: `Avg ${formatCcy(holding.avg_cost_usd)}`, position: 'insideTopRight', fontSize: 10, fill: '#6366f1' }} />
+                  <ReferenceLine y={holding.avg_cost.value} stroke="#6366f1" strokeDasharray="4 2"
+                    label={{ value: `Avg ${formatCcy(holding.avg_cost.value)}`, position: 'insideTopRight', fontSize: 10, fill: '#6366f1' }} />
                   <Area type="monotone" dataKey="close" stroke={chartColor} strokeWidth={2}
                     fill={`url(#grad-${holding.ticker})`} dot={false} activeDot={{ r: 3 }} />
                   {trades.map((t) => {
@@ -205,7 +205,7 @@ function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
                       <ReferenceDot
                         key={t.id}
                         x={date}
-                        y={t.price_per_share}
+                        y={t.price_per_share.value}
                         r={6}
                         fill={isBuy ? '#10b981' : '#ef4444'}
                         stroke="white"
@@ -251,25 +251,25 @@ export default function Stocks() {
   if (tradesLoading || portfolioLoading) return <LoadingSpinner message="Loading stocks & ETFs…" />
 
   const activeHoldings = portfolio?.holdings.filter((h) => h.shares > 0.0001) ?? []
-  const closedHoldings = portfolio?.holdings.filter((h) => h.shares <= 0.0001 && h.realized_gain !== 0) ?? []
+  const closedHoldings = portfolio?.holdings.filter((h) => h.shares <= 0.0001 && h.realized_gain.value !== 0) ?? []
   const allHoldings = portfolio?.holdings ?? []
 
   function toEur(amount: number, currency: string): number | null {
     return currency === 'EUR' ? amount : usdToEur(amount)
   }
 
-  const totalInvestedEur = activeHoldings.every((h) => toEur(h.total_cost_usd, h.currency) != null)
-    ? activeHoldings.reduce((sum, h) => sum + toEur(h.total_cost_usd, h.currency)!, 0)
+  const totalInvestedEur = activeHoldings.every((h) => toEur(h.total_cost.value, h.currency) != null)
+    ? activeHoldings.reduce((sum, h) => sum + toEur(h.total_cost.value, h.currency)!, 0)
     : null
-  const totalRealizedEur = allHoldings.every((h) => toEur(h.realized_gain, h.currency) != null)
-    ? allHoldings.reduce((sum, h) => sum + toEur(h.realized_gain, h.currency)!, 0)
+  const totalRealizedEur = allHoldings.every((h) => toEur(h.realized_gain.value, h.currency) != null)
+    ? allHoldings.reduce((sum, h) => sum + toEur(h.realized_gain.value, h.currency)!, 0)
     : null
 
   // Allocation chart data (sorted by EUR cost basis desc, slices < 5% grouped into "Other")
   const allocationData = totalInvestedEur != null && totalInvestedEur > 0
     ? (() => {
         const items = [...activeHoldings]
-          .map((h) => ({ name: h.ticker, value: toEur(h.total_cost_usd, h.currency) ?? 0 }))
+          .map((h) => ({ name: h.ticker, value: toEur(h.total_cost.value, h.currency) ?? 0 }))
           .sort((a, b) => b.value - a.value)
         const threshold = totalInvestedEur * 0.05
         const main = items.filter((i) => i.value >= threshold)
@@ -323,7 +323,7 @@ export default function Stocks() {
                 action: editingTrade.action,
                 ticker: editingTrade.ticker,
                 shares: editingTrade.shares,
-                price_per_share: editingTrade.price_per_share,
+                price_per_share: editingTrade.price_per_share.value,
                 currency: editingTrade.currency,
                 notes: editingTrade.notes,
               }}
@@ -474,10 +474,10 @@ export default function Stocks() {
                 {closedHoldings.map((h) => (
                   <tr key={h.ticker} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-bold text-gray-900">{h.ticker}</td>
-                    <td className={`px-4 py-3 text-right font-semibold ${gainColor(h.realized_gain)}`}>
+                    <td className={`px-4 py-3 text-right font-semibold ${gainColor(h.realized_gain.value)}`}>
                       {h.currency === 'EUR'
-                        ? <DualAmountEur eur={h.realized_gain} eurToUsd={eurToUsd} gain />
-                        : <DualAmount usd={h.realized_gain} usdToEur={usdToEur} gain />}
+                        ? <DualAmountEur eur={h.realized_gain.value} eurToUsd={eurToUsd} gain />
+                        : <DualAmount usd={h.realized_gain.value} usdToEur={usdToEur} gain />}
                     </td>
                   </tr>
                 ))}
@@ -508,7 +508,8 @@ export default function Stocks() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {[...(trades ?? [])].reverse().map((t) => {
-                const total = t.shares * t.price_per_share
+                const price = t.price_per_share.value
+                const total = t.shares * price
                 const isEur = t.currency === 'EUR'
                 return (
                   <tr key={t.id} className="hover:bg-gray-50">
@@ -524,8 +525,8 @@ export default function Stocks() {
                     <td className="px-4 py-3 text-right text-gray-700">{t.shares}</td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {isEur
-                        ? <DualAmountEur eur={t.price_per_share} eurToUsd={eurToUsd} />
-                        : <DualAmount usd={t.price_per_share} usdToEur={usdToEur} />}
+                        ? <DualAmountEur eur={price} eurToUsd={eurToUsd} />
+                        : <DualAmount usd={price} usdToEur={usdToEur} />}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
                       {isEur
