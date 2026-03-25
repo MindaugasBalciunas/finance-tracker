@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import clsx from 'clsx'
 
 export interface DateRange {
@@ -40,16 +40,30 @@ function presetRange(preset: Preset): DateRange {
   }
 }
 
-export default function DateRangeFilter({ value, onChange, className }: Props) {
+export default function DateRangeFilter({ onChange, className }: Props) {
   const [preset, setPreset] = useState<Preset>('all')
   const [custom, setCustom] = useState<DateRange>({})
+  const [popoverOpen, setPopoverOpen] = useState(false)
+  const popoverRef = useRef<HTMLDivElement>(null)
+
+  // Close popover on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setPopoverOpen(false)
+      }
+    }
+    if (popoverOpen) document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [popoverOpen])
 
   function selectPreset(p: Preset) {
     setPreset(p)
-    if (p !== 'custom') {
-      onChange(presetRange(p))
+    if (p === 'custom') {
+      setPopoverOpen(true)
     } else {
-      onChange(custom)
+      setPopoverOpen(false)
+      onChange(presetRange(p))
     }
   }
 
@@ -59,15 +73,60 @@ export default function DateRangeFilter({ value, onChange, className }: Props) {
     onChange(next)
   }
 
+  const customLabel = custom.date_from
+    ? `${custom.date_from}${custom.date_to ? ` → ${custom.date_to}` : ''}`
+    : 'Custom'
+
   return (
-    <div className={clsx('flex flex-wrap items-center gap-2', className)}>
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-        {PRESETS.map((p) => (
+    <div className={clsx('flex items-center gap-1 bg-gray-100 rounded-lg p-1', className)}>
+      {PRESETS.map((p) => {
+        if (p.key === 'custom') {
+          return (
+            <div key="custom" className="relative" ref={popoverRef}>
+              <button
+                onClick={() => selectPreset('custom')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap',
+                  preset === 'custom'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                {preset === 'custom' ? customLabel : 'Custom'}
+              </button>
+
+              {popoverOpen && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 flex items-center gap-2 whitespace-nowrap">
+                  <input
+                    type="date"
+                    value={custom.date_from ?? ''}
+                    onChange={(e) => updateCustom('date_from', e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                  />
+                  <span className="text-gray-400 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={custom.date_to ?? ''}
+                    onChange={(e) => updateCustom('date_to', e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                  />
+                  <button
+                    onClick={() => setPopoverOpen(false)}
+                    className="ml-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        }
+        return (
           <button
             key={p.key}
             onClick={() => selectPreset(p.key)}
             className={clsx(
-              'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+              'px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap',
               preset === p.key
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -75,32 +134,8 @@ export default function DateRangeFilter({ value, onChange, className }: Props) {
           >
             {p.label}
           </button>
-        ))}
-      </div>
-
-      {preset === 'custom' && (
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={custom.date_from ?? ''}
-            onChange={(e) => updateCustom('date_from', e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-          />
-          <span className="text-gray-400 text-sm">to</span>
-          <input
-            type="date"
-            value={custom.date_to ?? ''}
-            onChange={(e) => updateCustom('date_to', e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-          />
-        </div>
-      )}
-
-      {value.date_from && preset !== 'all' && (
-        <span className="text-xs text-gray-400">
-          From {value.date_from}{value.date_to ? ` to ${value.date_to}` : ''}
-        </span>
-      )}
+        )
+      })}
     </div>
   )
 }
