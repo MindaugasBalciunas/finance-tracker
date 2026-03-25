@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
@@ -6,12 +5,11 @@ import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import NetCashFlowChart from '../components/charts/NetCashFlowChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
-import DateRangeFilter from '../components/ui/DateRangeFilter'
-import type { DateRange } from '../components/ui/DateRangeFilter'
 import { formatEuro } from '../utils/format'
+import { useDateRange } from '../context/DateRangeContext'
 
 export default function Reports() {
-  const [dateRange, setDateRange] = useState<DateRange>({})
+  const { dateRange } = useDateRange()
 
   const { data: summary, isLoading } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
@@ -46,12 +44,9 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Reports</h2>
-          <p className="text-sm text-gray-500 mt-1">Financial analytics and breakdowns</p>
-        </div>
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Reports</h2>
+        <p className="text-sm text-gray-500 mt-1">Financial analytics and breakdowns</p>
       </div>
 
       {isLoading ? <LoadingSpinner /> : summary ? (
