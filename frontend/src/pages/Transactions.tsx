@@ -86,7 +86,7 @@ export default function Transactions() {
               defaultValues={{
                 date: editingTx.date.slice(0, 10),
                 type: editingTx.type,
-                amount: editingTx.amount,
+                amount: editingTx.amount.value,
                 category: editingTx.category,
                 comment: editingTx.comment,
               }}
@@ -156,7 +156,7 @@ export default function Transactions() {
                   <td className="px-4 py-3 text-gray-600">{tx.category}</td>
                   <td className="px-4 py-3 text-gray-500">{tx.comment || '—'}</td>
                   <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
-                    {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount)}
+                    {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">

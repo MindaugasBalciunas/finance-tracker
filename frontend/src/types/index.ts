@@ -1,21 +1,10 @@
-// --- Base Types ---
+// --- Shared monetary type ---
 
-export type Currency = 'EUR' | 'USD' | 'BTC'
+export type Currency = 'EUR' | 'USD'
 
-/** Money represents an amount with explicit currency */
 export interface Money {
   value: number
   currency: Currency
-}
-
-/** CryptoAmount represents a cryptocurrency amount with price context and conversion */
-export interface CryptoAmount {
-  amount: number
-  unit: Currency // 'BTC', 'ETH', etc.
-  price_per_unit: number
-  price_valid_at?: string
-  converted_value?: number
-  converted_currency?: Currency
 }
 
 // --- Transactions ---
@@ -28,13 +17,11 @@ export interface Transaction {
   id: number
   date: string
   type: TransactionType
-  amount: number // EUR
+  amount: Money // always EUR
   comment: string
   category: Category
   created_at: string
   updated_at: string
-  // Enhanced field
-  amount_money?: Money // amount with explicit EUR currency
 }
 
 export interface CreateTransactionInput {
@@ -86,32 +73,30 @@ export interface TransactionSummary {
   by_month: MonthlySummary[]
 }
 
+// --- Balances ---
+
 export interface Balance {
   id: number
   date: string
-  total: number // EUR - sum of all accounts
-  seb: number // EUR
-  swed: number // EUR
+  total: number    // EUR - recomputed with live BTC price when available
+  seb: number      // EUR
+  swed: number     // EUR
   swed_etf: number // EUR
   swed_pen: number // EUR
-  luminor: number // EUR
-  art: number // EUR
-  cash: number // EUR
-  rev_m: number // EUR
-  rev_r: number // EUR
-  r_btc: number      // stored in BTC units
-  m_btc: number      // stored in BTC units
-  btc_price: number  // EUR/BTC at snapshot time (0 = legacy row)
+  luminor: number  // EUR
+  art: number      // EUR
+  cash: number     // EUR
+  rev_m: number    // EUR
+  rev_r: number    // EUR
+  r_btc: number    // BTC units (stored)
+  m_btc: number    // BTC units (stored)
+  btc_price: number // EUR/BTC at snapshot time (0 = legacy row)
   rev_stocks: number // EUR
   created_at: string
   updated_at: string
-  
-  // Enhanced computed fields
-  r_btc_eur?: number  // BTC → EUR (deprecated, use r_btc_computed instead)
-  m_btc_eur?: number  // BTC → EUR (deprecated, use m_btc_computed instead)
-  r_btc_computed?: CryptoAmount // Revolut BTC with EUR conversion
-  m_btc_computed?: CryptoAmount // Mobile BTC with EUR conversion
-  total_eur?: Money // Total in EUR with explicit currency
+  // Computed EUR values (only present when the account has BTC holdings)
+  r_btc_eur?: number
+  m_btc_eur?: number
 }
 
 export interface CreateBalanceInput {
@@ -126,9 +111,9 @@ export interface CreateBalanceInput {
   cash?: number
   rev_m?: number
   rev_r?: number
-  r_btc?: number      // BTC units
-  m_btc?: number      // BTC units
-  btc_price?: number  // EUR/BTC at snapshot time
+  r_btc?: number
+  m_btc?: number
+  btc_price?: number
   rev_stocks?: number
 }
 
@@ -154,15 +139,11 @@ export interface StockTrade {
   action: StockAction
   ticker: string
   shares: number
-  price_per_share: number
-  currency: string // 'USD', 'EUR', etc.
+  price_per_share: Money // price with explicit currency
+  currency: string
   notes: string
   created_at: string
   updated_at: string
-  
-  // Enhanced computed fields
-  price_per_share_money?: Money // Price per share with explicit currency
-  total_cost_money?: Money // Shares * Price per share with currency
 }
 
 export interface CreateStockTradeInput {
@@ -177,26 +158,17 @@ export interface CreateStockTradeInput {
 
 export interface StockHolding {
   ticker: string
-  currency: string // 'USD', 'EUR', etc.
+  currency: string
   shares: number
-  avg_cost_usd: number // (DEPRECATED: use avg_cost_money instead)
-  total_cost_usd: number // (DEPRECATED: use total_cost_money instead)
-  realized_gain: number // (DEPRECATED: use realized_gain_money instead)
-  
-  // Enhanced computed fields
-  avg_cost_money?: Money // Average cost per share with currency
-  total_cost_money?: Money // Total invested with currency
-  realized_gain_money?: Money // Realized gain with currency
+  avg_cost: Money
+  total_cost: Money
+  realized_gain: Money
 }
 
 export interface StockPortfolio {
   holdings: StockHolding[]
-  total_cost_usd: number // (DEPRECATED: use total_cost_money instead)
-  total_realized_gain: number // (DEPRECATED: use total_realized_gain_money instead)
-  
-  // Enhanced computed fields
-  total_cost_money?: Money // Total cost with currency
-  total_realized_gain_money?: Money // Total realized gain with currency
+  total_cost: Money
+  total_realized_gain: Money
 }
 
 export interface TransactionFilter {

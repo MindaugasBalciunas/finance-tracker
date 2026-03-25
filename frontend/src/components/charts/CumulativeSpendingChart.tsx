@@ -102,7 +102,7 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const day = d.getDate()
     if (!byMonth[key]) byMonth[key] = {}
-    byMonth[key][day] = (byMonth[key][day] ?? 0) + tx.amount
+    byMonth[key][day] = (byMonth[key][day] ?? 0) + tx.amount.value
   }
 
   const monthKeys = Object.keys(byMonth).sort()

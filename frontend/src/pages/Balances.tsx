@@ -7,7 +7,6 @@ import LoadingSpinner from '../components/ui/LoadingSpinner'
 import StatCard from '../components/ui/StatCard'
 import { formatEuro, formatDate } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
-import { balanceBtcEur } from '../utils/btc'
 import type { Balance, CreateBalanceInput } from '../types'
 
 export default function Balances() {
@@ -139,7 +138,7 @@ export default function Balances() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(balanceBtcEur(latest, btc.price ?? null))}
+            value={formatEuro((latest.r_btc_eur ?? 0) + (latest.m_btc_eur ?? 0))}
             subtitle={btc.price != null
               ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}

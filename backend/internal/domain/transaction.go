@@ -35,19 +35,19 @@ const (
 )
 
 // Transaction represents a financial transaction record
-// All amounts are in EUR unless otherwise specified.
+// All amounts are in EUR.
 type Transaction struct {
 	ID        uint            `json:"id" gorm:"primaryKey;autoIncrement"`
 	Date      time.Time       `json:"date" gorm:"not null;index"`
 	Type      TransactionType `json:"type" gorm:"not null"`
-	Amount    float64         `json:"amount" gorm:"not null"` // EUR amount
+	Amount    float64         `json:"-" gorm:"not null"`     // DB column; use AmountMoney in responses
 	Comment   string          `json:"comment"`
 	Category  Category        `json:"category" gorm:"index"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 
-	// Enhanced field (not persisted, computed on read)
-	AmountMoney Money `json:"amount_money" gorm:"-"` // Amount with explicit EUR currency
+	// Computed for API response (not persisted)
+	AmountMoney Money `json:"amount" gorm:"-"`
 }
 
 // TransactionFilter holds filtering options for querying transactions
