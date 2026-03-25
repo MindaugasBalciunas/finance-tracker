@@ -8,6 +8,8 @@ import AllocationPieChart from '../components/charts/AllocationPieChart'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChart'
+import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
+import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import AIInsightCard from '../components/ui/AIInsightCard'
 import DateRangeFilter from '../components/ui/DateRangeFilter'
@@ -168,6 +170,15 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Expense breakdown by category per month */}
+      {allExpenses && allExpenses.data.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Where Money Goes Each Month</h3>
+          <p className="text-xs text-gray-400 mb-4">Stacked expense breakdown by category — see which categories dominate each month</p>
+          <MonthlyExpenseCategoryChart transactions={allExpenses.data} />
+        </div>
+      )}
+
       {/* Monthly spending pace */}
       {allExpenses && allExpenses.data.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -177,13 +188,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Monthly cash flow + allocation */}
+      {/* Savings rate trend + allocation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {summary?.by_month && summary.by_month.length > 0 && (
+        {summary?.by_month && summary.by_month.length > 1 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Cash Flow</h3>
-            <p className="text-xs text-gray-400 mb-4">Income vs expenses by month</p>
-            <MonthlyBarChart data={summary.by_month} />
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Savings Rate Trend</h3>
+            <p className="text-xs text-gray-400 mb-4">Monthly % of income kept after expenses — 20% is the recommended minimum</p>
+            <SavingsRateTrendChart data={summary.by_month} />
           </div>
         )}
 
@@ -195,6 +206,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Monthly cash flow */}
+      {summary?.by_month && summary.by_month.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Cash Flow</h3>
+          <p className="text-xs text-gray-400 mb-4">Income vs expenses vs investments by month</p>
+          <MonthlyBarChart data={summary.by_month} />
+        </div>
+      )}
 
       {/* Category breakdown */}
       {summary?.by_category && summary.by_category.length > 0 && (
