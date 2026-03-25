@@ -36,6 +36,7 @@ func main() {
 	balRepo := repository.NewBalanceRepository(db)
 	insightRepo := repository.NewInsightRepository(db)
 	stockRepo := repository.NewStockRepository(db)
+	exportLogRepo := repository.NewExportLogRepository(db)
 
 	// Services
 	txSvc := service.NewTransactionService(txRepo)
@@ -47,7 +48,7 @@ func main() {
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
-	exportHandler := handler.NewExportHandler(txSvc, balSvc)
+	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, exportLogRepo)
 	stockHandler := handler.NewStockHandler(stockSvc)
 
 	r := gin.Default()

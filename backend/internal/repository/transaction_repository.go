@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
@@ -17,6 +18,7 @@ type TransactionRepository interface {
 	Delete(id uint) error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
+	ListSince(since time.Time) ([]domain.Transaction, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -86,6 +88,14 @@ func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.P
 func (r *transactionRepository) ListAll() ([]domain.Transaction, error) {
 	var transactions []domain.Transaction
 	if err := r.db.Order("date DESC").Find(&transactions).Error; err != nil {
+		return nil, err
+	}
+	return transactions, nil
+}
+
+func (r *transactionRepository) ListSince(since time.Time) ([]domain.Transaction, error) {
+	var transactions []domain.Transaction
+	if err := r.db.Where("date >= ?", since).Order("date ASC").Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 	return transactions, nil
