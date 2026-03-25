@@ -13,7 +13,7 @@ import (
 )
 
 func TestTransactionService_Create(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
+	t.Run("expense", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
 		svc := service.NewTransactionService(repo)
 
@@ -24,7 +24,6 @@ func TestTransactionService_Create(t *testing.T) {
 			Comment:  "Maxima food",
 			Category: domain.CategoryFood,
 		}
-
 		repo.On("Create", &domain.Transaction{
 			Date:     time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 			Type:     domain.TransactionTypeExpense,
@@ -38,6 +37,54 @@ func TestTransactionService_Create(t *testing.T) {
 		assert.Equal(t, domain.TransactionTypeExpense, tx.Type)
 		assert.Equal(t, 50.00, tx.Amount)
 		assert.Equal(t, domain.CategoryFood, tx.Category)
+		// Money type should be populated
+		assert.Equal(t, 50.00, tx.AmountMoney.Value)
+		assert.Equal(t, domain.CurrencyEUR, tx.AmountMoney.Currency)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("income", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
+
+		repo.On("Create", &domain.Transaction{
+			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			Type:     domain.TransactionTypeIncome,
+			Amount:   3500.00,
+			Category: domain.CategoryIncome,
+		}).Return(nil)
+
+		tx, err := svc.Create(service.CreateTransactionInput{
+			Date:     "2026-02-01",
+			Type:     domain.TransactionTypeIncome,
+			Amount:   3500.00,
+			Category: domain.CategoryIncome,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.TransactionTypeIncome, tx.Type)
+		assert.Equal(t, 3500.00, tx.Amount)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("investment", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
+
+		repo.On("Create", &domain.Transaction{
+			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			Type:     domain.TransactionTypeInvestment,
+			Amount:   500.00,
+			Category: domain.CategoryInvestment,
+		}).Return(nil)
+
+		tx, err := svc.Create(service.CreateTransactionInput{
+			Date:     "2026-02-01",
+			Type:     domain.TransactionTypeInvestment,
+			Amount:   500.00,
+			Category: domain.CategoryInvestment,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.TransactionTypeInvestment, tx.Type)
 		repo.AssertExpectations(t)
 	})
 
@@ -58,13 +105,6 @@ func TestTransactionService_Create(t *testing.T) {
 		repo := &mock.TransactionRepository{}
 		svc := service.NewTransactionService(repo)
 
-		input := service.CreateTransactionInput{
-			Date:     "2026-01-15",
-			Type:     domain.TransactionTypeExpense,
-			Amount:   50.00,
-			Category: domain.CategoryFood,
-		}
-
 		repo.On("Create", &domain.Transaction{
 			Date:     time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 			Type:     domain.TransactionTypeExpense,
@@ -72,23 +112,30 @@ func TestTransactionService_Create(t *testing.T) {
 			Category: domain.CategoryFood,
 		}).Return(errors.New("db error"))
 
-		_, err := svc.Create(input)
+		_, err := svc.Create(service.CreateTransactionInput{
+			Date:     "2026-01-15",
+			Type:     domain.TransactionTypeExpense,
+			Amount:   50.00,
+			Category: domain.CategoryFood,
+		})
 		assert.ErrorContains(t, err, "db error")
 		repo.AssertExpectations(t)
 	})
 }
 
 func TestTransactionService_GetByID(t *testing.T) {
-	t.Run("found", func(t *testing.T) {
+	t.Run("found and Money populated", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
 		svc := service.NewTransactionService(repo)
 
-		expected := &domain.Transaction{ID: 1, Amount: 100, Type: domain.TransactionTypeIncome}
-		repo.On("GetByID", uint(1)).Return(expected, nil)
+		stored := &domain.Transaction{ID: 1, Amount: 100, Type: domain.TransactionTypeIncome}
+		repo.On("GetByID", uint(1)).Return(stored, nil)
 
 		tx, err := svc.GetByID(1)
 		require.NoError(t, err)
-		assert.Equal(t, expected, tx)
+		assert.Equal(t, uint(1), tx.ID)
+		assert.Equal(t, 100.0, tx.AmountMoney.Value)
+		assert.Equal(t, domain.CurrencyEUR, tx.AmountMoney.Currency)
 		repo.AssertExpectations(t)
 	})
 
@@ -119,6 +166,7 @@ func TestTransactionService_Update(t *testing.T) {
 		result, err := svc.Update(1, service.UpdateTransactionInput{Amount: 75})
 		require.NoError(t, err)
 		assert.Equal(t, 75.0, result.Amount)
+		assert.Equal(t, 75.0, result.AmountMoney.Value)
 		repo.AssertExpectations(t)
 	})
 
@@ -139,12 +187,10 @@ func TestTransactionService_Delete(t *testing.T) {
 		repo := &mock.TransactionRepository{}
 		svc := service.NewTransactionService(repo)
 
-		existing := &domain.Transaction{ID: 1}
-		repo.On("GetByID", uint(1)).Return(existing, nil)
+		repo.On("GetByID", uint(1)).Return(&domain.Transaction{ID: 1}, nil)
 		repo.On("Delete", uint(1)).Return(nil)
 
-		err := svc.Delete(1)
-		require.NoError(t, err)
+		require.NoError(t, svc.Delete(1))
 		repo.AssertExpectations(t)
 	})
 
@@ -154,39 +200,118 @@ func TestTransactionService_Delete(t *testing.T) {
 
 		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
 
-		err := svc.Delete(99)
-		assert.Error(t, err)
+		assert.Error(t, svc.Delete(99))
 		repo.AssertExpectations(t)
 	})
 }
 
 func TestTransactionService_List(t *testing.T) {
-	repo := &mock.TransactionRepository{}
-	svc := service.NewTransactionService(repo)
+	t.Run("populates AmountMoney for each transaction", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
 
-	filter := domain.TransactionFilter{Page: 1, PageSize: 10}
-	expected := &domain.PaginatedTransactions{
-		Data:  []domain.Transaction{{ID: 1, Amount: 100}},
-		Total: 1,
-	}
-	repo.On("List", filter).Return(expected, nil)
+		filter := domain.TransactionFilter{Page: 1, PageSize: 10}
+		repoResult := &domain.PaginatedTransactions{
+			Data: []domain.Transaction{
+				{ID: 1, Amount: 100, Type: domain.TransactionTypeExpense},
+				{ID: 2, Amount: 3500, Type: domain.TransactionTypeIncome},
+			},
+			Total: 2,
+		}
+		repo.On("List", filter).Return(repoResult, nil)
 
-	result, err := svc.List(filter)
-	require.NoError(t, err)
-	assert.Equal(t, expected, result)
-	repo.AssertExpectations(t)
+		result, err := svc.List(filter)
+		require.NoError(t, err)
+		assert.Equal(t, 100.0, result.Data[0].AmountMoney.Value)
+		assert.Equal(t, domain.CurrencyEUR, result.Data[0].AmountMoney.Currency)
+		assert.Equal(t, 3500.0, result.Data[1].AmountMoney.Value)
+		repo.AssertExpectations(t)
+	})
+}
+
+func TestTransactionService_ListAll(t *testing.T) {
+	t.Run("returns all transactions with Money populated", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
+
+		stored := []domain.Transaction{
+			{ID: 1, Amount: 50, Type: domain.TransactionTypeExpense},
+			{ID: 2, Amount: 200, Type: domain.TransactionTypeIncome},
+		}
+		repo.On("ListAll").Return(stored, nil)
+
+		result, err := svc.ListAll()
+		require.NoError(t, err)
+		assert.Len(t, result, 2)
+		assert.Equal(t, 50.0, result[0].AmountMoney.Value)
+		assert.Equal(t, 200.0, result[1].AmountMoney.Value)
+		repo.AssertExpectations(t)
+	})
+}
+
+func TestTransactionService_ListSince(t *testing.T) {
+	t.Run("returns transactions on or after the given date", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
+
+		since := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+		stored := []domain.Transaction{
+			{ID: 5, Amount: 80, Date: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)},
+		}
+		repo.On("ListSince", since).Return(stored, nil)
+
+		result, err := svc.ListSince(since)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Equal(t, uint(5), result[0].ID)
+		assert.Equal(t, 80.0, result[0].AmountMoney.Value)
+		repo.AssertExpectations(t)
+	})
 }
 
 func TestTransactionService_GetSummary(t *testing.T) {
-	repo := &mock.TransactionRepository{}
-	svc := service.NewTransactionService(repo)
+	t.Run("income increases net balance, expenses and investments decrease it", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
 
-	filter := domain.TransactionFilter{}
-	expected := &domain.TransactionSummary{TotalExpenses: 500, TotalIncome: 5000}
-	repo.On("GetSummary", filter).Return(expected, nil)
+		// Net = 5000 - 1200 - 800 = 3000
+		filter := domain.TransactionFilter{}
+		summary := &domain.TransactionSummary{
+			TotalIncome:      5000,
+			TotalExpenses:    1200,
+			TotalInvestments: 800,
+			NetBalance:       3000,
+		}
+		repo.On("GetSummary", filter).Return(summary, nil)
 
-	result, err := svc.GetSummary(filter)
-	require.NoError(t, err)
-	assert.Equal(t, expected, result)
-	repo.AssertExpectations(t)
+		result, err := svc.GetSummary(filter)
+		require.NoError(t, err)
+		assert.Equal(t, 5000.0, result.TotalIncome)
+		assert.Equal(t, 1200.0, result.TotalExpenses)
+		assert.Equal(t, 800.0, result.TotalInvestments)
+		// Net balance: income minus expenses and investments
+		assert.Equal(t, 3000.0, result.NetBalance)
+		assert.Greater(t, result.TotalIncome, result.TotalExpenses+result.TotalInvestments)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("negative net balance when expenses exceed income", func(t *testing.T) {
+		repo := &mock.TransactionRepository{}
+		svc := service.NewTransactionService(repo)
+
+		filter := domain.TransactionFilter{}
+		// Net = 1000 - 1500 - 0 = -500
+		summary := &domain.TransactionSummary{
+			TotalIncome:   1000,
+			TotalExpenses: 1500,
+			NetBalance:    -500,
+		}
+		repo.On("GetSummary", filter).Return(summary, nil)
+
+		result, err := svc.GetSummary(filter)
+		require.NoError(t, err)
+		assert.Equal(t, -500.0, result.NetBalance)
+		assert.Less(t, result.NetBalance, float64(0))
+		repo.AssertExpectations(t)
+	})
 }
