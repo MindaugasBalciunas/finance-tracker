@@ -94,7 +94,11 @@ export default function Dashboard() {
           />
           <StatCard
             title="Crypto"
-            value={formatEuro((latestBalance.r_btc_eur ?? 0) + (latestBalance.m_btc_eur ?? 0))}
+            value={formatEuro(
+              btc.price != null
+                ? (latestBalance.r_btc + latestBalance.m_btc) * btc.price
+                : (latestBalance.r_btc_eur ?? 0) + (latestBalance.m_btc_eur ?? 0)
+            )}
             subtitle={btc.price != null
               ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
               : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}
