@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceDot } from 'recharts'
 import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useStockPrice, useStockHistory, useUsdEurRate } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
+import StockForecastSection from '../components/charts/StockForecastSection'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatDate } from '../utils/format'
 import type { CreateStockTradeInput, StockHolding, StockTrade } from '../types'
@@ -454,6 +455,11 @@ export default function Stocks() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* 1-year scenario forecast vs VWCE */}
+      {activeHoldings.length > 0 && (
+        <StockForecastSection holdings={activeHoldings} usdToEur={usdToEur} />
       )}
 
       {/* Closed positions */}
