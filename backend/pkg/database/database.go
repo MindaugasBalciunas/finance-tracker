@@ -15,11 +15,20 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Rename swed_pen → seb_pen if old column still exists
-	var colExists int
-	db.Raw("SELECT COUNT(*) FROM pragma_table_info('balances') WHERE name = 'swed_pen'").Scan(&colExists)
-	if colExists > 0 {
+	// Migrate swed_pen → seb_pen
+	var swedPenExists, sebPenExists int
+	db.Raw("SELECT COUNT(*) FROM pragma_table_info('balances') WHERE name = 'swed_pen'").Scan(&swedPenExists)
+	db.Raw("SELECT COUNT(*) FROM pragma_table_info('balances') WHERE name = 'seb_pen'").Scan(&sebPenExists)
+	if swedPenExists > 0 && sebPenExists == 0 {
 		if err := db.Exec("ALTER TABLE balances RENAME COLUMN swed_pen TO seb_pen").Error; err != nil {
+			return nil, err
+		}
+	} else if swedPenExists > 0 && sebPenExists > 0 {
+		// AutoMigrate already added seb_pen; copy any non-zero data then drop old column
+		if err := db.Exec("UPDATE balances SET seb_pen = swed_pen WHERE seb_pen = 0 AND swed_pen != 0").Error; err != nil {
+			return nil, err
+		}
+		if err := db.Exec("ALTER TABLE balances DROP COLUMN swed_pen").Error; err != nil {
 			return nil, err
 		}
 	}
