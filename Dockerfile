@@ -16,10 +16,10 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 3 — final image: nginx + Go binary in one container
-FROM alpine:3.20
+FROM nginx:alpine
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates nginx jq
+RUN apk add --no-cache ca-certificates jq
 
 # Go binary
 COPY --from=backend-builder /app/backend/finance-tracker ./finance-tracker
@@ -28,7 +28,7 @@ COPY --from=backend-builder /app/backend/finance-tracker ./finance-tracker
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
 # nginx config (proxies /api/ to localhost:8080)
-COPY nginx.conf /etc/nginx/http.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # startup script
 COPY run.sh /run.sh
