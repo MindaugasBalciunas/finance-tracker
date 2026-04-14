@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal finance dashboard — transactions, balances, investments and AI insights"
-version: "1.0.2"
+version: "1.0.3"
 slug: "finance_tracker"
 init: false
 
@@ -9,8 +9,10 @@ arch:
 
 ports:
   80/tcp: 8099
+  8080/tcp: 8098
 ports_description:
   80/tcp: "Finance Tracker web interface"
+  8080/tcp: "Finance Tracker API (debug)"
 
 map:
   - data:rw
