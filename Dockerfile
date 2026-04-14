@@ -16,7 +16,7 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 3 — final image: nginx + Go binary in one container
-FROM nginx:alpine
+FROM nginx:stable-alpine
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates jq
