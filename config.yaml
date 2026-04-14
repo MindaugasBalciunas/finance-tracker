@@ -1,11 +1,16 @@
 name: "Finance Tracker"
 description: "Personal finance dashboard — transactions, balances, investments and AI insights"
-version: "1.0.6"
+version: "1.0.7"
 slug: "finance_tracker"
 init: false
 
 arch:
   - aarch64
+
+ingress: true
+ingress_port: 80
+panel_icon: mdi:cash-multiple
+panel_title: Finance
 
 ports:
   80/tcp: 8099
