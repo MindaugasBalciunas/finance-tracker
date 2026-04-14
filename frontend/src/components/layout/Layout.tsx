@@ -22,6 +22,76 @@ type ExportStatusData = {
   last_partial_export: string | null
 }
 
+type ImportResult = {
+  imported: { transactions: number; balances: number; stock_trades: number }
+  skipped:  { transactions: number; balances: number; stock_trades: number }
+}
+
+function ImportButton() {
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<ImportResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setResult(null)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/v1/import/json', { method: 'POST', body: form })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      }
+      const data: ImportResult = await res.json()
+      setResult(data)
+      // Reset so same file can be re-selected
+      e.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={handleFile}
+      />
+      <button
+        onClick={() => { setResult(null); setError(null); inputRef.current?.click() }}
+        disabled={importing}
+        className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors disabled:opacity-50"
+      >
+        {importing ? 'Importing…' : 'Import'}
+      </button>
+      {(result || error) && (
+        <div className={`absolute right-0 mt-1 w-64 border rounded-lg shadow-lg z-50 p-3 text-xs ${error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800'}`}>
+          <button onClick={() => { setResult(null); setError(null) }} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">✕</button>
+          {error && <p>{error}</p>}
+          {result && (
+            <>
+              <p className="font-semibold mb-1">Import complete</p>
+              <p>Transactions: +{result.imported.transactions} ({result.skipped.transactions} skipped)</p>
+              <p>Balances: +{result.imported.balances} ({result.skipped.balances} skipped)</p>
+              <p>Stock trades: +{result.imported.stock_trades} ({result.skipped.stock_trades} skipped)</p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ExportDropdown() {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<ExportStatusData | null>(null)
@@ -151,6 +221,7 @@ export default function Layout() {
             <DateRangeFilter value={dateRange} onChange={setDateRange} />
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            <ImportButton />
             <ExportDropdown />
             <a
               href="http://localhost:8080/swagger/index.html"

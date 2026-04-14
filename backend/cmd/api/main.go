@@ -49,6 +49,7 @@ func main() {
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
 	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, exportLogRepo)
+	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo)
 	stockHandler := handler.NewStockHandler(stockSvc)
 
 	r := gin.Default()
@@ -70,6 +71,7 @@ func main() {
 	balHandler.RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
 	exportHandler.RegisterRoutes(v1)
+	importHandler.RegisterRoutes(v1)
 	stockHandler.RegisterRoutes(v1)
 
 	// Health check
