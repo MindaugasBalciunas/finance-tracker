@@ -1,0 +1,22 @@
+name: "Finance Tracker"
+description: "Personal finance dashboard — transactions, balances, investments and AI insights"
+version: "1.0.0"
+slug: "finance_tracker"
+init: false
+
+arch:
+  - aarch64
+
+ports:
+  80/tcp: 8099
+ports_description:
+  80/tcp: "Finance Tracker web interface"
+
+map:
+  - data:rw
+
+options:
+  anthropic_api_key: ""
+
+schema:
+  anthropic_api_key: str?
