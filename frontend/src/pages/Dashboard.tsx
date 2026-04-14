@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   const netSaved = summary ? summary.total_income - summary.total_expenses : null
 
-  const avgMonthlySpend = summary && summary.by_month.length > 0
+  const avgMonthlySpend = summary && summary.by_month?.length > 0
     ? summary.total_expenses / summary.by_month.length
     : null
 
@@ -124,7 +124,7 @@ export default function Dashboard() {
             <StatCard
               title="Avg Monthly Spend"
               value={avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}
-              subtitle={`Over ${summary.by_month.length} month${summary.by_month.length !== 1 ? 's' : ''}`}
+              subtitle={`Over ${summary.by_month?.length ?? 0} month${(summary.by_month?.length ?? 0) !== 1 ? 's' : ''}`}
               color="blue"
             />
             <StatCard

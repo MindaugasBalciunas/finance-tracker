@@ -114,7 +114,10 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 		return nil, err
 	}
 
-	summary := &domain.TransactionSummary{}
+	summary := &domain.TransactionSummary{
+		ByCategory: []domain.CategorySummary{},
+		ByMonth:    []domain.MonthlySummary{},
+	}
 	for _, r := range results {
 		switch r.Type {
 		case domain.TransactionTypeExpense:
