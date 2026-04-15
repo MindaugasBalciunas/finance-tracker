@@ -22,7 +22,10 @@ export default function Dashboard() {
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(dateRange)
   const { data: allocations, isLoading: allocLoading } = useAccountAllocation()
   const { data: allExpenses } = useAllExpenses(dateRange)
-  const btc = useBtcEur()
+  const { price: liveBtcPrice } = useBtcEur()
+  // Fall back to the BTC price stored in the latest balance snapshot when live price is unavailable
+  const storedBtcPrice = latestBalance?.btc_price ?? 0
+  const btcPrice: number | null = liveBtcPrice ?? (storedBtcPrice > 0 ? storedBtcPrice : null)
 
   const isLoading = summaryLoading || balanceLoading || trendLoading || allocLoading
 
@@ -84,12 +87,12 @@ export default function Dashboard() {
           <StatCard
             title="Crypto"
             value={formatEuro(
-              btc.price != null
-                ? (latestBalance.r_btc + latestBalance.m_btc) * btc.price
+              btcPrice != null
+                ? (latestBalance.r_btc + latestBalance.m_btc) * btcPrice
                 : (latestBalance.r_btc_eur ?? 0) + (latestBalance.m_btc_eur ?? 0)
             )}
-            subtitle={btc.price != null
-              ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
+            subtitle={btcPrice != null
+              ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btcPrice.toLocaleString()} /BTC`
               : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}
             color="yellow"
           />
@@ -159,7 +162,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Net Worth Over Time</h3>
           <p className="text-xs text-gray-400 mb-4">Click legend items to show/hide accounts. Hover a line to highlight it.</p>
-          <BalanceTrendChart trend={trend} btcPrice={btc.price} />
+          <BalanceTrendChart trend={trend} btcPrice={btcPrice} />
         </div>
       )}
 
