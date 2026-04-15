@@ -16,6 +16,7 @@ type TransactionRepository interface {
 	GetByID(id uint) (*domain.Transaction, error)
 	Update(tx *domain.Transaction) error
 	Delete(id uint) error
+	DeleteBatch(ids []uint) error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
@@ -48,6 +49,13 @@ func (r *transactionRepository) Update(tx *domain.Transaction) error {
 
 func (r *transactionRepository) Delete(id uint) error {
 	return r.db.Delete(&domain.Transaction{}, id).Error
+}
+
+func (r *transactionRepository) DeleteBatch(ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.Delete(&domain.Transaction{}, ids).Error
 }
 
 func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {

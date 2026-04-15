@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -30,8 +31,9 @@ func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 type importResult struct {
-	Imported importCounts `json:"imported"`
-	Skipped  importCounts `json:"skipped"`
+	Imported      importCounts `json:"imported"`
+	Skipped       importCounts `json:"skipped"`
+	ImportedTxIDs []uint       `json:"imported_tx_ids,omitempty"`
 }
 
 type importCounts struct {
@@ -71,18 +73,32 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	result := importResult{}
 
 	// --- Transactions ---
+	// Build content-fingerprint set from existing transactions to catch
+	// duplicates even when IDs differ (e.g. importing into a different DB).
+	existingTxs, _ := h.txRepo.ListAll()
+	contentSeen := make(map[string]bool, len(existingTxs))
+	for _, t := range existingTxs {
+		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category)] = true
+	}
+
 	for _, row := range payload.Transactions {
 		date, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {
 			result.Skipped.Transactions++
 			continue
 		}
-		// Skip if a transaction with this ID already exists
+		// Skip by original ID
 		if row.ID > 0 {
 			if _, err := h.txRepo.GetByID(row.ID); err == nil {
 				result.Skipped.Transactions++
 				continue
 			}
+		}
+		// Skip by content fingerprint (catches duplicates when IDs don't match)
+		key := fmt.Sprintf("%s|%s|%.2f|%s|%s", date.Format("2006-01-02"), row.Type, row.Amount, row.Category, row.Comment)
+		if contentSeen[key] {
+			result.Skipped.Transactions++
+			continue
 		}
 		tx := &domain.Transaction{
 			Date:     date,
@@ -91,10 +107,15 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			Category: domain.Category(row.Category),
 			Comment:  row.Comment,
 		}
+		if row.ID > 0 {
+			tx.ID = row.ID // preserve original ID so re-imports are idempotent
+		}
 		if err := h.txRepo.Create(tx); err != nil {
 			result.Skipped.Transactions++
 			continue
 		}
+		contentSeen[key] = true
+		result.ImportedTxIDs = append(result.ImportedTxIDs, tx.ID)
 		result.Imported.Transactions++
 	}
 
