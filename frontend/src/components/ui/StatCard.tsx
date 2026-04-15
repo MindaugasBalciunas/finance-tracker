@@ -18,9 +18,9 @@ const colorMap = {
 
 export default function StatCard({ title, value, subtitle, trend, color = 'blue' }: StatCardProps) {
   return (
-    <div className={clsx('rounded-xl border p-5', colorMap[color])}>
-      <p className="text-sm font-medium opacity-80">{title}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
+    <div className={clsx('rounded-xl border p-4 sm:p-5', colorMap[color])}>
+      <p className="text-xs sm:text-sm font-medium opacity-80">{title}</p>
+      <p className="text-xl sm:text-2xl font-bold mt-1">{value}</p>
       {subtitle && <p className="text-xs opacity-70 mt-1">{subtitle}</p>}
       {trend !== undefined && (
         <p className={clsx('text-xs font-medium mt-2', trend >= 0 ? 'text-green-600' : 'text-red-600')}>

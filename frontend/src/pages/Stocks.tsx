@@ -287,15 +287,12 @@ export default function Stocks() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Stocks & ETFs</h2>
-          <p className="text-sm text-gray-500 mt-1">Track your stock and ETF trades and portfolio performance</p>
-        </div>
+        <p className="text-sm text-gray-500">Track your stock and ETF trades and portfolio performance</p>
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shrink-0 ml-3"
         >
-          + Add Trade
+          + Add
         </button>
       </div>
 
@@ -335,7 +332,7 @@ export default function Stocks() {
 
       {/* Summary cards */}
       {portfolio && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-500 mb-1">Invested (open)</p>
             <p className="text-xl font-bold text-gray-900">
@@ -363,7 +360,7 @@ export default function Stocks() {
 
       {/* Portfolio allocation chart + breakdown */}
       {allocationData.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
           {/* Donut chart */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Allocation by Cost Basis</h3>

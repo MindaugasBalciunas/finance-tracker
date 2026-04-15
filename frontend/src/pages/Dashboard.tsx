@@ -52,17 +52,11 @@ export default function Dashboard() {
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
   return (
-    <div className="space-y-8">
-
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-        <p className="text-sm text-gray-500 mt-1">Your financial overview</p>
-      </div>
+    <div className="space-y-4 sm:space-y-8">
 
       {/* Balance KPI cards — always from latest snapshot */}
       {latestBalance && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <StatCard
             title="Net Worth"
             value={formatEuro(latestBalance.total)}
@@ -108,7 +102,7 @@ export default function Dashboard() {
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
             {dateRange.date_from ? `From ${dateRange.date_from}${dateRange.date_to ? ` to ${dateRange.date_to}` : ''}` : 'All-time'} period insights
           </p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               title="Net Saved"
               value={netSaved != null ? formatEuro(netSaved) : '—'}
@@ -134,7 +128,7 @@ export default function Dashboard() {
               color={netWorthChange != null && netWorthChange >= 0 ? 'green' : 'red'}
             />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mt-3 sm:mt-4">
             <StatCard
               title="Total Income"
               value={formatEuro(summary.total_income)}
@@ -162,7 +156,7 @@ export default function Dashboard() {
 
       {/* Net Worth Over Time */}
       {trend && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Net Worth Over Time</h3>
           <p className="text-xs text-gray-400 mb-4">Click legend items to show/hide accounts. Hover a line to highlight it.</p>
           <BalanceTrendChart trend={trend} btcPrice={btc.price} />
@@ -171,7 +165,7 @@ export default function Dashboard() {
 
       {/* Expense breakdown by category per month */}
       {allExpenses && allExpenses.data.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Where Money Goes Each Month</h3>
           <p className="text-xs text-gray-400 mb-4">Stacked expense breakdown by category — see which categories dominate each month</p>
           <MonthlyExpenseCategoryChart transactions={allExpenses.data} />
@@ -180,7 +174,7 @@ export default function Dashboard() {
 
       {/* Monthly spending pace */}
       {allExpenses && allExpenses.data.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Spending Pace</h3>
           <p className="text-xs text-gray-400 mb-4">Cumulative daily expenses per month — steeper slope = faster spending</p>
           <CumulativeSpendingChart transactions={allExpenses.data} />
@@ -188,9 +182,9 @@ export default function Dashboard() {
       )}
 
       {/* Savings rate trend + allocation */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {summary?.by_month && summary.by_month.length > 1 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Savings Rate Trend</h3>
             <p className="text-xs text-gray-400 mb-4">Monthly % of income kept after expenses — 20% is the recommended minimum</p>
             <SavingsRateTrendChart data={summary.by_month} />
@@ -198,7 +192,7 @@ export default function Dashboard() {
         )}
 
         {allocations && allocations.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Current Allocation</h3>
             <p className="text-xs text-gray-400 mb-4">Share of net worth per account</p>
             <AllocationPieChart allocations={allocations} />
@@ -208,7 +202,7 @@ export default function Dashboard() {
 
       {/* Monthly cash flow */}
       {summary?.by_month && summary.by_month.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Cash Flow</h3>
           <p className="text-xs text-gray-400 mb-4">Income vs expenses vs investments by month</p>
           <MonthlyBarChart data={summary.by_month} />
@@ -217,18 +211,18 @@ export default function Dashboard() {
 
       {/* Category breakdown */}
       {summary?.by_category && summary.by_category.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Expenses by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where money is spent</p>
             <CategoryDonutChart data={summary.by_category} type="expense" />
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Income by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where money comes from</p>
             <CategoryDonutChart data={summary.by_category} type="income" />
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Investments by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where capital is deployed</p>
             <CategoryDonutChart data={summary.by_category} type="investment" />
