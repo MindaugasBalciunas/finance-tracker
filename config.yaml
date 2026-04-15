@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal finance dashboard — transactions, balances, investments and AI insights"
-version: "1.0.13"
+version: "1.0.14"
 slug: "finance_tracker"
 init: false
 

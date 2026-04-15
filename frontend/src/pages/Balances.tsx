@@ -13,9 +13,11 @@ export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
 
-  const btc = useBtcEur()
-  const { data: balances, isLoading } = useBalances({}, btc.price)
-  const { data: latest } = useLatestBalance(btc.price)
+  const { price: liveBtcPrice } = useBtcEur()
+  const { data: latest } = useLatestBalance(liveBtcPrice)
+  const storedBtcPrice = latest?.btc_price ?? 0
+  const btcPrice: number | null = liveBtcPrice ?? (storedBtcPrice > 0 ? storedBtcPrice : null)
+  const { data: balances, isLoading } = useBalances({}, btcPrice)
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()
@@ -136,12 +138,12 @@ export default function Balances() {
           <StatCard
             title="Crypto"
             value={formatEuro(
-              btc.price != null
-                ? (latest.r_btc + latest.m_btc) * btc.price
+              btcPrice != null
+                ? (latest.r_btc + latest.m_btc) * btcPrice
                 : (latest.r_btc_eur ?? 0) + (latest.m_btc_eur ?? 0)
             )}
-            subtitle={btc.price != null
-              ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btc.price.toLocaleString()} /BTC`
+            subtitle={btcPrice != null
+              ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btcPrice.toLocaleString()} /BTC`
               : 'Revolut R & M BTC'}
             color="yellow"
           />
@@ -153,7 +155,7 @@ export default function Balances() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
-            <BalanceTrendChart trend={trend} btcPrice={btc.price} />
+            <BalanceTrendChart trend={trend} btcPrice={btcPrice} />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Current Allocation</h3>
@@ -203,8 +205,8 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btc.price != null ? b.r_btc * btc.price : (b.r_btc_eur ?? 0))}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btc.price != null ? b.m_btc * btc.price : (b.m_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.r_btc * btcPrice : (b.r_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.m_btc * btcPrice : (b.m_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
