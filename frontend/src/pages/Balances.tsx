@@ -207,19 +207,9 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btc.price != null ? b.m_btc * btc.price : (b.m_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setEditingBalance(b)}
-                          className="text-gray-400 hover:text-blue-600 text-xs"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          onClick={() => handleDelete(b.id)}
-                          className="text-gray-400 hover:text-red-600 text-xs"
-                        >
-                          ✕
-                        </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => setEditingBalance(b)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => handleDelete(b.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>
                   </tr>

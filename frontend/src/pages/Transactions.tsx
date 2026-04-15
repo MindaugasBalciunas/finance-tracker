@@ -147,9 +147,9 @@ export default function Transactions() {
                   <span className={`text-sm font-bold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                     {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                   </span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setEditingTx(tx)} className="text-gray-400 hover:text-blue-600 text-xs">✎</button>
-                    <button onClick={() => handleDelete(tx.id)} className="text-gray-400 hover:text-red-600 text-xs">✕</button>
+                  <div className="flex gap-1">
+                    <button onClick={() => setEditingTx(tx)} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                    <button onClick={() => handleDelete(tx.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                   </div>
                 </div>
               </div>
@@ -186,20 +186,10 @@ export default function Transactions() {
                     <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                       {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setEditingTx(tx)}
-                          className="text-gray-400 hover:text-blue-600 text-xs"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          onClick={() => handleDelete(tx.id)}
-                          className="text-gray-400 hover:text-red-600 text-xs"
-                        >
-                          ✕
-                        </button>
+                    <td className="px-2 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => setEditingTx(tx)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => handleDelete(tx.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>
                   </tr>
