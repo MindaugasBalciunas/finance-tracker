@@ -17,6 +17,7 @@ type TransactionRepository interface {
 	Update(tx *domain.Transaction) error
 	Delete(id uint) error
 	DeleteBatch(ids []uint) error
+	DeleteAll() error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
@@ -56,6 +57,10 @@ func (r *transactionRepository) DeleteBatch(ids []uint) error {
 		return nil
 	}
 	return r.db.Delete(&domain.Transaction{}, ids).Error
+}
+
+func (r *transactionRepository) DeleteAll() error {
+	return r.db.Where("1 = 1").Delete(&domain.Transaction{}).Error
 }
 
 func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {
