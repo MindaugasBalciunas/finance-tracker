@@ -23,6 +23,7 @@ func (h *TransactionHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/summary", h.GetSummary)
+	g.DELETE("/batch", h.DeleteBatch)
 	g.GET("/:id", h.GetByID)
 	g.PUT("/:id", h.Update)
 	g.DELETE("/:id", h.Delete)
@@ -122,6 +123,21 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 	}
 	if err := h.svc.Delete(id); err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *TransactionHandler) DeleteBatch(c *gin.Context) {
+	var body struct {
+		IDs []uint `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || len(body.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "ids array required"})
+		return
+	}
+	if err := h.svc.DeleteBatch(body.IDs); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.Status(http.StatusNoContent)

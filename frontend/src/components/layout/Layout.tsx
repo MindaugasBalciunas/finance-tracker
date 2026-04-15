@@ -25,10 +25,12 @@ type ExportStatusData = {
 type ImportResult = {
   imported: { transactions: number; balances: number; stock_trades: number }
   skipped:  { transactions: number; balances: number; stock_trades: number }
+  imported_tx_ids?: number[]
 }
 
 function ImportButton({ onDone }: { onDone?: () => void }) {
   const [importing, setImporting] = useState(false)
+  const [undoing, setUndoing] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -57,6 +59,26 @@ function ImportButton({ onDone }: { onDone?: () => void }) {
     }
   }
 
+  const handleUndo = async () => {
+    if (!result?.imported_tx_ids?.length) return
+    if (!confirm(`Delete the ${result.imported_tx_ids.length} transactions that were just imported?`)) return
+    setUndoing(true)
+    try {
+      const res = await fetch('/api/v1/transactions/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: result.imported_tx_ids }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setResult(null)
+      onDone?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Undo failed')
+    } finally {
+      setUndoing(false)
+    }
+  }
+
   return (
     <div>
       <input ref={inputRef} type="file" accept=".json" className="hidden" onChange={handleFile} />
@@ -71,8 +93,20 @@ function ImportButton({ onDone }: { onDone?: () => void }) {
       {result && (
         <div className="px-3 py-2 text-xs text-green-700 bg-green-50 rounded-lg mx-3 mb-1">
           <p className="font-semibold">Import complete</p>
-          <p>+{result.imported.transactions} transactions, +{result.imported.balances} balances, +{result.imported.stock_trades} trades</p>
-          <button onClick={() => { setResult(null); onDone?.() }} className="mt-1 text-gray-500 underline">Close</button>
+          <p>+{result.imported.transactions} tx, +{result.imported.balances} balances, +{result.imported.stock_trades} trades</p>
+          <p className="text-gray-400">skipped {result.skipped.transactions + result.skipped.balances + result.skipped.stock_trades} duplicates</p>
+          <div className="flex items-center gap-3 mt-2">
+            <button onClick={() => { setResult(null); onDone?.() }} className="text-gray-500 underline">Close</button>
+            {(result.imported_tx_ids?.length ?? 0) > 0 && (
+              <button
+                onClick={handleUndo}
+                disabled={undoing}
+                className="text-red-600 underline disabled:opacity-50"
+              >
+                {undoing ? 'Undoing…' : `Undo (delete ${result.imported_tx_ids!.length} imported)`}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -180,6 +214,7 @@ function ExportDropdown() {
 // Desktop import button (inline, small)
 function DesktopImportButton() {
   const [importing, setImporting] = useState(false)
+  const [undoing, setUndoing] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -209,6 +244,23 @@ function DesktopImportButton() {
     } finally { setImporting(false) }
   }
 
+  const handleUndo = async () => {
+    if (!result?.imported_tx_ids?.length) return
+    if (!confirm(`Delete the ${result.imported_tx_ids.length} transactions that were just imported?`)) return
+    setUndoing(true)
+    try {
+      const res = await fetch('/api/v1/transactions/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: result.imported_tx_ids }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setResult(null); setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Undo failed')
+    } finally { setUndoing(false) }
+  }
+
   return (
     <div ref={ref} className="relative">
       <input ref={inputRef} type="file" accept=".json" className="hidden" onChange={handleFile} />
@@ -217,7 +269,7 @@ function DesktopImportButton() {
         {importing ? 'Importing…' : 'Import'}
       </button>
       {(result || error) && (
-        <div className={`absolute right-0 mt-1 w-64 border rounded-lg shadow-lg z-50 p-3 text-xs ${error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800'}`}>
+        <div className={`absolute right-0 mt-1 w-72 border rounded-lg shadow-lg z-50 p-3 text-xs ${error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800'}`}>
           <button onClick={() => { setResult(null); setError(null) }} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">✕</button>
           {error && <p>{error}</p>}
           {result && (<>
@@ -225,6 +277,12 @@ function DesktopImportButton() {
             <p>Transactions: +{result.imported.transactions} ({result.skipped.transactions} skipped)</p>
             <p>Balances: +{result.imported.balances} ({result.skipped.balances} skipped)</p>
             <p>Stock trades: +{result.imported.stock_trades} ({result.skipped.stock_trades} skipped)</p>
+            {(result.imported_tx_ids?.length ?? 0) > 0 && (
+              <button onClick={handleUndo} disabled={undoing}
+                className="mt-2 text-red-600 underline disabled:opacity-50">
+                {undoing ? 'Undoing…' : `Undo — delete ${result.imported_tx_ids!.length} imported transactions`}
+              </button>
+            )}
           </>)}
         </div>
       )}
