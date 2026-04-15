@@ -34,6 +34,7 @@ type TransactionService interface {
 	Update(id uint, input UpdateTransactionInput) (*domain.Transaction, error)
 	Delete(id uint) error
 	DeleteBatch(ids []uint) error
+	DeleteAll() error
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
@@ -130,6 +131,10 @@ func (s *transactionService) Delete(id uint) error {
 
 func (s *transactionService) DeleteBatch(ids []uint) error {
 	return s.repo.DeleteBatch(ids)
+}
+
+func (s *transactionService) DeleteAll() error {
+	return s.repo.DeleteAll()
 }
 
 func (s *transactionService) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {

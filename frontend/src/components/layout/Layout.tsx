@@ -290,6 +290,40 @@ function DesktopImportButton() {
   )
 }
 
+function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handle = async () => {
+    if (!confirm('Delete ALL transactions? This cannot be undone.')) return
+    if (!confirm('Are you sure? Every transaction record will be permanently deleted.')) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/v1/transactions', { method: 'DELETE' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onDone?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div>
+      <button
+        onClick={handle}
+        disabled={deleting}
+        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 transition-colors"
+      >
+        {deleting ? 'Deleting…' : '🗑 Delete all transactions'}
+      </button>
+      {error && <p className="px-3 py-1 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
 export default function Layout() {
   const { dateRange, setDateRange } = useDateRange()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -365,6 +399,12 @@ export default function Layout() {
               <div className="border-t border-gray-100" />
               {/* Export */}
               <ExportSection />
+              <div className="border-t border-gray-100" />
+              {/* Danger zone */}
+              <div>
+                <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Danger zone</p>
+                <DeleteAllTransactionsButton onDone={() => setDrawerOpen(false)} />
+              </div>
               <div className="border-t border-gray-100" />
               <div className="px-3">
                 <a href="/api/v1/swagger/index.html" target="_blank" rel="noopener noreferrer"
