@@ -44,15 +44,12 @@ export default function Balances() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Balances</h2>
-          <p className="text-sm text-gray-500 mt-1">Track your net worth across all accounts</p>
-        </div>
+        <p className="text-sm text-gray-500">Track your net worth across all accounts</p>
         <button
           onClick={() => setShowForm(true)}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
         >
-          + Add Snapshot
+          + Add
         </button>
       </div>
 
@@ -116,7 +113,7 @@ export default function Balances() {
 
       {/* Latest stats */}
       {latest && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <StatCard title="Total Net Worth" value={formatEuro(latest.total)} color="blue" />
           <StatCard
             title="Free Cash"
@@ -153,12 +150,12 @@ export default function Balances() {
 
       {/* Charts row */}
       {trend && allocations && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
             <BalanceTrendChart trend={trend} btcPrice={btc.price} />
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Current Allocation</h3>
             <AllocationPieChart allocations={allocations} />
           </div>
