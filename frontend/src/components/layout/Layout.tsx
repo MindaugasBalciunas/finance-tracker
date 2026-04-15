@@ -290,6 +290,56 @@ function DesktopImportButton() {
   )
 }
 
+function DesktopDeleteAllButton() {
+  const [open, setOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  const handle = async () => {
+    if (!confirm('Delete ALL transactions? This cannot be undone.')) return
+    setDeleting(true)
+    try {
+      await fetch('/api/v1/transactions', { method: 'DELETE' })
+      setOpen(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(v => !v)}
+        className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-md hover:bg-red-50 transition-colors">
+        Delete all
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-56 bg-white border border-red-200 rounded-lg shadow-lg z-50 p-3">
+          <p className="text-xs text-gray-700 font-semibold mb-1">Delete all transactions?</p>
+          <p className="text-xs text-gray-400 mb-3">This permanently removes every transaction record.</p>
+          <div className="flex gap-2">
+            <button onClick={handle} disabled={deleting}
+              className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
+              {deleting ? 'Deleting…' : 'Yes, delete all'}
+            </button>
+            <button onClick={() => setOpen(false)}
+              className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -354,6 +404,7 @@ export default function Layout() {
           <div className="flex items-center gap-3 shrink-0">
             <DesktopImportButton />
             <ExportDropdown />
+            <DesktopDeleteAllButton />
             <a href="http://localhost:8080/swagger/index.html" target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline">API Docs</a>
           </div>
