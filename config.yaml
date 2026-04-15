@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal finance dashboard — transactions, balances, investments and AI insights"
-version: "1.0.9"
+version: "1.0.10"
 slug: "finance_tracker"
 init: false
 
@@ -24,6 +24,10 @@ map:
 
 options:
   anthropic_api_key: ""
+  auth_user: "admin"
+  auth_password: ""
 
 schema:
   anthropic_api_key: str?
+  auth_user: str?
+  auth_password: str?

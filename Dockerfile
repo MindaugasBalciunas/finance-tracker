@@ -19,7 +19,7 @@ RUN npm run build
 FROM nginx:stable-alpine
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates jq
+RUN apk add --no-cache ca-certificates jq openssl
 
 # Go binary
 COPY --from=backend-builder /app/backend/finance-tracker ./finance-tracker
