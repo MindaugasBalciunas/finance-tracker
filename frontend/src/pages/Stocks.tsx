@@ -539,8 +539,8 @@ export default function Stocks() {
                     <td className="px-4 py-3 text-gray-500 text-xs">{t.notes || '—'}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setEditingTrade(t)} className="text-gray-400 hover:text-blue-600 text-xs">✎</button>
-                        <button onClick={() => handleDelete(t.id)} className="text-gray-400 hover:text-red-600 text-xs">✕</button>
+                        <button onClick={() => setEditingTrade(t)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>
                   </tr>
