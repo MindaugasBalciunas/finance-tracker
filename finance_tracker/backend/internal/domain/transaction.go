@@ -15,6 +15,7 @@ const (
 	CategoryEntertainment     Category = "Entertainment"
 	CategoryFinance           Category = "Finance"
 	CategoryFood              Category = "Food"
+	CategoryGaming            Category = "Gaming"
 	CategoryGifts             Category = "Gifts"
 	CategoryHealth            Category = "Health"
 	CategoryHousing           Category = "Housing"
@@ -46,6 +47,7 @@ var ValidCategories = []Category{
 	CategoryEntertainment,
 	CategoryFinance,
 	CategoryFood,
+	CategoryGaming,
 	CategoryGifts,
 	CategoryHealth,
 	CategoryHousing,
