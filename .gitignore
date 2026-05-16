@@ -9,7 +9,7 @@ finance_tracker/backend/docs/swagger.yaml
 # Frontend
 finance_tracker/frontend/node_modules/
 finance_tracker/frontend/dist/
-frontend/
+/frontend/
 
 # Claude Code
 .claude/settings.local.json
