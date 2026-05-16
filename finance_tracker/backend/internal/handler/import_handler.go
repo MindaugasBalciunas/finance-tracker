@@ -78,7 +78,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	existingTxs, _ := h.txRepo.ListAll()
 	contentSeen := make(map[string]bool, len(existingTxs))
 	for _, t := range existingTxs {
-		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category)] = true
+		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category, t.Comment)] = true
 	}
 
 	for _, row := range payload.Transactions {
@@ -138,21 +138,22 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			continue
 		}
 		b := &domain.Balance{
-			Date:      date,
-			Total:     row.Total,
-			Seb:       row.Seb,
-			Swed:      row.Swed,
-			SwedETF:   row.SwedETF,
-			SebPen:    row.SebPen,
-			Luminor:   row.Luminor,
-			Art:       row.Art,
-			Cash:      row.Cash,
-			RevM:      row.RevM,
-			RevR:      row.RevR,
-			RBTC:      row.RBTC,
-			MBTC:      row.MBTC,
-			BtcPrice:  row.BtcPrice,
-			RevStocks: row.RevStocks,
+			Date:       date,
+			Total:      row.Total,
+			Seb:        row.Seb,
+			Swed:       row.Swed,
+			SwedETF:    row.SwedETF,
+			SebPen:     row.SebPen,
+			Luminor:    row.Luminor,
+			Art:        row.Art,
+			Cash:       row.Cash,
+			RevM:       row.RevM,
+			RevR:       row.RevR,
+			RBTC:       row.RBTC,
+			MBTC:       row.MBTC,
+			BtcPrice:   row.BtcPrice,
+			RevStocks:  row.RevStocks,
+			IBKRStocks: row.IBKRStocks,
 		}
 		if err := h.balRepo.Create(b); err != nil {
 			result.Skipped.Balances++
@@ -179,6 +180,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.StockTrades++
 			continue
 		}
+		source := domain.StockSource(row.Source)
+		if source != domain.StockSourceIBKR {
+			source = domain.StockSourceRevolut
+		}
 		trade := &domain.StockTrade{
 			Date:          date,
 			Action:        domain.StockAction(row.Action),
@@ -186,6 +191,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			Shares:        row.Shares,
 			PricePerShare: row.PricePerShare,
 			Currency:      row.Currency,
+			Source:        source,
 			Notes:         row.Notes,
 		}
 		if err := h.stockRepo.Create(trade); err != nil {
