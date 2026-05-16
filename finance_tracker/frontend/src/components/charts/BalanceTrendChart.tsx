@@ -23,7 +23,8 @@ const ACCOUNT_COLORS: Record<string, string> = {
   rev_r:      '#fb923c',
   r_btc:      '#fbbf24',
   m_btc:      '#fcd34d',
-  rev_stocks: '#10b981',
+  rev_stocks:  '#10b981',
+  ibkr_stocks: '#059669',
 }
 
 const ACCOUNT_LABELS: Record<string, string> = {
@@ -38,7 +39,8 @@ const ACCOUNT_LABELS: Record<string, string> = {
   rev_r:      'Revolut R account',
   r_btc:      'Revolut R account BTC',
   m_btc:      'Revolut M account BTC',
-  rev_stocks: 'Revolut M account stocks',
+  rev_stocks:  'Revolut stocks',
+  ibkr_stocks: 'IBKR stocks',
 }
 
 const ACCOUNT_DASH: Record<string, string> = {
@@ -53,7 +55,8 @@ const ACCOUNT_DASH: Record<string, string> = {
   rev_r:      '3 3',
   r_btc:      '3 3',
   m_btc:      '3 3',
-  rev_stocks: '3 3',
+  rev_stocks:  '3 3',
+  ibkr_stocks: '3 3',
 }
 
 function buildYTicks(maxVal: number): number[] {

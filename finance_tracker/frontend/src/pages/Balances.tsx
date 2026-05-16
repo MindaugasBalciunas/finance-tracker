@@ -79,6 +79,7 @@ export default function Balances() {
                 r_btc: editingBalance.r_btc,
                 m_btc: editingBalance.m_btc,
                 rev_stocks: editingBalance.rev_stocks,
+                ibkr_stocks: editingBalance.ibkr_stocks,
               }}
             />
           </div>
@@ -107,6 +108,7 @@ export default function Balances() {
                 r_btc: latest.r_btc,
                 m_btc: latest.m_btc,
                 rev_stocks: latest.rev_stocks,
+                ibkr_stocks: latest.ibkr_stocks,
               } : undefined}
             />
           </div>
@@ -125,8 +127,8 @@ export default function Balances() {
           />
           <StatCard
             title="Investments"
-            value={formatEuro(latest.swed_etf + latest.rev_stocks)}
-            subtitle="ETF + Revolut Stocks"
+            value={formatEuro(latest.swed_etf + latest.rev_stocks + latest.ibkr_stocks)}
+            subtitle="ETF + Revolut + IBKR"
             color="blue"
           />
           <StatCard
