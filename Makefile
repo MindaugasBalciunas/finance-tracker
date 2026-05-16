@@ -2,12 +2,12 @@
 
 # Install all dependencies
 install:
-	cd backend && go mod tidy
-	cd frontend && npm install
+	cd finance_tracker/backend && go mod tidy
+	cd finance_tracker/frontend && npm install
 
 # Generate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
 swagger:
-	cd backend && swag init -g cmd/api/main.go --output docs
+	cd finance_tracker/backend && swag init -g cmd/api/main.go --output docs
 
 AIR := $(shell which air 2>/dev/null || echo $(HOME)/go/bin/air)
 
@@ -16,16 +16,16 @@ AIR := $(shell which air 2>/dev/null || echo $(HOME)/go/bin/air)
 backend:
 	@lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
-	  cd backend && $(AIR)
+	  cd finance_tracker/backend && $(AIR)
 
 # Run backend without live reload (no air needed)
 run-backend:
 	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
-	  cd backend && go run ./cmd/api/main.go
+	  cd finance_tracker/backend && go run ./cmd/api/main.go
 
 # Run frontend dev server
 frontend:
-	cd frontend && npm run dev
+	cd finance_tracker/frontend && npm run dev
 
 # Run both concurrently (requires 'make -j2')
 dev:
@@ -36,24 +36,24 @@ test: test-backend test-frontend
 
 # Run Go tests
 test-backend:
-	cd backend && go test ./... -v -cover
+	cd finance_tracker/backend && go test ./... -v -cover
 
 # Run React tests
 test-frontend:
-	cd frontend && npm test
+	cd finance_tracker/frontend && npm test
 
 # Build frontend for production
 build-frontend:
-	cd frontend && npm run build
+	cd finance_tracker/frontend && npm run build
 
 # Build backend binary
 build-backend:
-	cd backend && go build -o bin/finance-tracker ./cmd/api/main.go
+	cd finance_tracker/backend && go build -o bin/finance-tracker ./cmd/api/main.go
 
 # Build everything
 build: swagger build-backend build-frontend
 
 # Docker (future)
 docker-build:
-	docker build -t finance-tracker-backend ./backend
-	docker build -t finance-tracker-frontend ./frontend
+	docker build -t finance-tracker-backend ./finance_tracker/backend
+	docker build -t finance-tracker-frontend ./finance_tracker/frontend
