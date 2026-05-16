@@ -1,13 +1,15 @@
 # Backend
-backend/bin/
-backend/tmp/
-backend/finance.db
-backend/docs/swagger.json
-backend/docs/swagger.yaml
+finance_tracker/backend/bin/
+finance_tracker/backend/tmp/
+finance_tracker/backend/finance.db
+finance_tracker/backend/finance_tracker.db
+finance_tracker/backend/docs/swagger.json
+finance_tracker/backend/docs/swagger.yaml
 
 # Frontend
-frontend/node_modules/
-frontend/dist/
+finance_tracker/frontend/node_modules/
+finance_tracker/frontend/dist/
+frontend/
 
 # Claude Code
 .claude/settings.local.json
