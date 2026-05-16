@@ -1,8 +1,8 @@
 package database
 
 import (
+	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
