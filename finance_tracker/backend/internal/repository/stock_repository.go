@@ -13,6 +13,7 @@ type StockRepository interface {
 	GetByID(id uint) (*domain.StockTrade, error)
 	Update(t *domain.StockTrade) error
 	Delete(id uint) error
+	DeleteAll() error
 	ListAll() ([]domain.StockTrade, error)
 	ListSince(since time.Time) ([]domain.StockTrade, error)
 }
@@ -43,6 +44,10 @@ func (r *stockRepository) Update(t *domain.StockTrade) error {
 
 func (r *stockRepository) Delete(id uint) error {
 	return r.db.Delete(&domain.StockTrade{}, id).Error
+}
+
+func (r *stockRepository) DeleteAll() error {
+	return r.db.Where("1 = 1").Delete(&domain.StockTrade{}).Error
 }
 
 func (r *stockRepository) ListAll() ([]domain.StockTrade, error) {

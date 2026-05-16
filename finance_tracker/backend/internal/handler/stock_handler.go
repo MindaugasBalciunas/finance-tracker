@@ -34,6 +34,7 @@ func (h *StockHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("/analyst/:ticker", h.GetAnalyst)
 	g.GET("/:id", h.GetByID)
 	g.PUT("/:id", h.Update)
+	g.DELETE("", h.DeleteAll)
 	g.DELETE("/:id", h.Delete)
 }
 
@@ -122,6 +123,14 @@ func (h *StockHandler) Update(c *gin.Context) {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /stocks/{id} [delete]
+func (h *StockHandler) DeleteAll(c *gin.Context) {
+	if err := h.svc.DeleteAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *StockHandler) Delete(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
