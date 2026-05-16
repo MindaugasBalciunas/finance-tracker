@@ -36,6 +36,7 @@ type StockService interface {
 	GetByID(id uint) (*domain.StockTrade, error)
 	Update(id uint, input UpdateStockTradeInput) (*domain.StockTrade, error)
 	Delete(id uint) error
+	DeleteAll() error
 	ListAll() ([]domain.StockTrade, error)
 	ListSince(since time.Time) ([]domain.StockTrade, error)
 	GetPortfolio() (*domain.StockPortfolio, error)
@@ -157,6 +158,10 @@ func (s *stockService) Delete(id uint) error {
 		return err
 	}
 	return s.repo.Delete(id)
+}
+
+func (s *stockService) DeleteAll() error {
+	return s.repo.DeleteAll()
 }
 
 func (s *stockService) ListAll() ([]domain.StockTrade, error) {
