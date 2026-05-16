@@ -23,8 +23,9 @@ type Balance struct {
 	RBTC      float64   `json:"r_btc"`      // stored in BTC units
 	MBTC      float64   `json:"m_btc"`      // stored in BTC units
 	BtcPrice  float64   `json:"btc_price"`  // EUR/BTC rate at snapshot time (0 = legacy EUR row or price unknown)
-	RevStocks float64   `json:"rev_stocks"` // EUR
-	CreatedAt time.Time `json:"created_at"`
+	RevStocks  float64   `json:"rev_stocks"`  // EUR - Revolut stocks portfolio
+	IBKRStocks float64   `json:"ibkr_stocks"` // EUR - IBKR portfolio
+	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// Computed EUR values for BTC fields (not persisted, only set when holding > 0)

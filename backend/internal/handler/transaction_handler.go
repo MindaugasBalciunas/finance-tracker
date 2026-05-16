@@ -28,6 +28,12 @@ func (h *TransactionHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("/:id", h.GetByID)
 	g.PUT("/:id", h.Update)
 	g.DELETE("/:id", h.Delete)
+
+	rg.GET("/categories", h.ListCategories)
+}
+
+func (h *TransactionHandler) ListCategories(c *gin.Context) {
+	c.JSON(http.StatusOK, domain.ValidCategories)
 }
 
 // Create godoc
@@ -45,6 +51,10 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 	var input service.CreateTransactionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if !domain.IsValidCategory(input.Category) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid category"})
 		return
 	}
 	tx, err := h.svc.Create(input)
@@ -98,6 +108,10 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 	var input service.UpdateTransactionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if input.Category != "" && !domain.IsValidCategory(input.Category) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid category"})
 		return
 	}
 	tx, err := h.svc.Update(id, input)

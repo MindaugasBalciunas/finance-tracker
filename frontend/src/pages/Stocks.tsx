@@ -323,6 +323,7 @@ export default function Stocks() {
                 shares: editingTrade.shares,
                 price_per_share: editingTrade.price_per_share.value,
                 currency: editingTrade.currency,
+                source: editingTrade.source,
                 notes: editingTrade.notes,
               }}
             />
@@ -500,6 +501,7 @@ export default function Stocks() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Date</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-600">Broker</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Action</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Ticker</th>
                 <th className="text-right px-4 py-3 font-semibold text-gray-600">Shares</th>
@@ -517,6 +519,13 @@ export default function Stocks() {
                 return (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-700">{formatDate(t.date)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        t.source === 'IBKR' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {t.source}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
                         t.action === 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'

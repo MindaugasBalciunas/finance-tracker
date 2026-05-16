@@ -65,3 +65,13 @@ func (m *TransactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 	}
 	return args.Get(0).(*domain.TransactionSummary), args.Error(1)
 }
+
+func (m *TransactionRepository) DeleteAll() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *TransactionRepository) DeleteBatch(ids []uint) error {
+	args := m.Called(ids)
+	return args.Error(0)
+}

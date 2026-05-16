@@ -187,6 +187,7 @@ export default function Balances() {
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R account BTC</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account BTC</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account stocks</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">IBKR stocks</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -208,6 +209,7 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.r_btc * btcPrice : (b.r_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.m_btc * btcPrice : (b.m_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setEditingBalance(b)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
@@ -219,7 +221,7 @@ export default function Balances() {
               })}
               {!balances?.length && (
                 <tr>
-                  <td colSpan={15} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={16} className="px-4 py-12 text-center text-gray-400">
                     No balance snapshots yet. Add one above.
                   </td>
                 </tr>

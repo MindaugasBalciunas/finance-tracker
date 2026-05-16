@@ -1,6 +1,7 @@
-import { useForm } from 'react-hook-form'
+import { useEffect } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType } from '../../types'
-import { CATEGORIES } from '../../constants/categories'
+import { CATEGORIES_BY_TYPE } from '../../constants/categories'
 
 interface Props {
   onSubmit: (data: CreateTransactionInput) => void
@@ -10,9 +11,19 @@ interface Props {
 }
 
 export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
-  const { register, handleSubmit, formState: { errors } } = useForm<CreateTransactionInput>({
+  const { register, handleSubmit, formState: { errors }, control, setValue } = useForm<CreateTransactionInput>({
     defaultValues: { type: 'expense', ...defaultValues },
   })
+
+  const selectedType = useWatch({ control, name: 'type' })
+  const categories = CATEGORIES_BY_TYPE[selectedType] ?? []
+
+  // Reset category when type changes, unless editing an existing transaction
+  useEffect(() => {
+    if (!defaultValues?.category) {
+      setValue('category', '' as any)
+    }
+  }, [selectedType, defaultValues?.category, setValue])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -55,18 +66,15 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-          <input
-            type="text"
-            list="category-options"
+          <select
             {...register('category', { required: 'Category is required' })}
-            placeholder="Select or type a category..."
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <datalist id="category-options">
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c} />
+          >
+            <option value="">Select a category...</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
-          </datalist>
+          </select>
           {errors.category && <p className="text-xs text-red-600 mt-1">{errors.category.message}</p>}
         </div>
       </div>

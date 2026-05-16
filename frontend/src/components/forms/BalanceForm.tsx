@@ -14,7 +14,8 @@ const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
   { key: 'cash',      label: 'Cash' },
   { key: 'rev_m',     label: 'Revolut M account' },
   { key: 'rev_r',     label: 'Revolut R account' },
-  { key: 'rev_stocks', label: 'Revolut M account stocks' },
+  { key: 'rev_stocks',  label: 'Revolut M account stocks' },
+  { key: 'ibkr_stocks', label: 'IBKR stocks' },
 ]
 
 interface Props {

@@ -91,7 +91,8 @@ export interface Balance {
   r_btc: number    // BTC units (stored)
   m_btc: number    // BTC units (stored)
   btc_price: number // EUR/BTC at snapshot time (0 = legacy row)
-  rev_stocks: number // EUR
+  rev_stocks: number  // EUR - Revolut stocks portfolio
+  ibkr_stocks: number // EUR - IBKR portfolio
   created_at: string
   updated_at: string
   // Computed EUR values (only present when the account has BTC holdings)
@@ -115,6 +116,7 @@ export interface CreateBalanceInput {
   m_btc?: number
   btc_price?: number
   rev_stocks?: number
+  ibkr_stocks?: number
 }
 
 export interface BalanceTrend {
@@ -132,6 +134,7 @@ export interface AccountAllocation {
 // --- Stocks ---
 
 export type StockAction = 'buy' | 'sell'
+export type StockSource = 'Revolut' | 'IBKR'
 
 export interface StockTrade {
   id: number
@@ -141,6 +144,7 @@ export interface StockTrade {
   shares: number
   price_per_share: Money // price with explicit currency
   currency: string
+  source: StockSource
   notes: string
   created_at: string
   updated_at: string
@@ -153,6 +157,7 @@ export interface CreateStockTradeInput {
   shares: number
   price_per_share: number
   currency?: string
+  source: StockSource
   notes?: string
 }
 
