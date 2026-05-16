@@ -24,26 +24,28 @@ type CreateBalanceInput struct {
 	RBTC      float64 `json:"r_btc"`     // BTC units
 	MBTC      float64 `json:"m_btc"`     // BTC units
 	BtcPrice  float64 `json:"btc_price"` // EUR/BTC at snapshot time
-	RevStocks float64 `json:"rev_stocks"`
+	RevStocks  float64 `json:"rev_stocks"`
+	IBKRStocks float64 `json:"ibkr_stocks"`
 }
 
 // UpdateBalanceInput is the input DTO for updating a balance snapshot
 type UpdateBalanceInput struct {
-	Date      string  `json:"date"`
-	Total     float64 `json:"total"`
-	Seb       float64 `json:"seb"`
-	Swed      float64 `json:"swed"`
-	SwedETF   float64 `json:"swed_etf"`
-	SebPen   float64 `json:"seb_pen"`
-	Luminor   float64 `json:"luminor"`
-	Art       float64 `json:"art"`
-	Cash      float64 `json:"cash"`
-	RevM      float64 `json:"rev_m"`
-	RevR      float64 `json:"rev_r"`
-	RBTC      float64 `json:"r_btc"`     // BTC units
-	MBTC      float64 `json:"m_btc"`     // BTC units
-	BtcPrice  float64 `json:"btc_price"` // EUR/BTC at snapshot time
-	RevStocks float64 `json:"rev_stocks"`
+	Date       string  `json:"date"`
+	Total      float64 `json:"total"`
+	Seb        float64 `json:"seb"`
+	Swed       float64 `json:"swed"`
+	SwedETF    float64 `json:"swed_etf"`
+	SebPen     float64 `json:"seb_pen"`
+	Luminor    float64 `json:"luminor"`
+	Art        float64 `json:"art"`
+	Cash       float64 `json:"cash"`
+	RevM       float64 `json:"rev_m"`
+	RevR       float64 `json:"rev_r"`
+	RBTC       float64 `json:"r_btc"`     // BTC units
+	MBTC       float64 `json:"m_btc"`     // BTC units
+	BtcPrice   float64 `json:"btc_price"` // EUR/BTC at snapshot time
+	RevStocks  float64 `json:"rev_stocks"`
+	IBKRStocks float64 `json:"ibkr_stocks"`
 }
 
 const minValidBtcPrice = 100.0
@@ -75,7 +77,7 @@ func applyBtcEur(b *domain.Balance, livePrice float64) {
 
 	rBtcEur := btcToEur(b.RBTC, b.BtcPrice, livePrice)
 	mBtcEur := btcToEur(b.MBTC, b.BtcPrice, livePrice)
-	b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks
+	b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks + b.IBKRStocks
 	if b.RBTC > 0 {
 		b.RBtcEur = rBtcEur
 	}
@@ -111,28 +113,29 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 	}
 
 	b := &domain.Balance{
-		Date:      date,
-		Total:     input.Total,
-		Seb:       input.Seb,
-		Swed:      input.Swed,
-		SwedETF:   input.SwedETF,
-		SebPen:   input.SebPen,
-		Luminor:   input.Luminor,
-		Art:       input.Art,
-		Cash:      input.Cash,
-		RevM:      input.RevM,
-		RevR:      input.RevR,
-		RBTC:      input.RBTC,
-		MBTC:      input.MBTC,
-		BtcPrice:  input.BtcPrice,
-		RevStocks: input.RevStocks,
+		Date:       date,
+		Total:      input.Total,
+		Seb:        input.Seb,
+		Swed:       input.Swed,
+		SwedETF:    input.SwedETF,
+		SebPen:     input.SebPen,
+		Luminor:    input.Luminor,
+		Art:        input.Art,
+		Cash:       input.Cash,
+		RevM:       input.RevM,
+		RevR:       input.RevR,
+		RBTC:       input.RBTC,
+		MBTC:       input.MBTC,
+		BtcPrice:   input.BtcPrice,
+		RevStocks:  input.RevStocks,
+		IBKRStocks: input.IBKRStocks,
 	}
 
 	// Auto-calculate total if not provided
 	// BTC fields are stored in BTC units; multiply by btc_price to get EUR contribution
 	if b.Total == 0 {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
+		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks
 	}
 
 	if err := s.repo.Create(b); err != nil {
@@ -173,13 +176,14 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	b.MBTC = input.MBTC
 	b.BtcPrice = input.BtcPrice
 	b.RevStocks = input.RevStocks
+	b.IBKRStocks = input.IBKRStocks
 
 	// Recalculate total; BTC stored as BTC units × btc_price = EUR contribution
 	if input.Total != 0 {
 		b.Total = input.Total
 	} else {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks
+		b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks
 	}
 
 	if err := s.repo.Update(b); err != nil {
@@ -241,7 +245,8 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"Revolut R account":           latest.RevR,
 		"Revolut R account BTC":       rBtcEur,
 		"Revolut M account BTC":       mBtcEur,
-		"Revolut M account stocks":    latest.RevStocks,
+		"Revolut M account stocks": latest.RevStocks,
+		"IBKR stocks":              latest.IBKRStocks,
 	}
 
 	var allocations []domain.AccountAllocation

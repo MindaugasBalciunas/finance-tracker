@@ -10,6 +10,14 @@ const (
 	StockActionSell StockAction = "sell"
 )
 
+// StockSource represents which broker a trade was executed through
+type StockSource string
+
+const (
+	StockSourceRevolut StockSource = "Revolut"
+	StockSourceIBKR    StockSource = "IBKR"
+)
+
 // StockTrade represents a single stock buy or sell transaction
 type StockTrade struct {
 	ID            uint        `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -19,6 +27,7 @@ type StockTrade struct {
 	Shares        float64     `json:"shares" gorm:"not null"`
 	PricePerShare float64     `json:"-" gorm:"not null"`    // DB column; use PricePerShareMoney in responses
 	Currency      string      `json:"currency" gorm:"default:'USD'"` // currency of PricePerShare
+	Source        StockSource `json:"source" gorm:"not null;default:'Revolut'"`
 	Notes         string      `json:"notes"`
 	CreatedAt     time.Time   `json:"created_at"`
 	UpdatedAt     time.Time   `json:"updated_at"`

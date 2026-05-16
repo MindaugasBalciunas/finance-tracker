@@ -100,11 +100,16 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.Transactions++
 			continue
 		}
+		cat := domain.Category(row.Category)
+		if !domain.IsValidCategory(cat) {
+			result.Skipped.Transactions++
+			continue
+		}
 		tx := &domain.Transaction{
 			Date:     date,
 			Type:     domain.TransactionType(row.Type),
 			Amount:   row.Amount,
-			Category: domain.Category(row.Category),
+			Category: cat,
 			Comment:  row.Comment,
 		}
 		if row.ID > 0 {

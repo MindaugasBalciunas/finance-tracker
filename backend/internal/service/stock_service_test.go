@@ -24,6 +24,7 @@ func TestStockService_Create(t *testing.T) {
 			Shares:        10,
 			PricePerShare: 220.50,
 			Currency:      "USD",
+			Source:        domain.StockSourceRevolut,
 		}).Return(nil)
 
 		trade, err := svc.Create(service.CreateStockTradeInput{
@@ -32,6 +33,7 @@ func TestStockService_Create(t *testing.T) {
 			Ticker:        "AAPL",
 			Shares:        10,
 			PricePerShare: 220.50,
+			Source:        domain.StockSourceRevolut,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "AAPL", trade.Ticker)
@@ -53,6 +55,7 @@ func TestStockService_Create(t *testing.T) {
 			Shares:        5,
 			PricePerShare: 110.00,
 			Currency:      "EUR",
+			Source:        domain.StockSourceRevolut,
 		}).Return(nil)
 
 		trade, err := svc.Create(service.CreateStockTradeInput{
@@ -62,9 +65,65 @@ func TestStockService_Create(t *testing.T) {
 			Shares:        5,
 			PricePerShare: 110.00,
 			Currency:      "EUR",
+			Source:        domain.StockSourceRevolut,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, domain.CurrencyEUR, trade.PricePerShareMoney.Currency)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("source defaults to Revolut when empty", func(t *testing.T) {
+		repo := &mock.StockRepository{}
+		svc := service.NewStockService(repo)
+
+		repo.On("Create", &domain.StockTrade{
+			Date:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Action:        domain.StockActionBuy,
+			Ticker:        "AAPL",
+			Shares:        1,
+			PricePerShare: 100,
+			Currency:      "USD",
+			Source:        domain.StockSourceRevolut,
+		}).Return(nil)
+
+		trade, err := svc.Create(service.CreateStockTradeInput{
+			Date:          "2026-01-01",
+			Action:        domain.StockActionBuy,
+			Ticker:        "AAPL",
+			Shares:        1,
+			PricePerShare: 100,
+			// Source intentionally omitted → should default to Revolut
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StockSourceRevolut, trade.Source)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("source IBKR is stored when provided", func(t *testing.T) {
+		repo := &mock.StockRepository{}
+		svc := service.NewStockService(repo)
+
+		repo.On("Create", &domain.StockTrade{
+			Date:          time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			Action:        domain.StockActionBuy,
+			Ticker:        "VWCE",
+			Shares:        10,
+			PricePerShare: 115.50,
+			Currency:      "EUR",
+			Source:        domain.StockSourceIBKR,
+		}).Return(nil)
+
+		trade, err := svc.Create(service.CreateStockTradeInput{
+			Date:          "2026-04-01",
+			Action:        domain.StockActionBuy,
+			Ticker:        "VWCE",
+			Shares:        10,
+			PricePerShare: 115.50,
+			Currency:      "EUR",
+			Source:        domain.StockSourceIBKR,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StockSourceIBKR, trade.Source)
 		repo.AssertExpectations(t)
 	})
 
@@ -93,6 +152,7 @@ func TestStockService_Create(t *testing.T) {
 			Shares:        1,
 			PricePerShare: 100,
 			Currency:      "USD",
+			Source:        domain.StockSourceRevolut,
 		}).Return(errors.New("db error"))
 
 		_, err := svc.Create(service.CreateStockTradeInput{
@@ -101,6 +161,7 @@ func TestStockService_Create(t *testing.T) {
 			Ticker:        "AAPL",
 			Shares:        1,
 			PricePerShare: 100,
+			Source:        domain.StockSourceRevolut,
 		})
 		assert.ErrorContains(t, err, "db error")
 		repo.AssertExpectations(t)
@@ -153,6 +214,72 @@ func TestStockService_Delete(t *testing.T) {
 		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
 
 		assert.Error(t, svc.Delete(99))
+		repo.AssertExpectations(t)
+	})
+}
+
+func TestStockService_Update(t *testing.T) {
+	t.Run("source can be changed to IBKR", func(t *testing.T) {
+		repo := &mock.StockRepository{}
+		svc := service.NewStockService(repo)
+
+		existing := &domain.StockTrade{
+			ID:            1,
+			Date:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Action:        domain.StockActionBuy,
+			Ticker:        "AAPL",
+			Shares:        10,
+			PricePerShare: 200,
+			Currency:      "USD",
+			Source:        domain.StockSourceRevolut,
+		}
+		repo.On("GetByID", uint(1)).Return(existing, nil)
+
+		updated := *existing
+		updated.Source = domain.StockSourceIBKR
+		repo.On("Update", &updated).Return(nil)
+
+		trade, err := svc.Update(1, service.UpdateStockTradeInput{Source: domain.StockSourceIBKR})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StockSourceIBKR, trade.Source)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("source unchanged when not provided in update", func(t *testing.T) {
+		repo := &mock.StockRepository{}
+		svc := service.NewStockService(repo)
+
+		existing := &domain.StockTrade{
+			ID:            2,
+			Date:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Action:        domain.StockActionBuy,
+			Ticker:        "MSFT",
+			Shares:        5,
+			PricePerShare: 300,
+			Currency:      "USD",
+			Source:        domain.StockSourceIBKR,
+		}
+		repo.On("GetByID", uint(2)).Return(existing, nil)
+
+		// Update only shares — source should remain IBKR
+		updated := *existing
+		updated.Shares = 8
+		repo.On("Update", &updated).Return(nil)
+
+		trade, err := svc.Update(2, service.UpdateStockTradeInput{Shares: 8})
+		require.NoError(t, err)
+		assert.Equal(t, domain.StockSourceIBKR, trade.Source)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		repo := &mock.StockRepository{}
+		svc := service.NewStockService(repo)
+
+		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
+
+		_, err := svc.Update(99, service.UpdateStockTradeInput{Shares: 1})
+		assert.Error(t, err)
 		repo.AssertExpectations(t)
 	})
 }

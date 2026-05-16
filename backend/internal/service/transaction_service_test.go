@@ -51,14 +51,14 @@ func TestTransactionService_Create(t *testing.T) {
 			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 			Type:     domain.TransactionTypeIncome,
 			Amount:   3500.00,
-			Category: domain.CategoryIncome,
+			Category: domain.CategorySalary,
 		}).Return(nil)
 
 		tx, err := svc.Create(service.CreateTransactionInput{
 			Date:     "2026-02-01",
 			Type:     domain.TransactionTypeIncome,
 			Amount:   3500.00,
-			Category: domain.CategoryIncome,
+			Category: domain.CategorySalary,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, domain.TransactionTypeIncome, tx.Type)
@@ -74,14 +74,14 @@ func TestTransactionService_Create(t *testing.T) {
 			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 			Type:     domain.TransactionTypeInvestment,
 			Amount:   500.00,
-			Category: domain.CategoryInvestment,
+			Category: domain.CategoryStocksETF,
 		}).Return(nil)
 
 		tx, err := svc.Create(service.CreateTransactionInput{
 			Date:     "2026-02-01",
 			Type:     domain.TransactionTypeInvestment,
 			Amount:   500.00,
-			Category: domain.CategoryInvestment,
+			Category: domain.CategoryStocksETF,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, domain.TransactionTypeInvestment, tx.Type)

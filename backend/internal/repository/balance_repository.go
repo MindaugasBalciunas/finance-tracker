@@ -78,18 +78,19 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		Dates:  []string{},
 		Totals: []float64{},
 		Accounts: map[string][]float64{
-			"seb":       {},
-			"swed":      {},
-			"swed_etf":  {},
-			"seb_pen":  {},
-			"luminor":   {},
-			"art":       {},
-			"cash":      {},
-			"rev_m":     {},
-			"rev_r":     {},
-			"r_btc":     {},
-			"m_btc":     {},
+			"seb":        {},
+			"swed":       {},
+			"swed_etf":   {},
+			"seb_pen":    {},
+			"luminor":    {},
+			"art":        {},
+			"cash":       {},
+			"rev_m":      {},
+			"rev_r":      {},
+			"r_btc":      {},
+			"m_btc":      {},
 			"rev_stocks": {},
+			"ibkr_stocks": {},
 		},
 	}
 
@@ -108,6 +109,7 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		trend.Accounts["r_btc"] = append(trend.Accounts["r_btc"], b.RBTC)
 		trend.Accounts["m_btc"] = append(trend.Accounts["m_btc"], b.MBTC)
 		trend.Accounts["rev_stocks"] = append(trend.Accounts["rev_stocks"], b.RevStocks)
+		trend.Accounts["ibkr_stocks"] = append(trend.Accounts["ibkr_stocks"], b.IBKRStocks)
 	}
 
 	return trend, nil

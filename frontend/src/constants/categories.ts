@@ -1,19 +1,39 @@
-import type { Category } from '../types'
+import type { Category, TransactionType } from '../types'
 
+export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
+  expense: [
+    'Clothing',
+    'Dating',
+    'Divorce',
+    'Entertainment',
+    'Finance',
+    'Food',
+    'Gifts',
+    'Health',
+    'Housing',
+    'Kids - Education',
+    'Kids - Entertainment',
+    'Kids - Food',
+    'Kids - General',
+    'Transport',
+    'Vacation',
+  ],
+  income: [
+    'Salary',
+    'Freelance',
+    'Reimbursement',
+  ],
+  investment: [
+    'Stocks & ETF',
+    'Pension',
+    'Crypto',
+    'Real Estate',
+  ],
+}
+
+// Flat list for contexts that don't filter by type (e.g. filter dropdowns)
 export const CATEGORIES: Category[] = [
-  'Food',
-  'Kids',
-  'Kids(food)',
-  'Kids school',
-  'Kids (Entertainment)',
-  'Health',
-  'Finance',
-  'Investment',
-  'Entertainment',
-  'House expense',
-  'Credit',
-  'Car',
-  'Income',
-  'Clothes',
-  'Divorce',
+  ...CATEGORIES_BY_TYPE.expense,
+  ...CATEGORIES_BY_TYPE.income,
+  ...CATEGORIES_BY_TYPE.investment,
 ]

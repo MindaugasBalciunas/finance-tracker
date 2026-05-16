@@ -37,5 +37,10 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// Back-fill source = 'Revolut' for any stock trades that pre-date the source column
+	if err := db.Exec("UPDATE stock_trades SET source = 'Revolut' WHERE source = '' OR source IS NULL").Error; err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }

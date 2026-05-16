@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form'
-import type { CreateStockTradeInput, StockAction } from '../../types'
+import type { CreateStockTradeInput, StockAction, StockSource } from '../../types'
 
 interface Props {
   onSubmit: (data: CreateStockTradeInput) => void
@@ -10,7 +10,7 @@ interface Props {
 
 export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
   const { register, handleSubmit, formState: { errors } } = useForm<CreateStockTradeInput>({
-    defaultValues: { action: 'buy', currency: 'USD', ...defaultValues },
+    defaultValues: { action: 'buy', currency: 'USD', source: 'Revolut', ...defaultValues },
   })
 
   return (
@@ -52,6 +52,20 @@ export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defau
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Broker</label>
+          <select
+            {...register('source', { required: true })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {(['Revolut', 'IBKR'] as StockSource[]).map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
           <select
             {...register('currency')}
@@ -61,9 +75,6 @@ export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defau
             <option value="EUR">EUR</option>
           </select>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Shares</label>
           <input

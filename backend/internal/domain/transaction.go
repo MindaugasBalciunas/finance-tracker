@@ -8,22 +8,73 @@ import (
 type Category string
 
 const (
-	CategoryFood              Category = "Food"
-	CategoryKids              Category = "Kids"
-	CategoryKidsFood          Category = "Kids(food)"
-	CategoryHealth            Category = "Health"
-	CategoryFinance           Category = "Finance"
-	CategoryInvestment        Category = "Investment"
-	CategoryEntertainment     Category = "Entertainment"
-	CategoryHouseExpense      Category = "House expense"
-	CategoryCredit            Category = "Credit"
-	CategoryCar               Category = "Car"
-	CategoryIncome            Category = "Income"
-	CategoryClothes           Category = "Clothes"
-	CategoryKidsSchool        Category = "Kids school"
-	CategoryKidsEntertainment Category = "Kids (Entertainment)"
+	// Expense categories
+	CategoryClothing          Category = "Clothing"
+	CategoryDating            Category = "Dating"
 	CategoryDivorce           Category = "Divorce"
+	CategoryEntertainment     Category = "Entertainment"
+	CategoryFinance           Category = "Finance"
+	CategoryFood              Category = "Food"
+	CategoryGifts             Category = "Gifts"
+	CategoryHealth            Category = "Health"
+	CategoryHousing           Category = "Housing"
+	CategoryKidsEducation     Category = "Kids - Education"
+	CategoryKidsEntertainment Category = "Kids - Entertainment"
+	CategoryKidsFood          Category = "Kids - Food"
+	CategoryKidsGeneral       Category = "Kids - General"
+	CategoryTransport         Category = "Transport"
+	CategoryVacation          Category = "Vacation"
+
+	// Income categories
+	CategorySalary        Category = "Salary"
+	CategoryFreelance     Category = "Freelance"
+	CategoryReimbursement Category = "Reimbursement"
+
+	// Investment categories
+	CategoryStocksETF  Category = "Stocks & ETF"
+	CategoryPension    Category = "Pension"
+	CategoryCrypto     Category = "Crypto"
+	CategoryRealEstate Category = "Real Estate"
 )
+
+// ValidCategories is the authoritative list of allowed category values.
+var ValidCategories = []Category{
+	// Expense
+	CategoryClothing,
+	CategoryDating,
+	CategoryDivorce,
+	CategoryEntertainment,
+	CategoryFinance,
+	CategoryFood,
+	CategoryGifts,
+	CategoryHealth,
+	CategoryHousing,
+	CategoryKidsEducation,
+	CategoryKidsEntertainment,
+	CategoryKidsFood,
+	CategoryKidsGeneral,
+	CategoryTransport,
+	CategoryVacation,
+	// Income
+	CategorySalary,
+	CategoryFreelance,
+	CategoryReimbursement,
+	// Investment
+	CategoryStocksETF,
+	CategoryPension,
+	CategoryCrypto,
+	CategoryRealEstate,
+}
+
+// IsValidCategory returns true if the given category is in the allowed list.
+func IsValidCategory(c Category) bool {
+	for _, v := range ValidCategories {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
 
 // TransactionType represents the type of transaction
 type TransactionType string

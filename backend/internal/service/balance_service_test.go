@@ -46,7 +46,7 @@ func TestBalanceService_Create(t *testing.T) {
 			Seb:       1000,
 			Swed:      2000,
 			SwedETF:   500,
-			SebPen:   300,
+			SebPen:    300,
 			Luminor:   400,
 			Art:       200,
 			Cash:      800,
@@ -60,7 +60,7 @@ func TestBalanceService_Create(t *testing.T) {
 			Seb:       1000,
 			Swed:      2000,
 			SwedETF:   500,
-			SebPen:   300,
+			SebPen:    300,
 			Luminor:   400,
 			Art:       200,
 			Cash:      800,
@@ -73,6 +73,58 @@ func TestBalanceService_Create(t *testing.T) {
 		b, err := svc.Create(input)
 		require.NoError(t, err)
 		assert.Equal(t, float64(expectedTotal), b.Total)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("IBKRStocks included in auto total", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		// Cash=5000, RevStocks=1200, IBKRStocks=3000 → total = 9200
+		input := service.CreateBalanceInput{
+			Date:       "2026-03-01",
+			Cash:       5000,
+			RevStocks:  1200,
+			IBKRStocks: 3000,
+		}
+		repo.On("Create", &domain.Balance{
+			Date:       time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+			Cash:       5000,
+			RevStocks:  1200,
+			IBKRStocks: 3000,
+			Total:      9200,
+		}).Return(nil)
+
+		b, err := svc.Create(input)
+		require.NoError(t, err)
+		assert.Equal(t, 9200.0, b.Total)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("IBKRStocks and BTC both contribute to total", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		// Cash=5000, RBTC=0.01 at 80000 = 800, IBKRStocks=2000 → total = 7800
+		input := service.CreateBalanceInput{
+			Date:       "2026-03-01",
+			Cash:       5000,
+			RBTC:       0.01,
+			BtcPrice:   80000,
+			IBKRStocks: 2000,
+		}
+		repo.On("Create", &domain.Balance{
+			Date:       time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+			Cash:       5000,
+			RBTC:       0.01,
+			BtcPrice:   80000,
+			IBKRStocks: 2000,
+			Total:      7800,
+		}).Return(nil)
+
+		b, err := svc.Create(input)
+		require.NoError(t, err)
+		assert.Equal(t, 7800.0, b.Total)
 		repo.AssertExpectations(t)
 	})
 
@@ -193,6 +245,27 @@ func TestBalanceService_Update(t *testing.T) {
 		repo.AssertExpectations(t)
 	})
 
+	t.Run("IBKRStocks included in updated total", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		existing := &domain.Balance{ID: 4, Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+		repo.On("GetByID", uint(4)).Return(existing, nil)
+
+		// Cash=3000, RevStocks=1000, IBKRStocks=2500 → total = 6500
+		updated := *existing
+		updated.Cash = 3000
+		updated.RevStocks = 1000
+		updated.IBKRStocks = 2500
+		updated.Total = 6500
+		repo.On("Update", &updated).Return(nil)
+
+		b, err := svc.Update(4, service.UpdateBalanceInput{Cash: 3000, RevStocks: 1000, IBKRStocks: 2500})
+		require.NoError(t, err)
+		assert.Equal(t, 6500.0, b.Total)
+		repo.AssertExpectations(t)
+	})
+
 	t.Run("not found", func(t *testing.T) {
 		repo := &mock.BalanceRepository{}
 		svc := service.NewBalanceService(repo)
@@ -236,6 +309,28 @@ func TestBalanceService_GetLatest(t *testing.T) {
 		b, err := svc.GetLatest(80000)
 		require.NoError(t, err)
 		assert.Equal(t, 10800.0, b.Total)
+		assert.Equal(t, 800.0, b.RBtcEur)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("IBKRStocks included in live-price total recalculation", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		// Cash=10000, RBTC=0.01 at snapshot 70000, IBKRStocks=5000 → stored total=15700
+		// Live price 80000 → RBTC = 0.01*80000 = 800 → new total = 10000 + 800 + 5000 = 15800
+		stored := &domain.Balance{
+			Cash:       10000,
+			RBTC:       0.01,
+			BtcPrice:   70000,
+			IBKRStocks: 5000,
+			Total:      15700,
+		}
+		repo.On("GetLatest").Return(stored, nil)
+
+		b, err := svc.GetLatest(80000)
+		require.NoError(t, err)
+		assert.Equal(t, 15800.0, b.Total)
 		assert.Equal(t, 800.0, b.RBtcEur)
 		repo.AssertExpectations(t)
 	})
@@ -345,6 +440,45 @@ func TestBalanceService_GetAllocation(t *testing.T) {
 		svc := service.NewBalanceService(repo)
 
 		repo.On("GetLatest").Return(&domain.Balance{Total: 1000, Cash: 1000}, nil)
+
+		allocations, err := svc.GetAllocation()
+		require.NoError(t, err)
+		assert.Len(t, allocations, 1)
+		assert.Equal(t, "Cash", allocations[0].Account)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("IBKRStocks appears in allocation with correct percentage", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		// Total=10000: Cash=6000 (60%), IBKRStocks=4000 (40%)
+		repo.On("GetLatest").Return(&domain.Balance{
+			Total:      10000,
+			Cash:       6000,
+			IBKRStocks: 4000,
+		}, nil)
+
+		allocations, err := svc.GetAllocation()
+		require.NoError(t, err)
+		assert.Len(t, allocations, 2)
+
+		alloc := map[string]domain.AccountAllocation{}
+		for _, a := range allocations {
+			alloc[a.Account] = a
+		}
+		require.Contains(t, alloc, "IBKR stocks")
+		assert.Equal(t, 4000.0, alloc["IBKR stocks"].Amount)
+		assert.InDelta(t, 40.0, alloc["IBKR stocks"].Percentage, 0.01)
+		assert.InDelta(t, 60.0, alloc["Cash"].Percentage, 0.01)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("IBKRStocks zero is excluded from allocation", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := service.NewBalanceService(repo)
+
+		repo.On("GetLatest").Return(&domain.Balance{Total: 1000, Cash: 1000, IBKRStocks: 0}, nil)
 
 		allocations, err := svc.GetAllocation()
 		require.NoError(t, err)
