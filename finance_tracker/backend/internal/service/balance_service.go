@@ -92,6 +92,7 @@ type BalanceService interface {
 	GetByID(id uint) (*domain.Balance, error)
 	Update(id uint, input UpdateBalanceInput) (*domain.Balance, error)
 	Delete(id uint) error
+	DeleteAll() error
 	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
@@ -190,6 +191,10 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 		return nil, err
 	}
 	return b, nil
+}
+
+func (s *balanceService) DeleteAll() error {
+	return s.repo.DeleteAll()
 }
 
 func (s *balanceService) Delete(id uint) error {

@@ -11,6 +11,7 @@ type BalanceRepository interface {
 	GetByID(id uint) (*domain.Balance, error)
 	Update(b *domain.Balance) error
 	Delete(id uint) error
+	DeleteAll() error
 	List(filter domain.BalanceFilter) ([]domain.Balance, error)
 	GetLatest() (*domain.Balance, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
@@ -42,6 +43,10 @@ func (r *balanceRepository) Update(b *domain.Balance) error {
 
 func (r *balanceRepository) Delete(id uint) error {
 	return r.db.Delete(&domain.Balance{}, id).Error
+}
+
+func (r *balanceRepository) DeleteAll() error {
+	return r.db.Where("1 = 1").Delete(&domain.Balance{}).Error
 }
 
 func (r *balanceRepository) List(filter domain.BalanceFilter) ([]domain.Balance, error) {

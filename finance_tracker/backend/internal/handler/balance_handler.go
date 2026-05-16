@@ -32,6 +32,7 @@ func (h *BalanceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("/allocation", h.GetAllocation)
 	g.GET("/:id", h.GetByID)
 	g.PUT("/:id", h.Update)
+	g.DELETE("", h.DeleteAll)
 	g.DELETE("/:id", h.Delete)
 }
 
@@ -121,6 +122,14 @@ func (h *BalanceHandler) Update(c *gin.Context) {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /balances/{id} [delete]
+func (h *BalanceHandler) DeleteAll(c *gin.Context) {
+	if err := h.svc.DeleteAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *BalanceHandler) Delete(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {

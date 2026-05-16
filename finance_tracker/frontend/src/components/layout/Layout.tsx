@@ -304,10 +304,13 @@ function DesktopDeleteAllButton() {
   }, [])
 
   const handle = async () => {
-    if (!confirm('Delete ALL transactions? This cannot be undone.')) return
+    if (!confirm('Delete ALL transactions and balances? This cannot be undone.')) return
     setDeleting(true)
     try {
-      await fetch('/api/v1/transactions', { method: 'DELETE' })
+      await Promise.all([
+        fetch('/api/v1/transactions', { method: 'DELETE' }),
+        fetch('/api/v1/balances', { method: 'DELETE' }),
+      ])
       setOpen(false)
     } finally {
       setDeleting(false)
@@ -322,8 +325,8 @@ function DesktopDeleteAllButton() {
       </button>
       {open && (
         <div className="absolute right-0 mt-1 w-56 bg-white border border-red-200 rounded-lg shadow-lg z-50 p-3">
-          <p className="text-xs text-gray-700 font-semibold mb-1">Delete all transactions?</p>
-          <p className="text-xs text-gray-400 mb-3">This permanently removes every transaction record.</p>
+          <p className="text-xs text-gray-700 font-semibold mb-1">Delete all data?</p>
+          <p className="text-xs text-gray-400 mb-3">Permanently removes all transactions and balance snapshots.</p>
           <div className="flex gap-2">
             <button onClick={handle} disabled={deleting}
               className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
@@ -345,13 +348,16 @@ function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
   const [error, setError] = useState<string | null>(null)
 
   const handle = async () => {
-    if (!confirm('Delete ALL transactions? This cannot be undone.')) return
-    if (!confirm('Are you sure? Every transaction record will be permanently deleted.')) return
+    if (!confirm('Delete ALL transactions and balances? This cannot be undone.')) return
+    if (!confirm('Are you sure? Every transaction and balance record will be permanently deleted.')) return
     setDeleting(true)
     setError(null)
     try {
-      const res = await fetch('/api/v1/transactions', { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const [r1, r2] = await Promise.all([
+        fetch('/api/v1/transactions', { method: 'DELETE' }),
+        fetch('/api/v1/balances', { method: 'DELETE' }),
+      ])
+      if (!r1.ok || !r2.ok) throw new Error(`HTTP ${r1.status}/${r2.status}`)
       onDone?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed')
