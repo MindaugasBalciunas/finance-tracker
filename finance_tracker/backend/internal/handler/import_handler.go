@@ -73,8 +73,11 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	result := importResult{}
 
 	// --- Transactions ---
-	// Build content-fingerprint set from existing transactions to catch
-	// duplicates even when IDs differ (e.g. importing into a different DB).
+	// Primary dedup: by original ID (handles re-importing the same export file).
+	// Fingerprint dedup: only for rows without an ID, to catch content-identical
+	// duplicates from manual/ID-less imports. Never applied to rows with IDs —
+	// legitimate transactions can share the same date/amount/category/comment
+	// (e.g. three rounds at the same bar on the same night).
 	existingTxs, _ := h.txRepo.ListAll()
 	contentSeen := make(map[string]bool, len(existingTxs))
 	for _, t := range existingTxs {
@@ -87,18 +90,20 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.Transactions++
 			continue
 		}
-		// Skip by original ID
 		if row.ID > 0 {
+			// ID-based dedup: skip if this exact record is already present.
 			if _, err := h.txRepo.GetByID(row.ID); err == nil {
 				result.Skipped.Transactions++
 				continue
 			}
-		}
-		// Skip by content fingerprint (catches duplicates when IDs don't match)
-		key := fmt.Sprintf("%s|%s|%.2f|%s|%s", date.Format("2006-01-02"), row.Type, row.Amount, row.Category, row.Comment)
-		if contentSeen[key] {
-			result.Skipped.Transactions++
-			continue
+		} else {
+			// No ID: fall back to content fingerprint to avoid true duplicates.
+			key := fmt.Sprintf("%s|%s|%.2f|%s|%s", date.Format("2006-01-02"), row.Type, row.Amount, row.Category, row.Comment)
+			if contentSeen[key] {
+				result.Skipped.Transactions++
+				continue
+			}
+			contentSeen[key] = true
 		}
 		cat := domain.Category(row.Category)
 		tx := &domain.Transaction{
@@ -115,7 +120,6 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.Transactions++
 			continue
 		}
-		contentSeen[key] = true
 		result.ImportedTxIDs = append(result.ImportedTxIDs, tx.ID)
 		result.Imported.Transactions++
 	}
@@ -158,11 +162,13 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		result.Imported.Balances++
 	}
 
-	// --- Stock trades — deduplicate by date+ticker+action ---
+	// --- Stock trades — deduplicate by date+ticker+action+shares ---
+	// Shares are included because the same ticker can be bought/sold multiple
+	// times on the same day in separate transactions at different quantities.
 	existingStocks, _ := h.stockRepo.ListAll()
 	seen := make(map[string]bool, len(existingStocks))
 	for _, s := range existingStocks {
-		seen[s.Date.Format("2006-01-02")+"|"+s.Ticker+"|"+string(s.Action)] = true
+		seen[fmt.Sprintf("%s|%s|%s|%.4f", s.Date.Format("2006-01-02"), s.Ticker, string(s.Action), s.Shares)] = true
 	}
 
 	for _, row := range payload.StockTrades {
@@ -171,7 +177,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.StockTrades++
 			continue
 		}
-		key := date.Format("2006-01-02") + "|" + row.Ticker + "|" + row.Action
+		key := fmt.Sprintf("%s|%s|%s|%.4f", date.Format("2006-01-02"), row.Ticker, row.Action, row.Shares)
 		if seen[key] {
 			result.Skipped.StockTrades++
 			continue
