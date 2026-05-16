@@ -223,7 +223,7 @@ func (s *stockService) GetPortfolio() (*domain.StockPortfolio, error) {
 		}
 	}
 
-	portfolio := &domain.StockPortfolio{}
+	portfolio := &domain.StockPortfolio{Holdings: []domain.StockHolding{}}
 	totalCost := 0.0
 	totalGain := 0.0
 

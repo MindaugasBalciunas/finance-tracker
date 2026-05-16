@@ -251,8 +251,8 @@ export default function Stocks() {
 
   if (tradesLoading || portfolioLoading) return <LoadingSpinner message="Loading stocks & ETFs…" />
 
-  const activeHoldings = portfolio?.holdings.filter((h) => h.shares > 0.0001) ?? []
-  const closedHoldings = portfolio?.holdings.filter((h) => h.shares <= 0.0001 && h.realized_gain.value !== 0) ?? []
+  const activeHoldings = (portfolio?.holdings ?? []).filter((h) => h.shares > 0.0001)
+  const closedHoldings = (portfolio?.holdings ?? []).filter((h) => h.shares <= 0.0001 && h.realized_gain.value !== 0)
   const allHoldings = portfolio?.holdings ?? []
 
   function toEur(amount: number, currency: string): number | null {
