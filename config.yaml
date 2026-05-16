@@ -3,6 +3,7 @@ description: "Personal finance dashboard — transactions, balances, investments
 version: "1.0.15"
 slug: "finance_tracker"
 init: false
+image: "ghcr.io/mindaugasbalciunas/finance-tracker"
 
 arch:
   - aarch64
