@@ -23,7 +23,7 @@ jobs:
       - name: Read version from config.yaml
         id: version
         run: |
-          VERSION=$(grep '^version:' config.yaml | sed 's/version: *"\(.*\)"/\1/')
+          VERSION=$(grep '^version:' finance_tracker/config.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (for arm64 cross-build)
@@ -44,8 +44,8 @@ jobs:
       - name: Build and push aarch64 image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile
+          context: ./finance_tracker
+          file: ./finance_tracker/Dockerfile
           platforms: linux/arm64
           push: true
           tags: |
