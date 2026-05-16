@@ -85,7 +85,7 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 	w := csv.NewWriter(c.Writer)
 	_ = w.Write([]string{
 		"id", "date", "total", "seb", "swed", "swed_etf", "seb_pen",
-		"luminor", "art", "cash", "rev_m", "rev_r", "rbtc", "mbtc", "btc_price", "rev_stocks",
+		"luminor", "art", "cash", "rev_m", "rev_r", "rbtc", "mbtc", "btc_price", "rev_stocks", "ibkr_stocks",
 	})
 	for _, b := range balances {
 		_ = w.Write([]string{
@@ -105,6 +105,7 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 			fmt.Sprintf("%.8f", b.MBTC),
 			fmt.Sprintf("%.2f", b.BtcPrice),
 			fmt.Sprintf("%.2f", b.RevStocks),
+			fmt.Sprintf("%.2f", b.IBKRStocks),
 		})
 	}
 	w.Flush()
@@ -128,21 +129,22 @@ type txExportRow struct {
 }
 
 type balExportRow struct {
-	Date      string  `json:"date"`
-	Total     float64 `json:"total_eur"`
-	Seb       float64 `json:"seb,omitempty"`
-	Swed      float64 `json:"swed,omitempty"`
-	SwedETF   float64 `json:"swed_etf,omitempty"`
-	SebPen   float64 `json:"seb_pension,omitempty"`
-	Luminor   float64 `json:"luminor,omitempty"`
-	Art       float64 `json:"art,omitempty"`
-	Cash      float64 `json:"cash,omitempty"`
-	RevM      float64 `json:"revolut_m,omitempty"`
-	RevR      float64 `json:"revolut_r,omitempty"`
-	RBTC      float64 `json:"btc_r,omitempty"`
-	MBTC      float64 `json:"btc_m,omitempty"`
-	BtcPrice  float64 `json:"btc_price_eur,omitempty"`
-	RevStocks float64 `json:"revolut_stocks,omitempty"`
+	Date        string  `json:"date"`
+	Total       float64 `json:"total_eur"`
+	Seb         float64 `json:"seb,omitempty"`
+	Swed        float64 `json:"swed,omitempty"`
+	SwedETF     float64 `json:"swed_etf,omitempty"`
+	SebPen      float64 `json:"seb_pension,omitempty"`
+	Luminor     float64 `json:"luminor,omitempty"`
+	Art         float64 `json:"art,omitempty"`
+	Cash        float64 `json:"cash,omitempty"`
+	RevM        float64 `json:"revolut_m,omitempty"`
+	RevR        float64 `json:"revolut_r,omitempty"`
+	RBTC        float64 `json:"btc_r,omitempty"`
+	MBTC        float64 `json:"btc_m,omitempty"`
+	BtcPrice    float64 `json:"btc_price_eur,omitempty"`
+	RevStocks   float64 `json:"revolut_stocks,omitempty"`
+	IBKRStocks  float64 `json:"ibkr_stocks,omitempty"`
 }
 
 type stockExportRow struct {
@@ -152,6 +154,7 @@ type stockExportRow struct {
 	Shares        float64 `json:"shares"`
 	PricePerShare float64 `json:"price_per_share"`
 	Currency      string  `json:"currency"`
+	Source        string  `json:"source,omitempty"`
 	Notes         string  `json:"notes,omitempty"`
 }
 
@@ -205,21 +208,22 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	balRows := make([]balExportRow, len(balances))
 	for i, b := range balances {
 		balRows[i] = balExportRow{
-			Date:      b.Date.Format("2006-01-02"),
-			Total:     b.Total,
-			Seb:       b.Seb,
-			Swed:      b.Swed,
-			SwedETF:   b.SwedETF,
-			SebPen:   b.SebPen,
-			Luminor:   b.Luminor,
-			Art:       b.Art,
-			Cash:      b.Cash,
-			RevM:      b.RevM,
-			RevR:      b.RevR,
-			RBTC:      b.RBTC,
-			MBTC:      b.MBTC,
-			BtcPrice:  b.BtcPrice,
-			RevStocks: b.RevStocks,
+			Date:       b.Date.Format("2006-01-02"),
+			Total:      b.Total,
+			Seb:        b.Seb,
+			Swed:       b.Swed,
+			SwedETF:    b.SwedETF,
+			SebPen:     b.SebPen,
+			Luminor:    b.Luminor,
+			Art:        b.Art,
+			Cash:       b.Cash,
+			RevM:       b.RevM,
+			RevR:       b.RevR,
+			RBTC:       b.RBTC,
+			MBTC:       b.MBTC,
+			BtcPrice:   b.BtcPrice,
+			RevStocks:  b.RevStocks,
+			IBKRStocks: b.IBKRStocks,
 		}
 	}
 
@@ -232,6 +236,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 			Shares:        s.Shares,
 			PricePerShare: s.PricePerShare,
 			Currency:      s.Currency,
+			Source:        string(s.Source),
 			Notes:         s.Notes,
 		}
 	}
@@ -298,21 +303,22 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 	balRows := make([]balExportRow, len(balances))
 	for i, b := range balances {
 		balRows[i] = balExportRow{
-			Date:      b.Date.Format("2006-01-02"),
-			Total:     b.Total,
-			Seb:       b.Seb,
-			Swed:      b.Swed,
-			SwedETF:   b.SwedETF,
-			SebPen:   b.SebPen,
-			Luminor:   b.Luminor,
-			Art:       b.Art,
-			Cash:      b.Cash,
-			RevM:      b.RevM,
-			RevR:      b.RevR,
-			RBTC:      b.RBTC,
-			MBTC:      b.MBTC,
-			BtcPrice:  b.BtcPrice,
-			RevStocks: b.RevStocks,
+			Date:       b.Date.Format("2006-01-02"),
+			Total:      b.Total,
+			Seb:        b.Seb,
+			Swed:       b.Swed,
+			SwedETF:    b.SwedETF,
+			SebPen:     b.SebPen,
+			Luminor:    b.Luminor,
+			Art:        b.Art,
+			Cash:       b.Cash,
+			RevM:       b.RevM,
+			RevR:       b.RevR,
+			RBTC:       b.RBTC,
+			MBTC:       b.MBTC,
+			BtcPrice:   b.BtcPrice,
+			RevStocks:  b.RevStocks,
+			IBKRStocks: b.IBKRStocks,
 		}
 	}
 
@@ -325,6 +331,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 			Shares:        s.Shares,
 			PricePerShare: s.PricePerShare,
 			Currency:      s.Currency,
+			Source:        string(s.Source),
 			Notes:         s.Notes,
 		}
 	}
