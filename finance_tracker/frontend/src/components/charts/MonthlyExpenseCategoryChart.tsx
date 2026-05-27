@@ -7,6 +7,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Customized,
 } from 'recharts'
 import type { Transaction, MonthlySummary } from '../../types'
 import { formatEuro } from '../../utils/format'
@@ -22,23 +23,35 @@ function fmt(v: number) {
   return `€${v.toFixed(0)}`
 }
 
-function CustomTick({ x, y, payload, totalsMap, avg }: any) {
-  const data: MonthlySummary | undefined = totalsMap?.[payload?.value]
-  const aboveAvg = data && avg != null && data.expenses > avg
-  const belowAvg = data && avg != null && data.expenses < avg
-  const expColor = aboveAvg ? '#dc2626' : belowAvg ? '#16a34a' : '#374151'
+function TopLabels({ xAxisMap, totalsMap, avg, hasInvestments }: any) {
+  const xAxis = xAxisMap?.[0]
+  if (!xAxis?.scale) return null
+  const { scale } = xAxis
+  const bw: number = scale.bandwidth ? scale.bandwidth() : 0
+
   return (
-    <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={12} textAnchor="middle" fill="#6b7280" fontSize={10}>{payload?.value}</text>
-      {data && (
-        <>
-          <text x={0} y={0} dy={25} textAnchor="middle" fill="#15803d" fontSize={9}>{fmt(data.income)}</text>
-          <text x={0} y={0} dy={36} textAnchor="middle" fill={expColor} fontSize={9}>{fmt(data.expenses)}</text>
-          {data.investments > 0 && (
-            <text x={0} y={0} dy={47} textAnchor="middle" fill="#1d4ed8" fontSize={9}>{fmt(data.investments)}</text>
-          )}
-        </>
-      )}
+    <g>
+      {Object.keys(totalsMap).map((label) => {
+        const x: number | undefined = scale(label)
+        if (x == null) return null
+        const cx = x + bw / 2
+        const data: MonthlySummary = totalsMap[label]
+        const aboveAvg = avg != null && data.expenses > avg
+        const belowAvg = avg != null && data.expenses < avg
+        const expColor = aboveAvg ? '#dc2626' : belowAvg ? '#16a34a' : '#374151'
+        const lineH = 17
+        return (
+          <g key={label}>
+            <text x={cx} y={lineH}     textAnchor="middle" fill="#15803d" fontSize={12} fontWeight={600}>{fmt(data.income)}</text>
+            <text x={cx} y={lineH * 2} textAnchor="middle" fill={expColor}  fontSize={12} fontWeight={600}>{fmt(data.expenses)}</text>
+            {hasInvestments && (
+              <text x={cx} y={lineH * 3} textAnchor="middle" fill="#1d4ed8" fontSize={12} fontWeight={600}>
+                {data.investments > 0 ? fmt(data.investments) : ''}
+              </text>
+            )}
+          </g>
+        )
+      })}
     </g>
   )
 }
@@ -49,7 +62,6 @@ const COLORS = [
 ]
 
 function buildChartData(transactions: Transaction[], topN: number) {
-  // Group by month key
   const monthMap: Record<string, Record<string, number>> = {}
 
   for (const tx of transactions) {
@@ -60,7 +72,6 @@ function buildChartData(transactions: Transaction[], topN: number) {
     monthMap[key][cat] = (monthMap[key][cat] ?? 0) + tx.amount.value
   }
 
-  // Find top N categories by all-time total
   const catTotals: Record<string, number> = {}
   for (const cats of Object.values(monthMap)) {
     for (const [cat, amt] of Object.entries(cats)) {
@@ -100,7 +111,6 @@ function buildChartData(transactions: Transaction[], topN: number) {
 export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, monthTotals }: Props) {
   const { rows, categories } = buildChartData(transactions, topN)
 
-  // Build label -> MonthlySummary map using the same label format as buildChartData
   const totalsMap: Record<string, MonthlySummary> = {}
   for (const m of monthTotals ?? []) {
     const d = new Date(m.year, m.month - 1)
@@ -110,9 +120,8 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
   const avg = monthTotals && monthTotals.length > 0
     ? monthTotals.reduce((s, m) => s + m.expenses, 0) / monthTotals.length
     : null
-
   const hasInvestments = (monthTotals ?? []).some((m) => m.investments > 0)
-  const tickHeight = monthTotals ? (hasInvestments ? 62 : 50) : 28
+  const topMargin = monthTotals ? (hasInvestments ? 58 : 42) : 8
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
@@ -137,18 +146,10 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
   if (rows.length === 0) return null
 
   return (
-    <ResponsiveContainer width="100%" height={320 + (tickHeight - 28)}>
-      <BarChart data={rows} margin={{ top: 5, right: 20, left: 0, bottom: tickHeight - 20 }}>
+    <ResponsiveContainer width="100%" height={320 + topMargin - 8}>
+      <BarChart data={rows} margin={{ top: topMargin, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis
-          dataKey="name"
-          interval={0}
-          height={tickHeight}
-          tick={monthTotals
-            ? <CustomTick totalsMap={totalsMap} avg={avg} />
-            : { fontSize: 11 } as any
-          }
-        />
+        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
         <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -161,6 +162,13 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
             radius={i === categories.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
           />
         ))}
+        {monthTotals && (
+          <Customized
+            component={(props: any) => (
+              <TopLabels {...props} totalsMap={totalsMap} avg={avg} hasInvestments={hasInvestments} />
+            )}
+          />
+        )}
       </BarChart>
     </ResponsiveContainer>
   )
