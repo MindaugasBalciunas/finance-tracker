@@ -74,8 +74,8 @@ export default function Dashboard() {
           />
           <StatCard
             title="Investments"
-            value={formatEuro(latestBalance.swed_etf + latestBalance.rev_stocks)}
-            subtitle="ETF + Revolut Stocks"
+            value={formatEuro(latestBalance.swed_etf + latestBalance.rev_stocks + latestBalance.ibkr_stocks)}
+            subtitle="ETF + Revolut + IBKR"
             color="blue"
           />
           <StatCard
