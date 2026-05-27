@@ -10,7 +10,6 @@ import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChar
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
-import AIInsightCard from '../components/ui/AIInsightCard'
 import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
 
@@ -18,19 +17,16 @@ export default function Dashboard() {
   const { dateRange } = useDateRange()
 
   const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
-  const { data: allTimeSummary } = useTransactionSummary({})
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance()
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(dateRange)
   const { data: allocations, isLoading: allocLoading } = useAccountAllocation()
   const { data: allExpenses } = useAllExpenses(dateRange)
   const { price: liveBtcPrice } = useBtcEur()
-  // Fall back to the BTC price stored in the latest balance snapshot when live price is unavailable
   const storedBtcPrice = latestBalance?.btc_price ?? 0
   const btcPrice: number | null = liveBtcPrice ?? (storedBtcPrice > 0 ? storedBtcPrice : null)
 
   const isLoading = summaryLoading || balanceLoading || trendLoading || allocLoading
 
-  // Computed insights
   const savingsRate = summary && summary.total_income > 0
     ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
     : null
@@ -55,7 +51,7 @@ export default function Dashboard() {
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
-  const calMonths = allTimeSummary?.by_month ?? []
+  const calMonths = summary?.by_month ?? []
   const calAvg = calMonths.length > 0
     ? calMonths.reduce((s, m) => s + m.expenses, 0) / calMonths.length
     : null
@@ -64,57 +60,53 @@ export default function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-8">
 
-      {/* Monthly calendar grid — always all-time */}
+      {/* Monthly calendar grid */}
       {calMonths.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-baseline justify-between mb-3">
             <h3 className="text-base font-semibold text-gray-900">Monthly Overview</h3>
             <span className="text-xs text-gray-400">
               avg spend {calAvg != null ? formatEuro(calAvg) : '—'}/mo
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
             {calMonths.map((m) => {
               const aboveAvg = calAvg != null && m.expenses > calAvg
               const belowAvg = calAvg != null && m.expenses < calAvg
               const diffPct = calAvg != null && calAvg > 0
                 ? ((m.expenses - calAvg) / calAvg) * 100
                 : null
-              const accentColor = aboveAvg ? 'bg-red-500' : belowAvg ? 'bg-green-500' : 'bg-gray-300'
+              const accentColor = aboveAvg ? 'bg-red-400' : belowAvg ? 'bg-green-400' : 'bg-gray-200'
               const borderColor = aboveAvg ? 'border-red-100' : belowAvg ? 'border-green-100' : 'border-gray-200'
-              const expenseColor = aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
+              const expenseColor = aboveAvg ? 'text-red-600' : belowAvg ? 'text-green-600' : 'text-gray-700'
               const diffColor = aboveAvg ? 'text-red-400' : 'text-green-500'
               return (
-                <div key={`${m.year}-${m.month}`} className={`rounded-xl border ${borderColor} overflow-hidden`}>
-                  <div className={`${accentColor} h-1`} />
-                  <div className="px-4 py-3 space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                <div key={`${m.year}-${m.month}`} className={`rounded-lg border ${borderColor} overflow-hidden`}>
+                  <div className={`${accentColor} h-0.5`} />
+                  <div className="px-2.5 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">
                       {m.month_name.slice(0, 3)}{calMultiYear ? ` ${m.year}` : ''}
                     </p>
-                    <div>
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Expenses</p>
-                      <p className={`text-lg font-bold leading-tight ${expenseColor}`}>
-                        {formatEuro(m.expenses)}
-                      </p>
-                      {diffPct != null && (
-                        <p className={`text-xs font-medium ${diffColor}`}>
-                          {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
-                        </p>
+                    <div className="space-y-0.5">
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="text-[10px] text-gray-400 shrink-0">Inc</span>
+                        <span className="text-xs font-semibold text-green-700 tabular-nums">{formatEuro(m.income)}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="text-[10px] text-gray-400 shrink-0">Exp</span>
+                        <span className={`text-xs font-semibold tabular-nums ${expenseColor}`}>{formatEuro(m.expenses)}</span>
+                      </div>
+                      {m.investments > 0 && (
+                        <div className="flex items-baseline justify-between gap-1">
+                          <span className="text-[10px] text-gray-400 shrink-0">Inv</span>
+                          <span className="text-xs font-semibold text-blue-700 tabular-nums">{formatEuro(m.investments)}</span>
+                        </div>
                       )}
                     </div>
-                    <div>
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Income</p>
-                      <p className="text-lg font-bold leading-tight text-green-700">
-                        {formatEuro(m.income)}
+                    {diffPct != null && (
+                      <p className={`text-[10px] font-medium mt-1 ${diffColor}`}>
+                        {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}%
                       </p>
-                    </div>
-                    {m.investments > 0 && (
-                      <div>
-                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Invested</p>
-                        <p className="text-lg font-bold leading-tight text-blue-700">
-                          {formatEuro(m.investments)}
-                        </p>
-                      </div>
                     )}
                   </div>
                 </div>
@@ -220,9 +212,6 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
-      {/* AI Financial Overview */}
-      <AIInsightCard />
 
       {/* Net Worth Over Time */}
       {trend && (
