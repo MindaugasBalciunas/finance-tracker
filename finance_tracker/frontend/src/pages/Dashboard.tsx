@@ -64,13 +64,13 @@ export default function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-8">
 
-      {/* Monthly expenses — calendar grid at top, always all-time */}
+      {/* Monthly calendar grid — always all-time */}
       {calMonths.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <div className="flex items-baseline justify-between mb-4">
-            <h3 className="text-base font-semibold text-gray-900">Monthly Expenses</h3>
+            <h3 className="text-base font-semibold text-gray-900">Monthly Overview</h3>
             <span className="text-xs text-gray-400">
-              avg {calAvg != null ? formatEuro(calAvg) : '—'}/mo
+              avg spend {calAvg != null ? formatEuro(calAvg) : '—'}/mo
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -82,22 +82,39 @@ export default function Dashboard() {
                 : null
               const accentColor = aboveAvg ? 'bg-red-500' : belowAvg ? 'bg-green-500' : 'bg-gray-300'
               const borderColor = aboveAvg ? 'border-red-100' : belowAvg ? 'border-green-100' : 'border-gray-200'
-              const amountColor = aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
+              const expenseColor = aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
               const diffColor = aboveAvg ? 'text-red-400' : 'text-green-500'
               return (
                 <div key={`${m.year}-${m.month}`} className={`rounded-xl border ${borderColor} overflow-hidden`}>
                   <div className={`${accentColor} h-1`} />
-                  <div className="px-4 py-3">
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+                  <div className="px-4 py-3 space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
                       {m.month_name.slice(0, 3)}{calMultiYear ? ` ${m.year}` : ''}
                     </p>
-                    <p className={`text-xl font-bold leading-none ${amountColor}`}>
-                      {formatEuro(m.expenses)}
-                    </p>
-                    {diffPct != null && (
-                      <p className={`text-xs mt-1.5 font-medium ${diffColor}`}>
-                        {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
+                    <div>
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Expenses</p>
+                      <p className={`text-lg font-bold leading-tight ${expenseColor}`}>
+                        {formatEuro(m.expenses)}
                       </p>
+                      {diffPct != null && (
+                        <p className={`text-xs font-medium ${diffColor}`}>
+                          {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Income</p>
+                      <p className="text-lg font-bold leading-tight text-green-700">
+                        {formatEuro(m.income)}
+                      </p>
+                    </div>
+                    {m.investments > 0 && (
+                      <div>
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Invested</p>
+                        <p className="text-lg font-bold leading-tight text-blue-700">
+                          {formatEuro(m.investments)}
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
