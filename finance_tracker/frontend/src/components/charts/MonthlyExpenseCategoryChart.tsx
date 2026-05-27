@@ -39,14 +39,21 @@ function TopLabels({ xAxisMap, totalsMap, avg, hasInvestments }: any) {
         const aboveAvg = avg != null && data.expenses > avg
         const belowAvg = avg != null && data.expenses < avg
         const expColor = aboveAvg ? '#dc2626' : belowAvg ? '#16a34a' : '#374151'
-        const lineH = 17
+        const lineH = 20
         return (
           <g key={label}>
-            <text x={cx} y={lineH}     textAnchor="middle" fill="#15803d" fontSize={12} fontWeight={600}>{fmt(data.income)}</text>
-            <text x={cx} y={lineH * 2} textAnchor="middle" fill={expColor}  fontSize={12} fontWeight={600}>{fmt(data.expenses)}</text>
+            <text x={cx} y={lineH} textAnchor="middle">
+              <tspan fill="#9ca3af" fontSize={10}>Inc </tspan>
+              <tspan fill="#15803d" fontSize={14} fontWeight={700}>{fmt(data.income)}</tspan>
+            </text>
+            <text x={cx} y={lineH * 2} textAnchor="middle">
+              <tspan fill="#9ca3af" fontSize={10}>Exp </tspan>
+              <tspan fill={expColor} fontSize={14} fontWeight={700}>{fmt(data.expenses)}</tspan>
+            </text>
             {hasInvestments && (
-              <text x={cx} y={lineH * 3} textAnchor="middle" fill="#1d4ed8" fontSize={12} fontWeight={600}>
-                {data.investments > 0 ? fmt(data.investments) : ''}
+              <text x={cx} y={lineH * 3} textAnchor="middle">
+                <tspan fill="#9ca3af" fontSize={10}>Inv </tspan>
+                <tspan fill="#1d4ed8" fontSize={14} fontWeight={700}>{data.investments > 0 ? fmt(data.investments) : '—'}</tspan>
               </text>
             )}
           </g>
@@ -121,7 +128,7 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
     ? monthTotals.reduce((s, m) => s + m.expenses, 0) / monthTotals.length
     : null
   const hasInvestments = (monthTotals ?? []).some((m) => m.investments > 0)
-  const topMargin = monthTotals ? (hasInvestments ? 58 : 42) : 8
+  const topMargin = monthTotals ? (hasInvestments ? 68 : 48) : 8
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
