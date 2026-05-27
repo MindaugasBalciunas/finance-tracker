@@ -203,6 +203,49 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Monthly expenses — big numbers grid */}
+      {summary?.by_month && summary.by_month.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Expenses</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Avg {avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}/mo — green = below avg, red = above avg
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {summary.by_month.map((m) => {
+              const aboveAvg = avgMonthlySpend != null && m.expenses > avgMonthlySpend
+              const belowAvg = avgMonthlySpend != null && m.expenses < avgMonthlySpend
+              const diffPct = avgMonthlySpend != null && avgMonthlySpend > 0
+                ? ((m.expenses - avgMonthlySpend) / avgMonthlySpend) * 100
+                : null
+              return (
+                <div
+                  key={`${m.year}-${m.month}`}
+                  className={`rounded-lg border p-3 ${
+                    aboveAvg ? 'border-red-200 bg-red-50' :
+                    belowAvg ? 'border-green-200 bg-green-50' :
+                    'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <p className="text-xs font-medium text-gray-500 mb-1">
+                    {m.month_name} {summary.by_month.some((x) => x.year !== m.year) ? m.year : ''}
+                  </p>
+                  <p className={`text-lg font-bold leading-tight ${
+                    aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
+                  }`}>
+                    {formatEuro(m.expenses)}
+                  </p>
+                  {diffPct != null && (
+                    <p className={`text-xs mt-0.5 ${aboveAvg ? 'text-red-500' : 'text-green-500'}`}>
+                      {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Monthly cash flow */}
       {summary?.by_month && summary.by_month.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
