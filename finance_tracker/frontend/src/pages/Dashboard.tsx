@@ -54,8 +54,64 @@ export default function Dashboard() {
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
+  const multiYear = (summary?.by_month ?? []).some((m) => m.year !== (summary?.by_month[0]?.year ?? m.year))
+  const years = [...new Set((summary?.by_month ?? []).map((m) => m.year))].sort()
+
   return (
     <div className="space-y-4 sm:space-y-8">
+
+      {/* Monthly expenses — calendar grid at top */}
+      {summary?.by_month && summary.by_month.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <div className="flex items-baseline justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Monthly Expenses</h3>
+            <span className="text-xs text-gray-400">
+              avg {avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}/mo
+            </span>
+          </div>
+          {years.map((year) => {
+            const months = summary.by_month.filter((m) => m.year === year)
+            return (
+              <div key={year}>
+                {multiYear && (
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 mt-4 first:mt-0">{year}</p>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {months.map((m) => {
+                    const aboveAvg = avgMonthlySpend != null && m.expenses > avgMonthlySpend
+                    const belowAvg = avgMonthlySpend != null && m.expenses < avgMonthlySpend
+                    const diffPct = avgMonthlySpend != null && avgMonthlySpend > 0
+                      ? ((m.expenses - avgMonthlySpend) / avgMonthlySpend) * 100
+                      : null
+                    const accentColor = aboveAvg ? 'bg-red-500' : belowAvg ? 'bg-green-500' : 'bg-gray-300'
+                    const borderColor = aboveAvg ? 'border-red-100' : belowAvg ? 'border-green-100' : 'border-gray-200'
+                    const amountColor = aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
+                    const diffColor = aboveAvg ? 'text-red-400' : 'text-green-500'
+                    return (
+                      <div key={m.month} className={`rounded-xl border ${borderColor} overflow-hidden`}>
+                        <div className={`${accentColor} h-1`} />
+                        <div className="px-4 py-3">
+                          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+                            {m.month_name.slice(0, 3)}
+                          </p>
+                          <p className={`text-xl font-bold leading-none ${amountColor}`}>
+                            {formatEuro(m.expenses)}
+                          </p>
+                          {diffPct != null && (
+                            <p className={`text-xs mt-1.5 font-medium ${diffColor}`}>
+                              {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Balance KPI cards — always from latest snapshot */}
       {latestBalance && (
@@ -202,49 +258,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
-      {/* Monthly expenses — big numbers grid */}
-      {summary?.by_month && summary.by_month.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Expenses</h3>
-          <p className="text-xs text-gray-400 mb-4">
-            Avg {avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}/mo — green = below avg, red = above avg
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-            {summary.by_month.map((m) => {
-              const aboveAvg = avgMonthlySpend != null && m.expenses > avgMonthlySpend
-              const belowAvg = avgMonthlySpend != null && m.expenses < avgMonthlySpend
-              const diffPct = avgMonthlySpend != null && avgMonthlySpend > 0
-                ? ((m.expenses - avgMonthlySpend) / avgMonthlySpend) * 100
-                : null
-              return (
-                <div
-                  key={`${m.year}-${m.month}`}
-                  className={`rounded-lg border p-3 ${
-                    aboveAvg ? 'border-red-200 bg-red-50' :
-                    belowAvg ? 'border-green-200 bg-green-50' :
-                    'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <p className="text-xs font-medium text-gray-500 mb-1">
-                    {m.month_name} {summary.by_month.some((x) => x.year !== m.year) ? m.year : ''}
-                  </p>
-                  <p className={`text-lg font-bold leading-tight ${
-                    aboveAvg ? 'text-red-700' : belowAvg ? 'text-green-700' : 'text-gray-800'
-                  }`}>
-                    {formatEuro(m.expenses)}
-                  </p>
-                  {diffPct != null && (
-                    <p className={`text-xs mt-0.5 ${aboveAvg ? 'text-red-500' : 'text-green-500'}`}>
-                      {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}% vs avg
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Monthly cash flow */}
       {summary?.by_month && summary.by_month.length > 0 && (
