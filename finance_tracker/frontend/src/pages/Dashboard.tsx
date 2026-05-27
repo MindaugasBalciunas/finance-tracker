@@ -51,7 +51,7 @@ export default function Dashboard() {
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
-  const calMonths = summary?.by_month ?? []
+  const calMonths = [...(summary?.by_month ?? [])].sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month))
   const calAvg = calMonths.length > 0
     ? calMonths.reduce((s, m) => s + m.expenses, 0) / calMonths.length
     : null
@@ -69,7 +69,7 @@ export default function Dashboard() {
               avg spend {calAvg != null ? formatEuro(calAvg) : '—'}/mo
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {calMonths.map((m) => {
               const aboveAvg = calAvg != null && m.expenses > calAvg
               const belowAvg = calAvg != null && m.expenses < calAvg
