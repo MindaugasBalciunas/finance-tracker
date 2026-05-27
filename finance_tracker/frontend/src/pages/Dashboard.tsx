@@ -51,70 +51,8 @@ export default function Dashboard() {
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
-  const calMonths = [...(summary?.by_month ?? [])].sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month))
-  const calAvg = calMonths.length > 0
-    ? calMonths.reduce((s, m) => s + m.expenses, 0) / calMonths.length
-    : null
-  const calMultiYear = calMonths.some((m) => m.year !== calMonths[0]?.year)
-
   return (
     <div className="space-y-4 sm:space-y-8">
-
-      {/* Monthly calendar grid */}
-      {calMonths.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-base font-semibold text-gray-900">Monthly Overview</h3>
-            <span className="text-xs text-gray-400">
-              avg spend {calAvg != null ? formatEuro(calAvg) : '—'}/mo
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {calMonths.map((m) => {
-              const aboveAvg = calAvg != null && m.expenses > calAvg
-              const belowAvg = calAvg != null && m.expenses < calAvg
-              const diffPct = calAvg != null && calAvg > 0
-                ? ((m.expenses - calAvg) / calAvg) * 100
-                : null
-              const accentColor = aboveAvg ? 'bg-red-400' : belowAvg ? 'bg-green-400' : 'bg-gray-200'
-              const borderColor = aboveAvg ? 'border-red-100' : belowAvg ? 'border-green-100' : 'border-gray-200'
-              const expenseColor = aboveAvg ? 'text-red-600' : belowAvg ? 'text-green-600' : 'text-gray-700'
-              const diffColor = aboveAvg ? 'text-red-400' : 'text-green-500'
-              return (
-                <div key={`${m.year}-${m.month}`} className={`rounded-lg border ${borderColor} overflow-hidden`}>
-                  <div className={`${accentColor} h-0.5`} />
-                  <div className="px-2.5 py-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">
-                      {m.month_name.slice(0, 3)}{calMultiYear ? ` ${m.year}` : ''}
-                    </p>
-                    <div className="space-y-0.5">
-                      <div className="flex items-baseline justify-between gap-1">
-                        <span className="text-[10px] text-gray-400 shrink-0">Inc</span>
-                        <span className="text-xs font-semibold text-green-700 tabular-nums">{formatEuro(m.income)}</span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-1">
-                        <span className="text-[10px] text-gray-400 shrink-0">Exp</span>
-                        <span className={`text-xs font-semibold tabular-nums ${expenseColor}`}>{formatEuro(m.expenses)}</span>
-                      </div>
-                      {m.investments > 0 && (
-                        <div className="flex items-baseline justify-between gap-1">
-                          <span className="text-[10px] text-gray-400 shrink-0">Inv</span>
-                          <span className="text-xs font-semibold text-blue-700 tabular-nums">{formatEuro(m.investments)}</span>
-                        </div>
-                      )}
-                    </div>
-                    {diffPct != null && (
-                      <p className={`text-[10px] font-medium mt-1 ${diffColor}`}>
-                        {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}%
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Balance KPI cards — always from latest snapshot */}
       {latestBalance && (
@@ -222,11 +160,56 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Expense breakdown by category per month */}
+      {/* Expense breakdown by category per month + monthly calendar tiles */}
       {allExpenses && allExpenses.data.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Where Money Goes Each Month</h3>
           <p className="text-xs text-gray-400 mb-4">Stacked expense breakdown by category — see which categories dominate each month</p>
+          {(() => {
+            const months = [...(summary?.by_month ?? [])].sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month))
+            const avg = months.length > 0 ? months.reduce((s, m) => s + m.expenses, 0) / months.length : null
+            const multiYear = months.some((m) => m.year !== months[0]?.year)
+            return months.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                {months.map((m) => {
+                  const aboveAvg = avg != null && m.expenses > avg
+                  const belowAvg = avg != null && m.expenses < avg
+                  const diffPct = avg != null && avg > 0 ? ((m.expenses - avg) / avg) * 100 : null
+                  return (
+                    <div key={`${m.year}-${m.month}`} className={`rounded-lg border overflow-hidden ${aboveAvg ? 'border-red-100' : belowAvg ? 'border-green-100' : 'border-gray-200'}`}>
+                      <div className={`h-0.5 ${aboveAvg ? 'bg-red-400' : belowAvg ? 'bg-green-400' : 'bg-gray-200'}`} />
+                      <div className="px-2.5 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">
+                          {m.month_name.slice(0, 3)}{multiYear ? ` ${m.year}` : ''}
+                        </p>
+                        <div className="space-y-0.5">
+                          <div className="flex items-baseline justify-between gap-1">
+                            <span className="text-[10px] text-gray-400 shrink-0">Inc</span>
+                            <span className="text-xs font-semibold text-green-700 tabular-nums">{formatEuro(m.income)}</span>
+                          </div>
+                          <div className="flex items-baseline justify-between gap-1">
+                            <span className="text-[10px] text-gray-400 shrink-0">Exp</span>
+                            <span className={`text-xs font-semibold tabular-nums ${aboveAvg ? 'text-red-600' : belowAvg ? 'text-green-600' : 'text-gray-700'}`}>{formatEuro(m.expenses)}</span>
+                          </div>
+                          {m.investments > 0 && (
+                            <div className="flex items-baseline justify-between gap-1">
+                              <span className="text-[10px] text-gray-400 shrink-0">Inv</span>
+                              <span className="text-xs font-semibold text-blue-700 tabular-nums">{formatEuro(m.investments)}</span>
+                            </div>
+                          )}
+                        </div>
+                        {diffPct != null && (
+                          <p className={`text-[10px] font-medium mt-1 ${aboveAvg ? 'text-red-400' : 'text-green-500'}`}>
+                            {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(0)}%
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null
+          })()}
           <MonthlyExpenseCategoryChart transactions={allExpenses.data} />
         </div>
       )}
