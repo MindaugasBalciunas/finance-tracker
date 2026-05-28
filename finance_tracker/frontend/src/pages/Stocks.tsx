@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceDot, BarChart, Bar } from 'recharts'
-import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useStockPrice, useStockHistory, useUsdEurRate } from '../hooks/useStocks'
+import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useStockPrice, useStockHistory, useUsdEurRate, useAllStockPrices } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
@@ -273,6 +273,8 @@ export default function Stocks() {
   const updateMutation = useUpdateStockTrade()
   const deleteMutation = useDeleteStockTrade()
   const { usdToEur, eurToUsd } = useUsdEurRate()
+  const activeTickersEarly = (portfolio?.holdings ?? []).filter((h) => h.shares > 0.0001).map((h) => h.ticker)
+  const allPriceQueries = useAllStockPrices(activeTickersEarly)
 
   const handleCreate = async (input: CreateStockTradeInput) => {
     await createMutation.mutateAsync({ ...input, ticker: input.ticker.toUpperCase() })
@@ -303,6 +305,25 @@ export default function Stocks() {
   const totalRealizedEur = allHoldings.every((h) => toEur(h.realized_gain.value, h.currency) != null)
     ? allHoldings.reduce((sum, h) => sum + toEur(h.realized_gain.value, h.currency)!, 0)
     : null
+
+  // Price map: ticker → live price (aligns with activeHoldings order)
+  const priceMap: Record<string, number | null> = {}
+  activeHoldings.forEach((h, i) => { priceMap[h.ticker] = allPriceQueries[i]?.data?.price ?? null })
+
+  // Comparison data: realized + unrealized per ticker, sorted by abs total desc
+  const pnlCompData = [
+    ...activeHoldings.map((h) => {
+      const price = priceMap[h.ticker]
+      const unrealNative = price != null ? (price - h.avg_cost.value) * h.shares : null
+      const unrealEur = unrealNative != null ? (toEur(unrealNative, h.currency) ?? unrealNative) : null
+      return { ticker: h.ticker, realized: toEur(h.realized_gain.value, h.currency) ?? 0, unrealized: unrealEur }
+    }),
+    ...closedHoldings.map((h) => ({
+      ticker: h.ticker,
+      realized: toEur(h.realized_gain.value, h.currency) ?? 0,
+      unrealized: 0 as number | null,
+    })),
+  ].sort((a, b) => Math.abs((b.realized) + (b.unrealized ?? 0)) - Math.abs((a.realized) + (a.unrealized ?? 0)))
 
   // Allocation chart data (sorted by EUR cost basis desc, slices < 5% grouped into "Other")
   const allocationData = totalInvestedEur != null && totalInvestedEur > 0
@@ -551,6 +572,49 @@ export default function Stocks() {
           </div>
         )
       })()}
+
+      {/* Realized vs Unrealized comparison */}
+      {pnlCompData.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Realized vs. Unrealized P&L</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Per-ticker comparison in EUR · unrealized based on live prices ·{' '}
+            <span className="text-indigo-500 font-medium">■ realized</span>{' '}
+            <span className="text-blue-400 font-medium">■ unrealized</span>
+          </p>
+          <ResponsiveContainer width="100%" height={Math.max(pnlCompData.length * 52, 120)}>
+            <BarChart data={pnlCompData} layout="vertical" barCategoryGap="28%" barGap={3}
+              margin={{ top: 0, right: 70, left: 0, bottom: 0 }}>
+              <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+                tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} />
+              <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }}
+                tickLine={false} axisLine={false} width={54} />
+              <ReferenceLine x={0} stroke="#d1d5db" />
+              <Tooltip
+                formatter={(v: number, name: string) =>
+                  [`${v >= 0 ? '+' : ''}${formatEur(v)}`, name === 'realized' ? 'Realized' : 'Unrealized']
+                }
+                contentStyle={{ fontSize: 11, borderRadius: 6 }}
+              />
+              <Bar dataKey="realized" name="Realized" radius={[0, 3, 3, 0]}
+                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                {pnlCompData.map((entry, i) => (
+                  <Cell key={`r-${i}`} fill={entry.realized >= 0 ? '#6366f1' : '#a78bfa'} fillOpacity={entry.realized !== 0 ? 1 : 0.2} />
+                ))}
+              </Bar>
+              <Bar dataKey="unrealized" name="Unrealized" radius={[0, 3, 3, 0]}
+                label={{ position: 'right', fontSize: 10, formatter: (v: number | null) => v == null ? '…' : v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                {pnlCompData.map((entry, i) => (
+                  <Cell key={`u-${i}`} fill={entry.unrealized == null ? '#d1d5db' : entry.unrealized >= 0 ? '#3b82f6' : '#f97316'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {pnlCompData.some((d) => d.unrealized == null) && (
+            <p className="text-xs text-gray-400 mt-2">Gray bars = live price not yet loaded</p>
+          )}
+        </div>
+      )}
 
       {/* Portfolio allocation chart + breakdown */}
       {allocationData.length > 0 && (
