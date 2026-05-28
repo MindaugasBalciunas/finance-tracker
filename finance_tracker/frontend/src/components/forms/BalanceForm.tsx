@@ -42,7 +42,13 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   const mBtcEur = btcPrice && mBtc ? parseFloat(mBtc) * btcPrice : null
 
   const handleFormSubmit = (data: CreateBalanceInput) => {
-    // Store BTC amounts directly in BTC units; backend uses btc_price to compute EUR for total
+    // valueAsNumber returns NaN for untouched empty inputs — fall back to defaultValues then 0
+    for (const { key } of EUR_ACCOUNTS) {
+      const v = data[key] as number
+      if (typeof v !== 'number' || isNaN(v)) {
+        (data as any)[key] = defaultValues?.[key] ?? 0
+      }
+    }
     data.r_btc = rBtc ? parseFloat(rBtc) : 0
     data.m_btc = mBtc ? parseFloat(mBtc) : 0
     data.btc_price = btcPrice ?? 0
