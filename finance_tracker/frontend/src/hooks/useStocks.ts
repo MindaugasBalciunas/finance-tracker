@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { stocksApi } from '../api/stocks'
 import type { CreateStockTradeInput } from '../types'
 
@@ -19,6 +19,17 @@ export function useStockPrice(ticker: string, enabled: boolean) {
     queryFn: () => stocksApi.getPrice(ticker),
     staleTime: 5 * 60 * 1000,
     enabled: enabled && ticker.length > 0,
+  })
+}
+
+export function useAllStockPrices(tickers: string[]) {
+  return useQueries({
+    queries: tickers.map((ticker) => ({
+      queryKey: ['stock-price', ticker],
+      queryFn: () => stocksApi.getPrice(ticker),
+      staleTime: 5 * 60 * 1000,
+      enabled: ticker.length > 0,
+    })),
   })
 }
 
