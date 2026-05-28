@@ -1,11 +1,49 @@
 import { useState } from 'react'
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceDot } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceDot, BarChart, Bar } from 'recharts'
 import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useStockPrice, useStockHistory, useUsdEurRate } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatDate } from '../utils/format'
 import type { CreateStockTradeInput, StockHolding, StockTrade } from '../types'
+
+interface SellPnLEntry {
+  id: number
+  date: string
+  ticker: string
+  shares: number
+  sellPrice: number
+  avgCost: number
+  pnl: number
+  currency: string
+}
+
+function computeSellPnL(trades: StockTrade[]): SellPnLEntry[] {
+  const byTicker: Record<string, StockTrade[]> = {}
+  for (const t of trades) {
+    if (!byTicker[t.ticker]) byTicker[t.ticker] = []
+    byTicker[t.ticker].push(t)
+  }
+  const results: SellPnLEntry[] = []
+  for (const tickerTrades of Object.values(byTicker)) {
+    const sorted = [...tickerTrades].sort((a, b) => a.date.localeCompare(b.date))
+    let runningShares = 0
+    let runningCost = 0
+    for (const t of sorted) {
+      if (t.action === 'buy') {
+        runningShares += t.shares
+        runningCost += t.shares * t.price_per_share.value
+      } else if (t.action === 'sell' && runningShares > 0) {
+        const avgCost = runningCost / runningShares
+        const pnl = t.shares * (t.price_per_share.value - avgCost)
+        results.push({ id: t.id, date: t.date.slice(0, 10), ticker: t.ticker, shares: t.shares, sellPrice: t.price_per_share.value, avgCost, pnl, currency: t.currency })
+        runningCost -= t.shares * avgCost
+        runningShares -= t.shares
+      }
+    }
+  }
+  return results.sort((a, b) => a.date.localeCompare(b.date))
+}
 
 const CHART_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -358,6 +396,161 @@ export default function Stocks() {
           </div>
         </div>
       )}
+
+      {/* Realized Gains Analysis */}
+      {trades && trades.filter((t) => t.action === 'sell').length > 0 && (() => {
+        const sellPnL = computeSellPnL(trades)
+        if (sellPnL.length === 0) return null
+
+        const withEur = sellPnL.map((s) => ({
+          ...s,
+          pnlEur: s.currency === 'EUR' ? s.pnl : (usdToEur(s.pnl) ?? s.pnl),
+        }))
+
+        let running = 0
+        const cumData = withEur.map((s) => {
+          running += s.pnlEur
+          return { date: s.date, cumulative: running, trade: s.pnlEur, ticker: s.ticker }
+        })
+
+        const tickerTotals: Record<string, number> = {}
+        for (const s of withEur) tickerTotals[s.ticker] = (tickerTotals[s.ticker] ?? 0) + s.pnlEur
+        const tickerBars = Object.entries(tickerTotals)
+          .map(([ticker, pnl]) => ({ ticker, pnl }))
+          .sort((a, b) => b.pnl - a.pnl)
+
+        const totalPnlEur = withEur.reduce((s, x) => s + x.pnlEur, 0)
+        const best = tickerBars[0]
+        const worst = tickerBars[tickerBars.length - 1]
+        const lineColor = totalPnlEur >= 0 ? '#10b981' : '#ef4444'
+
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 space-y-5">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Realized Gains Analysis</h3>
+              <p className="text-xs text-gray-400">Per-sell P&L via average cost method · amounts converted to EUR</p>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">Total Realized</p>
+                <p className={`text-lg font-bold ${gainColor(totalPnlEur)}`}>{totalPnlEur >= 0 ? '+' : ''}{formatEur(totalPnlEur)}</p>
+                <p className="text-xs text-gray-400">{sellPnL.length} sell trade{sellPnL.length !== 1 ? 's' : ''}</p>
+              </div>
+              <div className={`rounded-lg p-3 ${best && best.pnl > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+                <p className="text-xs text-gray-500 mb-1">Best Performer</p>
+                {best ? (
+                  <>
+                    <p className={`text-lg font-bold ${gainColor(best.pnl)}`}>{best.ticker}</p>
+                    <p className={`text-xs ${gainColor(best.pnl)}`}>{best.pnl >= 0 ? '+' : ''}{formatEur(best.pnl)}</p>
+                  </>
+                ) : <p className="text-gray-400 text-sm">—</p>}
+              </div>
+              <div className={`rounded-lg p-3 ${worst && worst.pnl < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                <p className="text-xs text-gray-500 mb-1">Worst Performer</p>
+                {worst && worst !== best ? (
+                  <>
+                    <p className={`text-lg font-bold ${gainColor(worst.pnl)}`}>{worst.ticker}</p>
+                    <p className={`text-xs ${gainColor(worst.pnl)}`}>{worst.pnl >= 0 ? '+' : ''}{formatEur(worst.pnl)}</p>
+                  </>
+                ) : <p className="text-gray-400 text-sm">—</p>}
+              </div>
+            </div>
+
+            {/* Cumulative P&L chart */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Cumulative Realized P&L</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={cumData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={lineColor} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false}
+                    tickFormatter={(d) => d.slice(0, 7)} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+                    tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} width={58} />
+                  <ReferenceLine y={0} stroke="#d1d5db" strokeDasharray="4 2" />
+                  <Tooltip
+                    formatter={(v: number, name: string) => [
+                      `${v >= 0 ? '+' : ''}${formatEur(v)}`,
+                      name === 'cumulative' ? 'Cumulative P&L' : 'This trade',
+                    ]}
+                    labelFormatter={(l: string) => `${l}`}
+                    contentStyle={{ fontSize: 11, borderRadius: 6 }}
+                  />
+                  <Area type="monotone" dataKey="cumulative" stroke={lineColor} strokeWidth={2}
+                    fill="url(#cumGrad)" dot={{ r: 3, fill: lineColor, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Per-ticker P&L bars */}
+            {tickerBars.length > 1 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">Realized P&L by Ticker</p>
+                <ResponsiveContainer width="100%" height={Math.max(tickerBars.length * 36, 80)}>
+                  <BarChart data={tickerBars} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }}>
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+                      tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} />
+                    <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} axisLine={false} width={52} />
+                    <ReferenceLine x={0} stroke="#d1d5db" />
+                    <Tooltip formatter={(v: number) => [`${v >= 0 ? '+' : ''}${formatEur(v)}`, 'P&L']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+                    <Bar dataKey="pnl" radius={[0, 3, 3, 0]} label={{ position: 'right', fontSize: 10, formatter: (v: number) => `${v >= 0 ? '+' : ''}${formatEur(v)}` }}>
+                      {tickerBars.map((entry, i) => (
+                        <Cell key={i} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Sell trades with P&L */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Sell Trade Breakdown</p>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-1.5 pr-4 text-xs font-semibold text-gray-500">Date</th>
+                      <th className="text-left py-1.5 pr-4 text-xs font-semibold text-gray-500">Ticker</th>
+                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Shares</th>
+                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Sell Price</th>
+                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Avg Cost</th>
+                      <th className="text-right py-1.5 text-xs font-semibold text-gray-500">P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {[...withEur].reverse().map((s) => {
+                      const fmt = s.currency === 'EUR' ? formatEur : formatUsd
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-50">
+                          <td className="py-2 pr-4 text-gray-600 text-xs">{s.date}</td>
+                          <td className="py-2 pr-4 font-bold text-gray-900">{s.ticker}</td>
+                          <td className="py-2 pr-4 text-right text-gray-600 text-xs">{s.shares}</td>
+                          <td className="py-2 pr-4 text-right text-gray-600 text-xs">{fmt(s.sellPrice)}</td>
+                          <td className="py-2 pr-4 text-right text-gray-500 text-xs">{fmt(s.avgCost)}</td>
+                          <td className={`py-2 text-right font-semibold text-sm ${gainColor(s.pnlEur)}`}>
+                            {s.pnlEur >= 0 ? '+' : ''}{formatEur(s.pnlEur)}
+                            {s.currency !== 'EUR' && (
+                              <div className="text-xs font-normal text-gray-400">{s.pnl >= 0 ? '+' : ''}{fmt(s.pnl)}</div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Portfolio allocation chart + breakdown */}
       {allocationData.length > 0 && (
