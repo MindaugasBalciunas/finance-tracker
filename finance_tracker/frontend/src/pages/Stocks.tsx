@@ -310,18 +310,46 @@ export default function Stocks() {
   const priceMap: Record<string, number | null> = {}
   activeHoldings.forEach((h, i) => { priceMap[h.ticker] = allPriceQueries[i]?.data?.price ?? null })
 
+  // Cost-recovered: tickers where total sell proceeds >= total buy cost (remaining shares are "free money")
+  const tickerBuyCostEur: Record<string, number> = {}
+  const tickerSellProceedsEur: Record<string, number> = {}
+  for (const t of trades ?? []) {
+    const eurVal = t.currency === 'EUR'
+      ? t.shares * t.price_per_share.value
+      : (usdToEur(t.shares * t.price_per_share.value) ?? 0)
+    if (t.action === 'buy') tickerBuyCostEur[t.ticker] = (tickerBuyCostEur[t.ticker] ?? 0) + eurVal
+    else tickerSellProceedsEur[t.ticker] = (tickerSellProceedsEur[t.ticker] ?? 0) + eurVal
+  }
+  const costRecoveredSet = new Set(
+    Object.keys(tickerBuyCostEur).filter((t) => (tickerSellProceedsEur[t] ?? 0) >= tickerBuyCostEur[t])
+  )
+
+  // Total current unrealized P&L in EUR (for combined cumulative extension)
+  const totalUnrealizedEur = activeHoldings.reduce((sum, h) => {
+    const price = priceMap[h.ticker]
+    if (price == null) return sum
+    const unrealNative = (price - h.avg_cost.value) * h.shares
+    return sum + (toEur(unrealNative, h.currency) ?? unrealNative)
+  }, 0)
+
   // Comparison data: realized + unrealized per ticker, sorted by abs total desc
   const pnlCompData = [
     ...activeHoldings.map((h) => {
       const price = priceMap[h.ticker]
       const unrealNative = price != null ? (price - h.avg_cost.value) * h.shares : null
       const unrealEur = unrealNative != null ? (toEur(unrealNative, h.currency) ?? unrealNative) : null
-      return { ticker: h.ticker, realized: toEur(h.realized_gain.value, h.currency) ?? 0, unrealized: unrealEur }
+      return {
+        ticker: h.ticker,
+        realized: toEur(h.realized_gain.value, h.currency) ?? 0,
+        unrealized: unrealEur,
+        costRecovered: costRecoveredSet.has(h.ticker),
+      }
     }),
     ...closedHoldings.map((h) => ({
       ticker: h.ticker,
       realized: toEur(h.realized_gain.value, h.currency) ?? 0,
       unrealized: 0 as number | null,
+      costRecovered: costRecoveredSet.has(h.ticker),
     })),
   ].sort((a, b) => Math.abs((b.realized) + (b.unrealized ?? 0)) - Math.abs((a.realized) + (a.unrealized ?? 0)))
 
@@ -390,35 +418,197 @@ export default function Stocks() {
         </div>
       )}
 
-      {/* Summary cards */}
-      {portfolio && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Invested (open)</p>
-            <p className="text-xl font-bold text-gray-900">
-              {totalInvestedEur != null ? formatEur(totalInvestedEur) : '—'}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Realized gain/loss</p>
-            {totalRealizedEur != null ? (
-              <p className={`text-xl font-bold ${gainColor(totalRealizedEur)}`}>
-                {totalRealizedEur >= 0 ? '+' : ''}{formatEur(totalRealizedEur)}
+      {/* ── SECTION 1: PORTFOLIO SNAPSHOT ─────────────────────────── */}
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Portfolio snapshot</p>
+
+      {/* Summary KPI cards */}
+      {portfolio && (() => {
+        const totalUnrealPricesLoaded = activeHoldings.every((h) => priceMap[h.ticker] != null)
+        const totalUnrealDisplay = totalUnrealPricesLoaded ? totalUnrealizedEur : null
+        const totalPnl = totalRealizedEur != null && totalUnrealDisplay != null
+          ? totalRealizedEur + totalUnrealDisplay : null
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-1">Invested (open)</p>
+              <p className="text-xl font-bold text-gray-900">{totalInvestedEur != null ? formatEur(totalInvestedEur) : '—'}</p>
+              <p className="text-xs text-gray-400 mt-1">{activeHoldings.length} position{activeHoldings.length !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-1">Unrealized P&L</p>
+              <p className={`text-xl font-bold ${totalUnrealDisplay != null ? gainColor(totalUnrealDisplay) : 'text-gray-300'}`}>
+                {totalUnrealDisplay != null ? `${totalUnrealDisplay >= 0 ? '+' : ''}${formatEur(totalUnrealDisplay)}` : '…'}
               </p>
-            ) : <p className="text-xl font-bold text-gray-400">—</p>}
+              <p className="text-xs text-gray-400 mt-1">Open positions</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-1">Realized P&L</p>
+              {totalRealizedEur != null ? (
+                <p className={`text-xl font-bold ${gainColor(totalRealizedEur)}`}>
+                  {totalRealizedEur >= 0 ? '+' : ''}{formatEur(totalRealizedEur)}
+                </p>
+              ) : <p className="text-xl font-bold text-gray-400">—</p>}
+              <p className="text-xs text-gray-400 mt-1">All closed trades</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-1">Total P&L</p>
+              <p className={`text-xl font-bold ${totalPnl != null ? gainColor(totalPnl) : 'text-gray-300'}`}>
+                {totalPnl != null ? `${totalPnl >= 0 ? '+' : ''}${formatEur(totalPnl)}` : '…'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">Realized + unrealized</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-1">Total trades</p>
+              <p className="text-xl font-bold text-gray-900">{trades?.length ?? 0}</p>
+              <p className="text-xs text-gray-400 mt-1">{(trades ?? []).filter((t) => t.action === 'sell').length} sells</p>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Portfolio allocation + position weights */}
+      {allocationData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Allocation by Cost Basis</h3>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
+                  dataKey="value" nameKey="name" paddingAngle={2}>
+                  {allocationData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: number) => formatEur(v)} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Open positions</p>
-            <p className="text-xl font-bold text-gray-900">{activeHoldings.length}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Total trades</p>
-            <p className="text-xl font-bold text-gray-900">{trades?.length ?? 0}</p>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Position Weights</h3>
+            <div className="space-y-3">
+              {allocationData.map((item, i) => {
+                const pct = totalInvestedEur! > 0 ? (item.value / totalInvestedEur!) * 100 : 0
+                return (
+                  <div key={item.name}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-sm font-semibold text-gray-800">{item.name}</span>
+                      <div className="text-right">
+                        <span className="text-sm text-gray-700">{formatEur(item.value)}</span>
+                        <span className="text-xs text-gray-400 ml-2">{pct.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Realized Gains Analysis */}
+      {/* Open positions table */}
+      {activeHoldings.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-sm font-semibold text-gray-700">Open Positions</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Live prices from Yahoo Finance · EUR primary · USD secondary · click ticker to expand price chart</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-2 font-semibold text-gray-600">Ticker</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Ccy</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Shares</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Avg Cost</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Cost Basis</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Current Price</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Market Value</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Unrealized P&L</th>
+                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Realized P&L</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {activeHoldings.map((h) => (
+                  <PortfolioRow key={h.ticker} holding={h} usdToEur={usdToEur} eurToUsd={eurToUsd}
+                    totalCostEur={totalInvestedEur} trades={(trades ?? []).filter((t) => t.ticker === h.ticker)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION 2: P&L PERFORMANCE ────────────────────────────── */}
+      {pnlCompData.length > 0 && (
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">P&L performance</p>
+      )}
+
+      {/* Realized vs Unrealized comparison — with cost-recovered highlight */}
+      {pnlCompData.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Realized vs. Unrealized P&L</h3>
+          <p className="text-xs text-gray-400 mb-1">
+            Per-ticker in EUR · live prices ·{' '}
+            <span className="text-indigo-500 font-medium">■ realized</span>{' '}
+            <span className="text-blue-400 font-medium">■ unrealized</span>{' '}
+            {costRecoveredSet.size > 0 && <><span className="text-amber-500 font-medium">■ free shares</span>{' '}(cost fully recovered from sells)</>}
+          </p>
+          {costRecoveredSet.size > 0 && (
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 mb-3 inline-block">
+              ★ {Array.from(costRecoveredSet).join(', ')} — sell proceeds already covered the full buy cost; remaining shares are pure profit
+            </p>
+          )}
+          <ResponsiveContainer width="100%" height={Math.max(pnlCompData.length * 52, 120)}>
+            <BarChart data={pnlCompData} layout="vertical" barCategoryGap="28%" barGap={3}
+              margin={{ top: 0, right: 72, left: 0, bottom: 0 }}>
+              <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+                tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} />
+              <YAxis type="category" dataKey="ticker"
+                tick={(props: any) => {
+                  const { x, y, payload } = props
+                  const isFree = costRecoveredSet.has(payload.value)
+                  return (
+                    <g transform={`translate(${x},${y})`}>
+                      <text x={-4} y={0} dy={4} textAnchor="end" fontSize={11} fontWeight={700} fill={isFree ? '#d97706' : '#374151'}>{payload.value}</text>
+                      {isFree && <text x={-4} y={0} dy={16} textAnchor="end" fontSize={8} fill="#d97706">FREE ★</text>}
+                    </g>
+                  )
+                }}
+                tickLine={false} axisLine={false} width={58} />
+              <ReferenceLine x={0} stroke="#d1d5db" />
+              <Tooltip
+                formatter={(v: number, name: string) =>
+                  [`${v >= 0 ? '+' : ''}${formatEur(v)}`, name === 'realized' ? 'Realized' : 'Unrealized']
+                }
+                contentStyle={{ fontSize: 11, borderRadius: 6 }}
+              />
+              <Bar dataKey="realized" name="Realized" radius={[0, 3, 3, 0]}
+                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                {pnlCompData.map((entry, i) => (
+                  <Cell key={`r-${i}`} fill={entry.realized >= 0 ? '#6366f1' : '#a78bfa'} fillOpacity={entry.realized !== 0 ? 1 : 0.15} />
+                ))}
+              </Bar>
+              <Bar dataKey="unrealized" name="Unrealized" radius={[0, 3, 3, 0]}
+                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                {pnlCompData.map((entry, i) => (
+                  <Cell key={`u-${i}`}
+                    fill={entry.unrealized == null ? '#d1d5db'
+                      : entry.costRecovered ? '#f59e0b'
+                      : entry.unrealized >= 0 ? '#3b82f6' : '#f97316'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {pnlCompData.some((d) => d.unrealized == null) && (
+            <p className="text-xs text-gray-400 mt-2">Gray bars = live price loading…</p>
+          )}
+        </div>
+      )}
+
+      {/* Realized Gains Analysis — cumulative chart extended with today's unrealized */}
       {trades && trades.filter((t) => t.action === 'sell').length > 0 && (() => {
         const sellPnL = computeSellPnL(trades)
         if (sellPnL.length === 0) return null
@@ -429,10 +619,24 @@ export default function Stocks() {
         }))
 
         let running = 0
-        const cumData = withEur.map((s) => {
+        const cumPoints = withEur.map((s) => {
           running += s.pnlEur
-          return { date: s.date, cumulative: running, trade: s.pnlEur, ticker: s.ticker }
+          return { date: s.date, realized: running, ticker: s.ticker }
         })
+
+        const finalRealized = cumPoints.length > 0 ? cumPoints[cumPoints.length - 1].realized : 0
+        const today = new Date().toISOString().slice(0, 10)
+        const lastDate = cumPoints.length > 0 ? cumPoints[cumPoints.length - 1].date : today
+
+        // Extend chart to today: add a "now" point showing realized + unrealized
+        const allPricesLoaded = activeHoldings.length === 0 || activeHoldings.every((h) => priceMap[h.ticker] != null)
+        const extPoint = allPricesLoaded && lastDate < today
+          ? [{ date: today, realized: finalRealized, total: finalRealized + totalUnrealizedEur }]
+          : []
+        const cumData = [
+          ...cumPoints.map((d) => ({ ...d, total: d.realized })),
+          ...extPoint,
+        ]
 
         const tickerTotals: Record<string, number> = {}
         for (const s of withEur) tickerTotals[s.ticker] = (tickerTotals[s.ticker] ?? 0) + s.pnlEur
@@ -440,27 +644,35 @@ export default function Stocks() {
           .map(([ticker, pnl]) => ({ ticker, pnl }))
           .sort((a, b) => b.pnl - a.pnl)
 
-        const totalPnlEur = withEur.reduce((s, x) => s + x.pnlEur, 0)
+        const totalPnlEur = finalRealized
         const best = tickerBars[0]
         const worst = tickerBars[tickerBars.length - 1]
-        const lineColor = totalPnlEur >= 0 ? '#10b981' : '#ef4444'
+        const realColor = totalPnlEur >= 0 ? '#10b981' : '#ef4444'
+        const totalColor = (finalRealized + totalUnrealizedEur) >= 0 ? '#3b82f6' : '#f97316'
 
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 space-y-5">
             <div>
               <h3 className="text-base font-semibold text-gray-900 mb-1">Realized Gains Analysis</h3>
-              <p className="text-xs text-gray-400">Per-sell P&L via average cost method · amounts converted to EUR</p>
+              <p className="text-xs text-gray-400">Per-sell P&L via average cost method · EUR</p>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">Total Realized</p>
                 <p className={`text-lg font-bold ${gainColor(totalPnlEur)}`}>{totalPnlEur >= 0 ? '+' : ''}{formatEur(totalPnlEur)}</p>
-                <p className="text-xs text-gray-400">{sellPnL.length} sell trade{sellPnL.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-gray-400">{sellPnL.length} sell{sellPnL.length !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">+ Unrealized Today</p>
+                <p className={`text-lg font-bold ${gainColor(totalUnrealizedEur)}`}>
+                  {totalUnrealizedEur >= 0 ? '+' : ''}{formatEur(totalUnrealizedEur)}
+                </p>
+                <p className="text-xs text-gray-400">Open positions</p>
               </div>
               <div className={`rounded-lg p-3 ${best && best.pnl > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
-                <p className="text-xs text-gray-500 mb-1">Best Performer</p>
+                <p className="text-xs text-gray-500 mb-1">Best Realized</p>
                 {best ? (
                   <>
                     <p className={`text-lg font-bold ${gainColor(best.pnl)}`}>{best.ticker}</p>
@@ -469,7 +681,7 @@ export default function Stocks() {
                 ) : <p className="text-gray-400 text-sm">—</p>}
               </div>
               <div className={`rounded-lg p-3 ${worst && worst.pnl < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                <p className="text-xs text-gray-500 mb-1">Worst Performer</p>
+                <p className="text-xs text-gray-500 mb-1">Worst Realized</p>
                 {worst && worst !== best ? (
                   <>
                     <p className={`text-lg font-bold ${gainColor(worst.pnl)}`}>{worst.ticker}</p>
@@ -479,15 +691,23 @@ export default function Stocks() {
               </div>
             </div>
 
-            {/* Cumulative P&L chart */}
+            {/* Combined cumulative chart: realized history + unrealized extension to today */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-2">Cumulative Realized P&L</p>
-              <ResponsiveContainer width="100%" height={200}>
+              <p className="text-xs font-medium text-gray-500 mb-2">
+                Cumulative P&L ·{' '}
+                <span style={{ color: realColor }}>— realized</span>
+                {extPoint.length > 0 && <>{' '}+ <span style={{ color: totalColor }}>— total (incl. unrealized today)</span></>}
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={cumData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={lineColor} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
+                    <linearGradient id="realGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={realColor} stopOpacity={0.25} />
+                      <stop offset="95%" stopColor={realColor} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="totalGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={totalColor} stopOpacity={0.15} />
+                      <stop offset="95%" stopColor={totalColor} stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -499,29 +719,35 @@ export default function Stocks() {
                   <Tooltip
                     formatter={(v: number, name: string) => [
                       `${v >= 0 ? '+' : ''}${formatEur(v)}`,
-                      name === 'cumulative' ? 'Cumulative P&L' : 'This trade',
+                      name === 'total' ? 'Total (realized + unrealized)' : 'Cumulative realized',
                     ]}
-                    labelFormatter={(l: string) => `${l}`}
                     contentStyle={{ fontSize: 11, borderRadius: 6 }}
                   />
-                  <Area type="monotone" dataKey="cumulative" stroke={lineColor} strokeWidth={2}
-                    fill="url(#cumGrad)" dot={{ r: 3, fill: lineColor, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+                  {/* Total area (realized + unrealized) — rendered first so realized sits on top */}
+                  <Area type="monotone" dataKey="total" stroke={totalColor} strokeWidth={1.5}
+                    strokeDasharray="5 3" fill="url(#totalGrad)" dot={false} activeDot={{ r: 3 }} />
+                  {/* Realized area */}
+                  <Area type="monotone" dataKey="realized" stroke={realColor} strokeWidth={2}
+                    fill="url(#realGrad)" dot={{ r: 3, fill: realColor, strokeWidth: 0 }} activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
-            {/* Per-ticker P&L bars */}
+            {/* Per-ticker realized P&L bars */}
             {tickerBars.length > 1 && (
               <div>
                 <p className="text-xs font-medium text-gray-500 mb-2">Realized P&L by Ticker</p>
                 <ResponsiveContainer width="100%" height={Math.max(tickerBars.length * 36, 80)}>
-                  <BarChart data={tickerBars} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }}>
+                  <BarChart data={tickerBars} layout="vertical" margin={{ top: 0, right: 72, left: 0, bottom: 0 }}>
                     <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
                       tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} />
-                    <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }} tickLine={false} axisLine={false} width={52} />
+                    <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }}
+                      tickLine={false} axisLine={false} width={52} />
                     <ReferenceLine x={0} stroke="#d1d5db" />
-                    <Tooltip formatter={(v: number) => [`${v >= 0 ? '+' : ''}${formatEur(v)}`, 'P&L']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
-                    <Bar dataKey="pnl" radius={[0, 3, 3, 0]} label={{ position: 'right', fontSize: 10, formatter: (v: number) => `${v >= 0 ? '+' : ''}${formatEur(v)}` }}>
+                    <Tooltip formatter={(v: number) => [`${v >= 0 ? '+' : ''}${formatEur(v)}`, 'Realized P&L']}
+                      contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+                    <Bar dataKey="pnl" radius={[0, 3, 3, 0]}
+                      label={{ position: 'right', fontSize: 10, formatter: (v: number) => `${v >= 0 ? '+' : ''}${formatEur(v)}` }}>
                       {tickerBars.map((entry, i) => (
                         <Cell key={i} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
                       ))}
@@ -531,7 +757,7 @@ export default function Stocks() {
               </div>
             )}
 
-            {/* Sell trades with P&L */}
+            {/* Sell trade breakdown table */}
             <div>
               <p className="text-xs font-medium text-gray-500 mb-2">Sell Trade Breakdown</p>
               <div className="overflow-x-auto">
@@ -552,7 +778,10 @@ export default function Stocks() {
                       return (
                         <tr key={s.id} className="hover:bg-gray-50">
                           <td className="py-2 pr-4 text-gray-600 text-xs">{s.date}</td>
-                          <td className="py-2 pr-4 font-bold text-gray-900">{s.ticker}</td>
+                          <td className="py-2 pr-4 font-bold text-gray-900">
+                            {s.ticker}
+                            {costRecoveredSet.has(s.ticker) && <span className="ml-1 text-amber-500 text-xs">★</span>}
+                          </td>
                           <td className="py-2 pr-4 text-right text-gray-600 text-xs">{s.shares}</td>
                           <td className="py-2 pr-4 text-right text-gray-600 text-xs">{fmt(s.sellPrice)}</td>
                           <td className="py-2 pr-4 text-right text-gray-500 text-xs">{fmt(s.avgCost)}</td>
@@ -573,149 +802,16 @@ export default function Stocks() {
         )
       })()}
 
-      {/* Realized vs Unrealized comparison */}
-      {pnlCompData.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">Realized vs. Unrealized P&L</h3>
-          <p className="text-xs text-gray-400 mb-4">
-            Per-ticker comparison in EUR · unrealized based on live prices ·{' '}
-            <span className="text-indigo-500 font-medium">■ realized</span>{' '}
-            <span className="text-blue-400 font-medium">■ unrealized</span>
-          </p>
-          <ResponsiveContainer width="100%" height={Math.max(pnlCompData.length * 52, 120)}>
-            <BarChart data={pnlCompData} layout="vertical" barCategoryGap="28%" barGap={3}
-              margin={{ top: 0, right: 70, left: 0, bottom: 0 }}>
-              <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
-                tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} />
-              <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }}
-                tickLine={false} axisLine={false} width={54} />
-              <ReferenceLine x={0} stroke="#d1d5db" />
-              <Tooltip
-                formatter={(v: number, name: string) =>
-                  [`${v >= 0 ? '+' : ''}${formatEur(v)}`, name === 'realized' ? 'Realized' : 'Unrealized']
-                }
-                contentStyle={{ fontSize: 11, borderRadius: 6 }}
-              />
-              <Bar dataKey="realized" name="Realized" radius={[0, 3, 3, 0]}
-                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
-                {pnlCompData.map((entry, i) => (
-                  <Cell key={`r-${i}`} fill={entry.realized >= 0 ? '#6366f1' : '#a78bfa'} fillOpacity={entry.realized !== 0 ? 1 : 0.2} />
-                ))}
-              </Bar>
-              <Bar dataKey="unrealized" name="Unrealized" radius={[0, 3, 3, 0]}
-                label={{ position: 'right', fontSize: 10, formatter: (v: number | null) => v == null ? '…' : v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
-                {pnlCompData.map((entry, i) => (
-                  <Cell key={`u-${i}`} fill={entry.unrealized == null ? '#d1d5db' : entry.unrealized >= 0 ? '#3b82f6' : '#f97316'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          {pnlCompData.some((d) => d.unrealized == null) && (
-            <p className="text-xs text-gray-400 mt-2">Gray bars = live price not yet loaded</p>
-          )}
-        </div>
-      )}
-
-      {/* Portfolio allocation chart + breakdown */}
-      {allocationData.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-          {/* Donut chart */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Allocation by Cost Basis</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={allocationData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  dataKey="value"
-                  nameKey="name"
-                  paddingAngle={2}
-                >
-                  {allocationData.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: number) => formatEur(v)} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Allocation bars breakdown */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Position Weights</h3>
-            <div className="space-y-3">
-              {allocationData.map((item, i) => {
-                const pct = totalInvestedEur! > 0 ? (item.value / totalInvestedEur!) * 100 : 0
-                return (
-                  <div key={item.name}>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-semibold text-gray-800">{item.name}</span>
-                      <div className="text-right">
-                        <span className="text-sm text-gray-700">{formatEur(item.value)}</span>
-                        <span className="text-xs text-gray-400 ml-2">{pct.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: `${pct}%`, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Open positions */}
+      {/* ── SECTION 3: OUTLOOK ────────────────────────────────────── */}
       {activeHoldings.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-sm font-semibold text-gray-700">Open Positions</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Live prices from Yahoo Finance · EUR primary · USD secondary</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-2 font-semibold text-gray-600">Ticker</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Ccy</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Shares</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Avg Cost</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Cost Basis</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Current Price</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Market Value</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Unrealized P&L</th>
-                  <th className="text-right px-4 py-2 font-semibold text-gray-600">Realized P&L</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {activeHoldings.map((h) => (
-                  <PortfolioRow
-                    key={h.ticker}
-                    holding={h}
-                    usdToEur={usdToEur}
-                    eurToUsd={eurToUsd}
-                    totalCostEur={totalInvestedEur}
-                    trades={(trades ?? []).filter((t) => t.ticker === h.ticker)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Outlook</p>
       )}
-
-      {/* 1-year scenario forecast vs VWCE */}
       {activeHoldings.length > 0 && (
         <StockForecastSection holdings={activeHoldings} usdToEur={usdToEur} />
       )}
+
+      {/* ── SECTION 4: HISTORY ────────────────────────────────────── */}
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">History</p>
 
       {/* Closed positions */}
       {closedHoldings.length > 0 && (
@@ -734,7 +830,10 @@ export default function Stocks() {
               <tbody className="divide-y divide-gray-100">
                 {closedHoldings.map((h) => (
                   <tr key={h.ticker} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-bold text-gray-900">{h.ticker}</td>
+                    <td className="px-4 py-3 font-bold text-gray-900">
+                      {h.ticker}
+                      {costRecoveredSet.has(h.ticker) && <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">cost recovered</span>}
+                    </td>
                     <td className={`px-4 py-3 text-right font-semibold ${gainColor(h.realized_gain.value)}`}>
                       {h.currency === 'EUR'
                         ? <DualAmountEur eur={h.realized_gain.value} eurToUsd={eurToUsd} gain />
@@ -779,28 +878,20 @@ export default function Stocks() {
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                         t.source === 'IBKR' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {t.source}
-                      </span>
+                      }`}>{t.source}</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
                         t.action === 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {t.action.toUpperCase()}
-                      </span>
+                      }`}>{t.action.toUpperCase()}</span>
                     </td>
                     <td className="px-4 py-3 font-bold text-gray-900">{t.ticker}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{t.shares}</td>
                     <td className="px-4 py-3 text-right text-gray-700">
-                      {isEur
-                        ? <DualAmountEur eur={price} eurToUsd={eurToUsd} />
-                        : <DualAmount usd={price} usdToEur={usdToEur} />}
+                      {isEur ? <DualAmountEur eur={price} eurToUsd={eurToUsd} /> : <DualAmount usd={price} usdToEur={usdToEur} />}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      {isEur
-                        ? <DualAmountEur eur={total} eurToUsd={eurToUsd} />
-                        : <DualAmount usd={total} usdToEur={usdToEur} />}
+                      {isEur ? <DualAmountEur eur={total} eurToUsd={eurToUsd} /> : <DualAmount usd={total} usdToEur={usdToEur} />}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{t.notes || '—'}</td>
                     <td className="px-4 py-3 text-right">
@@ -814,9 +905,7 @@ export default function Stocks() {
               })}
               {!trades?.length && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
-                    No trades yet. Add your first trade above.
-                  </td>
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">No trades yet. Add your first trade above.</td>
                 </tr>
               )}
             </tbody>
