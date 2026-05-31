@@ -5,17 +5,21 @@ import { useBtcPrice } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
-  { key: 'seb',       label: 'Seb' },
-  { key: 'swed',      label: 'Swedbank' },
-  { key: 'swed_etf',  label: 'Swedbank ETF' },
-  { key: 'seb_pen',  label: 'SEB 2nd pillar pension' },
-  { key: 'luminor',   label: 'Luminor' },
-  { key: 'art',       label: 'Artea 3rd pillar pension' },
-  { key: 'cash',      label: 'Cash' },
-  { key: 'rev_m',     label: 'Revolut M account' },
-  { key: 'rev_r',     label: 'Revolut R account' },
+  { key: 'seb',         label: 'Seb' },
+  { key: 'swed',        label: 'Swedbank' },
+  { key: 'swed_etf',   label: 'Swedbank ETF' },
+  { key: 'seb_pen',    label: 'SEB 2nd pillar pension' },
+  { key: 'art',         label: 'Artea 3rd pillar pension' },
+  { key: 'cash',        label: 'Cash' },
+  { key: 'rev_m',       label: 'Revolut M account' },
+  { key: 'rev_r',       label: 'Revolut R account' },
   { key: 'rev_stocks',  label: 'Revolut M account stocks' },
   { key: 'ibkr_stocks', label: 'IBKR stocks' },
+]
+
+// Closed accounts — shown read-only to preserve history, not editable
+const CLOSED_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
+  { key: 'luminor', label: 'Luminor' },
 ]
 
 interface Props {
@@ -48,6 +52,10 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
       if (typeof v !== 'number' || isNaN(v)) {
         (data as any)[key] = defaultValues?.[key] ?? 0
       }
+    }
+    // Closed accounts: always carry forward last known value (or 0 for new entries)
+    for (const { key } of CLOSED_ACCOUNTS) {
+      (data as any)[key] = (defaultValues?.[key] as number | undefined) ?? 0
     }
     data.r_btc = rBtc ? parseFloat(rBtc) : 0
     data.m_btc = mBtc ? parseFloat(mBtc) : 0
@@ -82,6 +90,20 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
               {...register(key, { valueAsNumber: true })}
               placeholder="0.00"
               className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        ))}
+
+        {/* Closed accounts — read-only, value carried from last snapshot */}
+        {CLOSED_ACCOUNTS.map(({ key, label }) => (
+          <div key={key} className="opacity-50">
+            <label className="block text-xs font-medium text-gray-400 mb-0.5">{label} (€) <span className="italic text-gray-400">closed</span></label>
+            <input
+              type="number"
+              readOnly
+              disabled
+              value={(defaultValues?.[key] as number | undefined) ?? 0}
+              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-gray-50 text-gray-400 cursor-not-allowed"
             />
           </div>
         ))}
