@@ -1,267 +1,18 @@
 import { useState } from 'react'
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceDot, BarChart, Bar } from 'recharts'
-import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useStockPrice, useStockHistory, useUsdEurRate, useAllStockPrices } from '../hooks/useStocks'
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, BarChart, Bar } from 'recharts'
+import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useUsdEurRate, useAllStockPrices } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
+import PortfolioRow, { DualAmount, DualAmountEur } from '../components/stocks/PortfolioRow'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
-import { formatDate } from '../utils/format'
-import type { CreateStockTradeInput, StockHolding, StockTrade } from '../types'
-
-interface SellPnLEntry {
-  id: number
-  date: string
-  ticker: string
-  shares: number
-  sellPrice: number
-  avgCost: number
-  pnl: number
-  currency: string
-}
-
-function computeSellPnL(trades: StockTrade[]): SellPnLEntry[] {
-  const byTicker: Record<string, StockTrade[]> = {}
-  for (const t of trades) {
-    if (!byTicker[t.ticker]) byTicker[t.ticker] = []
-    byTicker[t.ticker].push(t)
-  }
-  const results: SellPnLEntry[] = []
-  for (const tickerTrades of Object.values(byTicker)) {
-    const sorted = [...tickerTrades].sort((a, b) => a.date.localeCompare(b.date))
-    let runningShares = 0
-    let runningCost = 0
-    for (const t of sorted) {
-      if (t.action === 'buy') {
-        runningShares += t.shares
-        runningCost += t.shares * t.price_per_share.value
-      } else if (t.action === 'sell' && runningShares > 0) {
-        const avgCost = runningCost / runningShares
-        const pnl = t.shares * (t.price_per_share.value - avgCost)
-        results.push({ id: t.id, date: t.date.slice(0, 10), ticker: t.ticker, shares: t.shares, sellPrice: t.price_per_share.value, avgCost, pnl, currency: t.currency })
-        runningCost -= t.shares * avgCost
-        runningShares -= t.shares
-      }
-    }
-  }
-  return results.sort((a, b) => a.date.localeCompare(b.date))
-}
+import { formatDate, formatEuro, formatUsd, gainColor } from '../utils/format'
+import { computeSellPnL } from '../utils/stockCalculations'
+import type { CreateStockTradeInput, StockTrade } from '../types'
 
 const CHART_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
   '#14b8a6', '#f97316', '#ec4899', '#6366f1', '#84cc16',
 ]
-
-function formatUsd(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
-}
-function formatEur(amount: number) {
-  return new Intl.NumberFormat('en-EU', { style: 'currency', currency: 'EUR' }).format(amount)
-}
-function formatPct(pct: number) {
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
-}
-function gainColor(value: number) {
-  if (value > 0) return 'text-green-600'
-  if (value < 0) return 'text-red-600'
-  return 'text-gray-500'
-}
-function gainBg(value: number) {
-  if (value > 0) return 'bg-green-500'
-  if (value < 0) return 'bg-red-500'
-  return 'bg-gray-300'
-}
-
-function DualAmount({ usd, usdToEur, gain = false }: { usd: number; usdToEur: (n: number) => number | null; gain?: boolean }) {
-  const eur = usdToEur(usd)
-  const prefix = gain && usd !== 0 ? (usd >= 0 ? '+' : '') : ''
-  return (
-    <div>
-      <div>{prefix}{eur != null ? formatEur(eur) : formatUsd(usd)}</div>
-      {eur != null && <div className="text-xs text-gray-400">{prefix}{formatUsd(usd)}</div>}
-    </div>
-  )
-}
-
-function DualAmountEur({ eur, eurToUsd, gain = false }: { eur: number; eurToUsd: (n: number) => number | null; gain?: boolean }) {
-  const usd = eurToUsd(eur)
-  const prefix = gain && eur !== 0 ? (eur >= 0 ? '+' : '') : ''
-  return (
-    <div>
-      <div>{prefix}{formatEur(eur)}</div>
-      {usd != null && <div className="text-xs text-gray-400">{prefix}{formatUsd(usd)}</div>}
-    </div>
-  )
-}
-
-const RANGES = ['1mo', '3mo', '6mo', '1y', '2y', '5y'] as const
-type Range = typeof RANGES[number]
-
-function PortfolioRow({ holding, usdToEur, eurToUsd, totalCostEur, trades }: {
-  holding: StockHolding
-  usdToEur: (n: number) => number | null
-  eurToUsd: (n: number) => number | null
-  totalCostEur: number | null
-  trades: StockTrade[]
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [range, setRange] = useState<Range>('1y')
-  const { data: priceData } = useStockPrice(holding.ticker, holding.shares > 0)
-  const currentPrice = priceData?.price ?? null
-  const currentValue = currentPrice != null ? holding.shares * currentPrice : null
-  const unrealizedGain = currentValue != null ? currentValue - holding.total_cost.value : null
-  const returnPct = unrealizedGain != null && holding.total_cost.value > 0
-    ? (unrealizedGain / holding.total_cost.value) * 100 : null
-  const isEur = holding.currency === 'EUR'
-
-  const costEur = isEur ? holding.total_cost.value : usdToEur(holding.total_cost.value)
-  const weightPct = costEur != null && totalCostEur != null && totalCostEur > 0
-    ? (costEur / totalCostEur) * 100 : null
-
-  function AmountCell({ amount, gain = false }: { amount: number; gain?: boolean }) {
-    return isEur
-      ? <DualAmountEur eur={amount} eurToUsd={eurToUsd} gain={gain} />
-      : <DualAmount usd={amount} usdToEur={usdToEur} gain={gain} />
-  }
-
-  // Inline chart state (only fetched when expanded)
-  const { data: histData, isLoading: histLoading, isError: histError } = useStockHistory(holding.ticker, range, expanded)
-  const points = histData?.points ?? []
-  const first = points[0]?.close
-  const last = points[points.length - 1]?.close
-  const chartColor = first != null && last != null && last >= first ? '#10b981' : '#ef4444'
-  const formatCcy = isEur ? (v: number) => `€${v.toFixed(2)}` : (v: number) => `$${v.toFixed(2)}`
-  const colSpan = 9
-
-  return (
-    <>
-      <tr className={`hover:bg-gray-50 ${expanded ? 'bg-blue-50/30' : ''}`}>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="font-bold text-gray-900 hover:text-blue-600 text-left"
-            >
-              {holding.ticker}
-            </button>
-            <span className={`text-xs transition-transform ${expanded ? 'rotate-90' : ''} text-gray-400`}>▶</span>
-          </div>
-        </td>
-        <td className="px-4 py-3 text-right text-gray-500 text-xs">{holding.currency}</td>
-        <td className="px-4 py-3 text-right text-gray-700">{holding.shares.toFixed(4)}</td>
-        <td className="px-4 py-3 text-right text-gray-700">
-          <AmountCell amount={holding.avg_cost.value} />
-        </td>
-        <td className="px-4 py-3 text-right text-gray-700">
-          <div>
-            <AmountCell amount={holding.total_cost.value} />
-            {weightPct != null && (
-              <div className="mt-1 flex items-center gap-1">
-                <div className="h-1.5 bg-gray-100 rounded-full flex-1 overflow-hidden">
-                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${weightPct}%` }} />
-                </div>
-                <span className="text-xs text-gray-400">{weightPct.toFixed(0)}%</span>
-              </div>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3 text-right text-gray-500">
-          {currentPrice != null ? <AmountCell amount={currentPrice} /> : <span className="text-xs text-gray-300">loading…</span>}
-        </td>
-        <td className="px-4 py-3 text-right font-semibold">
-          {currentValue != null ? (
-            <div className="text-blue-700"><AmountCell amount={currentValue} /></div>
-          ) : <span className="text-xs text-gray-300">—</span>}
-        </td>
-        <td className={`px-4 py-3 text-right font-semibold ${unrealizedGain != null ? gainColor(unrealizedGain) : 'text-gray-300'}`}>
-          {unrealizedGain != null ? (
-            <div>
-              <AmountCell amount={unrealizedGain} gain />
-              {returnPct != null && (
-                <div className="flex items-center justify-end gap-1 mt-0.5">
-                  <div className="h-1 w-10 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${gainBg(returnPct)}`} style={{ width: `${Math.min(Math.abs(returnPct), 100)}%` }} />
-                  </div>
-                  <span className={`text-xs ${gainColor(returnPct)}`}>{formatPct(returnPct)}</span>
-                </div>
-              )}
-            </div>
-          ) : '—'}
-        </td>
-        <td className={`px-4 py-3 text-right font-semibold ${gainColor(holding.realized_gain.value)}`}>
-          {holding.realized_gain.value !== 0 ? <AmountCell amount={holding.realized_gain.value} gain /> : '—'}
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr>
-          <td colSpan={colSpan} className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            {/* Range tabs */}
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-semibold text-gray-500 mr-1">Price history</span>
-              <div className="flex bg-white border border-gray-200 rounded-lg p-0.5">
-                {RANGES.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRange(r)}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                      range === r ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {r.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {histLoading && <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>}
-            {histError && <div className="h-48 flex items-center justify-center text-red-400 text-sm">Failed to load price history</div>}
-            {!histLoading && !histError && points.length > 0 && (
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={points} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id={`grad-${holding.ticker}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={chartColor} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false}
-                    tickFormatter={(d) => d.slice(5)} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
-                    tickFormatter={formatCcy} width={65} domain={['auto', 'auto']} />
-                  <Tooltip
-                    formatter={(v: number) => [formatCcy(v), 'Close']}
-                    contentStyle={{ fontSize: 11, borderRadius: 6 }}
-                  />
-                  <ReferenceLine y={holding.avg_cost.value} stroke="#6366f1" strokeDasharray="4 2"
-                    label={{ value: `Avg ${formatCcy(holding.avg_cost.value)}`, position: 'insideTopRight', fontSize: 10, fill: '#6366f1' }} />
-                  <Area type="monotone" dataKey="close" stroke={chartColor} strokeWidth={2}
-                    fill={`url(#grad-${holding.ticker})`} dot={false} activeDot={{ r: 3 }} />
-                  {trades.map((t) => {
-                    const date = t.date.slice(0, 10)
-                    if (!points.some((p) => p.date === date)) return null
-                    const isBuy = t.action === 'buy'
-                    return (
-                      <ReferenceDot
-                        key={t.id}
-                        x={date}
-                        y={t.price_per_share.value}
-                        r={6}
-                        fill={isBuy ? '#10b981' : '#ef4444'}
-                        stroke="white"
-                        strokeWidth={1.5}
-                        label={{ value: isBuy ? 'B' : 'S', position: 'top', fontSize: 9, fontWeight: 'bold', fill: isBuy ? '#10b981' : '#ef4444' }}
-                      />
-                    )
-                  })}
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  )
-}
 
 export default function Stocks() {
   const [showForm, setShowForm] = useState(false)
@@ -431,13 +182,13 @@ export default function Stocks() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-xs text-gray-500 mb-1">Invested (open)</p>
-              <p className="text-xl font-bold text-gray-900">{totalInvestedEur != null ? formatEur(totalInvestedEur) : '—'}</p>
+              <p className="text-xl font-bold text-gray-900">{totalInvestedEur != null ? formatEuro(totalInvestedEur) : '—'}</p>
               <p className="text-xs text-gray-400 mt-1">{activeHoldings.length} position{activeHoldings.length !== 1 ? 's' : ''}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-xs text-gray-500 mb-1">Unrealized P&L</p>
               <p className={`text-xl font-bold ${totalUnrealDisplay != null ? gainColor(totalUnrealDisplay) : 'text-gray-300'}`}>
-                {totalUnrealDisplay != null ? `${totalUnrealDisplay >= 0 ? '+' : ''}${formatEur(totalUnrealDisplay)}` : '…'}
+                {totalUnrealDisplay != null ? `${totalUnrealDisplay >= 0 ? '+' : ''}${formatEuro(totalUnrealDisplay)}` : '…'}
               </p>
               <p className="text-xs text-gray-400 mt-1">Open positions</p>
             </div>
@@ -445,7 +196,7 @@ export default function Stocks() {
               <p className="text-xs text-gray-500 mb-1">Realized P&L</p>
               {totalRealizedEur != null ? (
                 <p className={`text-xl font-bold ${gainColor(totalRealizedEur)}`}>
-                  {totalRealizedEur >= 0 ? '+' : ''}{formatEur(totalRealizedEur)}
+                  {totalRealizedEur >= 0 ? '+' : ''}{formatEuro(totalRealizedEur)}
                 </p>
               ) : <p className="text-xl font-bold text-gray-400">—</p>}
               <p className="text-xs text-gray-400 mt-1">All closed trades</p>
@@ -453,7 +204,7 @@ export default function Stocks() {
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-xs text-gray-500 mb-1">Total P&L</p>
               <p className={`text-xl font-bold ${totalPnl != null ? gainColor(totalPnl) : 'text-gray-300'}`}>
-                {totalPnl != null ? `${totalPnl >= 0 ? '+' : ''}${formatEur(totalPnl)}` : '…'}
+                {totalPnl != null ? `${totalPnl >= 0 ? '+' : ''}${formatEuro(totalPnl)}` : '…'}
               </p>
               <p className="text-xs text-gray-400 mt-1">Realized + unrealized</p>
             </div>
@@ -477,7 +228,7 @@ export default function Stocks() {
                   dataKey="value" nameKey="name" paddingAngle={2}>
                   {allocationData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
-                <Tooltip formatter={(v: number) => formatEur(v)} />
+                <Tooltip formatter={(v: number) => formatEuro(v)} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
@@ -492,7 +243,7 @@ export default function Stocks() {
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-sm font-semibold text-gray-800">{item.name}</span>
                       <div className="text-right">
-                        <span className="text-sm text-gray-700">{formatEur(item.value)}</span>
+                        <span className="text-sm text-gray-700">{formatEuro(item.value)}</span>
                         <span className="text-xs text-gray-400 ml-2">{pct.toFixed(1)}%</span>
                       </div>
                     </div>
@@ -581,18 +332,18 @@ export default function Stocks() {
               <ReferenceLine x={0} stroke="#d1d5db" />
               <Tooltip
                 formatter={(v: number, name: string) =>
-                  [`${v >= 0 ? '+' : ''}${formatEur(v)}`, name === 'realized' ? 'Realized' : 'Unrealized']
+                  [`${v >= 0 ? '+' : ''}${formatEuro(v)}`, name === 'realized' ? 'Realized' : 'Unrealized']
                 }
                 contentStyle={{ fontSize: 11, borderRadius: 6 }}
               />
               <Bar dataKey="realized" name="Realized" radius={[0, 3, 3, 0]}
-                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEuro(v)}` : '' }}>
                 {pnlCompData.map((entry, i) => (
                   <Cell key={`r-${i}`} fill={entry.realized >= 0 ? '#6366f1' : '#a78bfa'} fillOpacity={entry.realized !== 0 ? 1 : 0.15} />
                 ))}
               </Bar>
               <Bar dataKey="unrealized" name="Unrealized" radius={[0, 3, 3, 0]}
-                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEur(v)}` : '' }}>
+                label={{ position: 'right', fontSize: 10, formatter: (v: number) => v !== 0 ? `${v >= 0 ? '+' : ''}${formatEuro(v)}` : '' }}>
                 {pnlCompData.map((entry, i) => (
                   <Cell key={`u-${i}`}
                     fill={entry.unrealized == null ? '#d1d5db'
@@ -661,13 +412,13 @@ export default function Stocks() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">Total Realized</p>
-                <p className={`text-lg font-bold ${gainColor(totalPnlEur)}`}>{totalPnlEur >= 0 ? '+' : ''}{formatEur(totalPnlEur)}</p>
+                <p className={`text-lg font-bold ${gainColor(totalPnlEur)}`}>{totalPnlEur >= 0 ? '+' : ''}{formatEuro(totalPnlEur)}</p>
                 <p className="text-xs text-gray-400">{sellPnL.length} sell{sellPnL.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="bg-blue-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">+ Unrealized Today</p>
                 <p className={`text-lg font-bold ${gainColor(totalUnrealizedEur)}`}>
-                  {totalUnrealizedEur >= 0 ? '+' : ''}{formatEur(totalUnrealizedEur)}
+                  {totalUnrealizedEur >= 0 ? '+' : ''}{formatEuro(totalUnrealizedEur)}
                 </p>
                 <p className="text-xs text-gray-400">Open positions</p>
               </div>
@@ -676,7 +427,7 @@ export default function Stocks() {
                 {best ? (
                   <>
                     <p className={`text-lg font-bold ${gainColor(best.pnl)}`}>{best.ticker}</p>
-                    <p className={`text-xs ${gainColor(best.pnl)}`}>{best.pnl >= 0 ? '+' : ''}{formatEur(best.pnl)}</p>
+                    <p className={`text-xs ${gainColor(best.pnl)}`}>{best.pnl >= 0 ? '+' : ''}{formatEuro(best.pnl)}</p>
                   </>
                 ) : <p className="text-gray-400 text-sm">—</p>}
               </div>
@@ -685,7 +436,7 @@ export default function Stocks() {
                 {worst && worst !== best ? (
                   <>
                     <p className={`text-lg font-bold ${gainColor(worst.pnl)}`}>{worst.ticker}</p>
-                    <p className={`text-xs ${gainColor(worst.pnl)}`}>{worst.pnl >= 0 ? '+' : ''}{formatEur(worst.pnl)}</p>
+                    <p className={`text-xs ${gainColor(worst.pnl)}`}>{worst.pnl >= 0 ? '+' : ''}{formatEuro(worst.pnl)}</p>
                   </>
                 ) : <p className="text-gray-400 text-sm">—</p>}
               </div>
@@ -718,7 +469,7 @@ export default function Stocks() {
                   <ReferenceLine y={0} stroke="#d1d5db" strokeDasharray="4 2" />
                   <Tooltip
                     formatter={(v: number, name: string) => [
-                      `${v >= 0 ? '+' : ''}${formatEur(v)}`,
+                      `${v >= 0 ? '+' : ''}${formatEuro(v)}`,
                       name === 'total' ? 'Total (realized + unrealized)' : 'Cumulative realized',
                     ]}
                     contentStyle={{ fontSize: 11, borderRadius: 6 }}
@@ -744,10 +495,10 @@ export default function Stocks() {
                     <YAxis type="category" dataKey="ticker" tick={{ fontSize: 11, fontWeight: 600 }}
                       tickLine={false} axisLine={false} width={52} />
                     <ReferenceLine x={0} stroke="#d1d5db" />
-                    <Tooltip formatter={(v: number) => [`${v >= 0 ? '+' : ''}${formatEur(v)}`, 'Realized P&L']}
+                    <Tooltip formatter={(v: number) => [`${v >= 0 ? '+' : ''}${formatEuro(v)}`, 'Realized P&L']}
                       contentStyle={{ fontSize: 11, borderRadius: 6 }} />
                     <Bar dataKey="pnl" radius={[0, 3, 3, 0]}
-                      label={{ position: 'right', fontSize: 10, formatter: (v: number) => `${v >= 0 ? '+' : ''}${formatEur(v)}` }}>
+                      label={{ position: 'right', fontSize: 10, formatter: (v: number) => `${v >= 0 ? '+' : ''}${formatEuro(v)}` }}>
                       {tickerBars.map((entry, i) => (
                         <Cell key={i} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
                       ))}
@@ -774,7 +525,7 @@ export default function Stocks() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {[...withEur].reverse().map((s) => {
-                      const fmt = s.currency === 'EUR' ? formatEur : formatUsd
+                      const fmt = s.currency === 'EUR' ? formatEuro : formatUsd
                       return (
                         <tr key={s.id} className="hover:bg-gray-50">
                           <td className="py-2 pr-4 text-gray-600 text-xs">{s.date}</td>
@@ -786,7 +537,7 @@ export default function Stocks() {
                           <td className="py-2 pr-4 text-right text-gray-600 text-xs">{fmt(s.sellPrice)}</td>
                           <td className="py-2 pr-4 text-right text-gray-500 text-xs">{fmt(s.avgCost)}</td>
                           <td className={`py-2 text-right font-semibold text-sm ${gainColor(s.pnlEur)}`}>
-                            {s.pnlEur >= 0 ? '+' : ''}{formatEur(s.pnlEur)}
+                            {s.pnlEur >= 0 ? '+' : ''}{formatEuro(s.pnlEur)}
                             {s.currency !== 'EUR' && (
                               <div className="text-xs font-normal text-gray-400">{s.pnl >= 0 ? '+' : ''}{fmt(s.pnl)}</div>
                             )}

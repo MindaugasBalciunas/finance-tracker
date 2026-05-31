@@ -1,6 +1,7 @@
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { useBtcEur } from '../hooks/useBtcPrice'
+import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
 import StatCard from '../components/ui/StatCard'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
@@ -16,14 +17,12 @@ import { useDateRange } from '../context/DateRangeContext'
 export default function Dashboard() {
   const { dateRange } = useDateRange()
 
+  const { price: liveBtcPrice } = useBtcEur()
   const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
-  const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance()
+  const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance(liveBtcPrice)
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(dateRange)
   const { data: allocations, isLoading: allocLoading } = useAccountAllocation()
   const { data: allExpenses } = useAllExpenses(dateRange)
-  const { price: liveBtcPrice } = useBtcEur()
-  const storedBtcPrice = latestBalance?.btc_price ?? 0
-  const btcPrice: number | null = liveBtcPrice ?? (storedBtcPrice > 0 ? storedBtcPrice : null)
 
   const isLoading = summaryLoading || balanceLoading || trendLoading || allocLoading
 
@@ -65,32 +64,26 @@ export default function Dashboard() {
           />
           <StatCard
             title="Free Cash"
-            value={formatEuro(latestBalance.seb + latestBalance.swed + latestBalance.cash + latestBalance.rev_m + latestBalance.rev_r)}
+            value={formatEuro(freeCash(latestBalance))}
             subtitle="Banks + Cash + Revolut"
             color="green"
           />
           <StatCard
             title="Investments"
-            value={formatEuro(latestBalance.swed_etf + latestBalance.rev_stocks + latestBalance.ibkr_stocks)}
+            value={formatEuro(investments(latestBalance))}
             subtitle="ETF + Revolut + IBKR"
             color="blue"
           />
           <StatCard
             title="Pensions"
-            value={formatEuro(latestBalance.seb_pen + latestBalance.art)}
+            value={formatEuro(pensions(latestBalance))}
             subtitle="2nd + 3rd Pillar"
             color="purple"
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(
-              btcPrice != null
-                ? (latestBalance.r_btc + latestBalance.m_btc) * btcPrice
-                : (latestBalance.r_btc_eur ?? 0) + (latestBalance.m_btc_eur ?? 0)
-            )}
-            subtitle={btcPrice != null
-              ? `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC · €${btcPrice.toLocaleString()} /BTC`
-              : `${(latestBalance.r_btc + latestBalance.m_btc).toFixed(8)} BTC`}
+            value={formatEuro(cryptoEur(latestBalance))}
+            subtitle={cryptoSubtitle(latestBalance, liveBtcPrice)}
             color="yellow"
           />
         </div>
@@ -156,7 +149,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Net Worth Over Time</h3>
           <p className="text-xs text-gray-400 mb-4">Click legend items to show/hide accounts. Hover a line to highlight it.</p>
-          <BalanceTrendChart trend={trend} btcPrice={btcPrice} />
+          <BalanceTrendChart trend={trend} btcPrice={liveBtcPrice} />
         </div>
       )}
 
