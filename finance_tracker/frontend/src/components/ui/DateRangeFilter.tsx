@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import clsx from 'clsx'
+import DateInput from './DateInput'
 
 export interface DateRange {
   date_from?: string
@@ -97,17 +98,15 @@ export default function DateRangeFilter({ onChange, className }: Props) {
 
               {popoverOpen && (
                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 flex items-center gap-2 whitespace-nowrap">
-                  <input
-                    type="date"
+                  <DateInput
                     value={custom.date_from ?? ''}
-                    onChange={(e) => updateCustom('date_from', e.target.value)}
+                    onChange={(val) => updateCustom('date_from', val)}
                     className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
                   />
                   <span className="text-gray-400 text-sm">to</span>
-                  <input
-                    type="date"
+                  <DateInput
                     value={custom.date_to ?? ''}
-                    onChange={(e) => updateCustom('date_to', e.target.value)}
+                    onChange={(val) => updateCustom('date_to', val)}
                     className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
                   />
                   <button

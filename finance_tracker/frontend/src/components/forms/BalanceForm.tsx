@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import type { CreateBalanceInput } from '../../types'
 import { useBtcPrice } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
+import DateInput from '../ui/DateInput'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
   { key: 'seb',         label: 'SEB' },
@@ -38,7 +39,7 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   const [rBtc, setRBtc] = useState<string>(initRBtc)
   const [mBtc, setMBtc] = useState<string>(initMBtc)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<CreateBalanceInput>({
+  const { register, handleSubmit, control, formState: { errors } } = useForm<CreateBalanceInput>({
     defaultValues: { ...defaultValues },
   })
 
@@ -67,10 +68,11 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-        <input
-          type="date"
-          {...register('date', { required: 'Date is required' })}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <Controller
+          name="date"
+          control={control}
+          rules={{ required: 'Date is required' }}
+          render={({ field }) => <DateInput value={field.value ?? ''} onChange={field.onChange} />}
         />
         {errors.date && <p className="text-xs text-red-600 mt-1">{errors.date.message}</p>}
       </div>
