@@ -1,5 +1,6 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import type { CreateStockTradeInput, StockAction, StockSource } from '../../types'
+import DateInput from '../ui/DateInput'
 
 interface Props {
   onSubmit: (data: CreateStockTradeInput) => void
@@ -9,7 +10,7 @@ interface Props {
 }
 
 export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
-  const { register, handleSubmit, formState: { errors } } = useForm<CreateStockTradeInput>({
+  const { register, handleSubmit, control, formState: { errors } } = useForm<CreateStockTradeInput>({
     defaultValues: { action: 'buy', currency: 'USD', source: 'Revolut', ...defaultValues },
   })
 
@@ -18,10 +19,11 @@ export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defau
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-          <input
-            type="date"
-            {...register('date', { required: 'Date is required' })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <Controller
+            name="date"
+            control={control}
+            rules={{ required: 'Date is required' }}
+            render={({ field }) => <DateInput value={field.value ?? ''} onChange={field.onChange} />}
           />
           {errors.date && <p className="text-xs text-red-600 mt-1">{errors.date.message}</p>}
         </div>
