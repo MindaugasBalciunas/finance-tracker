@@ -43,14 +43,6 @@ const ACCOUNT_LABELS: Record<string, string> = {
   ibkr_stocks: 'IBKR stocks',
 }
 
-// Bottom → top stack order: liquid banks, then liquid Revolut, then investments, then pensions, then crypto
-const STACK_ORDER = [
-  'seb', 'swed', 'luminor', 'cash',
-  'rev_m', 'rev_r',
-  'swed_etf', 'ibkr_stocks', 'rev_stocks',
-  'seb_pen', 'art',
-  'm_btc', 'r_btc',
-]
 
 function buildYTicks(maxVal: number): number[] {
   const candidates = [0, 1000, 5000, 10000, 25000, 50000, 75000, 100000, 125000, 150000, 175000, 200000, 250000, 300000, 400000, 500000]
@@ -149,11 +141,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
     trend.accounts[acc].some((v) => v > 0)
   )
 
-  const orderedAccounts = [
-    ...STACK_ORDER.filter((acc) => activeAccounts.includes(acc)),
-    ...activeAccounts.filter((acc) => !STACK_ORDER.includes(acc)),
-  ]
-
+  // Compute latest values first so we can sort by them
   const latestValues: Record<string, number> = {}
   if (data.length > 0) {
     const last = data[data.length - 1]
@@ -161,6 +149,11 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
       latestValues[acc] = typeof last[acc] === 'number' ? (last[acc] as number) : 0
     }
   }
+
+  // Highest value at bottom of stack (first in array), lowest at top
+  const orderedAccounts = [...activeAccounts].sort(
+    (a, b) => (latestValues[b] ?? 0) - (latestValues[a] ?? 0)
+  )
 
   const maxTotal = Math.max(...data.map((d) =>
     activeAccounts.reduce((s, acc) => s + (typeof d[acc] === 'number' ? (d[acc] as number) : 0), 0)
