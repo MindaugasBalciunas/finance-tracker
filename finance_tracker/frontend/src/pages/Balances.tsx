@@ -121,7 +121,7 @@ export default function Balances() {
           <StatCard title="Total Net Worth" value={formatEuro(latest.total)} color="blue" />
           <StatCard
             title="Free Cash"
-            value={formatEuro(latest.seb + latest.swed + latest.luminor + latest.cash + latest.rev_m + latest.rev_r)}
+            value={formatEuro(latest.seb + latest.swed + latest.cash + latest.rev_m + latest.rev_r)}
             subtitle="Banks + Cash + Revolut"
             color="green"
           />
@@ -177,19 +177,19 @@ export default function Balances() {
               <tr>
                 <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Seb</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB 2nd pillar pension</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Luminor</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea 3rd pillar pension</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R account</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R account BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account BTC</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M account stocks</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">IBKR stocks</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC (€)</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M stocks</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB pension</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea pension</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC (€)</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600 text-gray-400">Luminor</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -201,17 +201,17 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.luminor)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.r_btc * btcPrice : (b.r_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.m_btc * btcPrice : (b.m_btc_eur ?? 0))}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.r_btc * btcPrice : (b.r_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-400">{b.luminor ? formatEuro(b.luminor) : '—'}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setEditingBalance(b)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>

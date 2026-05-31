@@ -65,7 +65,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Free Cash"
-            value={formatEuro(latestBalance.seb + latestBalance.swed + latestBalance.luminor + latestBalance.cash + latestBalance.rev_m + latestBalance.rev_r)}
+            value={formatEuro(latestBalance.seb + latestBalance.swed + latestBalance.cash + latestBalance.rev_m + latestBalance.rev_r)}
             subtitle="Banks + Cash + Revolut"
             color="green"
           />
