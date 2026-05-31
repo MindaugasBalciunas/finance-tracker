@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
+import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
 import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
@@ -15,9 +16,7 @@ export default function Balances() {
 
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
-  const storedBtcPrice = latest?.btc_price ?? 0
-  const btcPrice: number | null = liveBtcPrice ?? (storedBtcPrice > 0 ? storedBtcPrice : null)
-  const { data: balances, isLoading } = useBalances({}, btcPrice)
+  const { data: balances, isLoading } = useBalances({}, liveBtcPrice)
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()
@@ -121,32 +120,26 @@ export default function Balances() {
           <StatCard title="Total Net Worth" value={formatEuro(latest.total)} color="blue" />
           <StatCard
             title="Free Cash"
-            value={formatEuro(latest.seb + latest.swed + latest.cash + latest.rev_m + latest.rev_r)}
+            value={formatEuro(freeCash(latest))}
             subtitle="Banks + Cash + Revolut"
             color="green"
           />
           <StatCard
             title="Investments"
-            value={formatEuro(latest.swed_etf + latest.rev_stocks + latest.ibkr_stocks)}
+            value={formatEuro(investments(latest))}
             subtitle="ETF + Revolut + IBKR"
             color="blue"
           />
           <StatCard
             title="Pensions"
-            value={formatEuro(latest.seb_pen + latest.art)}
+            value={formatEuro(pensions(latest))}
             subtitle="2nd + 3rd Pillar"
             color="purple"
           />
           <StatCard
             title="Crypto"
-            value={formatEuro(
-              btcPrice != null
-                ? (latest.r_btc + latest.m_btc) * btcPrice
-                : (latest.r_btc_eur ?? 0) + (latest.m_btc_eur ?? 0)
-            )}
-            subtitle={btcPrice != null
-              ? `${(latest.r_btc + latest.m_btc).toFixed(8)} BTC · €${btcPrice.toLocaleString()} /BTC`
-              : 'Revolut R & M BTC'}
+            value={formatEuro(cryptoEur(latest))}
+            subtitle={cryptoSubtitle(latest, liveBtcPrice)}
             color="yellow"
           />
         </div>
@@ -157,7 +150,7 @@ export default function Balances() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
-            <BalanceTrendChart trend={trend} btcPrice={btcPrice} />
+            <BalanceTrendChart trend={trend} btcPrice={liveBtcPrice} />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Current Allocation</h3>
@@ -204,12 +197,12 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.m_btc * btcPrice : (b.m_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(btcPrice != null ? b.r_btc * btcPrice : (b.r_btc_eur ?? 0))}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setEditingBalance(b)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>

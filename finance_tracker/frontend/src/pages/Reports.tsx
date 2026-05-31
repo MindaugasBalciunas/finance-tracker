@@ -14,26 +14,26 @@ export default function Reports() {
   const { data: summary, isLoading } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
 
-  const savings = summary ? summary.total_income - summary.total_expenses : 0
+  const savings = summary ? summary.total_income - summary.total_expenses : null
   const savingsRate = summary && summary.total_income > 0
-    ? (savings / summary.total_income) * 100
-    : 0
+    ? ((savings ?? 0) / summary.total_income) * 100
+    : null
 
   const investmentRate = summary && summary.total_income > 0
     ? (summary.total_investments / summary.total_income) * 100
-    : 0
+    : null
 
   const expenseRatio = summary && summary.total_income > 0
     ? (summary.total_expenses / summary.total_income) * 100
-    : 0
+    : null
 
   const avgMonthlySpend = summary && summary.by_month?.length > 0
     ? summary.total_expenses / summary.by_month.length
-    : 0
+    : null
 
   const avgMonthlySavings = summary && summary.by_month?.length > 0
-    ? savings / summary.by_month.length
-    : 0
+    ? (savings ?? 0) / summary.by_month.length
+    : null
 
   const positiveMonths = summary?.by_month?.filter(m => m.income > m.expenses).length ?? 0
   const totalMonths = summary?.by_month?.length ?? 0
@@ -56,8 +56,8 @@ export default function Reports() {
             {[
               { label: 'Total Income', value: formatEuro(summary.total_income), color: 'text-green-600' },
               { label: 'Total Expenses', value: formatEuro(summary.total_expenses), color: 'text-red-600' },
-              { label: 'Net Savings', value: formatEuro(savings), color: savings >= 0 ? 'text-green-600' : 'text-red-600' },
-              { label: 'Savings Rate', value: `${savingsRate.toFixed(1)}%`, color: savingsRate >= 20 ? 'text-green-600' : 'text-yellow-600' },
+              { label: 'Net Savings', value: savings != null ? formatEuro(savings) : '—', color: savings != null && savings >= 0 ? 'text-green-600' : 'text-red-600' },
+              { label: 'Savings Rate', value: savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—', color: savingsRate != null && savingsRate >= 20 ? 'text-green-600' : 'text-yellow-600' },
             ].map(({ label, value, color }) => (
               <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
                 <p className="text-sm font-medium text-gray-500">{label}</p>
@@ -76,48 +76,48 @@ export default function Reports() {
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Savings Rate</span>
-                    <span className={savingsRate >= 20 ? 'text-green-600 font-semibold' : 'text-yellow-600'}>{savingsRate.toFixed(1)}%</span>
+                    <span className={(savingsRate ?? 0) >= 20 ? 'text-green-600 font-semibold' : 'text-yellow-600'}>{savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—'}</span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${savingsRate >= 20 ? 'bg-green-500' : savingsRate >= 10 ? 'bg-yellow-400' : 'bg-red-400'}`} style={{ width: `${Math.min(savingsRate, 100)}%` }} />
+                    <div className={`h-full rounded-full transition-all ${(savingsRate ?? 0) >= 20 ? 'bg-green-500' : (savingsRate ?? 0) >= 10 ? 'bg-yellow-400' : 'bg-red-400'}`} style={{ width: `${Math.min(savingsRate ?? 0, 100)}%` }} />
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">{savingsRate >= 20 ? 'Excellent — above 20% target' : savingsRate >= 10 ? 'OK — aim for 20%+' : 'Low — under 10%'}</p>
+                  <p className="text-xs text-gray-400 mt-1">{(savingsRate ?? 0) >= 20 ? 'Excellent — above 20% target' : (savingsRate ?? 0) >= 10 ? 'OK — aim for 20%+' : 'Low — under 10%'}</p>
                 </div>
 
                 {/* Investment rate */}
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Investment Rate</span>
-                    <span className={investmentRate >= 10 ? 'text-blue-600 font-semibold' : 'text-gray-500'}>{investmentRate.toFixed(1)}%</span>
+                    <span className={(investmentRate ?? 0) >= 10 ? 'text-blue-600 font-semibold' : 'text-gray-500'}>{investmentRate != null ? `${investmentRate.toFixed(1)}%` : '—'}</span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${investmentRate >= 10 ? 'bg-blue-500' : 'bg-gray-300'}`} style={{ width: `${Math.min(investmentRate, 100)}%` }} />
+                    <div className={`h-full rounded-full ${(investmentRate ?? 0) >= 10 ? 'bg-blue-500' : 'bg-gray-300'}`} style={{ width: `${Math.min(investmentRate ?? 0, 100)}%` }} />
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">{investmentRate >= 10 ? 'Good — investing 10%+' : 'Consider investing more'}</p>
+                  <p className="text-xs text-gray-400 mt-1">{(investmentRate ?? 0) >= 10 ? 'Good — investing 10%+' : 'Consider investing more'}</p>
                 </div>
 
                 {/* Expense ratio */}
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Expense Ratio</span>
-                    <span className={expenseRatio <= 70 ? 'text-green-600 font-semibold' : 'text-red-500'}>{expenseRatio.toFixed(1)}%</span>
+                    <span className={(expenseRatio ?? 101) <= 70 ? 'text-green-600 font-semibold' : 'text-red-500'}>{expenseRatio != null ? `${expenseRatio.toFixed(1)}%` : '—'}</span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${expenseRatio <= 70 ? 'bg-green-400' : expenseRatio <= 85 ? 'bg-yellow-400' : 'bg-red-400'}`} style={{ width: `${Math.min(expenseRatio, 100)}%` }} />
+                    <div className={`h-full rounded-full ${(expenseRatio ?? 0) <= 70 ? 'bg-green-400' : (expenseRatio ?? 0) <= 85 ? 'bg-yellow-400' : 'bg-red-400'}`} style={{ width: `${Math.min(expenseRatio ?? 0, 100)}%` }} />
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">{expenseRatio <= 70 ? 'Healthy — under 70%' : expenseRatio <= 85 ? 'OK — aim to reduce' : 'High — exceeds 85%'}</p>
+                  <p className="text-xs text-gray-400 mt-1">{(expenseRatio ?? 101) <= 70 ? 'Healthy — under 70%' : (expenseRatio ?? 101) <= 85 ? 'OK — aim to reduce' : 'High — exceeds 85%'}</p>
                 </div>
 
                 {/* Avg monthly savings */}
                 <div>
                   <p className="text-xs text-gray-500">Avg Monthly Savings</p>
-                  <p className={`text-lg font-bold mt-0.5 ${avgMonthlySavings >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatEuro(avgMonthlySavings)}</p>
+                  <p className={`text-lg font-bold mt-0.5 ${(avgMonthlySavings ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{avgMonthlySavings != null ? formatEuro(avgMonthlySavings) : '—'}</p>
                 </div>
 
                 {/* Avg monthly spend */}
                 <div>
                   <p className="text-xs text-gray-500">Avg Monthly Spend</p>
-                  <p className="text-lg font-bold mt-0.5 text-gray-800">{formatEuro(avgMonthlySpend)}</p>
+                  <p className="text-lg font-bold mt-0.5 text-gray-800">{avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}</p>
                 </div>
 
                 {/* Positive months */}
