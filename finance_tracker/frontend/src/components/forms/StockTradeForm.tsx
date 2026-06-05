@@ -10,8 +10,9 @@ interface Props {
 }
 
 export default function StockTradeForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
+  const today = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, control, formState: { errors } } = useForm<CreateStockTradeInput>({
-    defaultValues: { action: 'buy', currency: 'USD', source: 'Revolut', ...defaultValues },
+    defaultValues: { action: 'buy', currency: 'USD', source: 'Revolut', date: today, ...defaultValues },
   })
 
   return (

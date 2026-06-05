@@ -39,8 +39,9 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   const [rBtc, setRBtc] = useState<string>(initRBtc)
   const [mBtc, setMBtc] = useState<string>(initMBtc)
 
+  const today = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, control, formState: { errors } } = useForm<CreateBalanceInput>({
-    defaultValues: { ...defaultValues },
+    defaultValues: { date: today, ...defaultValues },
   })
 
   const rBtcEur = btcPrice && rBtc ? parseFloat(rBtc) * btcPrice : null
