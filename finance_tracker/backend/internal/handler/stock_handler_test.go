@@ -62,6 +62,7 @@ func (m *mockStockService) GetPortfolio() (*domain.StockPortfolio, error) {
 	}
 	return args.Get(0).(*domain.StockPortfolio), args.Error(1)
 }
+func (m *mockStockService) DeleteAll() error { return m.Called().Error(0) }
 
 func setupStockRouter(svc service.StockService) *gin.Engine {
 	r := gin.New()
@@ -81,6 +82,7 @@ func TestStockHandler_Create(t *testing.T) {
 			Ticker:        "AAPL",
 			Shares:        10,
 			PricePerShare: 220.50,
+			Source:        domain.StockSourceRevolut,
 		}
 		returned := &domain.StockTrade{
 			ID: 1, Ticker: "AAPL", Action: domain.StockActionBuy,

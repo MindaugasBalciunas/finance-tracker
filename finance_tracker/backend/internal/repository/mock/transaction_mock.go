@@ -75,3 +75,11 @@ func (m *TransactionRepository) DeleteBatch(ids []uint) error {
 	args := m.Called(ids)
 	return args.Error(0)
 }
+
+func (m *TransactionRepository) GetDistinctComments() ([]string, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}

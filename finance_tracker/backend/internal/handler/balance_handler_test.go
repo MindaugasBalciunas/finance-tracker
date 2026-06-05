@@ -69,6 +69,14 @@ func (m *mockBalanceService) GetAllocation() ([]domain.AccountAllocation, error)
 	}
 	return args.Get(0).([]domain.AccountAllocation), args.Error(1)
 }
+func (m *mockBalanceService) DeleteAll() error { return m.Called().Error(0) }
+func (m *mockBalanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, error) {
+	args := m.Called(liveBtcPrice)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Balance), args.Error(1)
+}
 
 func setupBalanceRouter(svc service.BalanceService) *gin.Engine {
 	r := gin.New()

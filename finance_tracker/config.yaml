@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal finance dashboard — transactions, balances, investments and AI insights"
-version: "1.0.48"
+version: "1.0.49"
 slug: "finance_tracker"
 init: false
 image: "ghcr.io/mindaugasbalciunas/finance-tracker"

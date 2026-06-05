@@ -112,8 +112,8 @@ var (
 
 	rtTransactions = []domain.Transaction{
 		{ID: 1, Date: rtDay1, Type: domain.TransactionTypeExpense, Amount: 88.91, Category: domain.CategoryFood, Comment: "Maxima"},
-		{ID: 2, Date: rtDay2, Type: domain.TransactionTypeIncome, Amount: 3500.00, Category: domain.CategoryIncome},
-		{ID: 3, Date: rtDay3, Type: domain.TransactionTypeInvestment, Amount: 200.00, Category: domain.CategoryInvestment, Comment: "ETF buy"},
+		{ID: 2, Date: rtDay2, Type: domain.TransactionTypeIncome, Amount: 3500.00, Category: domain.CategorySalary},
+		{ID: 3, Date: rtDay3, Type: domain.TransactionTypeInvestment, Amount: 200.00, Category: domain.CategoryStocksETF, Comment: "ETF buy"},
 	}
 
 	rtBalances = []domain.Balance{
@@ -245,6 +245,7 @@ func TestImportJSON_AllNew_ImportsEverything(t *testing.T) {
 	balRepo := &mock.BalanceRepository{}
 	stockRepo := &mock.StockRepository{}
 
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	for _, tx := range rtTransactions {
 		txRepo.On("GetByID", tx.ID).Return(nil, errors.New("not found"))
 	}
@@ -278,6 +279,7 @@ func TestImportJSON_Idempotent_SkipsAllOnSecondImport(t *testing.T) {
 	stockRepo := &mock.StockRepository{}
 
 	// All records already exist
+	txRepo.On("ListAll").Return(rtTransactions, nil)
 	for i := range rtTransactions {
 		tx := rtTransactions[i]
 		txRepo.On("GetByID", tx.ID).Return(&tx, nil)
@@ -343,6 +345,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	balRepo := &mock.BalanceRepository{}
 	stockRepo := &mock.StockRepository{}
 
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	for _, tx := range rtTransactions {
 		txRepo.On("GetByID", tx.ID).Return(nil, errors.New("not found"))
 	}
@@ -397,10 +400,12 @@ func TestImportJSON_InvalidJSON_Returns400(t *testing.T) {
 }
 
 func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {
+	txRepo := &mock.TransactionRepository{}
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	stockRepo := &mock.StockRepository{}
 	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
 
-	r := rtImportRouter(&mock.TransactionRepository{}, &mock.BalanceRepository{}, stockRepo)
+	r := rtImportRouter(txRepo, &mock.BalanceRepository{}, stockRepo)
 	body, ct := rtMultipartBody(t, rtBuildJSON(t, nil, nil, nil))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	req.Header.Set("Content-Type", ct)

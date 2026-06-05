@@ -76,6 +76,15 @@ func (m *mockTransactionService) ListSince(since time.Time) ([]domain.Transactio
 	}
 	return args.Get(0).([]domain.Transaction), args.Error(1)
 }
+func (m *mockTransactionService) DeleteAll() error   { return m.Called().Error(0) }
+func (m *mockTransactionService) DeleteBatch(ids []uint) error { return m.Called(ids).Error(0) }
+func (m *mockTransactionService) GetDistinctComments() ([]string, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
 
 func setupTransactionRouter(svc service.TransactionService) *gin.Engine {
 	r := gin.New()

@@ -34,6 +34,11 @@ func (m *StockRepository) Delete(id uint) error {
 	return args.Error(0)
 }
 
+func (m *StockRepository) DeleteAll() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func (m *StockRepository) ListAll() ([]domain.StockTrade, error) {
 	args := m.Called()
 	if args.Get(0) == nil {
