@@ -11,20 +11,22 @@ import (
 
 // CreateTransactionInput is the input DTO for creating a transaction
 type CreateTransactionInput struct {
-	Date     string                 `json:"date" binding:"required"`
-	Type     domain.TransactionType `json:"type" binding:"required,oneof=expense income investment"`
-	Amount   float64                `json:"amount" binding:"required,gt=0"`
-	Comment  string                 `json:"comment"`
-	Category domain.Category        `json:"category" binding:"required"`
+	Date          string                 `json:"date" binding:"required"`
+	Type          domain.TransactionType `json:"type" binding:"required,oneof=expense income investment"`
+	Amount        float64                `json:"amount" binding:"required,gt=0"`
+	Comment       string                 `json:"comment"`
+	Category      domain.Category        `json:"category" binding:"required"`
+	SourceAccount string                 `json:"source_account"`
 }
 
 // UpdateTransactionInput is the input DTO for updating a transaction
 type UpdateTransactionInput struct {
-	Date     string                 `json:"date"`
-	Type     domain.TransactionType `json:"type" binding:"omitempty,oneof=expense income investment"`
-	Amount   float64                `json:"amount" binding:"omitempty,gt=0"`
-	Comment  string                 `json:"comment"`
-	Category domain.Category        `json:"category"`
+	Date          string                 `json:"date"`
+	Type          domain.TransactionType `json:"type" binding:"omitempty,oneof=expense income investment"`
+	Amount        float64                `json:"amount" binding:"omitempty,gt=0"`
+	Comment       string                 `json:"comment"`
+	Category      domain.Category        `json:"category"`
+	SourceAccount string                 `json:"source_account"`
 }
 
 //go:generate mockery --name=TransactionService --output=../handler/mock --outpkg=mock
@@ -66,11 +68,12 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 	}
 
 	tx := &domain.Transaction{
-		Date:     date,
-		Type:     input.Type,
-		Amount:   input.Amount,
-		Comment:  input.Comment,
-		Category: input.Category,
+		Date:          date,
+		Type:          input.Type,
+		Amount:        input.Amount,
+		Comment:       input.Comment,
+		Category:      input.Category,
+		SourceAccount: input.SourceAccount,
 	}
 
 	if err := s.repo.Create(tx); err != nil {
@@ -114,6 +117,7 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if input.Category != "" {
 		tx.Category = input.Category
 	}
+	tx.SourceAccount = input.SourceAccount
 
 	if err := s.repo.Update(tx); err != nil {
 		return nil, err

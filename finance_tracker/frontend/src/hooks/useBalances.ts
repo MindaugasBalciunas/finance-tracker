@@ -4,6 +4,7 @@ import type { BalanceFilter, CreateBalanceInput } from '../types'
 
 export const BALANCES_KEY = 'balances'
 export const BALANCE_LATEST_KEY = 'balance-latest'
+export const BALANCE_PROJECTED_KEY = 'balance-projected'
 export const BALANCE_TREND_KEY = 'balance-trend'
 export const BALANCE_ALLOCATION_KEY = 'balance-allocation'
 
@@ -18,6 +19,14 @@ export function useLatestBalance(btcPrice?: number | null) {
   return useQuery({
     queryKey: [BALANCE_LATEST_KEY, btcPrice ?? 0],
     queryFn: () => balancesApi.getLatest(btcPrice ?? undefined),
+    retry: false,
+  })
+}
+
+export function useProjectedBalance(btcPrice?: number | null) {
+  return useQuery({
+    queryKey: [BALANCE_PROJECTED_KEY, btcPrice ?? 0],
+    queryFn: () => balancesApi.getProjected(btcPrice ?? undefined),
     retry: false,
   })
 }

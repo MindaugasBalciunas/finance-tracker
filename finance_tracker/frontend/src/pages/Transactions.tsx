@@ -90,6 +90,7 @@ export default function Transactions() {
                 amount: editingTx.amount.value,
                 category: editingTx.category,
                 comment: editingTx.comment,
+                source_account: editingTx.source_account,
               }}
             />
           </div>
@@ -171,6 +172,7 @@ export default function Transactions() {
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Type</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Category</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Comment</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Account</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600">Amount</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -183,6 +185,7 @@ export default function Transactions() {
                     <td className="px-4 py-3"><Badge type={tx.type} /></td>
                     <td className="px-4 py-3 text-gray-600">{tx.category}</td>
                     <td className="px-4 py-3 text-gray-500">{tx.comment || '—'}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{tx.source_account || '—'}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                       {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                     </td>
@@ -196,7 +199,7 @@ export default function Transactions() {
                 ))}
                 {!data?.data.length && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                       No transactions found. Add one above.
                     </td>
                   </tr>

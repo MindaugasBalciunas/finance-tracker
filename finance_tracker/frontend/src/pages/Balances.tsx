@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
+import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useProjectedBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
 import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
@@ -16,6 +16,7 @@ export default function Balances() {
 
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
+  const { data: projected } = useProjectedBalance(liveBtcPrice)
   const { data: balances, isLoading } = useBalances({}, liveBtcPrice)
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
@@ -94,20 +95,20 @@ export default function Balances() {
               onSubmit={handleCreate}
               onCancel={() => setShowForm(false)}
               isSubmitting={createMutation.isPending}
-              defaultValues={latest ? {
-                seb: latest.seb,
-                swed: latest.swed,
-                swed_etf: latest.swed_etf,
-                seb_pen: latest.seb_pen,
-                luminor: latest.luminor,
-                art: latest.art,
-                cash: latest.cash,
-                rev_m: latest.rev_m,
-                rev_r: latest.rev_r,
-                r_btc: latest.r_btc,
-                m_btc: latest.m_btc,
-                rev_stocks: latest.rev_stocks,
-                ibkr_stocks: latest.ibkr_stocks,
+              defaultValues={projected ? {
+                seb: projected.seb,
+                swed: projected.swed,
+                swed_etf: projected.swed_etf,
+                seb_pen: projected.seb_pen,
+                luminor: projected.luminor,
+                art: projected.art,
+                cash: projected.cash,
+                rev_m: projected.rev_m,
+                rev_r: projected.rev_r,
+                r_btc: projected.r_btc,
+                m_btc: projected.m_btc,
+                rev_stocks: projected.rev_stocks,
+                ibkr_stocks: projected.ibkr_stocks,
               } : undefined}
             />
           </div>

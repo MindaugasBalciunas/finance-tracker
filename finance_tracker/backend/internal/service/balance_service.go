@@ -95,16 +95,18 @@ type BalanceService interface {
 	DeleteAll() error
 	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
+	GetProjected(liveBtcPrice float64) (*domain.Balance, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
 
 type balanceService struct {
-	repo repository.BalanceRepository
+	repo   repository.BalanceRepository
+	txRepo repository.TransactionRepository
 }
 
-func NewBalanceService(repo repository.BalanceRepository) BalanceService {
-	return &balanceService{repo: repo}
+func NewBalanceService(repo repository.BalanceRepository, txRepo repository.TransactionRepository) BalanceService {
+	return &balanceService{repo: repo, txRepo: txRepo}
 }
 
 func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, error) {
@@ -222,6 +224,49 @@ func (s *balanceService) GetLatest(liveBtcPrice float64) (*domain.Balance, error
 	}
 	applyBtcEur(b, liveBtcPrice)
 	return b, nil
+}
+
+func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, error) {
+	latest, err := s.repo.GetLatest()
+	if err != nil {
+		return &domain.Balance{}, nil
+	}
+	txs, err := s.txRepo.ListSince(latest.Date)
+	if err != nil {
+		return nil, err
+	}
+	projected := *latest
+	for _, tx := range txs {
+		if !tx.Date.After(latest.Date) || tx.SourceAccount == "" {
+			continue
+		}
+		var delta float64
+		if tx.Type == domain.TransactionTypeIncome {
+			delta = tx.Amount
+		} else {
+			delta = -tx.Amount
+		}
+		switch tx.SourceAccount {
+		case "seb":
+			projected.Seb += delta
+		case "swed":
+			projected.Swed += delta
+		case "rev_m":
+			projected.RevM += delta
+		case "ibkr_stocks":
+			projected.IBKRStocks += delta
+		case "cash":
+			projected.Cash += delta
+		}
+	}
+	if liveBtcPrice >= minValidBtcPrice {
+		applyBtcEur(&projected, liveBtcPrice)
+	} else {
+		btcEur := projected.BtcPrice * (projected.RBTC + projected.MBTC)
+		projected.Total = projected.Seb + projected.Swed + projected.SwedETF + projected.SebPen + projected.Luminor + projected.Art + projected.Cash + projected.RevM + projected.RevR + btcEur + projected.RevStocks + projected.IBKRStocks
+	}
+	projected.ID = 0
+	return &projected, nil
 }
 
 func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {

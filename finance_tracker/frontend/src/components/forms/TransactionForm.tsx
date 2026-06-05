@@ -12,8 +12,9 @@ interface Props {
 }
 
 export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
+  const today = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, formState: { errors }, control, setValue } = useForm<CreateTransactionInput>({
-    defaultValues: { type: 'expense', ...defaultValues },
+    defaultValues: { type: 'expense', date: today, ...defaultValues },
   })
 
   const selectedType = useWatch({ control, name: 'type' })
@@ -81,14 +82,31 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
-        <input
-          type="text"
-          {...register('comment')}
-          placeholder="Optional description..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+          <input
+            type="text"
+            {...register('comment')}
+            placeholder="Optional description..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Account <span className="text-gray-400 font-normal">(optional)</span></label>
+          <select
+            {...register('source_account')}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">No account</option>
+            <option value="seb">SEB</option>
+            <option value="swed">Swedbank</option>
+            <option value="rev_m">Revolut M</option>
+            <option value="ibkr_stocks">IBKR Stocks</option>
+            <option value="cash">Cash</option>
+          </select>
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 pt-2">

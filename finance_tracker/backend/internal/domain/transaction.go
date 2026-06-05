@@ -90,14 +90,15 @@ const (
 // Transaction represents a financial transaction record
 // All amounts are in EUR.
 type Transaction struct {
-	ID        uint            `json:"id" gorm:"primaryKey;autoIncrement"`
-	Date      time.Time       `json:"date" gorm:"not null;index"`
-	Type      TransactionType `json:"type" gorm:"not null"`
-	Amount    float64         `json:"-" gorm:"not null"`     // DB column; use AmountMoney in responses
-	Comment   string          `json:"comment"`
-	Category  Category        `json:"category" gorm:"index"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	ID            uint            `json:"id" gorm:"primaryKey;autoIncrement"`
+	Date          time.Time       `json:"date" gorm:"not null;index"`
+	Type          TransactionType `json:"type" gorm:"not null"`
+	Amount        float64         `json:"-" gorm:"not null"`     // DB column; use AmountMoney in responses
+	Comment       string          `json:"comment"`
+	Category      Category        `json:"category" gorm:"index"`
+	SourceAccount string          `json:"source_account" gorm:"default:''"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
 
 	// Computed for API response (not persisted)
 	AmountMoney Money `json:"amount" gorm:"-"`

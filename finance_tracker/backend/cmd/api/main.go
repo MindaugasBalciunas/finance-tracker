@@ -40,7 +40,7 @@ func main() {
 
 	// Services
 	txSvc := service.NewTransactionService(txRepo)
-	balSvc := service.NewBalanceService(balRepo)
+	balSvc := service.NewBalanceService(balRepo, txRepo)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
 	stockSvc := service.NewStockService(stockRepo)
 

@@ -28,6 +28,7 @@ func (h *BalanceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/latest", h.GetLatest)
+	g.GET("/projected", h.GetProjected)
 	g.GET("/trend", h.GetTrend)
 	g.GET("/allocation", h.GetAllocation)
 	g.GET("/:id", h.GetByID)
@@ -173,6 +174,15 @@ func (h *BalanceHandler) GetLatest(c *gin.Context) {
 	b, err := h.svc.GetLatest(parseBtcPrice(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "no balance records found"})
+		return
+	}
+	c.JSON(http.StatusOK, b)
+}
+
+func (h *BalanceHandler) GetProjected(c *gin.Context) {
+	b, err := h.svc.GetProjected(parseBtcPrice(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, b)

@@ -13,6 +13,8 @@ export type TransactionType = 'expense' | 'income' | 'investment'
 
 export type Category = string
 
+export type SourceAccount = 'seb' | 'swed' | 'rev_m' | 'ibkr_stocks' | 'cash'
+
 export interface Transaction {
   id: number
   date: string
@@ -20,6 +22,7 @@ export interface Transaction {
   amount: Money // always EUR
   comment: string
   category: Category
+  source_account: string
   created_at: string
   updated_at: string
 }
@@ -30,6 +33,7 @@ export interface CreateTransactionInput {
   amount: number
   comment?: string
   category: Category
+  source_account?: string
 }
 
 export interface UpdateTransactionInput {
@@ -38,6 +42,7 @@ export interface UpdateTransactionInput {
   amount?: number
   comment?: string
   category?: Category
+  source_account?: string
 }
 
 export interface PaginatedTransactions {

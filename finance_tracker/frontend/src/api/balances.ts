@@ -48,4 +48,10 @@ export const balancesApi = {
     const { data } = await client.get<AccountAllocation[]>('/balances/allocation')
     return data
   },
+
+  getProjected: async (btcPrice?: number): Promise<Balance> => {
+    const params = btcPrice ? { btc_price: btcPrice } : undefined
+    const { data } = await client.get<Balance>('/balances/projected', { params })
+    return data
+  },
 }
