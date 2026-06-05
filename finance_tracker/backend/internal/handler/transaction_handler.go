@@ -23,6 +23,7 @@ func (h *TransactionHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/summary", h.GetSummary)
+	g.GET("/comments", h.GetComments)
 	g.DELETE("/batch", h.DeleteBatch)
 	g.DELETE("", h.DeleteAll)
 	g.GET("/:id", h.GetByID)
@@ -34,6 +35,15 @@ func (h *TransactionHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 func (h *TransactionHandler) ListCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, domain.ValidCategories)
+}
+
+func (h *TransactionHandler) GetComments(c *gin.Context) {
+	comments, err := h.svc.GetDistinctComments()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, comments)
 }
 
 // Create godoc

@@ -37,4 +37,9 @@ export const transactionsApi = {
     const { data } = await client.get<TransactionSummary>('/transactions/summary', { params: filter })
     return data
   },
+
+  getComments: async (): Promise<string[]> => {
+    const { data } = await client.get<string[]>('/transactions/comments')
+    return data
+  },
 }

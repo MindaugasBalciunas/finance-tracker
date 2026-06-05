@@ -40,6 +40,7 @@ type TransactionService interface {
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
+	GetDistinctComments() ([]string, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -166,6 +167,10 @@ func (s *transactionService) ListSince(since time.Time) ([]domain.Transaction, e
 	}
 	populateTxs(txs)
 	return txs, nil
+}
+
+func (s *transactionService) GetDistinctComments() ([]string, error) {
+	return s.repo.GetDistinctComments()
 }
 
 func (s *transactionService) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {

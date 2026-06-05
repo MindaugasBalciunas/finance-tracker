@@ -8,6 +8,7 @@ import type {
 
 export const TRANSACTIONS_KEY = 'transactions'
 export const SUMMARY_KEY = 'transactions-summary'
+export const COMMENTS_KEY = 'transactions-comments'
 
 export function useTransactions(filter: TransactionFilter = {}) {
   return useQuery({
@@ -30,6 +31,14 @@ export function useTransactionSummary(filter: Pick<TransactionFilter, 'date_from
   })
 }
 
+export function useTransactionComments() {
+  return useQuery({
+    queryKey: [COMMENTS_KEY],
+    queryFn: () => transactionsApi.getComments(),
+    staleTime: 60_000,
+  })
+}
+
 export function useCreateTransaction() {
   const qc = useQueryClient()
   return useMutation({
@@ -37,6 +46,7 @@ export function useCreateTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
       qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
+      qc.invalidateQueries({ queryKey: [COMMENTS_KEY] })
     },
   })
 }

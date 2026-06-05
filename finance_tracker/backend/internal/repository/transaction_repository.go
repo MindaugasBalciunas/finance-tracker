@@ -21,6 +21,7 @@ type TransactionRepository interface {
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
+	GetDistinctComments() ([]string, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
 
@@ -112,6 +113,18 @@ func (r *transactionRepository) ListSince(since time.Time) ([]domain.Transaction
 		return nil, err
 	}
 	return transactions, nil
+}
+
+func (r *transactionRepository) GetDistinctComments() ([]string, error) {
+	var comments []string
+	if err := r.db.Model(&domain.Transaction{}).
+		Where("comment != ''").
+		Distinct("comment").
+		Order("comment ASC").
+		Pluck("comment", &comments).Error; err != nil {
+		return nil, err
+	}
+	return comments, nil
 }
 
 func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error) {
