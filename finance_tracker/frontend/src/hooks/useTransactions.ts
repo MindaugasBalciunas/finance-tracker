@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactionsApi } from '../api/transactions'
+import { BALANCE_PROJECTED_KEY } from './useBalances'
 import type {
   TransactionFilter,
   CreateTransactionInput,
@@ -47,6 +48,7 @@ export function useCreateTransaction() {
       qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
       qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
       qc.invalidateQueries({ queryKey: [COMMENTS_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
     },
   })
 }
@@ -59,6 +61,8 @@ export function useUpdateTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
       qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
+      qc.invalidateQueries({ queryKey: [COMMENTS_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
     },
   })
 }
@@ -70,6 +74,8 @@ export function useDeleteTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
       qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
+      qc.invalidateQueries({ queryKey: [COMMENTS_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
     },
   })
 }
