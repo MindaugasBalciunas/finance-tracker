@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -236,15 +237,17 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 		return nil, err
 	}
 	projected := *latest
+	latestDay := latest.Date.Truncate(24 * time.Hour)
 	for _, tx := range txs {
-		if !tx.Date.After(latest.Date) || tx.SourceAccount == "" {
+		txDay := tx.Date.Truncate(24 * time.Hour)
+		if !txDay.After(latestDay) || tx.SourceAccount == "" {
 			continue
 		}
 		var delta float64
-		if tx.Type == domain.TransactionTypeIncome {
-			delta = tx.Amount
+		if tx.Type == domain.TransactionTypeExpense {
+			delta = -tx.Amount // expenses reduce the account
 		} else {
-			delta = -tx.Amount
+			delta = tx.Amount // income and investments add to the account
 		}
 		switch tx.SourceAccount {
 		case "seb":
