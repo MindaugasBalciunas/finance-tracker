@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
 )
@@ -14,6 +16,8 @@ type BalanceRepository interface {
 	DeleteAll() error
 	List(filter domain.BalanceFilter) ([]domain.Balance, error)
 	GetLatest() (*domain.Balance, error)
+	GetLatestManual() (*domain.Balance, error)
+	UpsertAuto(b *domain.Balance) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 }
 
@@ -26,7 +30,16 @@ func NewBalanceRepository(db *gorm.DB) BalanceRepository {
 }
 
 func (r *balanceRepository) Create(b *domain.Balance) error {
-	return r.db.Create(b).Error
+	var existing domain.Balance
+	err := r.db.Where("date = ? AND is_auto = ?", b.Date, false).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.db.Create(b).Error
+	}
+	if err != nil {
+		return err
+	}
+	b.ID = existing.ID
+	return r.db.Save(b).Error
 }
 
 func (r *balanceRepository) GetByID(id uint) (*domain.Balance, error) {
@@ -66,6 +79,29 @@ func (r *balanceRepository) GetLatest() (*domain.Balance, error) {
 		return nil, err
 	}
 	return &b, nil
+}
+
+func (r *balanceRepository) GetLatestManual() (*domain.Balance, error) {
+	var b domain.Balance
+	if err := r.db.Where("is_auto = ?", false).Order("date DESC").First(&b).Error; err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+func (r *balanceRepository) UpsertAuto(b *domain.Balance) error {
+	var existing domain.Balance
+	err := r.db.Where("date = ? AND is_auto = ?", b.Date, true).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		b.IsAuto = true
+		return r.db.Create(b).Error
+	}
+	if err != nil {
+		return err
+	}
+	b.ID = existing.ID
+	b.IsAuto = true
+	return r.db.Save(b).Error
 }
 
 func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {

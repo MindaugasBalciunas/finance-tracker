@@ -97,6 +97,7 @@ type BalanceService interface {
 	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetProjected(liveBtcPrice float64) (*domain.Balance, error)
+	UpsertProjected(liveBtcPrice float64) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -227,8 +228,22 @@ func (s *balanceService) GetLatest(liveBtcPrice float64) (*domain.Balance, error
 	return b, nil
 }
 
+func (s *balanceService) UpsertProjected(liveBtcPrice float64) error {
+	projected, err := s.GetProjected(liveBtcPrice)
+	if err != nil {
+		return err
+	}
+	if projected.ID == 0 && projected.Total == 0 {
+		return nil // no manual snapshot exists yet; nothing to persist
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	projected.Date = today
+	projected.IsAuto = true
+	return s.repo.UpsertAuto(projected)
+}
+
 func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, error) {
-	latest, err := s.repo.GetLatest()
+	latest, err := s.repo.GetLatestManual()
 	if err != nil {
 		return &domain.Balance{}, nil
 	}
@@ -240,7 +255,7 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 	latestDay := latest.Date.Truncate(24 * time.Hour)
 	for _, tx := range txs {
 		txDay := tx.Date.Truncate(24 * time.Hour)
-		if !txDay.After(latestDay) || tx.SourceAccount == "" {
+		if txDay.Before(latestDay) || tx.SourceAccount == "" {
 			continue
 		}
 		var delta float64
@@ -254,8 +269,18 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 			projected.Seb += delta
 		case "swed":
 			projected.Swed += delta
+		case "swed_etf":
+			projected.SwedETF += delta
+		case "seb_pen":
+			projected.SebPen += delta
+		case "luminor":
+			projected.Luminor += delta
+		case "art":
+			projected.Art += delta
 		case "rev_m":
 			projected.RevM += delta
+		case "rev_r":
+			projected.RevR += delta
 		case "ibkr_stocks":
 			projected.IBKRStocks += delta
 		case "cash":

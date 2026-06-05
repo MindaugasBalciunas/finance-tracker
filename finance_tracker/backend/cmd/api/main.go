@@ -38,9 +38,9 @@ func main() {
 	stockRepo := repository.NewStockRepository(db)
 	exportLogRepo := repository.NewExportLogRepository(db)
 
-	// Services
-	txSvc := service.NewTransactionService(txRepo)
+	// Services — balSvc must be created before txSvc (txSvc holds a reference to balSvc)
 	balSvc := service.NewBalanceService(balRepo, txRepo)
+	txSvc := service.NewTransactionService(txRepo, balSvc)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
 	stockSvc := service.NewStockService(stockRepo)
 

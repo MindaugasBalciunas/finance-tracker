@@ -33,6 +33,11 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		}
 	}
 
+	// Replace single-column unique index on balances.date with composite (date, is_auto)
+	// so manual and auto snapshots can coexist on the same date.
+	db.Exec("DROP INDEX IF EXISTS idx_balances_date")
+	db.Exec("DROP INDEX IF EXISTS uni_balances_date")
+
 	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}); err != nil {
 		return nil, err
 	}

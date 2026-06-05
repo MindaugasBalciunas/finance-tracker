@@ -48,6 +48,19 @@ func (m *BalanceRepository) GetLatest() (*domain.Balance, error) {
 	return args.Get(0).(*domain.Balance), args.Error(1)
 }
 
+func (m *BalanceRepository) GetLatestManual() (*domain.Balance, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Balance), args.Error(1)
+}
+
+func (m *BalanceRepository) UpsertAuto(b *domain.Balance) error {
+	args := m.Called(b)
+	return args.Error(0)
+}
+
 func (m *BalanceRepository) DeleteAll() error {
 	args := m.Called()
 	return args.Error(0)

@@ -9,13 +9,43 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/repository/mock"
 	"github.com/mindaugas/finance-tracker/internal/service"
 	"github.com/stretchr/testify/assert"
+	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// stubBalanceSvc is a no-op BalanceService used in transaction service tests
+// that only care about transaction behaviour, not balance projection.
+type stubBalanceSvc struct{ testifymock.Mock }
+
+func (s *stubBalanceSvc) UpsertProjected(liveBtcPrice float64) error {
+	return s.Called(liveBtcPrice).Error(0)
+}
+func (s *stubBalanceSvc) Create(_ service.CreateBalanceInput) (*domain.Balance, error) { return nil, nil }
+func (s *stubBalanceSvc) GetByID(_ uint) (*domain.Balance, error)                      { return nil, nil }
+func (s *stubBalanceSvc) Update(_ uint, _ service.UpdateBalanceInput) (*domain.Balance, error) {
+	return nil, nil
+}
+func (s *stubBalanceSvc) Delete(_ uint) error                                              { return nil }
+func (s *stubBalanceSvc) DeleteAll() error                                                 { return nil }
+func (s *stubBalanceSvc) List(_ domain.BalanceFilter, _ float64) ([]domain.Balance, error) { return nil, nil }
+func (s *stubBalanceSvc) GetLatest(_ float64) (*domain.Balance, error)                    { return nil, nil }
+func (s *stubBalanceSvc) GetProjected(_ float64) (*domain.Balance, error)                 { return nil, nil }
+func (s *stubBalanceSvc) GetTrend(_ domain.BalanceFilter) (*domain.BalanceTrend, error)   { return nil, nil }
+func (s *stubBalanceSvc) GetAllocation() ([]domain.AccountAllocation, error)              { return nil, nil }
+
+// newTxSvc builds a transactionService backed by a stub BalanceService.
+// UpsertProjected is pre-registered so it never panics on mutation paths;
+// call balSvc.AssertExpectations(t) in a test to verify it was actually invoked.
+func newTxSvc(repo *mock.TransactionRepository) (service.TransactionService, *stubBalanceSvc) {
+	balSvc := &stubBalanceSvc{}
+	balSvc.On("UpsertProjected", float64(0)).Return(nil)
+	return service.NewTransactionService(repo, balSvc), balSvc
+}
 
 func TestTransactionService_Create(t *testing.T) {
 	t.Run("expense", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		input := service.CreateTransactionInput{
 			Date:     "2026-01-15",
@@ -45,7 +75,7 @@ func TestTransactionService_Create(t *testing.T) {
 
 	t.Run("income", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("Create", &domain.Transaction{
 			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
@@ -68,7 +98,7 @@ func TestTransactionService_Create(t *testing.T) {
 
 	t.Run("investment", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("Create", &domain.Transaction{
 			Date:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
@@ -90,7 +120,7 @@ func TestTransactionService_Create(t *testing.T) {
 
 	t.Run("invalid date", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		_, err := svc.Create(service.CreateTransactionInput{
 			Date:     "not-a-date",
@@ -103,7 +133,7 @@ func TestTransactionService_Create(t *testing.T) {
 
 	t.Run("repository error", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("Create", &domain.Transaction{
 			Date:     time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
@@ -126,7 +156,7 @@ func TestTransactionService_Create(t *testing.T) {
 func TestTransactionService_GetByID(t *testing.T) {
 	t.Run("found and Money populated", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		stored := &domain.Transaction{ID: 1, Amount: 100, Type: domain.TransactionTypeIncome}
 		repo.On("GetByID", uint(1)).Return(stored, nil)
@@ -141,7 +171,7 @@ func TestTransactionService_GetByID(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
 
@@ -154,7 +184,7 @@ func TestTransactionService_GetByID(t *testing.T) {
 func TestTransactionService_Update(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		existing := &domain.Transaction{ID: 1, Amount: 50, Type: domain.TransactionTypeExpense, Category: domain.CategoryFood}
 		repo.On("GetByID", uint(1)).Return(existing, nil)
@@ -172,7 +202,7 @@ func TestTransactionService_Update(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
 
@@ -185,7 +215,7 @@ func TestTransactionService_Update(t *testing.T) {
 func TestTransactionService_Delete(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("GetByID", uint(1)).Return(&domain.Transaction{ID: 1}, nil)
 		repo.On("Delete", uint(1)).Return(nil)
@@ -196,7 +226,7 @@ func TestTransactionService_Delete(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		repo.On("GetByID", uint(99)).Return(nil, errors.New("record not found"))
 
@@ -208,7 +238,7 @@ func TestTransactionService_Delete(t *testing.T) {
 func TestTransactionService_List(t *testing.T) {
 	t.Run("populates AmountMoney for each transaction", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		filter := domain.TransactionFilter{Page: 1, PageSize: 10}
 		repoResult := &domain.PaginatedTransactions{
@@ -232,7 +262,7 @@ func TestTransactionService_List(t *testing.T) {
 func TestTransactionService_ListAll(t *testing.T) {
 	t.Run("returns all transactions with Money populated", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		stored := []domain.Transaction{
 			{ID: 1, Amount: 50, Type: domain.TransactionTypeExpense},
@@ -252,7 +282,7 @@ func TestTransactionService_ListAll(t *testing.T) {
 func TestTransactionService_ListSince(t *testing.T) {
 	t.Run("returns transactions on or after the given date", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		since := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 		stored := []domain.Transaction{
@@ -272,7 +302,7 @@ func TestTransactionService_ListSince(t *testing.T) {
 func TestTransactionService_GetSummary(t *testing.T) {
 	t.Run("income increases net balance, expenses and investments decrease it", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		// Net = 5000 - 1200 - 800 = 3000
 		filter := domain.TransactionFilter{}
@@ -297,7 +327,7 @@ func TestTransactionService_GetSummary(t *testing.T) {
 
 	t.Run("negative net balance when expenses exceed income", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}
-		svc := service.NewTransactionService(repo)
+		svc, _ := newTxSvc(repo)
 
 		filter := domain.TransactionFilter{}
 		// Net = 1000 - 1500 - 0 = -500

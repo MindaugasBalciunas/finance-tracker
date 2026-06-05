@@ -9,6 +9,7 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/repository/mock"
 	"github.com/mindaugas/finance-tracker/internal/service"
 	"github.com/stretchr/testify/assert"
+	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -564,7 +565,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		txRepo := &mock.TransactionRepository{}
 		svc := newSvcWithTx(balRepo, txRepo)
 
-		balRepo.On("GetLatest").Return(nil, errors.New("record not found"))
+		balRepo.On("GetLatestManual").Return(nil, errors.New("record not found"))
 
 		b, err := svc.GetProjected(0)
 		require.NoError(t, err)
@@ -582,7 +583,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			Swed: 3000, Cash: 1000, Total: 4000,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{}, nil)
 
 		b, err := svc.GetProjected(0)
@@ -604,7 +605,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			Swed: 3000, Total: 3000,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{
 				Date:          snapDate(2026, 5, 10),
@@ -631,7 +632,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			Cash: 2000, Total: 2000,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{
 				Date:          snapDate(2026, 5, 5),
@@ -656,7 +657,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			IBKRStocks: 5000, Total: 5000,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{
 				Date:          snapDate(2026, 5, 15),
@@ -681,7 +682,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			Swed: 3000, Cash: 1000, Total: 4000,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		sameDay := snapDate(2026, 5, 20)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{Date: sameDay, Type: domain.TransactionTypeIncome, Amount: 2000, SourceAccount: "swed"},
@@ -698,22 +699,41 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		assert.Equal(t, 5800.0, b.Total)
 	})
 
-	t.Run("transactions on snapshot date are skipped", func(t *testing.T) {
+	t.Run("transactions on snapshot date are included in projection", func(t *testing.T) {
 		balRepo := &mock.BalanceRepository{}
 		txRepo := &mock.TransactionRepository{}
 		svc := newSvcWithTx(balRepo, txRepo)
 
 		snapD := snapDate(2026, 5, 1)
 		snap := &domain.Balance{ID: 1, Date: snapD, Swed: 3000, Total: 3000}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snapD).Return([]domain.Transaction{
-			// on snapshot day — must be ignored
+			// same day as snapshot — must be applied (snapshot may predate the transaction)
 			{Date: snapD, Type: domain.TransactionTypeIncome, Amount: 500, SourceAccount: "swed"},
 		}, nil)
 
 		b, err := svc.GetProjected(0)
 		require.NoError(t, err)
-		assert.Equal(t, 3000.0, b.Swed, "snapshot-day tx must not change projected value")
+		assert.Equal(t, 3500.0, b.Swed, "same-day tx must be applied to projected value")
+		assert.Equal(t, 3500.0, b.Total)
+	})
+
+	t.Run("transactions strictly before snapshot date are skipped", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snapD := snapDate(2026, 5, 10)
+		snap := &domain.Balance{ID: 1, Date: snapD, Swed: 3000, Total: 3000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+		txRepo.On("ListSince", snapD).Return([]domain.Transaction{
+			// day before snapshot — must be ignored (already captured in snapshot)
+			{Date: snapDate(2026, 5, 9), Type: domain.TransactionTypeIncome, Amount: 500, SourceAccount: "swed"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 3000.0, b.Swed, "pre-snapshot tx must not change projected value")
 		assert.Equal(t, 3000.0, b.Total)
 	})
 
@@ -723,7 +743,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		svc := newSvcWithTx(balRepo, txRepo)
 
 		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Swed: 3000, Total: 3000}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{Date: snapDate(2026, 5, 10), Type: domain.TransactionTypeIncome, Amount: 500, SourceAccount: ""},
 		}, nil)
@@ -743,7 +763,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			Seb: 1000, Swed: 2000, RevM: 500, IBKRStocks: 3000, Cash: 800,
 			Total: 7300,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		d := snapDate(2026, 5, 10)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{Date: d, Type: domain.TransactionTypeExpense, Amount: 100, SourceAccount: "seb"},
@@ -764,6 +784,48 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		assert.Equal(t, 7720.0, b.Total)
 	})
 
+	t.Run("all ten account types route correctly", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{
+			ID: 1, Date: snapDate(2026, 5, 1),
+			Seb: 1000, Swed: 2000, SwedETF: 500, SebPen: 300, Luminor: 400,
+			Art: 200, RevM: 500, RevR: 250, IBKRStocks: 3000, Cash: 800,
+			Total: 8950,
+		}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+		d := snapDate(2026, 5, 10)
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: d, Type: domain.TransactionTypeExpense, Amount: 100, SourceAccount: "seb"},
+			{Date: d, Type: domain.TransactionTypeIncome, Amount: 200, SourceAccount: "swed"},
+			{Date: d, Type: domain.TransactionTypeInvestment, Amount: 50, SourceAccount: "swed_etf"},
+			{Date: d, Type: domain.TransactionTypeInvestment, Amount: 30, SourceAccount: "seb_pen"},
+			{Date: d, Type: domain.TransactionTypeExpense, Amount: 20, SourceAccount: "luminor"},
+			{Date: d, Type: domain.TransactionTypeExpense, Amount: 10, SourceAccount: "art"},
+			{Date: d, Type: domain.TransactionTypeExpense, Amount: 50, SourceAccount: "rev_m"},
+			{Date: d, Type: domain.TransactionTypeIncome, Amount: 75, SourceAccount: "rev_r"},
+			{Date: d, Type: domain.TransactionTypeInvestment, Amount: 400, SourceAccount: "ibkr_stocks"},
+			{Date: d, Type: domain.TransactionTypeExpense, Amount: 30, SourceAccount: "cash"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 900.0, b.Seb)         // 1000 - 100
+		assert.Equal(t, 2200.0, b.Swed)       // 2000 + 200
+		assert.Equal(t, 550.0, b.SwedETF)     // 500 + 50
+		assert.Equal(t, 330.0, b.SebPen)      // 300 + 30
+		assert.Equal(t, 380.0, b.Luminor)     // 400 - 20
+		assert.Equal(t, 190.0, b.Art)         // 200 - 10
+		assert.Equal(t, 450.0, b.RevM)        // 500 - 50
+		assert.Equal(t, 325.0, b.RevR)        // 250 + 75
+		assert.Equal(t, 3400.0, b.IBKRStocks) // 3000 + 400
+		assert.Equal(t, 770.0, b.Cash)        // 800 - 30
+		// total = 900+2200+550+330+380+190+450+325+3400+770 = 9495
+		assert.Equal(t, 9495.0, b.Total)
+	})
+
 	t.Run("live BTC price recalculates total after applying deltas", func(t *testing.T) {
 		balRepo := &mock.BalanceRepository{}
 		txRepo := &mock.TransactionRepository{}
@@ -774,7 +836,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 			ID: 1, Date: snapDate(2026, 5, 1),
 			Cash: 10000, RBTC: 0.01, BtcPrice: 70000, Total: 10700,
 		}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
 			{
 				Date:          snapDate(2026, 5, 10),
@@ -798,7 +860,7 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		svc := newSvcWithTx(balRepo, txRepo)
 
 		snap := &domain.Balance{ID: 42, Date: snapDate(2026, 5, 1), Cash: 1000, Total: 1000}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{}, nil)
 
 		b, err := svc.GetProjected(0)
@@ -812,10 +874,199 @@ func TestBalanceService_GetProjected(t *testing.T) {
 		svc := newSvcWithTx(balRepo, txRepo)
 
 		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Total: 1000}
-		balRepo.On("GetLatest").Return(snap, nil)
+		balRepo.On("GetLatestManual").Return(snap, nil)
 		txRepo.On("ListSince", snap.Date).Return(nil, errors.New("db error"))
 
 		_, err := svc.GetProjected(0)
 		assert.Error(t, err)
+	})
+
+	// --- delete / update reflection ----------------------------------------
+	// GetProjected reads whatever ListSince returns, so deleting a transaction
+	// (absent from the list) or updating one (different values in the list)
+	// is immediately reflected in the next projected balance calculation.
+
+	t.Run("deleted expense is no longer deducted from projected balance", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Cash: 2000, Total: 2000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Expense was deleted — list is empty, so Cash stays at snapshot value.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 2000.0, b.Cash, "deleted expense must not reduce cash")
+		assert.Equal(t, 2000.0, b.Total)
+	})
+
+	t.Run("deleted income is no longer added to projected balance", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Seb: 5000, Total: 5000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Income transaction was deleted — projected equals snapshot.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 5000.0, b.Seb, "deleted income must not increase seb")
+		assert.Equal(t, 5000.0, b.Total)
+	})
+
+	t.Run("updated expense amount is reflected in projected balance", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Cash: 3000, Total: 3000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Expense was updated from 500 → 200; repo returns the updated record.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 10), Type: domain.TransactionTypeExpense, Amount: 200, SourceAccount: "cash"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 2800.0, b.Cash, "updated (smaller) expense must deduct only new amount")
+		assert.Equal(t, 2800.0, b.Total)
+	})
+
+	t.Run("updated income amount is reflected in projected balance", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Swed: 1000, Total: 1000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Income was updated from 300 → 700; repo returns the updated record.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 12), Type: domain.TransactionTypeIncome, Amount: 700, SourceAccount: "swed"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 1700.0, b.Swed, "updated (larger) income must add new amount")
+		assert.Equal(t, 1700.0, b.Total)
+	})
+
+	t.Run("transaction type changed from expense to income reverses sign", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), RevM: 2000, Total: 2000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Same 400 amount, but type flipped to income → adds instead of deducts.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 8), Type: domain.TransactionTypeIncome, Amount: 400, SourceAccount: "rev_m"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 2400.0, b.RevM, "income must add; type change from expense must flip sign")
+		assert.Equal(t, 2400.0, b.Total)
+	})
+
+	t.Run("transaction type changed from income to expense reverses sign", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Seb: 3000, Total: 3000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Same 500 amount, but type flipped to expense → deducts instead of adds.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 9), Type: domain.TransactionTypeExpense, Amount: 500, SourceAccount: "seb"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 2500.0, b.Seb, "expense must deduct; type change from income must flip sign")
+		assert.Equal(t, 2500.0, b.Total)
+	})
+
+	t.Run("transaction source_account change routes delta to new account only", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{
+			ID: 1, Date: snapDate(2026, 5, 1),
+			Seb: 1000, Cash: 500, Total: 1500,
+		}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+
+		// Expense was moved from seb → cash; repo returns the updated record.
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 7), Type: domain.TransactionTypeExpense, Amount: 300, SourceAccount: "cash"},
+		}, nil)
+
+		b, err := svc.GetProjected(0)
+		require.NoError(t, err)
+		assert.Equal(t, 1000.0, b.Seb, "seb must be unchanged after source_account update")
+		assert.Equal(t, 200.0, b.Cash, "cash must absorb expense after source_account update")
+		assert.Equal(t, 1200.0, b.Total)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// UpsertProjected tests
+// ---------------------------------------------------------------------------
+
+func TestBalanceService_UpsertProjected(t *testing.T) {
+	t.Run("persists projected balance as auto snapshot for today", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Cash: 2000, Total: 2000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{
+			{Date: snapDate(2026, 5, 10), Type: domain.TransactionTypeIncome, Amount: 500, SourceAccount: "cash"},
+		}, nil)
+		balRepo.On("UpsertAuto", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.IsAuto && b.Cash == 2500 && b.Total == 2500
+		})).Return(nil)
+
+		require.NoError(t, svc.UpsertProjected(0))
+		balRepo.AssertExpectations(t)
+	})
+
+	t.Run("skips upsert when no manual snapshot exists", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		balRepo.On("GetLatestManual").Return(nil, errors.New("record not found"))
+
+		require.NoError(t, svc.UpsertProjected(0))
+		balRepo.AssertNotCalled(t, "UpsertAuto")
+	})
+
+	t.Run("auto snapshot is marked is_auto=true", func(t *testing.T) {
+		balRepo := &mock.BalanceRepository{}
+		txRepo := &mock.TransactionRepository{}
+		svc := newSvcWithTx(balRepo, txRepo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 5, 1), Seb: 1000, Total: 1000}
+		balRepo.On("GetLatestManual").Return(snap, nil)
+		txRepo.On("ListSince", snap.Date).Return([]domain.Transaction{}, nil)
+		balRepo.On("UpsertAuto", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.IsAuto == true
+		})).Return(nil)
+
+		require.NoError(t, svc.UpsertProjected(0))
+		balRepo.AssertExpectations(t)
 	})
 }

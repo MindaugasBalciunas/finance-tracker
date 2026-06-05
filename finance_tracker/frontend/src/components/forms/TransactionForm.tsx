@@ -131,6 +131,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
             <option value="rev_m">Revolut M</option>
             <option value="ibkr_stocks">IBKR Stocks</option>
             <option value="cash">Cash</option>
+            <option value="art">Artea</option>
           </select>
         </div>
       </div>
