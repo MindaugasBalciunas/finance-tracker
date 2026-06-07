@@ -53,9 +53,12 @@ export default function Dashboard() {
   const allTimeCompleteMonths = allTimeSummary?.by_month?.filter(
     (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
   ) ?? []
-  const avgMonthlyIncome = allTimeCompleteMonths.length > 0
-    ? allTimeCompleteMonths.reduce((s, m) => s + m.income, 0) / allTimeCompleteMonths.length
-    : null
+  const medianMonthlyIncome = (() => {
+    if (allTimeCompleteMonths.length === 0) return null
+    const sorted = [...allTimeCompleteMonths].map((m) => m.income).sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  })()
 
   const avgMonthlySpend = completeMonths.length > 0
     ? completeMonths.reduce((s, m) => s + m.expenses, 0) / completeMonths.length
@@ -132,15 +135,15 @@ export default function Dashboard() {
               value={
                 savingsRate != null
                   ? `${savingsRate.toFixed(1)}%`
-                  : avgMonthlyIncome != null
-                  ? formatEuro(avgMonthlyIncome)
+                  : medianMonthlyIncome != null
+                  ? formatEuro(medianMonthlyIncome)
                   : '—'
               }
               subtitle={
                 savingsRate != null
                   ? (periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
-                  : avgMonthlyIncome != null
-                  ? '⚠ Avg monthly income — salary pending'
+                  : medianMonthlyIncome != null
+                  ? '⚠ Median monthly income — salary pending'
                   : 'No data yet'
               }
               color={
