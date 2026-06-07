@@ -29,7 +29,7 @@ export default function AllocationPieChart({ allocations }: Props) {
     : main
 
   return (
-    <ResponsiveContainer width="100%" height={320}>
+    <ResponsiveContainer width="100%" height={360}>
       <PieChart>
         <Pie
           data={data}
@@ -38,7 +38,9 @@ export default function AllocationPieChart({ allocations }: Props) {
           outerRadius={110}
           dataKey="amount"
           nameKey="account"
-          label={({ account, percentage }) => `${account} ${percentage.toFixed(1)}%`}
+          label={({ account, percentage, amount }) =>
+            `${account} ${formatEuro(amount)} (${percentage.toFixed(1)}%)`
+          }
           labelLine={true}
         >
           {data.map((_, i) => (
