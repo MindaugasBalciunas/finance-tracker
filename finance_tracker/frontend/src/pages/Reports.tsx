@@ -27,16 +27,21 @@ export default function Reports() {
     ? (summary.total_expenses / summary.total_income) * 100
     : null
 
-  const avgMonthlySpend = summary && summary.by_month?.length > 0
-    ? summary.total_expenses / summary.by_month.length
+  const now = new Date()
+  const completeMonths = summary?.by_month?.filter(
+    (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
+  ) ?? []
+
+  const avgMonthlySpend = completeMonths.length > 0
+    ? completeMonths.reduce((s, m) => s + m.expenses, 0) / completeMonths.length
     : null
 
-  const avgMonthlySavings = summary && summary.by_month?.length > 0
-    ? (savings ?? 0) / summary.by_month.length
+  const avgMonthlySavings = completeMonths.length > 0
+    ? completeMonths.reduce((s, m) => s + (m.income - m.expenses), 0) / completeMonths.length
     : null
 
-  const positiveMonths = summary?.by_month?.filter(m => m.income > m.expenses).length ?? 0
-  const totalMonths = summary?.by_month?.length ?? 0
+  const positiveMonths = completeMonths.filter(m => m.income > m.expenses).length
+  const totalMonths = completeMonths.length
 
   const topExpenseCategory = summary?.by_category
     .filter(c => c.type === 'expense')

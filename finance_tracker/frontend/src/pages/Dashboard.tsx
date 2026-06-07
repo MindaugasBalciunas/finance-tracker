@@ -32,8 +32,13 @@ export default function Dashboard() {
 
   const netSaved = summary ? summary.total_income - summary.total_expenses : null
 
-  const avgMonthlySpend = summary && summary.by_month?.length > 0
-    ? summary.total_expenses / summary.by_month.length
+  const now = new Date()
+  const completeMonths = summary?.by_month?.filter(
+    (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
+  ) ?? []
+
+  const avgMonthlySpend = completeMonths.length > 0
+    ? completeMonths.reduce((s, m) => s + m.expenses, 0) / completeMonths.length
     : null
 
   const netWorthChange = trend && trend.totals.length >= 2
@@ -111,7 +116,7 @@ export default function Dashboard() {
             <StatCard
               title="Avg Monthly Spend"
               value={avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}
-              subtitle={`Over ${summary.by_month?.length ?? 0} month${(summary.by_month?.length ?? 0) !== 1 ? 's' : ''}`}
+              subtitle={`Over ${completeMonths.length} complete month${completeMonths.length !== 1 ? 's' : ''}`}
               color="blue"
             />
             <StatCard
