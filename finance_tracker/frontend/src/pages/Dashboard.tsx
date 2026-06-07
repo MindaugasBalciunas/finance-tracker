@@ -38,21 +38,12 @@ export default function Dashboard() {
   const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const periodIncludesCurrentMonth = !dateRange.date_to || dateRange.date_to >= curYM
 
-  // Use only complete months for savings rate to avoid salary-lag distortion
-  const completeTotalIncome = completeMonths.reduce((s, m) => s + m.income, 0)
-  const completeTotalExpenses = completeMonths.reduce((s, m) => s + m.expenses, 0)
-  const savingsRate = periodIncludesCurrentMonth
-    ? (completeMonths.length > 0 && completeTotalIncome > 0
-        ? ((completeTotalIncome - completeTotalExpenses) / completeTotalIncome) * 100
-        : null)
-    : (summary && summary.total_income > 0
-        ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
-        : null)
-
-  // Avg monthly income from all-time complete months — used as fallback when current period has no complete months
+  // All-time complete months (excluding current) — used for median fallback
   const allTimeCompleteMonths = allTimeSummary?.by_month?.filter(
     (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
   ) ?? []
+
+  // Median of per-month savings rates across all historical complete months
   const medianSavingsRate = (() => {
     if (allTimeCompleteMonths.length === 0) return null
     const rates = allTimeCompleteMonths
@@ -62,6 +53,49 @@ export default function Dashboard() {
     if (rates.length === 0) return null
     const mid = Math.floor(rates.length / 2)
     return rates.length % 2 === 1 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2
+  })()
+
+  // Median monthly income — threshold for "salary has dropped this month"
+  const allTimeMedianIncome = (() => {
+    if (allTimeCompleteMonths.length === 0) return null
+    const sorted = [...allTimeCompleteMonths].map((m) => m.income).sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  })()
+
+  // Current month entry in the period data (may exist even for "this month" filter)
+  const currentMonthEntry = summary?.by_month?.find(
+    (m) => m.year === now.getFullYear() && m.month === now.getMonth() + 1
+  )
+  // Salary considered dropped once current month income >= 50% of median
+  const salaryDropped =
+    currentMonthEntry != null &&
+    allTimeMedianIncome != null &&
+    allTimeMedianIncome > 0 &&
+    currentMonthEntry.income >= allTimeMedianIncome * 0.5
+
+  // Savings rate logic:
+  // • Period doesn't touch current month → use raw summary totals
+  // • Period includes current month AND salary has dropped → use summary totals (current data is reliable)
+  // • Period includes current month AND salary still pending → use complete months from period,
+  //   or fall back to median if none (e.g. "this month" view early in the month)
+  const completeTotalIncome = completeMonths.reduce((s, m) => s + m.income, 0)
+  const completeTotalExpenses = completeMonths.reduce((s, m) => s + m.expenses, 0)
+  const savingsRate = (() => {
+    if (!periodIncludesCurrentMonth) {
+      return summary && summary.total_income > 0
+        ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
+        : null
+    }
+    if (salaryDropped) {
+      return summary && summary.total_income > 0
+        ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
+        : null
+    }
+    // Salary still pending — use only complete months in the period
+    return completeMonths.length > 0 && completeTotalIncome > 0
+      ? ((completeTotalIncome - completeTotalExpenses) / completeTotalIncome) * 100
+      : null // → medianSavingsRate fallback in the card
   })()
 
   const avgMonthlySpend = completeMonths.length > 0
@@ -145,7 +179,7 @@ export default function Dashboard() {
               }
               subtitle={
                 savingsRate != null
-                  ? (periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
+                  ? (periodIncludesCurrentMonth && !salaryDropped ? 'Complete months only' : periodIncludesCurrentMonth && salaryDropped ? 'Month in progress' : 'Of income kept')
                   : medianSavingsRate != null
                   ? '⚠ Median rate — salary pending'
                   : 'No data yet'
