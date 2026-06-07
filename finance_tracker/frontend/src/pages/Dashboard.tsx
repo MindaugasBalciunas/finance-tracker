@@ -19,6 +19,7 @@ export default function Dashboard() {
 
   const { price: liveBtcPrice } = useBtcEur()
   const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
+  const { data: allTimeSummary } = useTransactionSummary({})
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance(liveBtcPrice)
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(dateRange)
   const { data: allocations, isLoading: allocLoading } = useAccountAllocation()
@@ -47,6 +48,14 @@ export default function Dashboard() {
     : (summary && summary.total_income > 0
         ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
         : null)
+
+  // Avg monthly income from all-time complete months — used as fallback when current period has no complete months
+  const allTimeCompleteMonths = allTimeSummary?.by_month?.filter(
+    (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
+  ) ?? []
+  const avgMonthlyIncome = allTimeCompleteMonths.length > 0
+    ? allTimeCompleteMonths.reduce((s, m) => s + m.income, 0) / allTimeCompleteMonths.length
+    : null
 
   const avgMonthlySpend = completeMonths.length > 0
     ? completeMonths.reduce((s, m) => s + m.expenses, 0) / completeMonths.length
@@ -120,9 +129,25 @@ export default function Dashboard() {
             />
             <StatCard
               title="Savings Rate"
-              value={savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—'}
-              subtitle={periodIncludesCurrentMonth && completeMonths.length > 0 ? 'Complete months only' : periodIncludesCurrentMonth ? 'No complete months yet' : 'Of income kept'}
-              color={savingsRate != null && savingsRate >= 20 ? 'green' : savingsRate != null && savingsRate >= 0 ? 'yellow' : 'red'}
+              value={
+                savingsRate != null
+                  ? `${savingsRate.toFixed(1)}%`
+                  : avgMonthlyIncome != null
+                  ? formatEuro(avgMonthlyIncome)
+                  : '—'
+              }
+              subtitle={
+                savingsRate != null
+                  ? (periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
+                  : avgMonthlyIncome != null
+                  ? '⚠ Avg monthly income — salary pending'
+                  : 'No data yet'
+              }
+              color={
+                savingsRate != null
+                  ? (savingsRate >= 20 ? 'green' : savingsRate >= 0 ? 'yellow' : 'red')
+                  : 'yellow'
+              }
             />
             <StatCard
               title="Avg Monthly Spend"
