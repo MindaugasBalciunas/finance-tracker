@@ -53,11 +53,15 @@ export default function Dashboard() {
   const allTimeCompleteMonths = allTimeSummary?.by_month?.filter(
     (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
   ) ?? []
-  const medianMonthlyIncome = (() => {
+  const medianSavingsRate = (() => {
     if (allTimeCompleteMonths.length === 0) return null
-    const sorted = [...allTimeCompleteMonths].map((m) => m.income).sort((a, b) => a - b)
-    const mid = Math.floor(sorted.length / 2)
-    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+    const rates = allTimeCompleteMonths
+      .filter((m) => m.income > 0)
+      .map((m) => ((m.income - m.expenses) / m.income) * 100)
+      .sort((a, b) => a - b)
+    if (rates.length === 0) return null
+    const mid = Math.floor(rates.length / 2)
+    return rates.length % 2 === 1 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2
   })()
 
   const avgMonthlySpend = completeMonths.length > 0
@@ -135,20 +139,22 @@ export default function Dashboard() {
               value={
                 savingsRate != null
                   ? `${savingsRate.toFixed(1)}%`
-                  : medianMonthlyIncome != null
-                  ? formatEuro(medianMonthlyIncome)
+                  : medianSavingsRate != null
+                  ? `${medianSavingsRate.toFixed(1)}%`
                   : '—'
               }
               subtitle={
                 savingsRate != null
                   ? (periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
-                  : medianMonthlyIncome != null
-                  ? '⚠ Median monthly income — salary pending'
+                  : medianSavingsRate != null
+                  ? '⚠ Median rate — salary pending'
                   : 'No data yet'
               }
               color={
                 savingsRate != null
                   ? (savingsRate >= 20 ? 'green' : savingsRate >= 0 ? 'yellow' : 'red')
+                  : medianSavingsRate != null
+                  ? (medianSavingsRate >= 20 ? 'green' : medianSavingsRate >= 0 ? 'yellow' : 'red')
                   : 'yellow'
               }
             />
