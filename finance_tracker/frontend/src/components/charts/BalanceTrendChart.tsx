@@ -13,7 +13,7 @@ interface Props {
 
 const ACCOUNT_COLORS: Record<string, string> = {
   seb:         '#2563eb',
-  swed:        '#3b82f6',
+  swed:        '#1d4ed8',
   luminor:     '#93c5fd',
   cash:        '#bfdbfe',
   rev_m:       '#ea580c',
@@ -150,10 +150,14 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
     }
   }
 
-  // Highest value at bottom of stack (first in array), lowest at top
-  const orderedAccounts = [...activeAccounts].sort(
-    (a, b) => (latestValues[b] ?? 0) - (latestValues[a] ?? 0)
-  )
+  // Highest value at bottom of stack (first in array), lowest at top.
+  // Swedbank is always pinned to the visual top (last rendered) for prominence.
+  const orderedAccounts = [
+    ...activeAccounts
+      .filter((a) => a !== 'swed')
+      .sort((a, b) => (latestValues[b] ?? 0) - (latestValues[a] ?? 0)),
+    ...(activeAccounts.includes('swed') ? ['swed'] : []),
+  ]
 
   const maxTotal = Math.max(...data.map((d) =>
     activeAccounts.reduce((s, acc) => s + (typeof d[acc] === 'number' ? (d[acc] as number) : 0), 0)
@@ -205,8 +209,8 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
             dataKey={acc}
             stackId="nw"
             stroke={ACCOUNT_COLORS[acc] ?? '#94a3b8'}
-            strokeWidth={0.5}
-            strokeOpacity={0.4}
+            strokeWidth={acc === 'swed' ? 2 : 0.5}
+            strokeOpacity={acc === 'swed' ? 0.9 : 0.4}
             fill={`url(#sg-${acc})`}
             name={ACCOUNT_LABELS[acc] ?? acc}
             hide={hiddenKeys.has(acc)}
