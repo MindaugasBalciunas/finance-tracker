@@ -43,18 +43,6 @@ export default function Dashboard() {
     (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
   ) ?? []
 
-  // Median of per-month savings rates across all historical complete months
-  const medianSavingsRate = (() => {
-    if (allTimeCompleteMonths.length === 0) return null
-    const rates = allTimeCompleteMonths
-      .filter((m) => m.income > 0)
-      .map((m) => ((m.income - m.expenses) / m.income) * 100)
-      .sort((a, b) => a - b)
-    if (rates.length === 0) return null
-    const mid = Math.floor(rates.length / 2)
-    return rates.length % 2 === 1 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2
-  })()
-
   // Median monthly income — threshold for "salary has dropped this month"
   const allTimeMedianIncome = (() => {
     if (allTimeCompleteMonths.length === 0) return null
@@ -74,11 +62,18 @@ export default function Dashboard() {
     allTimeMedianIncome > 0 &&
     currentMonthEntry.income >= allTimeMedianIncome * 0.5
 
+  // Projected rate when salary is pending: actual expenses so far vs expected (median) income.
+  // Shows what the rate would be if no more expenses are added — clearly labelled as a projection.
+  const projectedSavingsRate =
+    allTimeMedianIncome != null && allTimeMedianIncome > 0 && currentMonthEntry != null
+      ? ((allTimeMedianIncome - currentMonthEntry.expenses) / allTimeMedianIncome) * 100
+      : null
+
   // Savings rate logic:
   // • Period doesn't touch current month → use raw summary totals
   // • Period includes current month AND salary has dropped → use summary totals (current data is reliable)
   // • Period includes current month AND salary still pending → use complete months from period,
-  //   or fall back to median if none (e.g. "this month" view early in the month)
+  //   or fall back to projected rate (actual spend vs median income) if no complete months
   const completeTotalIncome = completeMonths.reduce((s, m) => s + m.income, 0)
   const completeTotalExpenses = completeMonths.reduce((s, m) => s + m.expenses, 0)
   const savingsRate = (() => {
@@ -95,7 +90,7 @@ export default function Dashboard() {
     // Salary still pending — use only complete months in the period
     return completeMonths.length > 0 && completeTotalIncome > 0
       ? ((completeTotalIncome - completeTotalExpenses) / completeTotalIncome) * 100
-      : null // → medianSavingsRate fallback in the card
+      : null // → projectedSavingsRate fallback in the card
   })()
 
   const avgMonthlySpend = completeMonths.length > 0
@@ -173,22 +168,22 @@ export default function Dashboard() {
               value={
                 savingsRate != null
                   ? `${savingsRate.toFixed(1)}%`
-                  : medianSavingsRate != null
-                  ? `${medianSavingsRate.toFixed(1)}%`
+                  : projectedSavingsRate != null
+                  ? `~${projectedSavingsRate.toFixed(1)}%`
                   : '—'
               }
               subtitle={
                 savingsRate != null
-                  ? (periodIncludesCurrentMonth && !salaryDropped ? 'Complete months only' : periodIncludesCurrentMonth && salaryDropped ? 'Month in progress' : 'Of income kept')
-                  : medianSavingsRate != null
-                  ? '⚠ Median rate — salary pending'
+                  ? (periodIncludesCurrentMonth && salaryDropped ? 'Month in progress' : periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
+                  : projectedSavingsRate != null
+                  ? `⚠ Projected — salary pending`
                   : 'No data yet'
               }
               color={
                 savingsRate != null
                   ? (savingsRate >= 20 ? 'green' : savingsRate >= 0 ? 'yellow' : 'red')
-                  : medianSavingsRate != null
-                  ? (medianSavingsRate >= 20 ? 'green' : medianSavingsRate >= 0 ? 'yellow' : 'red')
+                  : projectedSavingsRate != null
+                  ? (projectedSavingsRate >= 20 ? 'green' : projectedSavingsRate >= 0 ? 'yellow' : 'red')
                   : 'yellow'
               }
             />
