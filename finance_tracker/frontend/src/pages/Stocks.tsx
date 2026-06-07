@@ -14,6 +14,19 @@ const CHART_COLORS = [
   '#14b8a6', '#f97316', '#ec4899', '#6366f1', '#84cc16',
 ]
 
+function AllocationTooltip({ active, payload, totalInvestedEur }: any) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  const pct = totalInvestedEur > 0 ? (d.value / totalInvestedEur) * 100 : 0
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <p className="font-semibold text-gray-800 mb-1">{d.name}</p>
+      <p className="text-gray-700">{formatEuro(d.value)}</p>
+      <p className="text-gray-500">{pct.toFixed(1)}%</p>
+    </div>
+  )
+}
+
 export default function Stocks() {
   const [showForm, setShowForm] = useState(false)
   const [editingTrade, setEditingTrade] = useState<StockTrade | null>(null)
@@ -240,7 +253,7 @@ export default function Stocks() {
                 >
                   {allocationData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
-                <Tooltip formatter={(v: number) => formatEuro(v)} />
+                <Tooltip content={<AllocationTooltip totalInvestedEur={totalInvestedEur} />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
