@@ -26,16 +26,27 @@ export default function Dashboard() {
 
   const isLoading = summaryLoading || balanceLoading || trendLoading || allocLoading
 
-  const savingsRate = summary && summary.total_income > 0
-    ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
-    : null
-
   const netSaved = summary ? summary.total_income - summary.total_expenses : null
 
   const now = new Date()
   const completeMonths = summary?.by_month?.filter(
     (m) => !(m.year === now.getFullYear() && m.month === now.getMonth() + 1)
   ) ?? []
+
+  // True when the selected period extends into the current calendar month
+  const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const periodIncludesCurrentMonth = !dateRange.date_to || dateRange.date_to >= curYM
+
+  // Use only complete months for savings rate to avoid salary-lag distortion
+  const completeTotalIncome = completeMonths.reduce((s, m) => s + m.income, 0)
+  const completeTotalExpenses = completeMonths.reduce((s, m) => s + m.expenses, 0)
+  const savingsRate = periodIncludesCurrentMonth
+    ? (completeMonths.length > 0 && completeTotalIncome > 0
+        ? ((completeTotalIncome - completeTotalExpenses) / completeTotalIncome) * 100
+        : null)
+    : (summary && summary.total_income > 0
+        ? ((summary.total_income - summary.total_expenses) / summary.total_income) * 100
+        : null)
 
   const avgMonthlySpend = completeMonths.length > 0
     ? completeMonths.reduce((s, m) => s + m.expenses, 0) / completeMonths.length
@@ -110,7 +121,7 @@ export default function Dashboard() {
             <StatCard
               title="Savings Rate"
               value={savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—'}
-              subtitle="Of income kept"
+              subtitle={periodIncludesCurrentMonth && completeMonths.length > 0 ? 'Complete months only' : periodIncludesCurrentMonth ? 'No complete months yet' : 'Of income kept'}
               color={savingsRate != null && savingsRate >= 20 ? 'green' : savingsRate != null && savingsRate >= 0 ? 'yellow' : 'red'}
             />
             <StatCard

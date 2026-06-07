@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, BarChart, Bar } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, BarChart, Bar } from 'recharts'
 import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useUsdEurRate, useAllStockPrices } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
@@ -222,14 +222,25 @@ export default function Stocks() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Allocation by Cost Basis</h3>
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
-                  dataKey="value" nameKey="name" paddingAngle={2}>
+                <Pie
+                  data={allocationData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  dataKey="value"
+                  nameKey="name"
+                  paddingAngle={2}
+                  label={({ name, value, percent }) =>
+                    `${name} ${formatEuro(value)} (${(percent * 100).toFixed(1)}%)`
+                  }
+                  labelLine={true}
+                >
                   {allocationData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
                 <Tooltip formatter={(v: number) => formatEuro(v)} />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
