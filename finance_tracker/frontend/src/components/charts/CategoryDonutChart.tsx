@@ -19,8 +19,10 @@ export default function CategoryDonutChart({ data, type }: Props) {
     return <p className="text-center text-gray-400 py-10 text-sm">No data</p>
   }
 
+  const total = filtered.reduce((s, d) => s + d.total, 0)
+
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={320}>
       <PieChart>
         <Pie
           data={filtered}
@@ -30,12 +32,18 @@ export default function CategoryDonutChart({ data, type }: Props) {
           outerRadius={100}
           dataKey="total"
           nameKey="category"
+          label={({ category, total: value, percent }) =>
+            percent >= 0.05
+              ? `${category} ${formatEuro(value)} (${(percent * 100).toFixed(1)}%)`
+              : ''
+          }
+          labelLine={true}
         >
           {filtered.map((_, i) => (
             <Cell key={i} fill={COLORS[i % COLORS.length]} />
           ))}
         </Pie>
-        <Tooltip formatter={(v: number) => formatEuro(v)} />
+        <Tooltip formatter={(v: number) => [formatEuro(v), `${((v / total) * 100).toFixed(1)}%`]} />
         <Legend formatter={(value) => <span className="text-xs">{value}</span>} />
       </PieChart>
     </ResponsiveContainer>
