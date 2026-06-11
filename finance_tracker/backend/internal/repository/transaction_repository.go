@@ -195,7 +195,7 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 	}
 
 	monthMap := map[string]*domain.MonthlySummary{}
-	monthNames := []string{"", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	monthNames := []string{"", "Sau", "Vas", "Kov", "Bal", "Geg", "Bir", "Lie", "Rgp", "Rgs", "Spa", "Lap", "Grd"}
 	for _, m := range monthResults {
 		yr, _ := strconv.Atoi(m.Year)
 		mo, _ := strconv.Atoi(m.Month)

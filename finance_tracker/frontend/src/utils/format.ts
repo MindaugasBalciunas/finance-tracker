@@ -1,5 +1,5 @@
 export function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount)
+  return new Intl.NumberFormat('lt-LT', { style: 'currency', currency: 'EUR' }).format(amount)
 }
 
 export function formatUsd(amount: number): string {
@@ -11,24 +11,24 @@ export function formatPercent(value: number, decimals = 2): string {
 }
 
 export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
+  return new Date(dateStr).toLocaleDateString('lt-LT', {
+    day: 'numeric',
+    month: 'long',
     year: 'numeric',
   })
 }
 
-export function formatTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
+export function formatShortDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('lt-LT', {
+    day: 'numeric',
+    month: 'short',
   })
 }
 
-export function formatShortDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
+export function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('lt-LT', {
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
