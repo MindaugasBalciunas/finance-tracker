@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"math"
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -243,6 +244,10 @@ func (s *balanceService) UpsertProjected(liveBtcPrice float64) error {
 }
 
 // applyAccountDelta adds delta to the named account field in b.
+func roundCents(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
 func applyAccountDelta(b *domain.Balance, account string, delta float64) {
 	switch account {
 	case "seb":
@@ -312,6 +317,18 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 			applyAccountDelta(&projected, credit, tx.Amount)
 		}
 	}
+	projected.Seb = roundCents(projected.Seb)
+	projected.Swed = roundCents(projected.Swed)
+	projected.SwedETF = roundCents(projected.SwedETF)
+	projected.SebPen = roundCents(projected.SebPen)
+	projected.Luminor = roundCents(projected.Luminor)
+	projected.Art = roundCents(projected.Art)
+	projected.Cash = roundCents(projected.Cash)
+	projected.RevM = roundCents(projected.RevM)
+	projected.RevR = roundCents(projected.RevR)
+	projected.RevStocks = roundCents(projected.RevStocks)
+	projected.IBKRStocks = roundCents(projected.IBKRStocks)
+
 	if liveBtcPrice >= minValidBtcPrice {
 		applyBtcEur(&projected, liveBtcPrice)
 	} else {
