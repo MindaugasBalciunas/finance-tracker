@@ -16,7 +16,8 @@ type CreateTransactionInput struct {
 	Amount        float64                `json:"amount" binding:"required,gt=0"`
 	Comment       string                 `json:"comment"`
 	Category      domain.Category        `json:"category" binding:"required"`
-	SourceAccount string                 `json:"source_account"`
+	DebitAccount  string                 `json:"debit_account"`
+	CreditAccount string                 `json:"credit_account"`
 }
 
 // UpdateTransactionInput is the input DTO for updating a transaction
@@ -26,7 +27,8 @@ type UpdateTransactionInput struct {
 	Amount        float64                `json:"amount" binding:"omitempty,gt=0"`
 	Comment       string                 `json:"comment"`
 	Category      domain.Category        `json:"category"`
-	SourceAccount string                 `json:"source_account"`
+	DebitAccount  string                 `json:"debit_account"`
+	CreditAccount string                 `json:"credit_account"`
 }
 
 //go:generate mockery --name=TransactionService --output=../handler/mock --outpkg=mock
@@ -81,7 +83,8 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		Amount:        input.Amount,
 		Comment:       input.Comment,
 		Category:      input.Category,
-		SourceAccount: input.SourceAccount,
+		DebitAccount:  input.DebitAccount,
+		CreditAccount: input.CreditAccount,
 	}
 
 	if err := s.repo.Create(tx); err != nil {
@@ -126,7 +129,8 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if input.Category != "" {
 		tx.Category = input.Category
 	}
-	tx.SourceAccount = input.SourceAccount
+	tx.DebitAccount = input.DebitAccount
+	tx.CreditAccount = input.CreditAccount
 
 	if err := s.repo.Update(tx); err != nil {
 		return nil, err

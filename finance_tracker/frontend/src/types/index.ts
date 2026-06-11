@@ -13,7 +13,23 @@ export type TransactionType = 'expense' | 'income' | 'investment'
 
 export type Category = string
 
-export type SourceAccount = 'seb' | 'swed' | 'rev_m' | 'ibkr_stocks' | 'cash'
+export type AccountKey =
+  | 'seb' | 'swed' | 'swed_etf' | 'seb_pen' | 'luminor'
+  | 'art' | 'rev_m' | 'rev_r' | 'rev_stocks' | 'ibkr_stocks' | 'cash'
+
+export const ACCOUNT_LABELS: Record<AccountKey, string> = {
+  seb: 'SEB',
+  swed: 'Swedbank',
+  swed_etf: 'Swed ETF',
+  seb_pen: 'SEB Pension',
+  luminor: 'Luminor',
+  art: 'Artea',
+  rev_m: 'Revolut M',
+  rev_r: 'Revolut R',
+  rev_stocks: 'Rev Stocks',
+  ibkr_stocks: 'IBKR',
+  cash: 'Cash',
+}
 
 export interface Transaction {
   id: number
@@ -22,7 +38,11 @@ export interface Transaction {
   amount: Money // always EUR
   comment: string
   category: Category
+  // Legacy field — present on old rows, empty on new rows
   source_account: string
+  // New fields — one or both set depending on transaction type
+  debit_account: string
+  credit_account: string
   created_at: string
   updated_at: string
 }
@@ -33,7 +53,8 @@ export interface CreateTransactionInput {
   amount: number
   comment?: string
   category: Category
-  source_account?: string
+  debit_account?: string
+  credit_account?: string
 }
 
 export interface UpdateTransactionInput {
@@ -42,7 +63,8 @@ export interface UpdateTransactionInput {
   amount?: number
   comment?: string
   category?: Category
-  source_account?: string
+  debit_account?: string
+  credit_account?: string
 }
 
 export interface PaginatedTransactions {

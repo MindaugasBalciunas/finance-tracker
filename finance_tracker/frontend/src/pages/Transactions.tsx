@@ -9,9 +9,26 @@ import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro, formatDate } from '../utils/format'
-import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput } from '../types'
+import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput, AccountKey } from '../types'
+import { ACCOUNT_LABELS } from '../types'
 import { CATEGORIES } from '../constants/categories'
 import { useDateRange } from '../context/DateRangeContext'
+
+function label(key: string) {
+  return ACCOUNT_LABELS[key as AccountKey] ?? key
+}
+
+function formatAccount(tx: Transaction): string {
+  const debit = tx.debit_account
+  const credit = tx.credit_account
+  // New-style rows
+  if (debit && credit) return `${label(debit)} → ${label(credit)}`
+  if (debit) return label(debit)
+  if (credit) return label(credit)
+  // Legacy rows
+  if (tx.source_account) return label(tx.source_account)
+  return '—'
+}
 
 export default function Transactions() {
   const { dateRange } = useDateRange()
@@ -90,7 +107,8 @@ export default function Transactions() {
                 amount: editingTx.amount.value,
                 category: editingTx.category,
                 comment: editingTx.comment,
-                source_account: editingTx.source_account,
+                debit_account: editingTx.debit_account || '',
+                credit_account: editingTx.credit_account || '',
               }}
             />
           </div>
@@ -185,7 +203,7 @@ export default function Transactions() {
                     <td className="px-4 py-3"><Badge type={tx.type} /></td>
                     <td className="px-4 py-3 text-gray-600">{tx.category}</td>
                     <td className="px-4 py-3 text-gray-500">{tx.comment || '—'}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{tx.source_account || '—'}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatAccount(tx)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                       {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                     </td>

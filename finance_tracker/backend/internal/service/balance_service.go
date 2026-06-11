@@ -242,6 +242,34 @@ func (s *balanceService) UpsertProjected(liveBtcPrice float64) error {
 	return s.repo.UpsertAuto(projected)
 }
 
+// applyAccountDelta adds delta to the named account field in b.
+func applyAccountDelta(b *domain.Balance, account string, delta float64) {
+	switch account {
+	case "seb":
+		b.Seb += delta
+	case "swed":
+		b.Swed += delta
+	case "swed_etf":
+		b.SwedETF += delta
+	case "seb_pen":
+		b.SebPen += delta
+	case "luminor":
+		b.Luminor += delta
+	case "art":
+		b.Art += delta
+	case "rev_m":
+		b.RevM += delta
+	case "rev_r":
+		b.RevR += delta
+	case "rev_stocks":
+		b.RevStocks += delta
+	case "ibkr_stocks":
+		b.IBKRStocks += delta
+	case "cash":
+		b.Cash += delta
+	}
+}
+
 func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, error) {
 	latest, err := s.repo.GetLatestManual()
 	if err != nil {
@@ -255,36 +283,33 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 	latestDay := latest.Date.Truncate(24 * time.Hour)
 	for _, tx := range txs {
 		txDay := tx.Date.Truncate(24 * time.Hour)
-		if txDay.Before(latestDay) || tx.SourceAccount == "" {
+		if txDay.Before(latestDay) {
 			continue
 		}
-		var delta float64
-		if tx.Type == domain.TransactionTypeExpense {
-			delta = -tx.Amount // expenses reduce the account
-		} else {
-			delta = tx.Amount // income and investments add to the account
+
+		debit := tx.DebitAccount
+		credit := tx.CreditAccount
+
+		// Backward compat: old rows only have source_account set.
+		// Derive debit/credit from type so existing data keeps working.
+		if debit == "" && credit == "" && tx.SourceAccount != "" {
+			if tx.Type == domain.TransactionTypeExpense {
+				debit = tx.SourceAccount
+			} else {
+				// income and legacy investments: the source_account was the receiving/destination account
+				credit = tx.SourceAccount
+			}
 		}
-		switch tx.SourceAccount {
-		case "seb":
-			projected.Seb += delta
-		case "swed":
-			projected.Swed += delta
-		case "swed_etf":
-			projected.SwedETF += delta
-		case "seb_pen":
-			projected.SebPen += delta
-		case "luminor":
-			projected.Luminor += delta
-		case "art":
-			projected.Art += delta
-		case "rev_m":
-			projected.RevM += delta
-		case "rev_r":
-			projected.RevR += delta
-		case "ibkr_stocks":
-			projected.IBKRStocks += delta
-		case "cash":
-			projected.Cash += delta
+
+		if debit == "" && credit == "" {
+			continue // no account info — skip
+		}
+
+		if debit != "" {
+			applyAccountDelta(&projected, debit, -tx.Amount)
+		}
+		if credit != "" {
+			applyAccountDelta(&projected, credit, tx.Amount)
 		}
 	}
 	if liveBtcPrice >= minValidBtcPrice {
