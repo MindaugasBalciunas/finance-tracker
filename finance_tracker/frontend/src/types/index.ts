@@ -105,6 +105,7 @@ export interface TransactionSummary {
 export interface Balance {
   id: number
   date: string
+  is_auto: boolean // true = auto-generated after a transaction mutation; not user-created
   total: number    // EUR - recomputed with live BTC price when available
   seb: number      // EUR
   swed: number     // EUR

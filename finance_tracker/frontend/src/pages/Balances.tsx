@@ -17,7 +17,9 @@ export default function Balances() {
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
   const { data: projected } = useProjectedBalance(liveBtcPrice)
-  const { data: balances, isLoading } = useBalances({}, liveBtcPrice)
+  const { data: allBalances, isLoading } = useBalances({}, liveBtcPrice)
+  // Auto-generated snapshots are internal projection caches — hide from history table
+  const balances = allBalances?.filter(b => !b.is_auto)
   const { data: trend } = useBalanceTrend()
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()

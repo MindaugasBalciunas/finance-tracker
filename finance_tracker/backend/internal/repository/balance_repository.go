@@ -105,14 +105,38 @@ func (r *balanceRepository) UpsertAuto(b *domain.Balance) error {
 }
 
 func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {
-	balances, err := r.List(filter)
+	all, err := r.List(filter)
 	if err != nil {
 		return nil, err
 	}
 
-	// Reverse to chronological order
-	for i, j := 0, len(balances)-1; i < j; i, j = i+1, j-1 {
-		balances[i], balances[j] = balances[j], balances[i]
+	// Deduplicate by calendar day: manual snapshot wins over auto.
+	// This prevents a visual double-point when an auto and a manual snapshot
+	// coexist on the same day.
+	type winner struct {
+		b    domain.Balance
+		idx  int // original index, used to rebuild chronological order
+	}
+	byDay := make(map[string]winner, len(all))
+	for i, b := range all {
+		day := b.Date.Format("2006-01-02")
+		prev, ok := byDay[day]
+		if !ok || prev.b.IsAuto {
+			byDay[day] = winner{b, i}
+		}
+	}
+	// Restore original order (all is DESC from List; we want to reverse to ASC)
+	balances := make([]domain.Balance, 0, len(byDay))
+	for _, w := range byDay {
+		balances = append(balances, w.b)
+	}
+	// Sort ascending by date
+	for i := 0; i < len(balances); i++ {
+		for j := i + 1; j < len(balances); j++ {
+			if balances[j].Date.Before(balances[i].Date) {
+				balances[i], balances[j] = balances[j], balances[i]
+			}
+		}
 	}
 
 	trend := &domain.BalanceTrend{
