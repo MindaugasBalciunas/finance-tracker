@@ -18,6 +18,13 @@ export function formatDate(dateStr: string): string {
   })
 }
 
+export function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function formatShortDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-GB', {
     day: '2-digit',

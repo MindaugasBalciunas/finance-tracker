@@ -6,7 +6,7 @@ import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import StatCard from '../components/ui/StatCard'
-import { formatEuro, formatDate } from '../utils/format'
+import { formatEuro, formatDate, formatTime } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
 
@@ -192,7 +192,10 @@ export default function Balances() {
               {balances?.map((b) => {
                 return (
                   <tr key={b.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-700 font-medium">{formatDate(b.date)}</td>
+                    <td className="px-3 py-2">
+                      <span className="text-gray-700 font-medium">{formatDate(b.date)}</span>
+                      <span className="block text-xs text-gray-400 mt-0.5">{formatTime(b.created_at)}</span>
+                    </td>
                     <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
