@@ -17,7 +17,7 @@ import (
 // that only care about transaction behaviour, not balance projection.
 type stubBalanceSvc struct{ testifymock.Mock }
 
-func (s *stubBalanceSvc) UpsertProjected(liveBtcPrice float64) error {
+func (s *stubBalanceSvc) RebuildAutoSnapshots(liveBtcPrice float64) error {
 	return s.Called(liveBtcPrice).Error(0)
 }
 func (s *stubBalanceSvc) Create(_ service.CreateBalanceInput) (*domain.Balance, error) { return nil, nil }
@@ -34,11 +34,11 @@ func (s *stubBalanceSvc) GetTrend(_ domain.BalanceFilter) (*domain.BalanceTrend,
 func (s *stubBalanceSvc) GetAllocation() ([]domain.AccountAllocation, error)              { return nil, nil }
 
 // newTxSvc builds a transactionService backed by a stub BalanceService.
-// UpsertProjected is pre-registered so it never panics on mutation paths;
+// RebuildAutoSnapshots is pre-registered so it never panics on mutation paths;
 // call balSvc.AssertExpectations(t) in a test to verify it was actually invoked.
 func newTxSvc(repo *mock.TransactionRepository) (service.TransactionService, *stubBalanceSvc) {
 	balSvc := &stubBalanceSvc{}
-	balSvc.On("UpsertProjected", float64(0)).Return(nil)
+	balSvc.On("RebuildAutoSnapshots", float64(0)).Return(nil)
 	return service.NewTransactionService(repo, balSvc), balSvc
 }
 

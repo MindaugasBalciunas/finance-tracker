@@ -98,7 +98,7 @@ type BalanceService interface {
 	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetProjected(liveBtcPrice float64) (*domain.Balance, error)
-	UpsertProjected(liveBtcPrice float64) error
+	RebuildAutoSnapshots(liveBtcPrice float64) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -147,6 +147,7 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 	if err := s.repo.Create(b); err != nil {
 		return nil, err
 	}
+	_ = s.RebuildAutoSnapshots(0)
 	return b, nil
 }
 
@@ -195,6 +196,7 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	if err := s.repo.Update(b); err != nil {
 		return nil, err
 	}
+	_ = s.RebuildAutoSnapshots(0)
 	return b, nil
 }
 
@@ -206,7 +208,11 @@ func (s *balanceService) Delete(id uint) error {
 	if _, err := s.repo.GetByID(id); err != nil {
 		return err
 	}
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	_ = s.RebuildAutoSnapshots(0)
+	return nil
 }
 
 func (s *balanceService) List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error) {
@@ -229,23 +235,79 @@ func (s *balanceService) GetLatest(liveBtcPrice float64) (*domain.Balance, error
 	return b, nil
 }
 
-func (s *balanceService) UpsertProjected(liveBtcPrice float64) error {
-	projected, err := s.GetProjected(liveBtcPrice)
+func (s *balanceService) RebuildAutoSnapshots(liveBtcPrice float64) error {
+	latest, err := s.repo.GetLatestManual()
+	if err != nil {
+		return nil // no manual snapshot — nothing to do
+	}
+	if err := s.repo.DeleteAllAuto(); err != nil {
+		return err
+	}
+	txs, err := s.txRepo.ListStrictlyAfter(latest.Date)
 	if err != nil {
 		return err
 	}
-	if projected.ID == 0 && projected.Total == 0 {
-		return nil // no manual snapshot exists yet; nothing to persist
+	running := *latest
+	for _, tx := range txs {
+		debit, credit := resolveAccounts(&tx)
+		if debit == "" && credit == "" {
+			continue
+		}
+		if debit != "" {
+			applyAccountDelta(&running, debit, -tx.Amount)
+		}
+		if credit != "" {
+			applyAccountDelta(&running, credit, tx.Amount)
+		}
+		roundAllAccounts(&running)
+		if liveBtcPrice >= minValidBtcPrice {
+			applyBtcEur(&running, liveBtcPrice)
+		} else {
+			btcEur := running.BtcPrice * (running.RBTC + running.MBTC)
+			running.Total = running.Seb + running.Swed + running.SwedETF + running.SebPen + running.Luminor + running.Art + running.Cash + running.RevM + running.RevR + btcEur + running.RevStocks + running.IBKRStocks
+		}
+		snapshot := running
+		snapshot.ID = 0
+		snapshot.Date = tx.Date.Truncate(24 * time.Hour)
+		snapshot.IsAuto = true
+		snapshot.CreatedAt = time.Time{}
+		snapshot.UpdatedAt = time.Time{}
+		if err := s.repo.CreateAuto(&snapshot); err != nil {
+			return err
+		}
 	}
-	today := time.Now().UTC().Truncate(24 * time.Hour)
-	projected.Date = today
-	projected.IsAuto = true
-	return s.repo.UpsertAuto(projected)
+	return nil
 }
 
-// applyAccountDelta adds delta to the named account field in b.
+func resolveAccounts(tx *domain.Transaction) (debit, credit string) {
+	debit = tx.DebitAccount
+	credit = tx.CreditAccount
+	if debit == "" && credit == "" && tx.SourceAccount != "" {
+		if tx.Type == domain.TransactionTypeExpense {
+			debit = tx.SourceAccount
+		} else {
+			credit = tx.SourceAccount
+		}
+	}
+	return debit, credit
+}
+
 func roundCents(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+func roundAllAccounts(b *domain.Balance) {
+	b.Seb = roundCents(b.Seb)
+	b.Swed = roundCents(b.Swed)
+	b.SwedETF = roundCents(b.SwedETF)
+	b.SebPen = roundCents(b.SebPen)
+	b.Luminor = roundCents(b.Luminor)
+	b.Art = roundCents(b.Art)
+	b.Cash = roundCents(b.Cash)
+	b.RevM = roundCents(b.RevM)
+	b.RevR = roundCents(b.RevR)
+	b.RevStocks = roundCents(b.RevStocks)
+	b.IBKRStocks = roundCents(b.IBKRStocks)
 }
 
 func applyAccountDelta(b *domain.Balance, account string, delta float64) {
@@ -276,67 +338,14 @@ func applyAccountDelta(b *domain.Balance, account string, delta float64) {
 }
 
 func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, error) {
-	latest, err := s.repo.GetLatestManual()
+	b, err := s.repo.GetLatest()
 	if err != nil {
 		return &domain.Balance{}, nil
 	}
-	txs, err := s.txRepo.ListSince(latest.Date)
-	if err != nil {
-		return nil, err
-	}
-	projected := *latest
-	latestDay := latest.Date.Truncate(24 * time.Hour)
-	for _, tx := range txs {
-		txDay := tx.Date.Truncate(24 * time.Hour)
-		if txDay.Before(latestDay) {
-			continue
-		}
-
-		debit := tx.DebitAccount
-		credit := tx.CreditAccount
-
-		// Backward compat: old rows only have source_account set.
-		// Derive debit/credit from type so existing data keeps working.
-		if debit == "" && credit == "" && tx.SourceAccount != "" {
-			if tx.Type == domain.TransactionTypeExpense {
-				debit = tx.SourceAccount
-			} else {
-				// income and legacy investments: the source_account was the receiving/destination account
-				credit = tx.SourceAccount
-			}
-		}
-
-		if debit == "" && credit == "" {
-			continue // no account info — skip
-		}
-
-		if debit != "" {
-			applyAccountDelta(&projected, debit, -tx.Amount)
-		}
-		if credit != "" {
-			applyAccountDelta(&projected, credit, tx.Amount)
-		}
-	}
-	projected.Seb = roundCents(projected.Seb)
-	projected.Swed = roundCents(projected.Swed)
-	projected.SwedETF = roundCents(projected.SwedETF)
-	projected.SebPen = roundCents(projected.SebPen)
-	projected.Luminor = roundCents(projected.Luminor)
-	projected.Art = roundCents(projected.Art)
-	projected.Cash = roundCents(projected.Cash)
-	projected.RevM = roundCents(projected.RevM)
-	projected.RevR = roundCents(projected.RevR)
-	projected.RevStocks = roundCents(projected.RevStocks)
-	projected.IBKRStocks = roundCents(projected.IBKRStocks)
-
-	if liveBtcPrice >= minValidBtcPrice {
-		applyBtcEur(&projected, liveBtcPrice)
-	} else {
-		btcEur := projected.BtcPrice * (projected.RBTC + projected.MBTC)
-		projected.Total = projected.Seb + projected.Swed + projected.SwedETF + projected.SebPen + projected.Luminor + projected.Art + projected.Cash + projected.RevM + projected.RevR + btcEur + projected.RevStocks + projected.IBKRStocks
-	}
-	projected.ID = 0
-	return &projected, nil
+	result := *b
+	applyBtcEur(&result, liveBtcPrice)
+	result.ID = 0
+	return &result, nil
 }
 
 func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {

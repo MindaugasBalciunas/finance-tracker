@@ -58,7 +58,7 @@ func NewTransactionService(repo repository.TransactionRepository, balSvc Balance
 // refreshProjected recomputes and persists the auto balance snapshot after any mutation.
 // Failures are non-fatal — the transaction itself is the source of truth.
 func (s *transactionService) refreshProjected() {
-	_ = s.balSvc.UpsertProjected(0)
+	_ = s.balSvc.RebuildAutoSnapshots(0)
 }
 
 func populateTx(tx *domain.Transaction) {

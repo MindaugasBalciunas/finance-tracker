@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
@@ -14,10 +15,11 @@ type BalanceRepository interface {
 	Update(b *domain.Balance) error
 	Delete(id uint) error
 	DeleteAll() error
+	DeleteAllAuto() error
 	List(filter domain.BalanceFilter) ([]domain.Balance, error)
 	GetLatest() (*domain.Balance, error)
 	GetLatestManual() (*domain.Balance, error)
-	UpsertAuto(b *domain.Balance) error
+	CreateAuto(b *domain.Balance) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 }
 
@@ -67,7 +69,7 @@ func (r *balanceRepository) List(filter domain.BalanceFilter) ([]domain.Balance,
 	query = applyBalanceFilters(query, filter)
 
 	var balances []domain.Balance
-	if err := query.Order("date DESC").Find(&balances).Error; err != nil {
+	if err := query.Order("date DESC, id DESC").Find(&balances).Error; err != nil {
 		return nil, err
 	}
 	return balances, nil
@@ -75,7 +77,7 @@ func (r *balanceRepository) List(filter domain.BalanceFilter) ([]domain.Balance,
 
 func (r *balanceRepository) GetLatest() (*domain.Balance, error) {
 	var b domain.Balance
-	if err := r.db.Order("date DESC").First(&b).Error; err != nil {
+	if err := r.db.Order("date DESC, id DESC").First(&b).Error; err != nil {
 		return nil, err
 	}
 	return &b, nil
@@ -83,25 +85,22 @@ func (r *balanceRepository) GetLatest() (*domain.Balance, error) {
 
 func (r *balanceRepository) GetLatestManual() (*domain.Balance, error) {
 	var b domain.Balance
-	if err := r.db.Where("is_auto = ?", false).Order("date DESC").First(&b).Error; err != nil {
+	if err := r.db.Where("is_auto = ?", false).Order("date DESC, id DESC").First(&b).Error; err != nil {
 		return nil, err
 	}
 	return &b, nil
 }
 
-func (r *balanceRepository) UpsertAuto(b *domain.Balance) error {
-	var existing domain.Balance
-	err := r.db.Where("date = ? AND is_auto = ?", b.Date, true).First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		b.IsAuto = true
-		return r.db.Create(b).Error
-	}
-	if err != nil {
-		return err
-	}
-	b.ID = existing.ID
+func (r *balanceRepository) DeleteAllAuto() error {
+	return r.db.Where("is_auto = ?", true).Delete(&domain.Balance{}).Error
+}
+
+func (r *balanceRepository) CreateAuto(b *domain.Balance) error {
 	b.IsAuto = true
-	return r.db.Save(b).Error
+	b.ID = 0
+	b.CreatedAt = time.Time{}
+	b.UpdatedAt = time.Time{}
+	return r.db.Create(b).Error
 }
 
 func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {

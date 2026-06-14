@@ -32,6 +32,16 @@ func (m *BalanceRepository) Delete(id uint) error {
 	return args.Error(0)
 }
 
+func (m *BalanceRepository) DeleteAll() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *BalanceRepository) DeleteAllAuto() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func (m *BalanceRepository) List(filter domain.BalanceFilter) ([]domain.Balance, error) {
 	args := m.Called(filter)
 	if args.Get(0) == nil {
@@ -56,13 +66,8 @@ func (m *BalanceRepository) GetLatestManual() (*domain.Balance, error) {
 	return args.Get(0).(*domain.Balance), args.Error(1)
 }
 
-func (m *BalanceRepository) UpsertAuto(b *domain.Balance) error {
+func (m *BalanceRepository) CreateAuto(b *domain.Balance) error {
 	args := m.Called(b)
-	return args.Error(0)
-}
-
-func (m *BalanceRepository) DeleteAll() error {
-	args := m.Called()
 	return args.Error(0)
 }
 
@@ -72,12 +77,4 @@ func (m *BalanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.BalanceTrend), args.Error(1)
-}
-
-func (m *BalanceRepository) GetAllocation() ([]domain.AccountAllocation, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.AccountAllocation), args.Error(1)
 }

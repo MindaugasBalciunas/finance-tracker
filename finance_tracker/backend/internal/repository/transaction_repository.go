@@ -21,6 +21,7 @@ type TransactionRepository interface {
 	List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error)
 	ListAll() ([]domain.Transaction, error)
 	ListSince(since time.Time) ([]domain.Transaction, error)
+	ListStrictlyAfter(since time.Time) ([]domain.Transaction, error)
 	GetDistinctComments() ([]string, error)
 	GetSummary(filter domain.TransactionFilter) (*domain.TransactionSummary, error)
 }
@@ -110,6 +111,14 @@ func (r *transactionRepository) ListAll() ([]domain.Transaction, error) {
 func (r *transactionRepository) ListSince(since time.Time) ([]domain.Transaction, error) {
 	var transactions []domain.Transaction
 	if err := r.db.Where("date >= ?", since).Order("date ASC").Find(&transactions).Error; err != nil {
+		return nil, err
+	}
+	return transactions, nil
+}
+
+func (r *transactionRepository) ListStrictlyAfter(since time.Time) ([]domain.Transaction, error) {
+	var transactions []domain.Transaction
+	if err := r.db.Where("date > ?", since).Order("date ASC, id ASC").Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 	return transactions, nil
