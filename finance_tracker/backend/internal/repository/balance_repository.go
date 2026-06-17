@@ -1,9 +1,6 @@
 package repository
 
 import (
-	"errors"
-	"time"
-
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
 )
@@ -15,11 +12,8 @@ type BalanceRepository interface {
 	Update(b *domain.Balance) error
 	Delete(id uint) error
 	DeleteAll() error
-	DeleteAllAuto() error
 	List(filter domain.BalanceFilter) ([]domain.Balance, error)
 	GetLatest() (*domain.Balance, error)
-	GetLatestManual() (*domain.Balance, error)
-	CreateAuto(b *domain.Balance) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 }
 
@@ -32,16 +26,7 @@ func NewBalanceRepository(db *gorm.DB) BalanceRepository {
 }
 
 func (r *balanceRepository) Create(b *domain.Balance) error {
-	var existing domain.Balance
-	err := r.db.Where("date = ? AND is_auto = ?", b.Date, false).First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return r.db.Create(b).Error
-	}
-	if err != nil {
-		return err
-	}
-	b.ID = existing.ID
-	return r.db.Save(b).Error
+	return r.db.Create(b).Error
 }
 
 func (r *balanceRepository) GetByID(id uint) (*domain.Balance, error) {
@@ -83,53 +68,30 @@ func (r *balanceRepository) GetLatest() (*domain.Balance, error) {
 	return &b, nil
 }
 
-func (r *balanceRepository) GetLatestManual() (*domain.Balance, error) {
-	var b domain.Balance
-	if err := r.db.Where("is_auto = ?", false).Order("date DESC, id DESC").First(&b).Error; err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
-
-func (r *balanceRepository) DeleteAllAuto() error {
-	return r.db.Where("is_auto = ?", true).Delete(&domain.Balance{}).Error
-}
-
-func (r *balanceRepository) CreateAuto(b *domain.Balance) error {
-	b.IsAuto = true
-	b.ID = 0
-	b.CreatedAt = time.Time{}
-	b.UpdatedAt = time.Time{}
-	return r.db.Create(b).Error
-}
-
 func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {
 	all, err := r.List(filter)
 	if err != nil {
 		return nil, err
 	}
 
-	// Deduplicate by calendar day: manual snapshot wins over auto.
-	// This prevents a visual double-point when an auto and a manual snapshot
-	// coexist on the same day.
-	type winner struct {
-		b    domain.Balance
-		idx  int // original index, used to rebuild chronological order
+	// Deduplicate by calendar day: keep the latest entry (highest id, first in DESC list).
+	type entry struct {
+		b   domain.Balance
+		idx int
 	}
-	byDay := make(map[string]winner, len(all))
+	byDay := make(map[string]entry, len(all))
 	for i, b := range all {
 		day := b.Date.Format("2006-01-02")
-		prev, ok := byDay[day]
-		if !ok || prev.b.IsAuto {
-			byDay[day] = winner{b, i}
+		if _, ok := byDay[day]; !ok {
+			byDay[day] = entry{b, i}
 		}
 	}
-	// Restore original order (all is DESC from List; we want to reverse to ASC)
+
+	// Collect and sort ascending by date.
 	balances := make([]domain.Balance, 0, len(byDay))
-	for _, w := range byDay {
-		balances = append(balances, w.b)
+	for _, e := range byDay {
+		balances = append(balances, e.b)
 	}
-	// Sort ascending by date
 	for i := 0; i < len(balances); i++ {
 		for j := i + 1; j < len(balances); j++ {
 			if balances[j].Date.Before(balances[i].Date) {
@@ -142,18 +104,18 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		Dates:  []string{},
 		Totals: []float64{},
 		Accounts: map[string][]float64{
-			"seb":        {},
-			"swed":       {},
-			"swed_etf":   {},
-			"seb_pen":    {},
-			"luminor":    {},
-			"art":        {},
-			"cash":       {},
-			"rev_m":      {},
-			"rev_r":      {},
-			"r_btc":      {},
-			"m_btc":      {},
-			"rev_stocks": {},
+			"seb":         {},
+			"swed":        {},
+			"swed_etf":    {},
+			"seb_pen":     {},
+			"luminor":     {},
+			"art":         {},
+			"cash":        {},
+			"rev_m":       {},
+			"rev_r":       {},
+			"r_btc":       {},
+			"m_btc":       {},
+			"rev_stocks":  {},
 			"ibkr_stocks": {},
 		},
 	}

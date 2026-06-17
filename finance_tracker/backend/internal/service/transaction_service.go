@@ -47,18 +47,11 @@ type TransactionService interface {
 }
 
 type transactionService struct {
-	repo   repository.TransactionRepository
-	balSvc BalanceService
+	repo repository.TransactionRepository
 }
 
-func NewTransactionService(repo repository.TransactionRepository, balSvc BalanceService) TransactionService {
-	return &transactionService{repo: repo, balSvc: balSvc}
-}
-
-// refreshProjected recomputes and persists the auto balance snapshot after any mutation.
-// Failures are non-fatal — the transaction itself is the source of truth.
-func (s *transactionService) refreshProjected() {
-	_ = s.balSvc.RebuildAutoSnapshots(0)
+func NewTransactionService(repo repository.TransactionRepository, _ BalanceService) TransactionService {
+	return &transactionService{repo: repo}
 }
 
 func populateTx(tx *domain.Transaction) {
@@ -91,7 +84,6 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		return nil, err
 	}
 	populateTx(tx)
-	s.refreshProjected()
 	return tx, nil
 }
 
@@ -136,7 +128,6 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 		return nil, err
 	}
 	populateTx(tx)
-	s.refreshProjected()
 	return tx, nil
 }
 
@@ -144,27 +135,15 @@ func (s *transactionService) Delete(id uint) error {
 	if _, err := s.repo.GetByID(id); err != nil {
 		return err
 	}
-	if err := s.repo.Delete(id); err != nil {
-		return err
-	}
-	s.refreshProjected()
-	return nil
+	return s.repo.Delete(id)
 }
 
 func (s *transactionService) DeleteBatch(ids []uint) error {
-	if err := s.repo.DeleteBatch(ids); err != nil {
-		return err
-	}
-	s.refreshProjected()
-	return nil
+	return s.repo.DeleteBatch(ids)
 }
 
 func (s *transactionService) DeleteAll() error {
-	if err := s.repo.DeleteAll(); err != nil {
-		return err
-	}
-	s.refreshProjected()
-	return nil
+	return s.repo.DeleteAll()
 }
 
 func (s *transactionService) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {

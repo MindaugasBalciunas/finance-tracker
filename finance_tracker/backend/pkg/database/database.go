@@ -33,10 +33,18 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		}
 	}
 
-	// Replace single-column unique index on balances.date with composite (date, is_auto)
-	// so manual and auto snapshots can coexist on the same date.
+	// Drop old unique indexes on balances.date (allow multiple snapshots per day).
 	db.Exec("DROP INDEX IF EXISTS idx_balances_date")
 	db.Exec("DROP INDEX IF EXISTS uni_balances_date")
+	db.Exec("DROP INDEX IF EXISTS idx_balances_date_auto")
+
+	// Drop is_auto column if it exists (auto-snapshots feature removed).
+	var isAutoExists int
+	db.Raw("SELECT COUNT(*) FROM pragma_table_info('balances') WHERE name = 'is_auto'").Scan(&isAutoExists)
+	if isAutoExists > 0 {
+		db.Exec("DELETE FROM balances WHERE is_auto = 1")
+		db.Exec("ALTER TABLE balances DROP COLUMN is_auto")
+	}
 
 	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}); err != nil {
 		return nil, err

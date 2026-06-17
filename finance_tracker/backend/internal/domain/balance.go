@@ -8,9 +8,8 @@ import "time"
 // BTC fields are stored as BTC units with corresponding price at snapshot time.
 // Enhanced fields with Money types (prefixed "M") are computed on read and not persisted.
 type Balance struct {
-	ID     uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Date   time.Time `json:"date" gorm:"not null;uniqueIndex:idx_balances_date_auto"`
-	IsAuto bool      `json:"is_auto" gorm:"not null;default:false;uniqueIndex:idx_balances_date_auto"`
+	ID   uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Date time.Time `json:"date" gorm:"not null;index"`
 	Total     float64   `json:"total"`      // EUR - sum of all account balances
 	Seb       float64   `json:"seb"`        // EUR
 	Swed      float64   `json:"swed"`       // EUR
