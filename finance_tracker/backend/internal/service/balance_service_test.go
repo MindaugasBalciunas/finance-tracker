@@ -9,6 +9,7 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/repository/mock"
 	"github.com/mindaugas/finance-tracker/internal/service"
 	"github.com/stretchr/testify/assert"
+	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -396,6 +397,146 @@ func TestBalanceService_GetAllocation(t *testing.T) {
 		allocations, err := svc.GetAllocation()
 		require.NoError(t, err)
 		assert.Empty(t, allocations)
+		repo.AssertExpectations(t)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// SnapshotFromTransaction tests
+// ---------------------------------------------------------------------------
+
+func TestBalanceService_SnapshotFromTransaction(t *testing.T) {
+	t.Run("expense deducts from debit account and creates snapshot", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 6, 13), Swed: 3507.14, Total: 3507.14}
+		repo.On("GetLatest").Return(snap, nil)
+
+		tx := &domain.Transaction{
+			Date:         snapDate(2026, 6, 14),
+			Type:         domain.TransactionTypeExpense,
+			Amount:       27.44,
+			DebitAccount: "swed",
+		}
+		repo.On("Create", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.ID == 0 &&
+				b.Swed == 3479.70 &&
+				b.Total == 3479.70 &&
+				b.Date.Equal(tx.Date)
+		})).Return(nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(tx))
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("income adds to credit account and creates snapshot", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 6, 13), Seb: 4000, Total: 4000}
+		repo.On("GetLatest").Return(snap, nil)
+
+		tx := &domain.Transaction{
+			Date:          snapDate(2026, 6, 14),
+			Type:          domain.TransactionTypeIncome,
+			Amount:        500,
+			CreditAccount: "seb",
+		}
+		repo.On("Create", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.Seb == 4500 && b.Total == 4500 && b.Date.Equal(tx.Date)
+		})).Return(nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(tx))
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("investment with debit and credit both applied", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Date: snapDate(2026, 6, 13), Swed: 10000, IBKRStocks: 5000, Total: 15000}
+		repo.On("GetLatest").Return(snap, nil)
+
+		tx := &domain.Transaction{
+			Date:          snapDate(2026, 6, 14),
+			Type:          domain.TransactionTypeInvestment,
+			Amount:        2000,
+			DebitAccount:  "swed",
+			CreditAccount: "ibkr_stocks",
+		}
+		repo.On("Create", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.Swed == 8000 && b.IBKRStocks == 7000 && b.Total == 15000
+		})).Return(nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(tx))
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("no latest snapshot — returns nil without creating", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		repo.On("GetLatest").Return(nil, errors.New("record not found"))
+
+		require.NoError(t, svc.SnapshotFromTransaction(&domain.Transaction{
+			Date: snapDate(2026, 6, 14), Type: domain.TransactionTypeExpense, Amount: 50, DebitAccount: "swed",
+		}))
+		repo.AssertNotCalled(t, "Create")
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("transaction with no account info — skipped", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Swed: 3000, Total: 3000}
+		repo.On("GetLatest").Return(snap, nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(&domain.Transaction{
+			Date: snapDate(2026, 6, 14), Type: domain.TransactionTypeExpense, Amount: 50,
+		}))
+		repo.AssertNotCalled(t, "Create")
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("legacy source_account used for expense", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Cash: 1000, Total: 1000}
+		repo.On("GetLatest").Return(snap, nil)
+
+		tx := &domain.Transaction{
+			Date:          snapDate(2026, 6, 14),
+			Type:          domain.TransactionTypeExpense,
+			Amount:        150,
+			SourceAccount: "cash",
+		}
+		repo.On("Create", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.Cash == 850 && b.Total == 850
+		})).Return(nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(tx))
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("snapshot date matches transaction date", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		snap := &domain.Balance{ID: 1, Cash: 1000, Total: 1000}
+		repo.On("GetLatest").Return(snap, nil)
+
+		txDate := snapDatetime(2026, 6, 14, 15, 30)
+		tx := &domain.Transaction{
+			Date: txDate, Type: domain.TransactionTypeExpense, Amount: 50, DebitAccount: "cash",
+		}
+		repo.On("Create", testifymock.MatchedBy(func(b *domain.Balance) bool {
+			return b.Date.Equal(txDate) && b.ID == 0
+		})).Return(nil)
+
+		require.NoError(t, svc.SnapshotFromTransaction(tx))
 		repo.AssertExpectations(t)
 	})
 }

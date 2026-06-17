@@ -163,14 +163,14 @@ func TestE2E_NewSnapshotUpdatesProjected(t *testing.T) {
 	assert.InDelta(t, 3507.14, b.Total, 0.001)
 }
 
-// TestE2E_TransactionsDoNotAffectProjected verifies that adding transactions
-// does not change the projected balance — it stays as the latest snapshot.
-func TestE2E_TransactionsDoNotAffectProjected(t *testing.T) {
+// TestE2E_TransactionCreatesBalanceSnapshot verifies that adding a transaction
+// automatically creates a new balance snapshot with the amount applied.
+func TestE2E_TransactionCreatesBalanceSnapshot(t *testing.T) {
 	r := e2eRouter(t)
 
 	createSnapshot(t, r, map[string]any{"date": "2026-06-13T17:09", "swed": 3507.14})
 
-	// Add an expense — should NOT change projected balance
+	// Add an expense — should create a new snapshot with Swed reduced by 27.44
 	w := e2ePostJSON(t, r, "/api/v1/transactions", map[string]any{
 		"date": "2026-06-14", "type": "expense", "amount": 27.44,
 		"category": "Housing", "debit_account": "swed",
@@ -178,7 +178,45 @@ func TestE2E_TransactionsDoNotAffectProjected(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	b := projected(t, r)
-	assert.InDelta(t, 3507.14, b.Swed, 0.001, "transactions must not change projected balance")
+	assert.InDelta(t, 3479.70, b.Swed, 0.001, "expense must reduce swed in new auto snapshot")
+	assert.InDelta(t, 3479.70, b.Total, 0.001)
+}
+
+// TestE2E_UpdateAndDeleteDoNotChangeBalance verifies that updating or deleting
+// a transaction does NOT create a new balance snapshot.
+func TestE2E_UpdateAndDeleteDoNotChangeBalance(t *testing.T) {
+	r := e2eRouter(t)
+
+	createSnapshot(t, r, map[string]any{"date": "2026-06-13T17:09", "swed": 3507.14})
+
+	// Create a transaction (this creates an auto snapshot → 3479.70)
+	var txResp struct{ ID uint `json:"id"` }
+	w := e2ePostJSON(t, r, "/api/v1/transactions", map[string]any{
+		"date": "2026-06-14", "type": "expense", "amount": 27.44,
+		"category": "Housing", "debit_account": "swed",
+	})
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&txResp))
+
+	b := projected(t, r)
+	assert.InDelta(t, 3479.70, b.Swed, 0.001, "snapshot created after transaction")
+
+	// Update the transaction — balance must NOT change
+	w = e2ePutJSON(t, r, "/api/v1/transactions/1", map[string]any{
+		"date": "2026-06-14", "type": "expense", "amount": 100.00,
+		"category": "Housing", "debit_account": "swed",
+	})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	b = projected(t, r)
+	assert.InDelta(t, 3479.70, b.Swed, 0.001, "update must not change projected balance")
+
+	// Delete the transaction — balance must NOT change
+	w = e2eDelete(t, r, "/api/v1/transactions/1")
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	b = projected(t, r)
+	assert.InDelta(t, 3479.70, b.Swed, 0.001, "delete must not change projected balance")
 }
 
 // TestE2E_MultipleSameDaySnapshotsAllStored confirms that two snapshots on the

@@ -77,6 +77,9 @@ func (m *mockBalanceService) GetProjected(liveBtcPrice float64) (*domain.Balance
 	}
 	return args.Get(0).(*domain.Balance), args.Error(1)
 }
+func (m *mockBalanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
+	return m.Called(tx).Error(0)
+}
 
 func setupBalanceRouter(svc service.BalanceService) *gin.Engine {
 	r := gin.New()

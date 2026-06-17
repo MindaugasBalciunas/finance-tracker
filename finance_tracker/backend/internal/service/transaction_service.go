@@ -47,11 +47,12 @@ type TransactionService interface {
 }
 
 type transactionService struct {
-	repo repository.TransactionRepository
+	repo   repository.TransactionRepository
+	balSvc BalanceService
 }
 
-func NewTransactionService(repo repository.TransactionRepository, _ BalanceService) TransactionService {
-	return &transactionService{repo: repo}
+func NewTransactionService(repo repository.TransactionRepository, balSvc BalanceService) TransactionService {
+	return &transactionService{repo: repo, balSvc: balSvc}
 }
 
 func populateTx(tx *domain.Transaction) {
@@ -84,6 +85,9 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		return nil, err
 	}
 	populateTx(tx)
+	if s.balSvc != nil {
+		_ = s.balSvc.SnapshotFromTransaction(tx)
+	}
 	return tx, nil
 }
 

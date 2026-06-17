@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"math"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
@@ -96,6 +97,7 @@ type BalanceService interface {
 	List(filter domain.BalanceFilter, liveBtcPrice float64) ([]domain.Balance, error)
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetProjected(liveBtcPrice float64) (*domain.Balance, error)
+	SnapshotFromTransaction(tx *domain.Transaction) error
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -232,6 +234,94 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 	applyBtcEur(&result, liveBtcPrice)
 	result.ID = 0
 	return &result, nil
+}
+
+// SnapshotFromTransaction creates a new balance snapshot by applying a single
+// transaction's debit/credit to the current latest snapshot values.
+// Called only on transaction Create — Update and Delete leave balances untouched.
+func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
+	latest, err := s.repo.GetLatest()
+	if err != nil {
+		return nil // no snapshot to base on — skip silently
+	}
+
+	debit, credit := resolveAccounts(tx)
+	if debit == "" && credit == "" {
+		return nil // no account info — nothing to apply
+	}
+
+	snap := *latest
+	if debit != "" {
+		applyAccountDelta(&snap, debit, -tx.Amount)
+	}
+	if credit != "" {
+		applyAccountDelta(&snap, credit, tx.Amount)
+	}
+	roundAllAccounts(&snap)
+
+	btcEur := snap.BtcPrice * (snap.RBTC + snap.MBTC)
+	snap.Total = roundCents(snap.Seb + snap.Swed + snap.SwedETF + snap.SebPen + snap.Luminor + snap.Art + snap.Cash + snap.RevM + snap.RevR + btcEur + snap.RevStocks + snap.IBKRStocks)
+
+	snap.ID = 0
+	snap.Date = tx.Date
+	snap.CreatedAt = time.Time{}
+	snap.UpdatedAt = time.Time{}
+
+	return s.repo.Create(&snap)
+}
+
+func resolveAccounts(tx *domain.Transaction) (debit, credit string) {
+	debit = tx.DebitAccount
+	credit = tx.CreditAccount
+	if debit == "" && credit == "" && tx.SourceAccount != "" {
+		if tx.Type == domain.TransactionTypeExpense {
+			debit = tx.SourceAccount
+		} else {
+			credit = tx.SourceAccount
+		}
+	}
+	return debit, credit
+}
+
+func applyAccountDelta(b *domain.Balance, account string, delta float64) {
+	switch account {
+	case "seb":
+		b.Seb += delta
+	case "swed":
+		b.Swed += delta
+	case "swed_etf":
+		b.SwedETF += delta
+	case "seb_pen":
+		b.SebPen += delta
+	case "luminor":
+		b.Luminor += delta
+	case "art":
+		b.Art += delta
+	case "rev_m":
+		b.RevM += delta
+	case "rev_r":
+		b.RevR += delta
+	case "rev_stocks":
+		b.RevStocks += delta
+	case "ibkr_stocks":
+		b.IBKRStocks += delta
+	case "cash":
+		b.Cash += delta
+	}
+}
+
+func roundAllAccounts(b *domain.Balance) {
+	b.Seb = roundCents(b.Seb)
+	b.Swed = roundCents(b.Swed)
+	b.SwedETF = roundCents(b.SwedETF)
+	b.SebPen = roundCents(b.SebPen)
+	b.Luminor = roundCents(b.Luminor)
+	b.Art = roundCents(b.Art)
+	b.Cash = roundCents(b.Cash)
+	b.RevM = roundCents(b.RevM)
+	b.RevR = roundCents(b.RevR)
+	b.RevStocks = roundCents(b.RevStocks)
+	b.IBKRStocks = roundCents(b.IBKRStocks)
 }
 
 func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {
