@@ -120,12 +120,15 @@ type financeExport struct {
 }
 
 type txExportRow struct {
-	ID       uint    `json:"id"`
-	Date     string  `json:"date"`
-	Type     string  `json:"type"`
-	Amount   float64 `json:"amount_eur"`
-	Category string  `json:"category"`
-	Comment  string  `json:"comment,omitempty"`
+	ID            uint    `json:"id"`
+	Date          string  `json:"date"`
+	Type          string  `json:"type"`
+	Amount        float64 `json:"amount_eur"`
+	Category      string  `json:"category"`
+	Comment       string  `json:"comment,omitempty"`
+	DebitAccount  string  `json:"debit_account,omitempty"`
+	CreditAccount string  `json:"credit_account,omitempty"`
+	SourceAccount string  `json:"source_account,omitempty"`
 }
 
 type balExportRow struct {
@@ -196,12 +199,15 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	txRows := make([]txExportRow, len(transactions))
 	for i, tx := range transactions {
 		txRows[i] = txExportRow{
-			ID:       tx.ID,
-			Date:     tx.Date.Format("2006-01-02"),
-			Type:     string(tx.Type),
-			Amount:   tx.Amount,
-			Category: string(tx.Category),
-			Comment:  tx.Comment,
+			ID:            tx.ID,
+			Date:          tx.Date.Format("2006-01-02"),
+			Type:          string(tx.Type),
+			Amount:        tx.Amount,
+			Category:      string(tx.Category),
+			Comment:       tx.Comment,
+			DebitAccount:  tx.DebitAccount,
+			CreditAccount: tx.CreditAccount,
+			SourceAccount: tx.SourceAccount,
 		}
 	}
 
@@ -291,12 +297,15 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 	txRows := make([]txExportRow, len(transactions))
 	for i, tx := range transactions {
 		txRows[i] = txExportRow{
-			ID:       tx.ID,
-			Date:     tx.Date.Format("2006-01-02"),
-			Type:     string(tx.Type),
-			Amount:   tx.Amount,
-			Category: string(tx.Category),
-			Comment:  tx.Comment,
+			ID:            tx.ID,
+			Date:          tx.Date.Format("2006-01-02"),
+			Type:          string(tx.Type),
+			Amount:        tx.Amount,
+			Category:      string(tx.Category),
+			Comment:       tx.Comment,
+			DebitAccount:  tx.DebitAccount,
+			CreditAccount: tx.CreditAccount,
+			SourceAccount: tx.SourceAccount,
 		}
 	}
 

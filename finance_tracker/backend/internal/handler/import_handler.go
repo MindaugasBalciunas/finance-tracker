@@ -107,11 +107,14 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		}
 		cat := domain.Category(row.Category)
 		tx := &domain.Transaction{
-			Date:     date,
-			Type:     domain.TransactionType(row.Type),
-			Amount:   row.Amount,
-			Category: cat,
-			Comment:  row.Comment,
+			Date:          date,
+			Type:          domain.TransactionType(row.Type),
+			Amount:        row.Amount,
+			Category:      cat,
+			Comment:       row.Comment,
+			DebitAccount:  row.DebitAccount,
+			CreditAccount: row.CreditAccount,
+			SourceAccount: row.SourceAccount,
 		}
 		if row.ID > 0 {
 			tx.ID = row.ID // preserve original ID so re-imports are idempotent
