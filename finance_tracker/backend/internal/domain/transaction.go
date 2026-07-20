@@ -36,6 +36,7 @@ const (
 	CategoryPension    Category = "Pension"
 	CategoryCrypto     Category = "Crypto"
 	CategoryRealEstate Category = "Real Estate"
+	CategoryVehicle    Category = "Vehicle"
 )
 
 // ValidCategories is the authoritative list of allowed category values.
@@ -66,6 +67,7 @@ var ValidCategories = []Category{
 	CategoryPension,
 	CategoryCrypto,
 	CategoryRealEstate,
+	CategoryVehicle,
 }
 
 // IsValidCategory returns true if the given category is in the allowed list.

@@ -314,6 +314,39 @@ func TestExportAllJSON_ContainsAllRecords(t *testing.T) {
 	assert.Equal(t, 4551.50, got.Assets[2].PurchasePrice)
 }
 
+// TestExportAllJSON_ChronologicalOrder verifies the export sorts transactions
+// and balances oldest-first even when the repositories return newest-first
+// (the UI listing order).
+func TestExportAllJSON_ChronologicalOrder(t *testing.T) {
+	reversedTx := make([]domain.Transaction, len(rtTransactions))
+	for i, tx := range rtTransactions {
+		reversedTx[len(rtTransactions)-1-i] = tx
+	}
+	reversedBal := make([]domain.Balance, len(rtBalances))
+	for i, b := range rtBalances {
+		reversedBal[len(rtBalances)-1-i] = b
+	}
+
+	r := rtExportRouter(reversedTx, reversedBal, []domain.StockTrade{}, []domain.Asset{})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var got rtExport
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+
+	for i := 1; i < len(got.Transactions); i++ {
+		assert.LessOrEqual(t, got.Transactions[i-1].Date, got.Transactions[i].Date,
+			"transactions must be in ascending date order")
+	}
+	for i := 1; i < len(got.Balances); i++ {
+		assert.LessOrEqual(t, got.Balances[i-1].Date, got.Balances[i].Date,
+			"balances must be in ascending date order")
+	}
+	assert.Equal(t, "2026-01-15", got.Transactions[0].Date, "oldest transaction first")
+	assert.Equal(t, "2026-01-15", got.Balances[0].Date, "oldest balance first")
+}
+
 func TestExportAllJSON_EmptyDB_ProducesEmptyArraysNotNull(t *testing.T) {
 	r := rtExportRouter([]domain.Transaction{}, []domain.Balance{}, []domain.StockTrade{}, []domain.Asset{})
 

@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -12,6 +13,23 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/mindaugas/finance-tracker/internal/service"
 )
+
+// sortChronologically orders export rows oldest-first (date, then ID) so the
+// JSON reads as a timeline regardless of the repositories' listing order.
+func sortChronologically(transactions []domain.Transaction, balances []domain.Balance) {
+	sort.SliceStable(transactions, func(i, j int) bool {
+		if !transactions[i].Date.Equal(transactions[j].Date) {
+			return transactions[i].Date.Before(transactions[j].Date)
+		}
+		return transactions[i].ID < transactions[j].ID
+	})
+	sort.SliceStable(balances, func(i, j int) bool {
+		if !balances[i].Date.Equal(balances[j].Date) {
+			return balances[i].Date.Before(balances[j].Date)
+		}
+		return balances[i].ID < balances[j].ID
+	})
+}
 
 type ExportHandler struct {
 	txSvc         service.TransactionService
@@ -134,22 +152,22 @@ type txExportRow struct {
 }
 
 type balExportRow struct {
-	Date        string  `json:"date"`
-	Total       float64 `json:"total_eur"`
-	Seb         float64 `json:"seb,omitempty"`
-	Swed        float64 `json:"swed,omitempty"`
-	SwedETF     float64 `json:"swed_etf,omitempty"`
-	SebPen      float64 `json:"seb_pension,omitempty"`
-	Luminor     float64 `json:"luminor,omitempty"`
-	Art         float64 `json:"art,omitempty"`
-	Cash        float64 `json:"cash,omitempty"`
-	RevM        float64 `json:"revolut_m,omitempty"`
-	RevR        float64 `json:"revolut_r,omitempty"`
-	RBTC        float64 `json:"btc_r,omitempty"`
-	MBTC        float64 `json:"btc_m,omitempty"`
-	BtcPrice    float64 `json:"btc_price_eur,omitempty"`
-	RevStocks   float64 `json:"revolut_stocks,omitempty"`
-	IBKRStocks  float64 `json:"ibkr_stocks,omitempty"`
+	Date       string  `json:"date"`
+	Total      float64 `json:"total_eur"`
+	Seb        float64 `json:"seb,omitempty"`
+	Swed       float64 `json:"swed,omitempty"`
+	SwedETF    float64 `json:"swed_etf,omitempty"`
+	SebPen     float64 `json:"seb_pension,omitempty"`
+	Luminor    float64 `json:"luminor,omitempty"`
+	Art        float64 `json:"art,omitempty"`
+	Cash       float64 `json:"cash,omitempty"`
+	RevM       float64 `json:"revolut_m,omitempty"`
+	RevR       float64 `json:"revolut_r,omitempty"`
+	RBTC       float64 `json:"btc_r,omitempty"`
+	MBTC       float64 `json:"btc_m,omitempty"`
+	BtcPrice   float64 `json:"btc_price_eur,omitempty"`
+	RevStocks  float64 `json:"revolut_stocks,omitempty"`
+	IBKRStocks float64 `json:"ibkr_stocks,omitempty"`
 }
 
 type stockExportRow struct {
@@ -248,6 +266,8 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+
+	sortChronologically(transactions, balances)
 
 	txRows := make([]txExportRow, len(transactions))
 	for i, tx := range transactions {
@@ -353,6 +373,8 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+
+	sortChronologically(transactions, balances)
 
 	txRows := make([]txExportRow, len(transactions))
 	for i, tx := range transactions {

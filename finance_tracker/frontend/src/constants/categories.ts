@@ -28,6 +28,7 @@ export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
     'Pension',
     'Crypto',
     'Real Estate',
+    'Vehicle',
   ],
 }
 
