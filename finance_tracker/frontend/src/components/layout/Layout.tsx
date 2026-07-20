@@ -9,6 +9,7 @@ const navItems = [
   { to: '/transactions', label: 'Transactions', icon: '💸' },
   { to: '/balances', label: 'Balances', icon: '🏦' },
   { to: '/stocks', label: 'Stocks', icon: '📉' },
+  { to: '/assets', label: 'Assets', icon: '🏠' },
   { to: '/reports', label: 'Reports', icon: '📈' },
 ]
 
@@ -23,8 +24,8 @@ type ExportStatusData = {
 }
 
 type ImportResult = {
-  imported: { transactions: number; balances: number; stock_trades: number }
-  skipped:  { transactions: number; balances: number; stock_trades: number }
+  imported: { transactions: number; balances: number; stock_trades: number; assets: number }
+  skipped:  { transactions: number; balances: number; stock_trades: number; assets: number }
   imported_tx_ids?: number[]
 }
 
@@ -93,8 +94,8 @@ function ImportButton({ onDone }: { onDone?: () => void }) {
       {result && (
         <div className="px-3 py-2 text-xs text-green-700 bg-green-50 rounded-lg mx-3 mb-1">
           <p className="font-semibold">Import complete</p>
-          <p>+{result.imported.transactions} tx, +{result.imported.balances} balances, +{result.imported.stock_trades} trades</p>
-          <p className="text-gray-400">skipped {result.skipped.transactions + result.skipped.balances + result.skipped.stock_trades} duplicates</p>
+          <p>+{result.imported.transactions} tx, +{result.imported.balances} balances, +{result.imported.stock_trades} trades, +{result.imported.assets} assets</p>
+          <p className="text-gray-400">skipped {result.skipped.transactions + result.skipped.balances + result.skipped.stock_trades + result.skipped.assets} duplicates</p>
           <div className="flex items-center gap-3 mt-2">
             <button onClick={() => { setResult(null); onDone?.() }} className="text-gray-500 underline">Close</button>
             {(result.imported_tx_ids?.length ?? 0) > 0 && (
@@ -277,6 +278,7 @@ function DesktopImportButton() {
             <p>Transactions: +{result.imported.transactions} ({result.skipped.transactions} skipped)</p>
             <p>Balances: +{result.imported.balances} ({result.skipped.balances} skipped)</p>
             <p>Stock trades: +{result.imported.stock_trades} ({result.skipped.stock_trades} skipped)</p>
+            <p>Assets: +{result.imported.assets} ({result.skipped.assets} skipped)</p>
             {(result.imported_tx_ids?.length ?? 0) > 0 && (
               <button onClick={handleUndo} disabled={undoing}
                 className="mt-2 text-red-600 underline disabled:opacity-50">
@@ -304,13 +306,14 @@ function DesktopDeleteAllButton() {
   }, [])
 
   const handle = async () => {
-    if (!confirm('Delete ALL transactions, balances and stock trades? This cannot be undone.')) return
+    if (!confirm('Delete ALL transactions, balances, stock trades and assets? This cannot be undone.')) return
     setDeleting(true)
     try {
       await Promise.all([
         fetch('/api/v1/transactions', { method: 'DELETE' }),
         fetch('/api/v1/balances', { method: 'DELETE' }),
         fetch('/api/v1/stocks', { method: 'DELETE' }),
+        fetch('/api/v1/assets', { method: 'DELETE' }),
       ])
       setOpen(false)
     } finally {
@@ -327,7 +330,7 @@ function DesktopDeleteAllButton() {
       {open && (
         <div className="absolute right-0 mt-1 w-56 bg-white border border-red-200 rounded-lg shadow-lg z-50 p-3">
           <p className="text-xs text-gray-700 font-semibold mb-1">Delete all data?</p>
-          <p className="text-xs text-gray-400 mb-3">Permanently removes all transactions, balances and stock trades.</p>
+          <p className="text-xs text-gray-400 mb-3">Permanently removes all transactions, balances, stock trades and assets.</p>
           <div className="flex gap-2">
             <button onClick={handle} disabled={deleting}
               className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
@@ -349,17 +352,18 @@ function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
   const [error, setError] = useState<string | null>(null)
 
   const handle = async () => {
-    if (!confirm('Delete ALL transactions, balances and stock trades? This cannot be undone.')) return
-    if (!confirm('Are you sure? Every transaction, balance and stock trade will be permanently deleted.')) return
+    if (!confirm('Delete ALL transactions, balances, stock trades and assets? This cannot be undone.')) return
+    if (!confirm('Are you sure? Every transaction, balance, stock trade and asset will be permanently deleted.')) return
     setDeleting(true)
     setError(null)
     try {
-      const [r1, r2, r3] = await Promise.all([
+      const [r1, r2, r3, r4] = await Promise.all([
         fetch('/api/v1/transactions', { method: 'DELETE' }),
         fetch('/api/v1/balances', { method: 'DELETE' }),
         fetch('/api/v1/stocks', { method: 'DELETE' }),
+        fetch('/api/v1/assets', { method: 'DELETE' }),
       ])
-      if (!r1.ok || !r2.ok || !r3.ok) throw new Error(`HTTP ${r1.status}/${r2.status}/${r3.status}`)
+      if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) throw new Error(`HTTP ${r1.status}/${r2.status}/${r3.status}/${r4.status}`)
       onDone?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed')
@@ -481,7 +485,7 @@ export default function Layout() {
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-6 h-16">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               className={({ isActive }) => clsx(

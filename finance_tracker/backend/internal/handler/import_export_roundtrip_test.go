@@ -25,8 +25,8 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/handler"
 	"github.com/mindaugas/finance-tracker/internal/repository/mock"
-	tm "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/assert"
+	tm "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,19 +35,23 @@ import (
 // can both parse export output and construct import payloads.
 
 type rtExport struct {
-	ExportDate  string      `json:"export_date"`
-	Transactions []rtTx     `json:"transactions"`
-	Balances    []rtBalance `json:"balances"`
-	StockTrades []rtStock   `json:"stock_trades"`
+	ExportDate   string      `json:"export_date"`
+	Transactions []rtTx      `json:"transactions"`
+	Balances     []rtBalance `json:"balances"`
+	StockTrades  []rtStock   `json:"stock_trades"`
+	Assets       []rtAsset   `json:"assets"`
 }
 
 type rtTx struct {
-	ID       uint    `json:"id"`
-	Date     string  `json:"date"`
-	Type     string  `json:"type"`
-	Amount   float64 `json:"amount_eur"`
-	Category string  `json:"category"`
-	Comment  string  `json:"comment,omitempty"`
+	ID            uint    `json:"id"`
+	Date          string  `json:"date"`
+	Type          string  `json:"type"`
+	Amount        float64 `json:"amount_eur"`
+	Category      string  `json:"category"`
+	Comment       string  `json:"comment,omitempty"`
+	DebitAccount  string  `json:"debit_account,omitempty"`
+	CreditAccount string  `json:"credit_account,omitempty"`
+	SourceAccount string  `json:"source_account,omitempty"`
 }
 
 type rtBalance struct {
@@ -78,6 +82,21 @@ type rtStock struct {
 	Notes         string  `json:"notes,omitempty"`
 }
 
+type rtAsset struct {
+	Name              string  `json:"name"`
+	Type              string  `json:"type"`
+	PurchaseDate      string  `json:"purchase_date,omitempty"`
+	PurchasePrice     float64 `json:"purchase_price_eur"`
+	CurrentValue      float64 `json:"current_value_eur"`
+	ValuationDate     string  `json:"valuation_date,omitempty"`
+	Notes             string  `json:"notes,omitempty"`
+	LoanRemaining     float64 `json:"loan_remaining_eur,omitempty"`
+	LoanRemainingDate string  `json:"loan_remaining_date,omitempty"`
+	LoanRate          string  `json:"loan_rate,omitempty"`
+	LoanAccount       string  `json:"loan_account,omitempty"`
+	LoanPaidOffDate   string  `json:"loan_paid_off_date,omitempty"`
+}
+
 type rtImportResult struct {
 	Imported rtCounts `json:"imported"`
 	Skipped  rtCounts `json:"skipped"`
@@ -86,6 +105,7 @@ type rtCounts struct {
 	Transactions int `json:"transactions"`
 	Balances     int `json:"balances"`
 	StockTrades  int `json:"stock_trades"`
+	Assets       int `json:"assets"`
 }
 
 // ---- mock for ExportLogRepository (not in repository/mock/) ----
@@ -105,15 +125,20 @@ func (m *mockExportLog) GetLastTime(t string) (*time.Time, error) {
 
 // ---- canonical test fixtures ----
 
+func rtDatePtr(y int, m time.Month, d int) *time.Time {
+	t := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	return &t
+}
+
 var (
 	rtDay1 = time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	rtDay2 = time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	rtDay3 = time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
 
 	rtTransactions = []domain.Transaction{
-		{ID: 1, Date: rtDay1, Type: domain.TransactionTypeExpense, Amount: 88.91, Category: domain.CategoryFood, Comment: "Maxima"},
-		{ID: 2, Date: rtDay2, Type: domain.TransactionTypeIncome, Amount: 3500.00, Category: domain.CategorySalary},
-		{ID: 3, Date: rtDay3, Type: domain.TransactionTypeInvestment, Amount: 200.00, Category: domain.CategoryStocksETF, Comment: "ETF buy"},
+		{ID: 1, Date: rtDay1, Type: domain.TransactionTypeExpense, Amount: 88.91, Category: domain.CategoryFood, Comment: "Maxima", DebitAccount: "swed"},
+		{ID: 2, Date: rtDay2, Type: domain.TransactionTypeIncome, Amount: 3500.00, Category: domain.CategorySalary, CreditAccount: "seb"},
+		{ID: 3, Date: rtDay3, Type: domain.TransactionTypeInvestment, Amount: 200.00, Category: domain.CategoryStocksETF, Comment: "ETF buy", DebitAccount: "swed", CreditAccount: "swed_etf"},
 	}
 
 	rtBalances = []domain.Balance{
@@ -124,6 +149,27 @@ var (
 	rtStocks = []domain.StockTrade{
 		{Date: rtDay1, Action: domain.StockActionBuy, Ticker: "AAPL", Shares: 5, PricePerShare: 210.50, Currency: "USD"},
 		{Date: rtDay2, Action: domain.StockActionBuy, Ticker: "MSFT", Shares: 2, PricePerShare: 415.00, Currency: "USD", Notes: "DCA"},
+	}
+
+	rtAssets = []domain.Asset{
+		{
+			Name: "Toyota RAV4 Style Hybrid", Type: domain.AssetTypeVehicle,
+			PurchaseDate: rtDatePtr(2020, 11, 17), PurchasePrice: 34000, CurrentValue: 34000,
+			LoanPaidOffDate: rtDatePtr(2025, 11, 17), Notes: "Bought new. Fully paid on 2025-11-17.",
+		},
+		{
+			Name: "House Platiniškių 21A, Platiniškių k.", Type: domain.AssetTypeRealEstate,
+			PurchaseDate: rtDatePtr(2022, 8, 17), PurchasePrice: 355000,
+			CurrentValue: 410000, ValuationDate: rtDatePtr(2025, 12, 1),
+			LoanRemaining: 263568.67, LoanRemainingDate: rtDatePtr(2026, 7, 20),
+			LoanRate: "6M EURIBOR + 1.3%", LoanAccount: "seb",
+			Notes: "Energy class B, built 2017.",
+		},
+		{
+			Name: "Solar panels 10.35 kWp (SOLAX X3 Hybrid G4)", Type: domain.AssetTypeSolar,
+			PurchasePrice: 4551.50, CurrentValue: 4551.50,
+			Notes: "Gross €7,100.84 − €2,549.34 subsidy.",
+		},
 	}
 )
 
@@ -141,19 +187,41 @@ func rtMultipartBody(t *testing.T, data []byte) (*bytes.Buffer, string) {
 	return &buf, w.FormDataContentType()
 }
 
-func rtImportRouter(txRepo *mock.TransactionRepository, balRepo *mock.BalanceRepository, stockRepo *mock.StockRepository) *gin.Engine {
+func rtImportRouter(txRepo *mock.TransactionRepository, balRepo *mock.BalanceRepository, stockRepo *mock.StockRepository, assetRepo *mock.AssetRepository) *gin.Engine {
 	r := gin.New()
-	handler.NewImportHandler(txRepo, balRepo, stockRepo).RegisterRoutes(r.Group("/api/v1"))
+	handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).RegisterRoutes(r.Group("/api/v1"))
 	return r
+}
+
+func rtOptDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+func rtAssetRows(assets []domain.Asset) []rtAsset {
+	rows := make([]rtAsset, len(assets))
+	for i, a := range assets {
+		rows[i] = rtAsset{
+			Name: a.Name, Type: string(a.Type),
+			PurchaseDate: rtOptDate(a.PurchaseDate), PurchasePrice: a.PurchasePrice,
+			CurrentValue: a.CurrentValue, ValuationDate: rtOptDate(a.ValuationDate),
+			Notes:         a.Notes,
+			LoanRemaining: a.LoanRemaining, LoanRemainingDate: rtOptDate(a.LoanRemainingDate),
+			LoanRate: a.LoanRate, LoanAccount: a.LoanAccount, LoanPaidOffDate: rtOptDate(a.LoanPaidOffDate),
+		}
+	}
+	return rows
 }
 
 // rtBuildJSON constructs a finances.json payload from raw domain objects,
 // mirroring exactly what ExportAllJSON serialises.
-func rtBuildJSON(t *testing.T, txs []domain.Transaction, bals []domain.Balance, stocks []domain.StockTrade) []byte {
+func rtBuildJSON(t *testing.T, txs []domain.Transaction, bals []domain.Balance, stocks []domain.StockTrade, assets []domain.Asset) []byte {
 	t.Helper()
 	txRows := make([]rtTx, len(txs))
 	for i, tx := range txs {
-		txRows[i] = rtTx{ID: tx.ID, Date: tx.Date.Format("2006-01-02"), Type: string(tx.Type), Amount: tx.Amount, Category: string(tx.Category), Comment: tx.Comment}
+		txRows[i] = rtTx{ID: tx.ID, Date: tx.Date.Format("2006-01-02"), Type: string(tx.Type), Amount: tx.Amount, Category: string(tx.Category), Comment: tx.Comment, DebitAccount: tx.DebitAccount, CreditAccount: tx.CreditAccount, SourceAccount: tx.SourceAccount}
 	}
 	balRows := make([]rtBalance, len(bals))
 	for i, b := range bals {
@@ -163,26 +231,35 @@ func rtBuildJSON(t *testing.T, txs []domain.Transaction, bals []domain.Balance, 
 	for i, s := range stocks {
 		stockRows[i] = rtStock{Date: s.Date.Format("2006-01-02"), Action: string(s.Action), Ticker: s.Ticker, Shares: s.Shares, PricePerShare: s.PricePerShare, Currency: s.Currency, Notes: s.Notes}
 	}
-	data, err := json.Marshal(rtExport{ExportDate: time.Now().Format("2006-01-02"), Transactions: txRows, Balances: balRows, StockTrades: stockRows})
+	data, err := json.Marshal(rtExport{ExportDate: time.Now().Format("2006-01-02"), Transactions: txRows, Balances: balRows, StockTrades: stockRows, Assets: rtAssetRows(assets)})
 	require.NoError(t, err)
 	return data
+}
+
+// rtExportRouter wires an ExportHandler with all four mock services pre-loaded
+// with the canonical fixtures.
+func rtExportRouter(txs []domain.Transaction, bals []domain.Balance, stocks []domain.StockTrade, assets []domain.Asset) *gin.Engine {
+	txSvc := &mockTransactionService{}
+	balSvc := &mockBalanceService{}
+	stockSvc := &mockStockService{}
+	assetSvc := &mockAssetService{}
+	logRepo := &mockExportLog{}
+
+	txSvc.On("ListAll").Return(txs, nil)
+	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return(bals, nil)
+	stockSvc.On("ListAll").Return(stocks, nil)
+	assetSvc.On("ListAll").Return(assets, nil)
+	logRepo.On("Save", "full").Return(nil)
+
+	r := gin.New()
+	handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+	return r
 }
 
 // ---- Export tests ----
 
 func TestExportAllJSON_ContainsAllRecords(t *testing.T) {
-	txSvc := &mockTransactionService{}
-	balSvc := &mockBalanceService{}
-	stockSvc := &mockStockService{}
-	logRepo := &mockExportLog{}
-
-	txSvc.On("ListAll").Return(rtTransactions, nil)
-	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return(rtBalances, nil)
-	stockSvc.On("ListAll").Return(rtStocks, nil)
-	logRepo.On("Save", "full").Return(nil)
-
-	r := gin.New()
-	handler.NewExportHandler(txSvc, balSvc, stockSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+	r := rtExportRouter(rtTransactions, rtBalances, rtStocks, rtAssets)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
@@ -194,6 +271,7 @@ func TestExportAllJSON_ContainsAllRecords(t *testing.T) {
 	assert.Len(t, got.Transactions, 3, "all transactions exported")
 	assert.Len(t, got.Balances, 2, "all balances exported")
 	assert.Len(t, got.StockTrades, 2, "all stock trades exported")
+	assert.Len(t, got.Assets, 3, "all assets exported")
 
 	// Field mapping spot-checks
 	assert.Equal(t, "2026-01-15", got.Transactions[0].Date)
@@ -210,21 +288,34 @@ func TestExportAllJSON_ContainsAllRecords(t *testing.T) {
 	assert.Equal(t, "AAPL", got.StockTrades[0].Ticker)
 	assert.Equal(t, "buy", got.StockTrades[0].Action)
 	assert.Equal(t, float64(5), got.StockTrades[0].Shares)
+
+	// Asset field mapping — car
+	assert.Equal(t, "Toyota RAV4 Style Hybrid", got.Assets[0].Name)
+	assert.Equal(t, "vehicle", got.Assets[0].Type)
+	assert.Equal(t, "2020-11-17", got.Assets[0].PurchaseDate)
+	assert.Equal(t, 34000.0, got.Assets[0].PurchasePrice)
+	assert.Equal(t, "2025-11-17", got.Assets[0].LoanPaidOffDate)
+
+	// Asset field mapping — house with mortgage
+	house := got.Assets[1]
+	assert.Equal(t, "real_estate", house.Type)
+	assert.Equal(t, "2022-08-17", house.PurchaseDate)
+	assert.Equal(t, 355000.0, house.PurchasePrice)
+	assert.Equal(t, 410000.0, house.CurrentValue)
+	assert.Equal(t, "2025-12-01", house.ValuationDate)
+	assert.Equal(t, 263568.67, house.LoanRemaining)
+	assert.Equal(t, "2026-07-20", house.LoanRemainingDate)
+	assert.Equal(t, "6M EURIBOR + 1.3%", house.LoanRate)
+	assert.Equal(t, "seb", house.LoanAccount)
+
+	// Asset field mapping — solar without purchase date
+	assert.Equal(t, "solar", got.Assets[2].Type)
+	assert.Equal(t, "", got.Assets[2].PurchaseDate, "missing purchase date exported as empty")
+	assert.Equal(t, 4551.50, got.Assets[2].PurchasePrice)
 }
 
 func TestExportAllJSON_EmptyDB_ProducesEmptyArraysNotNull(t *testing.T) {
-	txSvc := &mockTransactionService{}
-	balSvc := &mockBalanceService{}
-	stockSvc := &mockStockService{}
-	logRepo := &mockExportLog{}
-
-	txSvc.On("ListAll").Return([]domain.Transaction{}, nil)
-	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return([]domain.Balance{}, nil)
-	stockSvc.On("ListAll").Return([]domain.StockTrade{}, nil)
-	logRepo.On("Save", "full").Return(nil)
-
-	r := gin.New()
-	handler.NewExportHandler(txSvc, balSvc, stockSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+	r := rtExportRouter([]domain.Transaction{}, []domain.Balance{}, []domain.StockTrade{}, []domain.Asset{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
@@ -236,6 +327,7 @@ func TestExportAllJSON_EmptyDB_ProducesEmptyArraysNotNull(t *testing.T) {
 	assert.Equal(t, `[]`, string(raw["transactions"]), "empty transactions must be [] not null")
 	assert.Equal(t, `[]`, string(raw["balances"]), "empty balances must be [] not null")
 	assert.Equal(t, `[]`, string(raw["stock_trades"]), "empty stock_trades must be [] not null")
+	assert.Equal(t, `[]`, string(raw["assets"]), "empty assets must be [] not null")
 }
 
 // ---- Import tests ----
@@ -244,6 +336,7 @@ func TestImportJSON_AllNew_ImportsEverything(t *testing.T) {
 	txRepo := &mock.TransactionRepository{}
 	balRepo := &mock.BalanceRepository{}
 	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
 
 	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	for _, tx := range rtTransactions {
@@ -254,12 +347,14 @@ func TestImportJSON_AllNew_ImportsEverything(t *testing.T) {
 	balRepo.On("Create", tm.AnythingOfType("*domain.Balance")).Return(nil)
 	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
 	stockRepo.On("Create", tm.AnythingOfType("*domain.StockTrade")).Return(nil)
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
+	assetRepo.On("Create", tm.AnythingOfType("*domain.Asset")).Return(nil)
 
-	body, ct := rtMultipartBody(t, rtBuildJSON(t, rtTransactions, rtBalances, rtStocks))
+	body, ct := rtMultipartBody(t, rtBuildJSON(t, rtTransactions, rtBalances, rtStocks, rtAssets))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	req.Header.Set("Content-Type", ct)
 	w := httptest.NewRecorder()
-	rtImportRouter(txRepo, balRepo, stockRepo).ServeHTTP(w, req)
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	var result rtImportResult
@@ -268,15 +363,18 @@ func TestImportJSON_AllNew_ImportsEverything(t *testing.T) {
 	assert.Equal(t, 3, result.Imported.Transactions)
 	assert.Equal(t, 2, result.Imported.Balances)
 	assert.Equal(t, 2, result.Imported.StockTrades)
+	assert.Equal(t, 3, result.Imported.Assets)
 	assert.Equal(t, 0, result.Skipped.Transactions)
 	assert.Equal(t, 0, result.Skipped.Balances)
 	assert.Equal(t, 0, result.Skipped.StockTrades)
+	assert.Equal(t, 0, result.Skipped.Assets)
 }
 
 func TestImportJSON_Idempotent_SkipsAllOnSecondImport(t *testing.T) {
 	txRepo := &mock.TransactionRepository{}
 	balRepo := &mock.BalanceRepository{}
 	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
 
 	// All records already exist
 	txRepo.On("ListAll").Return(rtTransactions, nil)
@@ -286,12 +384,13 @@ func TestImportJSON_Idempotent_SkipsAllOnSecondImport(t *testing.T) {
 	}
 	balRepo.On("List", tm.AnythingOfType("domain.BalanceFilter")).Return([]domain.Balance{{Date: rtDay1}}, nil)
 	stockRepo.On("ListAll").Return(rtStocks, nil)
+	assetRepo.On("ListAll").Return(rtAssets, nil)
 
-	body, ct := rtMultipartBody(t, rtBuildJSON(t, rtTransactions, rtBalances, rtStocks))
+	body, ct := rtMultipartBody(t, rtBuildJSON(t, rtTransactions, rtBalances, rtStocks, rtAssets))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	req.Header.Set("Content-Type", ct)
 	w := httptest.NewRecorder()
-	rtImportRouter(txRepo, balRepo, stockRepo).ServeHTTP(w, req)
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	var result rtImportResult
@@ -299,13 +398,16 @@ func TestImportJSON_Idempotent_SkipsAllOnSecondImport(t *testing.T) {
 
 	assert.Equal(t, 0, result.Imported.Transactions, "second import must not create duplicate transactions")
 	assert.Equal(t, 0, result.Imported.StockTrades, "second import must not create duplicate stock trades")
+	assert.Equal(t, 0, result.Imported.Assets, "second import must not create duplicate assets")
 	assert.Equal(t, 3, result.Skipped.Transactions)
 	assert.Equal(t, 2, result.Skipped.StockTrades)
+	assert.Equal(t, 3, result.Skipped.Assets)
 
 	// Create must never be called on any repo
 	txRepo.AssertNotCalled(t, "Create", tm.Anything)
 	balRepo.AssertNotCalled(t, "Create", tm.Anything)
 	stockRepo.AssertNotCalled(t, "Create", tm.Anything)
+	assetRepo.AssertNotCalled(t, "Create", tm.Anything)
 }
 
 // ---- Round-trip test ----
@@ -314,18 +416,7 @@ func TestImportJSON_Idempotent_SkipsAllOnSecondImport(t *testing.T) {
 // the JSON produced by ExportAllJSON can be fully re-imported with zero loss or duplication.
 func TestExportImportRoundTrip(t *testing.T) {
 	// --- Step 1: Export ---
-	txSvc := &mockTransactionService{}
-	balSvc := &mockBalanceService{}
-	stockSvc := &mockStockService{}
-	logRepo := &mockExportLog{}
-
-	txSvc.On("ListAll").Return(rtTransactions, nil)
-	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return(rtBalances, nil)
-	stockSvc.On("ListAll").Return(rtStocks, nil)
-	logRepo.On("Save", "full").Return(nil)
-
-	exportRouter := gin.New()
-	handler.NewExportHandler(txSvc, balSvc, stockSvc, logRepo).RegisterRoutes(exportRouter.Group("/api/v1"))
+	exportRouter := rtExportRouter(rtTransactions, rtBalances, rtStocks, rtAssets)
 
 	ew := httptest.NewRecorder()
 	exportRouter.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
@@ -339,11 +430,13 @@ func TestExportImportRoundTrip(t *testing.T) {
 	require.Len(t, exported.Transactions, len(rtTransactions), "export must contain all transactions")
 	require.Len(t, exported.Balances, len(rtBalances), "export must contain all balances")
 	require.Len(t, exported.StockTrades, len(rtStocks), "export must contain all stock trades")
+	require.Len(t, exported.Assets, len(rtAssets), "export must contain all assets")
 
 	// --- Step 2: Import the exact JSON that was exported ---
 	txRepo := &mock.TransactionRepository{}
 	balRepo := &mock.BalanceRepository{}
 	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
 
 	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	for _, tx := range rtTransactions {
@@ -354,12 +447,14 @@ func TestExportImportRoundTrip(t *testing.T) {
 	balRepo.On("Create", tm.AnythingOfType("*domain.Balance")).Return(nil)
 	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
 	stockRepo.On("Create", tm.AnythingOfType("*domain.StockTrade")).Return(nil)
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
+	assetRepo.On("Create", tm.AnythingOfType("*domain.Asset")).Return(nil)
 
 	body, ct := rtMultipartBody(t, exportedJSON)
 	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	importReq.Header.Set("Content-Type", ct)
 	iw := httptest.NewRecorder()
-	rtImportRouter(txRepo, balRepo, stockRepo).ServeHTTP(iw, importReq)
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(iw, importReq)
 
 	require.Equal(t, http.StatusOK, iw.Code, "import must succeed")
 	var result rtImportResult
@@ -369,19 +464,83 @@ func TestExportImportRoundTrip(t *testing.T) {
 	assert.Equal(t, len(rtTransactions), result.Imported.Transactions, "all transactions must be imported")
 	assert.Equal(t, len(rtBalances), result.Imported.Balances, "all balances must be imported")
 	assert.Equal(t, len(rtStocks), result.Imported.StockTrades, "all stock trades must be imported")
+	assert.Equal(t, len(rtAssets), result.Imported.Assets, "all assets must be imported")
 	assert.Equal(t, 0, result.Skipped.Transactions, "no transactions skipped on fresh import")
 	assert.Equal(t, 0, result.Skipped.Balances, "no balances skipped on fresh import")
 	assert.Equal(t, 0, result.Skipped.StockTrades, "no stock trades skipped on fresh import")
+	assert.Equal(t, 0, result.Skipped.Assets, "no assets skipped on fresh import")
 
-	total := result.Imported.Transactions + result.Imported.Balances + result.Imported.StockTrades
-	original := len(rtTransactions) + len(rtBalances) + len(rtStocks)
+	total := result.Imported.Transactions + result.Imported.Balances + result.Imported.StockTrades + result.Imported.Assets
+	original := len(rtTransactions) + len(rtBalances) + len(rtStocks) + len(rtAssets)
 	assert.Equal(t, original, total, "total imported == total original — zero delta proven")
+}
+
+// TestExportImportRoundTrip_AssetFieldsPreserved verifies every asset field —
+// including loan terms and nullable dates — survives a full export → import round-trip.
+func TestExportImportRoundTrip_AssetFieldsPreserved(t *testing.T) {
+	// --- Export ---
+	exportRouter := rtExportRouter([]domain.Transaction{}, []domain.Balance{}, []domain.StockTrade{}, rtAssets)
+
+	ew := httptest.NewRecorder()
+	exportRouter.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
+	require.Equal(t, http.StatusOK, ew.Code)
+
+	// --- Import the exported JSON and capture what was created ---
+	txRepo := &mock.TransactionRepository{}
+	balRepo := &mock.BalanceRepository{}
+	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
+
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
+	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
+
+	var created []*domain.Asset
+	assetRepo.On("Create", tm.AnythingOfType("*domain.Asset")).
+		Run(func(args tm.Arguments) { created = append(created, args.Get(0).(*domain.Asset)) }).
+		Return(nil)
+
+	body, ct := rtMultipartBody(t, ew.Body.Bytes())
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
+	importReq.Header.Set("Content-Type", ct)
+	iw := httptest.NewRecorder()
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(iw, importReq)
+
+	require.Equal(t, http.StatusOK, iw.Code)
+	require.Len(t, created, 3, "all three assets imported")
+
+	car, house, solar := created[0], created[1], created[2]
+
+	assert.Equal(t, "Toyota RAV4 Style Hybrid", car.Name)
+	assert.Equal(t, domain.AssetTypeVehicle, car.Type)
+	require.NotNil(t, car.PurchaseDate)
+	assert.Equal(t, "2020-11-17", car.PurchaseDate.Format("2006-01-02"))
+	assert.Equal(t, 34000.0, car.PurchasePrice)
+	require.NotNil(t, car.LoanPaidOffDate)
+	assert.Equal(t, "2025-11-17", car.LoanPaidOffDate.Format("2006-01-02"))
+	assert.Equal(t, 0.0, car.LoanRemaining)
+
+	assert.Equal(t, domain.AssetTypeRealEstate, house.Type)
+	assert.Equal(t, 355000.0, house.PurchasePrice)
+	assert.Equal(t, 410000.0, house.CurrentValue)
+	require.NotNil(t, house.ValuationDate)
+	assert.Equal(t, "2025-12-01", house.ValuationDate.Format("2006-01-02"))
+	assert.Equal(t, 263568.67, house.LoanRemaining)
+	require.NotNil(t, house.LoanRemainingDate)
+	assert.Equal(t, "2026-07-20", house.LoanRemainingDate.Format("2006-01-02"))
+	assert.Equal(t, "6M EURIBOR + 1.3%", house.LoanRate)
+	assert.Equal(t, "seb", house.LoanAccount)
+
+	assert.Equal(t, domain.AssetTypeSolar, solar.Type)
+	assert.Nil(t, solar.PurchaseDate, "missing purchase date stays nil after round-trip")
+	assert.Equal(t, 4551.50, solar.PurchasePrice)
+	assert.Equal(t, 4551.50, solar.CurrentValue)
 }
 
 // ---- Edge-case tests ----
 
 func TestImportJSON_MissingFileField_Returns400(t *testing.T) {
-	r := rtImportRouter(&mock.TransactionRepository{}, &mock.BalanceRepository{}, &mock.StockRepository{})
+	r := rtImportRouter(&mock.TransactionRepository{}, &mock.BalanceRepository{}, &mock.StockRepository{}, &mock.AssetRepository{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -390,7 +549,7 @@ func TestImportJSON_MissingFileField_Returns400(t *testing.T) {
 }
 
 func TestImportJSON_InvalidJSON_Returns400(t *testing.T) {
-	r := rtImportRouter(&mock.TransactionRepository{}, &mock.BalanceRepository{}, &mock.StockRepository{})
+	r := rtImportRouter(&mock.TransactionRepository{}, &mock.BalanceRepository{}, &mock.StockRepository{}, &mock.AssetRepository{})
 	body, ct := rtMultipartBody(t, []byte(`not valid json {{`))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	req.Header.Set("Content-Type", ct)
@@ -399,14 +558,71 @@ func TestImportJSON_InvalidJSON_Returns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// TestExportImportRoundTrip_AccountFieldsPreserved verifies that debit_account,
+// credit_account, and source_account survive a full export → import round-trip.
+func TestExportImportRoundTrip_AccountFieldsPreserved(t *testing.T) {
+	// --- Export ---
+	exportRouter := rtExportRouter(rtTransactions, []domain.Balance{}, []domain.StockTrade{}, []domain.Asset{})
+
+	ew := httptest.NewRecorder()
+	exportRouter.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
+	require.Equal(t, http.StatusOK, ew.Code)
+
+	var exported rtExport
+	require.NoError(t, json.Unmarshal(ew.Body.Bytes(), &exported))
+
+	// Spot-check account fields in the raw JSON export
+	assert.Equal(t, "swed", exported.Transactions[0].DebitAccount, "expense debit_account exported")
+	assert.Equal(t, "seb", exported.Transactions[1].CreditAccount, "income credit_account exported")
+	assert.Equal(t, "swed", exported.Transactions[2].DebitAccount, "investment debit_account exported")
+	assert.Equal(t, "swed_etf", exported.Transactions[2].CreditAccount, "investment credit_account exported")
+
+	// --- Import the exported JSON and capture what was created ---
+	txRepo := &mock.TransactionRepository{}
+	balRepo := &mock.BalanceRepository{}
+	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
+
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
+	for _, tx := range rtTransactions {
+		txRepo.On("GetByID", tx.ID).Return(nil, errors.New("not found"))
+	}
+
+	var created []*domain.Transaction
+	txRepo.On("Create", tm.AnythingOfType("*domain.Transaction")).
+		Run(func(args tm.Arguments) { created = append(created, args.Get(0).(*domain.Transaction)) }).
+		Return(nil)
+	balRepo.On("List", tm.AnythingOfType("domain.BalanceFilter")).Return([]domain.Balance{}, nil)
+	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
+
+	body, ct := rtMultipartBody(t, ew.Body.Bytes())
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
+	importReq.Header.Set("Content-Type", ct)
+	iw := httptest.NewRecorder()
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(iw, importReq)
+
+	require.Equal(t, http.StatusOK, iw.Code)
+
+	require.Len(t, created, 3, "all three transactions imported")
+	assert.Equal(t, "swed", created[0].DebitAccount, "expense debit_account round-tripped")
+	assert.Equal(t, "", created[0].CreditAccount, "expense credit_account empty")
+	assert.Equal(t, "seb", created[1].CreditAccount, "income credit_account round-tripped")
+	assert.Equal(t, "", created[1].DebitAccount, "income debit_account empty")
+	assert.Equal(t, "swed", created[2].DebitAccount, "investment debit_account round-tripped")
+	assert.Equal(t, "swed_etf", created[2].CreditAccount, "investment credit_account round-tripped")
+}
+
 func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {
 	txRepo := &mock.TransactionRepository{}
 	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
 	stockRepo := &mock.StockRepository{}
 	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
+	assetRepo := &mock.AssetRepository{}
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
 
-	r := rtImportRouter(txRepo, &mock.BalanceRepository{}, stockRepo)
-	body, ct := rtMultipartBody(t, rtBuildJSON(t, nil, nil, nil))
+	r := rtImportRouter(txRepo, &mock.BalanceRepository{}, stockRepo, assetRepo)
+	body, ct := rtMultipartBody(t, rtBuildJSON(t, nil, nil, nil, nil))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
 	req.Header.Set("Content-Type", ct)
 	w := httptest.NewRecorder()
@@ -418,4 +634,5 @@ func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {
 	assert.Equal(t, 0, result.Imported.Transactions)
 	assert.Equal(t, 0, result.Imported.Balances)
 	assert.Equal(t, 0, result.Imported.StockTrades)
+	assert.Equal(t, 0, result.Imported.Assets)
 }

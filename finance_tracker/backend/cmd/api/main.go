@@ -36,6 +36,7 @@ func main() {
 	balRepo := repository.NewBalanceRepository(db)
 	insightRepo := repository.NewInsightRepository(db)
 	stockRepo := repository.NewStockRepository(db)
+	assetRepo := repository.NewAssetRepository(db)
 	exportLogRepo := repository.NewExportLogRepository(db)
 
 	// Services — balSvc must be created before txSvc (txSvc holds a reference to balSvc)
@@ -43,14 +44,16 @@ func main() {
 	txSvc := service.NewTransactionService(txRepo, balSvc)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
 	stockSvc := service.NewStockService(stockRepo)
+	assetSvc := service.NewAssetService(assetRepo)
 
 	// Handlers
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
-	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, exportLogRepo)
-	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo)
+	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, exportLogRepo)
+	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo)
 	stockHandler := handler.NewStockHandler(stockSvc)
+	assetHandler := handler.NewAssetHandler(assetSvc)
 
 	r := gin.Default()
 
@@ -72,6 +75,7 @@ func main() {
 	exportHandler.RegisterRoutes(v1)
 	importHandler.RegisterRoutes(v1)
 	stockHandler.RegisterRoutes(v1)
+	assetHandler.RegisterRoutes(v1)
 
 	// Health check
 	v1.GET("/health", func(c *gin.Context) {

@@ -16,14 +16,16 @@ type ImportHandler struct {
 	txRepo    repository.TransactionRepository
 	balRepo   repository.BalanceRepository
 	stockRepo repository.StockRepository
+	assetRepo repository.AssetRepository
 }
 
 func NewImportHandler(
 	txRepo repository.TransactionRepository,
 	balRepo repository.BalanceRepository,
 	stockRepo repository.StockRepository,
+	assetRepo repository.AssetRepository,
 ) *ImportHandler {
-	return &ImportHandler{txRepo: txRepo, balRepo: balRepo, stockRepo: stockRepo}
+	return &ImportHandler{txRepo: txRepo, balRepo: balRepo, stockRepo: stockRepo, assetRepo: assetRepo}
 }
 
 func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -40,6 +42,7 @@ type importCounts struct {
 	Transactions int `json:"transactions"`
 	Balances     int `json:"balances"`
 	StockTrades  int `json:"stock_trades"`
+	Assets       int `json:"assets"`
 }
 
 // ImportJSON godoc
@@ -205,6 +208,69 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		}
 		seen[key] = true
 		result.Imported.StockTrades++
+	}
+
+	// --- Assets — deduplicate by name+type+purchase_date ---
+	// Assets have no export ID; name plus type plus purchase date uniquely
+	// identifies a physical asset for re-import purposes.
+	existingAssets, _ := h.assetRepo.ListAll()
+	assetSeen := make(map[string]bool, len(existingAssets))
+	assetKey := func(name, typ, purchaseDate string) string {
+		return fmt.Sprintf("%s|%s|%s", name, typ, purchaseDate)
+	}
+	for _, a := range existingAssets {
+		assetSeen[assetKey(a.Name, string(a.Type), formatOptionalDate(a.PurchaseDate))] = true
+	}
+
+	parseOptDate := func(s string) (*time.Time, bool) {
+		if s == "" {
+			return nil, true
+		}
+		d, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return nil, false
+		}
+		return &d, true
+	}
+
+	for _, row := range payload.Assets {
+		key := assetKey(row.Name, row.Type, row.PurchaseDate)
+		if row.Name == "" || assetSeen[key] {
+			result.Skipped.Assets++
+			continue
+		}
+		purchaseDate, ok1 := parseOptDate(row.PurchaseDate)
+		valuationDate, ok2 := parseOptDate(row.ValuationDate)
+		loanRemainingDate, ok3 := parseOptDate(row.LoanRemainingDate)
+		loanPaidOffDate, ok4 := parseOptDate(row.LoanPaidOffDate)
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			result.Skipped.Assets++
+			continue
+		}
+		currentValue := row.CurrentValue
+		if currentValue == 0 {
+			currentValue = row.PurchasePrice
+		}
+		asset := &domain.Asset{
+			Name:              row.Name,
+			Type:              domain.AssetType(row.Type),
+			PurchaseDate:      purchaseDate,
+			PurchasePrice:     row.PurchasePrice,
+			CurrentValue:      currentValue,
+			ValuationDate:     valuationDate,
+			Notes:             row.Notes,
+			LoanRemaining:     row.LoanRemaining,
+			LoanRemainingDate: loanRemainingDate,
+			LoanRate:          row.LoanRate,
+			LoanAccount:       row.LoanAccount,
+			LoanPaidOffDate:   loanPaidOffDate,
+		}
+		if err := h.assetRepo.Create(asset); err != nil {
+			result.Skipped.Assets++
+			continue
+		}
+		assetSeen[key] = true
+		result.Imported.Assets++
 	}
 
 	c.JSON(http.StatusOK, result)

@@ -6,6 +6,7 @@ import Transactions from './pages/Transactions'
 import Balances from './pages/Balances'
 import Reports from './pages/Reports'
 import Stocks from './pages/Stocks'
+import Assets from './pages/Assets'
 import { DateRangeProvider } from './context/DateRangeContext'
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="transactions" element={<Transactions />} />
               <Route path="balances" element={<Balances />} />
               <Route path="stocks" element={<Stocks />} />
+              <Route path="assets" element={<Assets />} />
               <Route path="reports" element={<Reports />} />
             </Route>
           </Routes>

@@ -204,6 +204,59 @@ export interface StockPortfolio {
   total_realized_gain: Money
 }
 
+// --- Assets ---
+
+export type AssetType = 'vehicle' | 'real_estate' | 'solar' | 'other'
+
+export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  vehicle: 'Vehicle',
+  real_estate: 'Real Estate',
+  solar: 'Solar',
+  other: 'Other',
+}
+
+export interface Asset {
+  id: number
+  name: string
+  type: AssetType
+  purchase_date?: string
+  purchase_price: number // EUR
+  current_value: number // EUR — latest valuation
+  valuation_date?: string
+  notes: string
+  loan_remaining: number // EUR outstanding; 0 = owned outright
+  loan_remaining_date?: string
+  loan_rate?: string
+  loan_account?: string
+  loan_paid_off_date?: string
+  created_at: string
+  updated_at: string
+  equity: number // current_value − loan_remaining (computed by backend)
+}
+
+export interface CreateAssetInput {
+  name: string
+  type: AssetType
+  purchase_date?: string
+  purchase_price: number
+  current_value?: number
+  valuation_date?: string
+  notes?: string
+  loan_remaining?: number
+  loan_remaining_date?: string
+  loan_rate?: string
+  loan_account?: string
+  loan_paid_off_date?: string
+}
+
+export interface AssetSummary {
+  count: number
+  total_purchase_price: number
+  total_value: number
+  total_loans: number
+  net_equity: number
+}
+
 export interface TransactionFilter {
   date_from?: string
   date_to?: string

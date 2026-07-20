@@ -84,6 +84,22 @@ make test-frontend
 | PUT | `/balances/:id` | Update |
 | DELETE | `/balances/:id` | Delete |
 
+### Assets  `/api/v1/assets`
+
+Physical assets (vehicles, real estate, solar installations) with purchase price,
+current valuation, loan terms and computed net equity. Included in the JSON
+export/import round-trip.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/assets` | List all assets |
+| POST | `/assets` | Create asset |
+| GET | `/assets/summary` | Totals: value, loans, net equity |
+| GET | `/assets/:id` | Get by ID |
+| PUT | `/assets/:id` | Update (full replace) |
+| DELETE | `/assets/:id` | Delete |
+| DELETE | `/assets` | Delete all |
+
 ### Query filters
 
 ```

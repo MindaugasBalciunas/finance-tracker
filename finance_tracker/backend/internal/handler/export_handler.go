@@ -17,11 +17,12 @@ type ExportHandler struct {
 	txSvc         service.TransactionService
 	balSvc        service.BalanceService
 	stockSvc      service.StockService
+	assetSvc      service.AssetService
 	exportLogRepo repository.ExportLogRepository
 }
 
-func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceService, stockSvc service.StockService, exportLogRepo repository.ExportLogRepository) *ExportHandler {
-	return &ExportHandler{txSvc: txSvc, balSvc: balSvc, stockSvc: stockSvc, exportLogRepo: exportLogRepo}
+func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceService, stockSvc service.StockService, assetSvc service.AssetService, exportLogRepo repository.ExportLogRepository) *ExportHandler {
+	return &ExportHandler{txSvc: txSvc, balSvc: balSvc, stockSvc: stockSvc, assetSvc: assetSvc, exportLogRepo: exportLogRepo}
 }
 
 func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -117,6 +118,7 @@ type financeExport struct {
 	Transactions    []txExportRow    `json:"transactions"`
 	Balances        []balExportRow   `json:"balances"`
 	StockTrades     []stockExportRow `json:"stock_trades"`
+	Assets          []assetExportRow `json:"assets"`
 }
 
 type txExportRow struct {
@@ -161,13 +163,58 @@ type stockExportRow struct {
 	Notes         string  `json:"notes,omitempty"`
 }
 
+type assetExportRow struct {
+	Name              string  `json:"name"`
+	Type              string  `json:"type"`
+	PurchaseDate      string  `json:"purchase_date,omitempty"`
+	PurchasePrice     float64 `json:"purchase_price_eur"`
+	CurrentValue      float64 `json:"current_value_eur"`
+	ValuationDate     string  `json:"valuation_date,omitempty"`
+	Notes             string  `json:"notes,omitempty"`
+	LoanRemaining     float64 `json:"loan_remaining_eur,omitempty"`
+	LoanRemainingDate string  `json:"loan_remaining_date,omitempty"`
+	LoanRate          string  `json:"loan_rate,omitempty"`
+	LoanAccount       string  `json:"loan_account,omitempty"`
+	LoanPaidOffDate   string  `json:"loan_paid_off_date,omitempty"`
+}
+
+// formatOptionalDate renders a nullable date as YYYY-MM-DD or "".
+func formatOptionalDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+func toAssetExportRows(assets []domain.Asset) []assetExportRow {
+	rows := make([]assetExportRow, len(assets))
+	for i, a := range assets {
+		rows[i] = assetExportRow{
+			Name:              a.Name,
+			Type:              string(a.Type),
+			PurchaseDate:      formatOptionalDate(a.PurchaseDate),
+			PurchasePrice:     a.PurchasePrice,
+			CurrentValue:      a.CurrentValue,
+			ValuationDate:     formatOptionalDate(a.ValuationDate),
+			Notes:             a.Notes,
+			LoanRemaining:     a.LoanRemaining,
+			LoanRemainingDate: formatOptionalDate(a.LoanRemainingDate),
+			LoanRate:          a.LoanRate,
+			LoanAccount:       a.LoanAccount,
+			LoanPaidOffDate:   formatOptionalDate(a.LoanPaidOffDate),
+		}
+	}
+	return rows
+}
+
 const exportPrompt = `You are a personal finance advisor. I'm sharing my complete financial data exported from my finance tracker app. Please analyze it and help me understand:
 1. My overall financial health and net worth trend
 2. My spending patterns and top expense categories
 3. How my savings rate looks over time
 4. My investment portfolio (stocks + crypto) performance
-5. Any concerns or areas I should improve
-6. Specific actionable recommendations for my situation
+5. My physical assets (real estate, vehicles, solar) — value, loans and net equity
+6. Any concerns or areas I should improve
+7. Specific actionable recommendations for my situation
 
 All monetary amounts are in EUR unless otherwise noted. Stock prices may be in USD.`
 
@@ -191,6 +238,12 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	}
 
 	stocks, err := h.stockSvc.ListAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	assets, err := h.assetSvc.ListAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -256,6 +309,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		Transactions:    txRows,
 		Balances:        balRows,
 		StockTrades:     stockRows,
+		Assets:          toAssetExportRows(assets),
 	})
 }
 
@@ -289,6 +343,12 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 	}
 
 	stocks, err := h.stockSvc.ListSince(*since)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	assets, err := h.assetSvc.ListSince(*since)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -355,6 +415,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		Transactions:    txRows,
 		Balances:        balRows,
 		StockTrades:     stockRows,
+		Assets:          toAssetExportRows(assets),
 	})
 }
 
