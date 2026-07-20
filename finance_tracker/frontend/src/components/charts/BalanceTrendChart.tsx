@@ -49,6 +49,25 @@ function buildYTicks(maxVal: number): number[] {
   return candidates.filter((v) => v <= maxVal * 1.05)
 }
 
+// Month-boundary ticks for the time axis, thinned to at most ~12 labels so
+// multi-year histories stay readable.
+function buildTimeTicks(minTs: number, maxTs: number): number[] {
+  const ticks: number[] = []
+  const d = new Date(minTs)
+  d.setDate(1); d.setHours(0, 0, 0, 0)
+  if (d.getTime() < minTs) d.setMonth(d.getMonth() + 1)
+  while (d.getTime() <= maxTs) {
+    ticks.push(d.getTime())
+    d.setMonth(d.getMonth() + 1)
+  }
+  const step = Math.ceil(ticks.length / 12)
+  return ticks.filter((_, i) => i % step === 0)
+}
+
+function formatTick(ts: number): string {
+  return new Date(ts).toLocaleDateString('lt-LT', { year: '2-digit', month: 'short' })
+}
+
 interface TooltipProps {
   active?: boolean
   payload?: any[]
@@ -56,8 +75,10 @@ interface TooltipProps {
   hiddenKeys: Set<string>
 }
 
-function CustomTooltip({ active, payload, label, hiddenKeys }: TooltipProps) {
+function CustomTooltip({ active, payload, hiddenKeys }: TooltipProps) {
   if (!active || !payload?.length) return null
+  const rawDate = payload[0]?.payload?.date as string | undefined
+  const label = rawDate ? String(rawDate).slice(0, 10) : ''
 
   // Individual segment values are in payload[i].payload[dataKey], not payload[i].value (which is cumulative)
   const items = [...payload]
@@ -126,7 +147,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
   const data = trend.dates.map((date, i) => {
-    const row: Record<string, number | string> = { date }
+    const row: Record<string, number | string> = { date, ts: new Date(date).getTime() }
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
       if ((acc === 'r_btc' || acc === 'm_btc') && btcPrice && btcPrice >= MIN_VALID_BTC_PRICE) {
@@ -135,7 +156,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
       row[acc] = value
     })
     return row
-  })
+  }).sort((a, b) => (a.ts as number) - (b.ts as number))
 
   const activeAccounts = Object.keys(trend.accounts).filter((acc) =>
     trend.accounts[acc].some((v) => v > 0)
@@ -187,7 +208,15 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
           })}
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+        <XAxis
+          dataKey="ts"
+          type="number"
+          scale="time"
+          domain={['dataMin', 'dataMax']}
+          ticks={data.length > 0 ? buildTimeTicks(data[0].ts as number, data[data.length - 1].ts as number) : undefined}
+          tickFormatter={formatTick}
+          tick={{ fontSize: 11 }}
+        />
         <YAxis
           domain={[0, 'auto']}
           ticks={yTicks}
@@ -208,6 +237,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
             type="monotone"
             dataKey={acc}
             stackId="nw"
+            isAnimationActive={false}
             stroke={ACCOUNT_COLORS[acc] ?? '#94a3b8'}
             strokeWidth={acc === 'swed' ? 2 : 0.5}
             strokeOpacity={acc === 'swed' ? 0.9 : 0.4}
