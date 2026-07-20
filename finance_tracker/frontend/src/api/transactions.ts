@@ -14,6 +14,20 @@ export const transactionsApi = {
     return data
   },
 
+  // Fetches every page matching the filter, so callers get the complete set
+  // regardless of how many transactions exist.
+  listAll: async (filter: Omit<TransactionFilter, 'page' | 'page_size'> = {}): Promise<PaginatedTransactions> => {
+    const pageSize = 1000
+    const first = await transactionsApi.list({ ...filter, page: 1, page_size: pageSize })
+    if (first.total_pages <= 1) return first
+    const rest = await Promise.all(
+      Array.from({ length: first.total_pages - 1 }, (_, i) =>
+        transactionsApi.list({ ...filter, page: i + 2, page_size: pageSize })
+      )
+    )
+    return { ...first, data: [...first.data, ...rest.flatMap((r) => r.data)] }
+  },
+
   getById: async (id: number): Promise<Transaction> => {
     const { data } = await client.get<Transaction>(`/transactions/${id}`)
     return data
