@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from 'react'
 import type { DateRange } from '../components/ui/DateRangeFilter'
+import { presetRange, DEFAULT_PRESET } from '../components/ui/DateRangeFilter'
 
 interface DateRangeContextValue {
   dateRange: DateRange
@@ -12,7 +13,7 @@ const DateRangeContext = createContext<DateRangeContextValue>({
 })
 
 export function DateRangeProvider({ children }: { children: React.ReactNode }) {
-  const [dateRange, setDateRange] = useState<DateRange>({})
+  const [dateRange, setDateRange] = useState<DateRange>(presetRange(DEFAULT_PRESET))
   return (
     <DateRangeContext.Provider value={{ dateRange, setDateRange }}>
       {children}

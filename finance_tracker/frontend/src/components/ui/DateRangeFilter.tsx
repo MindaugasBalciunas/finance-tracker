@@ -31,7 +31,7 @@ function startOfMonth(monthsAgo: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function presetRange(preset: Preset): DateRange {
+export function presetRange(preset: Preset): DateRange {
   switch (preset) {
     case 'this-month': return { date_from: startOfMonth(0) }
     case '3m':         return { date_from: startOfMonth(3) }
@@ -41,8 +41,11 @@ function presetRange(preset: Preset): DateRange {
   }
 }
 
+// Preset every page starts on; DateRangeContext must seed its range from this.
+export const DEFAULT_PRESET: Preset = '6m'
+
 export default function DateRangeFilter({ onChange, className }: Props) {
-  const [preset, setPreset] = useState<Preset>('all')
+  const [preset, setPreset] = useState<Preset>(DEFAULT_PRESET)
   const [custom, setCustom] = useState<DateRange>({})
   const [popoverOpen, setPopoverOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
