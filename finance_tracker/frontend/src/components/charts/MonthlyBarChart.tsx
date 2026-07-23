@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   BarChart,
   Bar,
@@ -16,7 +17,7 @@ interface Props {
   data: MonthlySummary[]
 }
 
-export default function MonthlyBarChart({ data }: Props) {
+const MonthlyBarChart = ({ data }: Props) => {
   const now = new Date()
   const sorted = [...data].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
   const chartData = sorted.map((d) => {
@@ -74,3 +75,5 @@ export default function MonthlyBarChart({ data }: Props) {
     </ResponsiveContainer>
   )
 }
+
+export default memo(MonthlyBarChart)

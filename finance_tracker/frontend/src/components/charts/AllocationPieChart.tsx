@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import type { AccountAllocation } from '../../types'
 import { formatEuro } from '../../utils/format'
@@ -24,7 +25,7 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-export default function AllocationPieChart({ allocations }: Props) {
+const AllocationPieChart = ({ allocations }: Props) => {
   const sorted = [...allocations].sort((a, b) => b.amount - a.amount)
 
   const main = sorted.filter((a) => a.percentage >= 5)
@@ -90,3 +91,5 @@ export default function AllocationPieChart({ allocations }: Props) {
     </div>
   )
 }
+
+export default memo(AllocationPieChart)

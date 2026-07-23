@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import type { CategorySummary } from '../../types'
 import { formatEuro } from '../../utils/format'
@@ -26,7 +27,7 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-export default function CategoryDonutChart({ data, type, onSelect }: Props) {
+const CategoryDonutChart = ({ data, type, onSelect }: Props) => {
   const filtered = data.filter((d) => d.type === type).sort((a, b) => b.total - a.total)
 
   if (filtered.length === 0) {
@@ -95,3 +96,5 @@ export default function CategoryDonutChart({ data, type, onSelect }: Props) {
     </div>
   )
 }
+
+export default memo(CategoryDonutChart)

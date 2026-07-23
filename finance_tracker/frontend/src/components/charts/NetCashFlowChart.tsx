@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   BarChart,
   Bar,
@@ -17,7 +18,7 @@ interface Props {
   data: MonthlySummary[]
 }
 
-export default function NetCashFlowChart({ data }: Props) {
+const NetCashFlowChart = ({ data }: Props) => {
   const sorted = [...data].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
 
   const chartData = sorted.map((d) => ({
@@ -60,3 +61,5 @@ export default function NetCashFlowChart({ data }: Props) {
     </ResponsiveContainer>
   )
 }
+
+export default memo(NetCashFlowChart)

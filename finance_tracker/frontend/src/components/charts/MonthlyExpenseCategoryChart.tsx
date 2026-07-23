@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import {
   BarChart,
   Bar,
@@ -115,19 +116,23 @@ function buildChartData(transactions: Transaction[], topN: number) {
   return { rows, categories: allCats }
 }
 
-export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, monthTotals }: Props) {
-  const { rows, categories } = buildChartData(transactions, topN)
+const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Props) => {
+  const { rows, categories } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
 
-  const totalsMap: Record<string, MonthlySummary> = {}
-  for (const m of monthTotals ?? []) {
-    const d = new Date(m.year, m.month - 1)
-    const label = d.toLocaleDateString('en', { month: 'short', year: '2-digit' })
-    totalsMap[label] = m
-  }
-  const avg = monthTotals && monthTotals.length > 0
-    ? monthTotals.reduce((s, m) => s + m.expenses, 0) / monthTotals.length
-    : null
-  const hasInvestments = (monthTotals ?? []).some((m) => m.investments > 0)
+  const { totalsMap, avg, hasInvestments } = useMemo(() => {
+    const totalsMap: Record<string, MonthlySummary> = {}
+    for (const m of monthTotals ?? []) {
+      const d = new Date(m.year, m.month - 1)
+      const label = d.toLocaleDateString('en', { month: 'short', year: '2-digit' })
+      totalsMap[label] = m
+    }
+    const avg = monthTotals && monthTotals.length > 0
+      ? monthTotals.reduce((s, m) => s + m.expenses, 0) / monthTotals.length
+      : null
+    const hasInvestments = (monthTotals ?? []).some((m) => m.investments > 0)
+    return { totalsMap, avg, hasInvestments }
+  }, [monthTotals])
+
   const topMargin = monthTotals ? (hasInvestments ? 68 : 48) : 8
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -167,6 +172,7 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
             stackId="a"
             fill={COLORS[i % COLORS.length]}
             radius={i === categories.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+            isAnimationActive={false}
           />
         ))}
         {monthTotals && (
@@ -180,3 +186,5 @@ export default function MonthlyExpenseCategoryChart({ transactions, topN = 8, mo
     </ResponsiveContainer>
   )
 }
+
+export default memo(MonthlyExpenseCategoryChart)

@@ -101,6 +101,7 @@ function AssetCard({ asset, onEdit, onDelete }: { asset: Asset; onEdit: () => vo
 export default function Assets() {
   const [showForm, setShowForm] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const { data: assets, isLoading: assetsLoading } = useAssets()
   const { data: summary, isLoading: summaryLoading } = useAssetSummary()
@@ -109,13 +110,23 @@ export default function Assets() {
   const deleteMutation = useDeleteAsset()
 
   const handleCreate = async (input: CreateAssetInput) => {
-    await createMutation.mutateAsync(input)
-    setShowForm(false)
+    try {
+      await createMutation.mutateAsync(input)
+      setShowForm(false)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
   const handleUpdate = async (input: CreateAssetInput) => {
     if (!editingAsset) return
-    await updateMutation.mutateAsync({ id: editingAsset.id, input })
-    setEditingAsset(null)
+    try {
+      await updateMutation.mutateAsync({ id: editingAsset.id, input })
+      setEditingAsset(null)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
   const handleDelete = async (asset: Asset) => {
     if (confirm(`Delete asset "${asset.name}"?`)) await deleteMutation.mutateAsync(asset.id)
@@ -131,7 +142,7 @@ export default function Assets() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">Physical assets — property, vehicles and installations with their loans and equity</p>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowForm(true); setFormError(null) }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shrink-0 ml-3"
         >
           + Add
@@ -143,7 +154,8 @@ export default function Assets() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-6">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xl mx-4 my-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">New Asset</h3>
-            <AssetForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} isSubmitting={createMutation.isPending} />
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
+            <AssetForm onSubmit={handleCreate} onCancel={() => { setShowForm(false); setFormError(null) }} isSubmitting={createMutation.isPending} />
           </div>
         </div>
       )}
@@ -153,10 +165,11 @@ export default function Assets() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-6">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xl mx-4 my-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Asset — {editingAsset.name}</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <AssetForm
               key={editingAsset.id}
               onSubmit={handleUpdate}
-              onCancel={() => setEditingAsset(null)}
+              onCancel={() => { setEditingAsset(null); setFormError(null) }}
               isSubmitting={updateMutation.isPending}
               defaultValues={{
                 name: editingAsset.name,
@@ -211,7 +224,7 @@ export default function Assets() {
       {assets && assets.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
           {assets.map((a) => (
-            <AssetCard key={a.id} asset={a} onEdit={() => setEditingAsset(a)} onDelete={() => handleDelete(a)} />
+            <AssetCard key={a.id} asset={a} onEdit={() => { setEditingAsset(a); setFormError(null) }} onDelete={() => handleDelete(a)} />
           ))}
         </div>
       ) : (

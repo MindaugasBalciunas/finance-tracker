@@ -30,6 +30,7 @@ function AllocationTooltip({ active, payload, totalInvestedEur }: any) {
 export default function Stocks() {
   const [showForm, setShowForm] = useState(false)
   const [editingTrade, setEditingTrade] = useState<StockTrade | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const { data: trades, isLoading: tradesLoading } = useStockTrades()
   const { data: portfolio, isLoading: portfolioLoading } = useStockPortfolio()
@@ -41,13 +42,23 @@ export default function Stocks() {
   const allPriceQueries = useAllStockPrices(activeTickersEarly)
 
   const handleCreate = async (input: CreateStockTradeInput) => {
-    await createMutation.mutateAsync({ ...input, ticker: input.ticker.toUpperCase() })
-    setShowForm(false)
+    try {
+      await createMutation.mutateAsync({ ...input, ticker: input.ticker.toUpperCase() })
+      setShowForm(false)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
   const handleUpdate = async (input: CreateStockTradeInput) => {
     if (!editingTrade) return
-    await updateMutation.mutateAsync({ id: editingTrade.id, input: { ...input, ticker: input.ticker.toUpperCase() } })
-    setEditingTrade(null)
+    try {
+      await updateMutation.mutateAsync({ id: editingTrade.id, input: { ...input, ticker: input.ticker.toUpperCase() } })
+      setEditingTrade(null)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
   const handleDelete = async (id: number) => {
     if (confirm('Delete this trade?')) await deleteMutation.mutateAsync(id)
@@ -140,7 +151,7 @@ export default function Stocks() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">Track your stock and ETF trades and portfolio performance</p>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowForm(true); setFormError(null) }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shrink-0 ml-3"
         >
           + Add
@@ -152,7 +163,8 @@ export default function Stocks() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">New Stock / ETF Trade</h3>
-            <StockTradeForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} isSubmitting={createMutation.isPending} />
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
+            <StockTradeForm onSubmit={handleCreate} onCancel={() => { setShowForm(false); setFormError(null) }} isSubmitting={createMutation.isPending} />
           </div>
         </div>
       )}
@@ -162,10 +174,11 @@ export default function Stocks() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Trade — {editingTrade.ticker}</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <StockTradeForm
               key={editingTrade.id}
               onSubmit={handleUpdate}
-              onCancel={() => setEditingTrade(null)}
+              onCancel={() => { setEditingTrade(null); setFormError(null) }}
               isSubmitting={updateMutation.isPending}
               defaultValues={{
                 date: editingTrade.date.slice(0, 10),
@@ -671,7 +684,7 @@ export default function Stocks() {
                     <td className="px-4 py-3 text-gray-500 text-xs">{t.notes || '—'}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setEditingTrade(t)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => { setEditingTrade(t); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
                         <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>

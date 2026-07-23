@@ -214,10 +214,45 @@ func (h *StockHandler) GetHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ticker": ticker, "points": points})
 }
 
+// yahooCache is a TTL cache for Yahoo Finance responses. Prices move slowly
+// relative to page loads, and each miss can cost up to 6 serial round-trips
+// through the exchange-suffix fallback.
+var yahooCache = struct {
+	mu sync.Mutex
+	m  map[string]yahooCacheEntry
+}{m: make(map[string]yahooCacheEntry)}
+
+type yahooCacheEntry struct {
+	val     any
+	expires time.Time
+}
+
+func yahooCacheGet(key string) (any, bool) {
+	yahooCache.mu.Lock()
+	defer yahooCache.mu.Unlock()
+	e, ok := yahooCache.m[key]
+	if !ok || time.Now().After(e.expires) {
+		return nil, false
+	}
+	return e.val, true
+}
+
+func yahooCacheSet(key string, val any, ttl time.Duration) {
+	yahooCache.mu.Lock()
+	defer yahooCache.mu.Unlock()
+	yahooCache.m[key] = yahooCacheEntry{val: val, expires: time.Now().Add(ttl)}
+}
+
 // fetchYahooPrice calls Yahoo Finance to get the latest price for a ticker.
 // If the ticker has no exchange suffix and the direct lookup fails, it tries
 // common European exchange suffixes (.AS, .DE, .L, .MI, .PA).
+// Successful lookups are cached for 5 minutes.
 func fetchYahooPrice(ticker string) (float64, error) {
+	cacheKey := "price:" + ticker
+	if v, ok := yahooCacheGet(cacheKey); ok {
+		return v.(float64), nil
+	}
+
 	candidates := []string{ticker}
 	if !strings.Contains(ticker, ".") {
 		for _, suffix := range []string{".AS", ".DE", ".L", ".MI", ".PA"} {
@@ -228,6 +263,7 @@ func fetchYahooPrice(ticker string) (float64, error) {
 	for _, candidate := range candidates {
 		price, err := fetchYahooPriceRaw(candidate)
 		if err == nil && price > 0 {
+			yahooCacheSet(cacheKey, price, 5*time.Minute)
 			return price, nil
 		}
 		lastErr = err
@@ -299,7 +335,13 @@ type HistoryPoint struct {
 
 // fetchYahooHistory fetches OHLCV history and returns date+close pairs.
 // Uses exchange suffix fallback same as fetchYahooPrice.
+// Successful lookups are cached for 30 minutes.
 func fetchYahooHistory(ticker, rangeParam string) ([]HistoryPoint, error) {
+	cacheKey := "history:" + ticker + ":" + rangeParam
+	if v, ok := yahooCacheGet(cacheKey); ok {
+		return v.([]HistoryPoint), nil
+	}
+
 	interval := "1wk"
 	if rangeParam == "1mo" || rangeParam == "3mo" {
 		interval = "1d"
@@ -316,6 +358,7 @@ func fetchYahooHistory(ticker, rangeParam string) ([]HistoryPoint, error) {
 	for _, candidate := range candidates {
 		points, err := fetchYahooHistoryRaw(candidate, interval, rangeParam)
 		if err == nil && len(points) > 0 {
+			yahooCacheSet(cacheKey, points, 30*time.Minute)
 			return points, nil
 		}
 		lastErr = err
@@ -407,7 +450,13 @@ func (h *StockHandler) GetAnalyst(c *gin.Context) {
 
 // fetchYahooAnalyst fetches analyst price targets from Yahoo Finance quoteSummary.
 // Falls back to 52-week range heuristic from the v8 chart API if quoteSummary is unavailable.
+// Successful lookups are cached for 6 hours — analyst targets change rarely.
 func fetchYahooAnalyst(ticker string) (*AnalystData, error) {
+	cacheKey := "analyst:" + ticker
+	if v, ok := yahooCacheGet(cacheKey); ok {
+		return v.(*AnalystData), nil
+	}
+
 	candidates := []string{ticker}
 	if !strings.Contains(ticker, ".") {
 		for _, suffix := range []string{".AS", ".DE", ".L", ".MI", ".PA"} {
@@ -420,6 +469,7 @@ func fetchYahooAnalyst(ticker string) (*AnalystData, error) {
 		data, err := fetchYahooAnalystRaw(candidate)
 		if err == nil && data.TargetMean > 0 {
 			data.Ticker = ticker
+			yahooCacheSet(cacheKey, data, 6*time.Hour)
 			return data, nil
 		}
 	}
@@ -437,7 +487,7 @@ func fetchYahooAnalyst(ticker string) (*AnalystData, error) {
 			if base > bull {
 				base = bull
 			}
-			return &AnalystData{
+			data := &AnalystData{
 				Ticker:         ticker,
 				TargetLow:      bear,
 				TargetMean:     base,
@@ -445,7 +495,9 @@ func fetchYahooAnalyst(ticker string) (*AnalystData, error) {
 				Recommendation: "52wk-range",
 				NumAnalysts:    0,
 				Currency:       m.Currency,
-			}, nil
+			}
+			yahooCacheSet(cacheKey, data, 6*time.Hour)
+			return data, nil
 		}
 	}
 

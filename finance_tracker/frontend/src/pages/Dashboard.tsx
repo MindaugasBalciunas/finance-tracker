@@ -10,6 +10,7 @@ import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChart'
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
+import AIInsightCard from '../components/ui/AIInsightCard'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
@@ -105,9 +106,9 @@ export default function Dashboard() {
     ? (netWorthChange / trend.totals[0]) * 100
     : null
 
-  const topCategory = summary?.by_category
-    .filter((c) => c.type === 'expense')
-    .sort((a, b) => b.total - a.total)[0] ?? null
+  const runwayMonths = latestBalance && avgMonthlySpend && avgMonthlySpend > 0
+    ? freeCash(latestBalance) / avgMonthlySpend
+    : null
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
 
@@ -200,7 +201,7 @@ export default function Dashboard() {
               color={netWorthChange != null && netWorthChange >= 0 ? 'green' : 'red'}
             />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mt-3 sm:mt-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-3 sm:mt-4">
             <StatCard
               title="Total Income"
               value={formatEuro(summary.total_income)}
@@ -216,12 +217,21 @@ export default function Dashboard() {
             <StatCard
               title="Total Invested"
               value={formatEuro(summary.total_investments)}
-              subtitle={topCategory ? `Top spend: ${topCategory.category}` : 'Investment transactions'}
+              subtitle="Investment transactions"
               color="purple"
+            />
+            <StatCard
+              title="Savings Runway"
+              value={runwayMonths != null ? `${runwayMonths.toFixed(1)} months` : '—'}
+              subtitle="Free cash ÷ avg monthly spend"
+              color={runwayMonths == null ? 'yellow' : runwayMonths >= 6 ? 'green' : runwayMonths >= 3 ? 'yellow' : 'red'}
             />
           </div>
         </div>
       )}
+
+      {/* AI financial overview */}
+      <AIInsightCard />
 
       {/* Net Worth Over Time */}
       {trend && (

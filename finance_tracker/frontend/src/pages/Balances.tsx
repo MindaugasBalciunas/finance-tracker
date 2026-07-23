@@ -13,6 +13,7 @@ import type { Balance, CreateBalanceInput } from '../types'
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
@@ -27,14 +28,24 @@ export default function Balances() {
   const deleteMutation = useDeleteBalance()
 
   const handleCreate = async (input: CreateBalanceInput) => {
-    await createMutation.mutateAsync(input)
-    setShowForm(false)
+    try {
+      await createMutation.mutateAsync(input)
+      setShowForm(false)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
 
   const handleUpdate = async (input: CreateBalanceInput) => {
     if (!editingBalance) return
-    await updateMutation.mutateAsync({ id: editingBalance.id, input })
-    setEditingBalance(null)
+    try {
+      await updateMutation.mutateAsync({ id: editingBalance.id, input })
+      setEditingBalance(null)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -50,7 +61,7 @@ export default function Balances() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">Track your net worth across all accounts</p>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowForm(true); setFormError(null) }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
         >
           + Add
@@ -62,10 +73,11 @@ export default function Balances() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Snapshot — {formatDate(editingBalance.date)}</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <BalanceForm
               key={editingBalance.id}
               onSubmit={handleUpdate}
-              onCancel={() => setEditingBalance(null)}
+              onCancel={() => { setEditingBalance(null); setFormError(null) }}
               isSubmitting={updateMutation.isPending}
               defaultValues={{
                 date: editingBalance.date.slice(0, 10),
@@ -93,9 +105,10 @@ export default function Balances() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">New Balance Snapshot</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <BalanceForm
               onSubmit={handleCreate}
-              onCancel={() => setShowForm(false)}
+              onCancel={() => { setShowForm(false); setFormError(null) }}
               isSubmitting={createMutation.isPending}
               defaultValues={projected ? {
                 seb: projected.seb,
@@ -211,7 +224,7 @@ export default function Balances() {
                     <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setEditingBalance(b)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => { setEditingBalance(b); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
                         <button onClick={() => handleDelete(b.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>

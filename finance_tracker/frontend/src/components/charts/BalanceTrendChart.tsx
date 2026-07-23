@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -143,10 +143,10 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: LegendPro
   )
 }
 
-export default function BalanceTrendChart({ trend, btcPrice }: Props) {
+const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
-  const data = trend.dates.map((date, i) => {
+  const data = useMemo(() => trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date, ts: new Date(date).getTime() }
     Object.keys(trend.accounts).forEach((acc) => {
       let value = trend.accounts[acc][i] ?? 0
@@ -156,34 +156,43 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
       row[acc] = value
     })
     return row
-  }).sort((a, b) => (a.ts as number) - (b.ts as number))
+  }).sort((a, b) => (a.ts as number) - (b.ts as number)), [trend, btcPrice])
 
-  const activeAccounts = Object.keys(trend.accounts).filter((acc) =>
+  const activeAccounts = useMemo(() => Object.keys(trend.accounts).filter((acc) =>
     trend.accounts[acc].some((v) => v > 0)
-  )
+  ), [trend])
 
   // Compute latest values first so we can sort by them
-  const latestValues: Record<string, number> = {}
-  if (data.length > 0) {
-    const last = data[data.length - 1]
-    for (const acc of activeAccounts) {
-      latestValues[acc] = typeof last[acc] === 'number' ? (last[acc] as number) : 0
+  const latestValues = useMemo(() => {
+    const values: Record<string, number> = {}
+    if (data.length > 0) {
+      const last = data[data.length - 1]
+      for (const acc of activeAccounts) {
+        values[acc] = typeof last[acc] === 'number' ? (last[acc] as number) : 0
+      }
     }
-  }
+    return values
+  }, [data, activeAccounts])
 
   // Highest value at bottom of stack (first in array), lowest at top.
   // Swedbank is always pinned to the visual top (last rendered) for prominence.
-  const orderedAccounts = [
+  const orderedAccounts = useMemo(() => [
     ...activeAccounts
       .filter((a) => a !== 'swed')
       .sort((a, b) => (latestValues[b] ?? 0) - (latestValues[a] ?? 0)),
     ...(activeAccounts.includes('swed') ? ['swed'] : []),
-  ]
+  ], [activeAccounts, latestValues])
 
-  const maxTotal = Math.max(...data.map((d) =>
-    activeAccounts.reduce((s, acc) => s + (typeof d[acc] === 'number' ? (d[acc] as number) : 0), 0)
-  ))
-  const yTicks = buildYTicks(maxTotal)
+  const yTicks = useMemo(() => {
+    const maxTotal = Math.max(...data.map((d) =>
+      activeAccounts.reduce((s, acc) => s + (typeof d[acc] === 'number' ? (d[acc] as number) : 0), 0)
+    ))
+    return buildYTicks(maxTotal)
+  }, [data, activeAccounts])
+
+  const timeTicks = useMemo(() => (
+    data.length > 0 ? buildTimeTicks(data[0].ts as number, data[data.length - 1].ts as number) : undefined
+  ), [data])
 
   const toggleKey = (key: string) => {
     setHiddenKeys((prev) => {
@@ -213,7 +222,7 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
           type="number"
           scale="time"
           domain={['dataMin', 'dataMax']}
-          ticks={data.length > 0 ? buildTimeTicks(data[0].ts as number, data[data.length - 1].ts as number) : undefined}
+          ticks={timeTicks}
           tickFormatter={formatTick}
           tick={{ fontSize: 11 }}
         />
@@ -250,3 +259,5 @@ export default function BalanceTrendChart({ trend, btcPrice }: Props) {
     </ResponsiveContainer>
   )
 }
+
+export default memo(BalanceTrendChart)

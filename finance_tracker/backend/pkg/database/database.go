@@ -1,6 +1,8 @@
 package database
 
 import (
+	"os"
+
 	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
@@ -8,12 +10,23 @@ import (
 )
 
 func NewSQLiteDB(path string) (*gorm.DB, error) {
+	// Per-statement SQL logging is wasted I/O (and SD-card wear) in production;
+	// set DB_LOG=info to re-enable it for debugging.
+	logLevel := logger.Warn
+	if os.Getenv("DB_LOG") == "info" {
+		logLevel = logger.Info
+	}
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logLevel),
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	// WAL allows concurrent reads during writes; busy_timeout retries instead
+	// of failing with SQLITE_BUSY when a write overlaps another statement.
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
 
 	// Migrate swed_pen → seb_pen
 	var swedPenExists, sebPenExists int

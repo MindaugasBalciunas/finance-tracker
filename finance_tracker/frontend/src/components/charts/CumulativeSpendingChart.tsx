@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -89,71 +89,76 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLeg
   )
 }
 
-export default function CumulativeSpendingChart({ transactions }: Props) {
+const CumulativeSpendingChart = ({ transactions }: Props) => {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
-  // Group expenses by "YYYY-MM" month key
-  const byMonth: Record<string, Record<number, number>> = {}
+  const { monthKeys, trimmed, latestValues } = useMemo(() => {
+    // Group expenses by "YYYY-MM" month key
+    const byMonth: Record<string, Record<number, number>> = {}
 
-  for (const tx of transactions) {
-    if (tx.type !== 'expense') continue
-    const d = new Date(tx.date)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const day = d.getDate()
-    if (!byMonth[key]) byMonth[key] = {}
-    byMonth[key][day] = (byMonth[key][day] ?? 0) + tx.amount.value
-  }
-
-  const monthKeys = Object.keys(byMonth).sort()
-  if (monthKeys.length === 0) return null
-
-  // Build chart rows: one per day 1-31 with cumulative sums per month
-  const chartData = Array.from({ length: 31 }, (_, i) => {
-    const day = i + 1
-    const row: Record<string, number> = { day }
-    for (const mk of monthKeys) {
-      void mk
-      row[mk] = 0
+    for (const tx of transactions) {
+      if (tx.type !== 'expense') continue
+      const d = new Date(tx.date)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const day = d.getDate()
+      if (!byMonth[key]) byMonth[key] = {}
+      byMonth[key][day] = (byMonth[key][day] ?? 0) + tx.amount.value
     }
-    return row
-  })
 
-  // Today's month key and day — used to cap the current month
-  const now = new Date()
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const todayDay = now.getDate()
+    const monthKeys = Object.keys(byMonth).sort()
 
-  // Accumulate day by day per month; leave future days as undefined for current month
-  for (const mk of monthKeys) {
-    let running = 0
-    for (let day = 1; day <= 31; day++) {
-      if (mk === todayKey && day > todayDay) {
-        chartData[day - 1][mk] = undefined as unknown as number
-        continue
+    // Build chart rows: one per day 1-31 with cumulative sums per month
+    const chartData = Array.from({ length: 31 }, (_, i) => {
+      const day = i + 1
+      const row: Record<string, number> = { day }
+      for (const mk of monthKeys) {
+        void mk
+        row[mk] = 0
       }
-      running += byMonth[mk][day] ?? 0
-      chartData[day - 1][mk] = running
-    }
-  }
+      return row
+    })
 
-  // Remove trailing all-zero rows
-  const lastNonZero = chartData.reduce((last, row, i) => {
-    const hasData = monthKeys.some((mk) => row[mk] > 0)
-    return hasData ? i : last
-  }, 0)
-  const trimmed = chartData.slice(0, lastNonZero + 1)
+    // Today's month key and day — used to cap the current month
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const todayDay = now.getDate()
+
+    // Accumulate day by day per month; leave future days as undefined for current month
+    for (const mk of monthKeys) {
+      let running = 0
+      for (let day = 1; day <= 31; day++) {
+        if (mk === todayKey && day > todayDay) {
+          chartData[day - 1][mk] = undefined as unknown as number
+          continue
+        }
+        running += byMonth[mk][day] ?? 0
+        chartData[day - 1][mk] = running
+      }
+    }
+
+    // Remove trailing all-zero rows
+    const lastNonZero = chartData.reduce((last, row, i) => {
+      const hasData = monthKeys.some((mk) => row[mk] > 0)
+      return hasData ? i : last
+    }, 0)
+    const trimmed = chartData.slice(0, lastNonZero + 1)
+
+    // Latest cumulative total per month (last defined value)
+    const latestValues: Record<string, number> = {}
+    for (const mk of monthKeys) {
+      const lastDefined = [...trimmed].reverse().find((row) => row[mk] != null && row[mk] > 0)
+      latestValues[mk] = lastDefined?.[mk] ?? 0
+    }
+
+    return { monthKeys, trimmed, latestValues }
+  }, [transactions])
+
+  if (monthKeys.length === 0) return null
 
   const monthLabel = (mk: string) => {
     const [year, month] = mk.split('-')
     return new Date(Number(year), Number(month) - 1).toLocaleString('default', { month: 'short', year: '2-digit' })
-  }
-
-  // Latest cumulative total per month (last defined value)
-  const latestValues: Record<string, number> = {}
-  for (const mk of monthKeys) {
-    const lastDefined = [...trimmed].reverse().find((row) => row[mk] != null && row[mk] > 0)
-    latestValues[mk] = lastDefined?.[mk] ?? 0
   }
 
   const toggleKey = (key: string) => {
@@ -195,6 +200,7 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
             dot={false}
             connectNulls={false}
             hide={hiddenKeys.has(mk)}
+            isAnimationActive={false}
             onMouseEnter={() => setActiveKey(mk)}
             onMouseLeave={() => setActiveKey(null)}
           />
@@ -203,3 +209,5 @@ export default function CumulativeSpendingChart({ transactions }: Props) {
     </ResponsiveContainer>
   )
 }
+
+export default memo(CumulativeSpendingChart)

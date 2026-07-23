@@ -34,6 +34,7 @@ export default function Transactions() {
   const { dateRange } = useDateRange()
   const [showForm, setShowForm] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20, ...dateRange })
 
   // Sync global date range into local filter
@@ -47,14 +48,24 @@ export default function Transactions() {
   const deleteMutation = useDeleteTransaction()
 
   const handleCreate = async (input: CreateTransactionInput) => {
-    await createMutation.mutateAsync(input)
-    setShowForm(false)
+    try {
+      await createMutation.mutateAsync(input)
+      setShowForm(false)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
 
   const handleUpdate = async (input: CreateTransactionInput) => {
     if (!editingTx) return
-    await updateMutation.mutateAsync({ id: editingTx.id, input })
-    setEditingTx(null)
+    try {
+      await updateMutation.mutateAsync({ id: editingTx.id, input })
+      setEditingTx(null)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -70,7 +81,7 @@ export default function Transactions() {
           {data ? `${data.total} records` : 'All expenses, income and investments'}
         </p>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowForm(true); setFormError(null) }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
         >
           + Add
@@ -82,9 +93,10 @@ export default function Transactions() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">New Transaction</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <TransactionForm
               onSubmit={handleCreate}
-              onCancel={() => setShowForm(false)}
+              onCancel={() => { setShowForm(false); setFormError(null) }}
               isSubmitting={createMutation.isPending}
             />
           </div>
@@ -96,10 +108,11 @@ export default function Transactions() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Transaction</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <TransactionForm
               key={editingTx.id}
               onSubmit={handleUpdate}
-              onCancel={() => setEditingTx(null)}
+              onCancel={() => { setEditingTx(null); setFormError(null) }}
               isSubmitting={updateMutation.isPending}
               defaultValues={{
                 date: editingTx.date.slice(0, 10),
@@ -167,7 +180,7 @@ export default function Transactions() {
                     {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                   </span>
                   <div className="flex gap-1">
-                    <button onClick={() => setEditingTx(tx)} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                    <button onClick={() => { setEditingTx(tx); setFormError(null) }} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
                     <button onClick={() => handleDelete(tx.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                   </div>
                 </div>
@@ -209,7 +222,7 @@ export default function Transactions() {
                     </td>
                     <td className="px-2 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setEditingTx(tx)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                        <button onClick={() => { setEditingTx(tx); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
                         <button onClick={() => handleDelete(tx.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
                       </div>
                     </td>

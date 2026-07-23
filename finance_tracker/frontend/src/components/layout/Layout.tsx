@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
-import { useDateRange } from '../../context/DateRangeContext'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
@@ -30,6 +30,7 @@ type ImportResult = {
 }
 
 function ImportButton({ onDone }: { onDone?: () => void }) {
+  const qc = useQueryClient()
   const [importing, setImporting] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -52,6 +53,7 @@ function ImportButton({ onDone }: { onDone?: () => void }) {
       }
       const data: ImportResult = await res.json()
       setResult(data)
+      qc.invalidateQueries()
       e.target.value = ''
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
@@ -72,6 +74,7 @@ function ImportButton({ onDone }: { onDone?: () => void }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setResult(null)
+      qc.invalidateQueries()
       onDone?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Undo failed')
@@ -214,6 +217,7 @@ function ExportDropdown() {
 
 // Desktop import button (inline, small)
 function DesktopImportButton() {
+  const qc = useQueryClient()
   const [importing, setImporting] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -239,6 +243,7 @@ function DesktopImportButton() {
       const res = await fetch('/api/v1/import/json', { method: 'POST', body: form })
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? `HTTP ${res.status}`) }
       setResult(await res.json())
+      qc.invalidateQueries()
       e.target.value = ''
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
@@ -257,6 +262,7 @@ function DesktopImportButton() {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setResult(null); setError(null)
+      qc.invalidateQueries()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Undo failed')
     } finally { setUndoing(false) }
@@ -293,6 +299,7 @@ function DesktopImportButton() {
 }
 
 function DesktopDeleteAllButton() {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -315,6 +322,7 @@ function DesktopDeleteAllButton() {
         fetch('/api/v1/stocks', { method: 'DELETE' }),
         fetch('/api/v1/assets', { method: 'DELETE' }),
       ])
+      qc.invalidateQueries()
       setOpen(false)
     } finally {
       setDeleting(false)
@@ -348,6 +356,7 @@ function DesktopDeleteAllButton() {
 }
 
 function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
+  const qc = useQueryClient()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -364,6 +373,7 @@ function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
         fetch('/api/v1/assets', { method: 'DELETE' }),
       ])
       if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) throw new Error(`HTTP ${r1.status}/${r2.status}/${r3.status}/${r4.status}`)
+      qc.invalidateQueries()
       onDone?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed')
@@ -387,7 +397,6 @@ function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
 }
 
 export default function Layout() {
-  const { dateRange, setDateRange } = useDateRange()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
@@ -410,8 +419,8 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="flex-1 flex justify-center">
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          <div className="flex-1 flex justify-center min-w-0">
+            <DateRangeFilter />
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <DesktopImportButton />
@@ -451,7 +460,7 @@ export default function Layout() {
               {/* Date filter */}
               <div className="px-3">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Date Range</p>
-                <DateRangeFilter value={dateRange} onChange={setDateRange} />
+                <DateRangeFilter />
               </div>
               <div className="border-t border-gray-100" />
               {/* Import */}

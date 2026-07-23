@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   LineChart,
   Line,
@@ -20,7 +21,7 @@ function isCurrentMonth(d: MonthlySummary): boolean {
   return d.year === now.getFullYear() && d.month === now.getMonth() + 1
 }
 
-export default function SavingsRateTrendChart({ data }: Props) {
+const SavingsRateTrendChart = ({ data }: Props) => {
   const sorted = [...data]
     .filter(d => !isCurrentMonth(d)) // exclude in-progress month — distorts scale before salary drops
     .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
@@ -71,3 +72,5 @@ export default function SavingsRateTrendChart({ data }: Props) {
     </ResponsiveContainer>
   )
 }
+
+export default memo(SavingsRateTrendChart)
