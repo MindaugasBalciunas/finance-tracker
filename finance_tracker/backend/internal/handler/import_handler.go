@@ -142,20 +142,39 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		result.Imported.Transactions++
 	}
 
-	// --- Balances — skip if date already exists (unique index) ---
+	// --- Balances ---
+	// v2 exports carry id + time: dedup by ID (idempotent re-import) and keep
+	// the time-of-day so multiple snapshots per day survive a restore.
+	// v1 exports (no id/time) fall back to the old one-per-day rule.
 	for _, row := range payload.Balances {
 		date, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {
 			result.Skipped.Balances++
 			continue
 		}
-		dayEnd := date.Add(24 * time.Hour)
-		existing, _ := h.balRepo.List(domain.BalanceFilter{DateFrom: &date, DateTo: &dayEnd})
-		if len(existing) > 0 {
-			result.Skipped.Balances++
-			continue
+		if row.Time != "" {
+			if t, terr := time.Parse("15:04:05", row.Time); terr == nil {
+				date = date.Add(time.Duration(t.Hour())*time.Hour +
+					time.Duration(t.Minute())*time.Minute +
+					time.Duration(t.Second())*time.Second)
+			}
+		}
+		if row.ID > 0 {
+			if _, err := h.balRepo.GetByID(row.ID); err == nil {
+				result.Skipped.Balances++
+				continue
+			}
+		} else {
+			dayStart := date.Truncate(24 * time.Hour)
+			dayEnd := dayStart.Add(24*time.Hour - time.Nanosecond)
+			existing, _ := h.balRepo.List(domain.BalanceFilter{DateFrom: &dayStart, DateTo: &dayEnd})
+			if len(existing) > 0 {
+				result.Skipped.Balances++
+				continue
+			}
 		}
 		b := &domain.Balance{
+			ID:         row.ID,
 			Date:       date,
 			Total:      row.Total,
 			Seb:        row.Seb,

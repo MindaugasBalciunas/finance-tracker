@@ -97,18 +97,24 @@ func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // @Success      200  {string}  string  "CSV file"
 // @Router       /export/transactions.csv [get]
 func (h *ExportHandler) ExportTransactions(c *gin.Context) {
+	from, to, err := parseExportRange(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
 	transactions, err := h.txSvc.ListAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	transactions = filterTxRange(transactions, from, to)
 
 	ts := time.Now().Format("2006-01-02")
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"transactions_%s.csv\"", ts))
 
 	w := csv.NewWriter(c.Writer)
-	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment"})
+	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment", "labels"})
 	for _, tx := range transactions {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(tx.ID), 10),
@@ -117,6 +123,7 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 			fmt.Sprintf("%.2f", tx.Amount),
 			string(tx.Category),
 			tx.Comment,
+			tx.Labels,
 		})
 	}
 	w.Flush()
@@ -129,7 +136,12 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 // @Success      200  {string}  string  "CSV file"
 // @Router       /export/balances.csv [get]
 func (h *ExportHandler) ExportBalances(c *gin.Context) {
-	balances, err := h.balSvc.List(domain.BalanceFilter{}, 0)
+	from, to, err := parseExportRange(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	balances, err := h.balSvc.List(domain.BalanceFilter{DateFrom: from, DateTo: to}, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -168,7 +180,15 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 	w.Flush()
 }
 
+// exportSchemaVersion tracks the finances.json format. Importers accept any
+// older version (fields only ever get added, never renamed or removed):
+//
+//	v1 — transactions/balances/stock_trades/assets (+budgets/label_rules/budget_settings)
+//	v2 — schema_version field, balance rows carry id + time (multi-snapshot days)
+const exportSchemaVersion = 2
+
 type financeExport struct {
+	SchemaVersion   int              `json:"schema_version,omitempty"`
 	ExportDate      string           `json:"export_date"`
 	SuggestedPrompt string           `json:"suggested_prompt"`
 	Transactions    []txExportRow    `json:"transactions"`
@@ -215,7 +235,9 @@ type txExportRow struct {
 }
 
 type balExportRow struct {
+	ID         uint    `json:"id,omitempty"`
 	Date       string  `json:"date"`
+	Time       string  `json:"time,omitempty"`
 	Total      float64 `json:"total_eur"`
 	Seb        float64 `json:"seb,omitempty"`
 	Swed       float64 `json:"swed,omitempty"`
@@ -267,6 +289,132 @@ func formatOptionalDate(t *time.Time) string {
 	return t.Format("2006-01-02")
 }
 
+func toTxExportRows(transactions []domain.Transaction) []txExportRow {
+	rows := make([]txExportRow, len(transactions))
+	for i, tx := range transactions {
+		rows[i] = txExportRow{
+			ID:            tx.ID,
+			Date:          tx.Date.Format("2006-01-02"),
+			Type:          string(tx.Type),
+			Amount:        tx.Amount,
+			Category:      string(tx.Category),
+			Comment:       tx.Comment,
+			Labels:        tx.Labels,
+			DebitAccount:  tx.DebitAccount,
+			CreditAccount: tx.CreditAccount,
+			SourceAccount: tx.SourceAccount,
+		}
+	}
+	return rows
+}
+
+func toBalExportRows(balances []domain.Balance) []balExportRow {
+	rows := make([]balExportRow, len(balances))
+	for i, b := range balances {
+		rows[i] = balExportRow{
+			ID:         b.ID,
+			Date:       b.Date.Format("2006-01-02"),
+			Total:      b.Total,
+			Seb:        b.Seb,
+			Swed:       b.Swed,
+			SwedETF:    b.SwedETF,
+			SebPen:     b.SebPen,
+			Luminor:    b.Luminor,
+			Art:        b.Art,
+			Cash:       b.Cash,
+			RevM:       b.RevM,
+			RevR:       b.RevR,
+			RBTC:       b.RBTC,
+			MBTC:       b.MBTC,
+			BtcPrice:   b.BtcPrice,
+			RevStocks:  b.RevStocks,
+			IBKRStocks: b.IBKRStocks,
+		}
+		// Time-of-day distinguishes multiple snapshots on the same date; only
+		// written when non-midnight so v1-era daily snapshots stay unchanged.
+		if hhmmss := b.Date.Format("15:04:05"); hhmmss != "00:00:00" {
+			rows[i].Time = hhmmss
+		}
+	}
+	return rows
+}
+
+func toStockExportRows(stocks []domain.StockTrade) []stockExportRow {
+	rows := make([]stockExportRow, len(stocks))
+	for i, s := range stocks {
+		rows[i] = stockExportRow{
+			Date:          s.Date.Format("2006-01-02"),
+			Action:        string(s.Action),
+			Ticker:        s.Ticker,
+			Shares:        s.Shares,
+			PricePerShare: s.PricePerShare,
+			Currency:      s.Currency,
+			Source:        string(s.Source),
+			Notes:         s.Notes,
+		}
+	}
+	return rows
+}
+
+// parseExportRange reads optional ?from=YYYY-MM-DD&to=YYYY-MM-DD query params.
+// Both bounds are inclusive; 'to' covers the entire named day (the returned
+// bound is that day's final nanosecond, so it composes with the repositories'
+// `date <= ?` filters without dragging in the next day's midnight snapshots).
+func parseExportRange(c *gin.Context) (from, to *time.Time, err error) {
+	if s := c.Query("from"); s != "" {
+		d, perr := time.Parse("2006-01-02", s)
+		if perr != nil {
+			return nil, nil, fmt.Errorf("invalid 'from' date %q, expected YYYY-MM-DD", s)
+		}
+		from = &d
+	}
+	if s := c.Query("to"); s != "" {
+		d, perr := time.Parse("2006-01-02", s)
+		if perr != nil {
+			return nil, nil, fmt.Errorf("invalid 'to' date %q, expected YYYY-MM-DD", s)
+		}
+		d = d.Add(24*time.Hour - time.Nanosecond)
+		to = &d
+	}
+	return from, to, nil
+}
+
+func inRange(date time.Time, from, to *time.Time) bool {
+	if from != nil && date.Before(*from) {
+		return false
+	}
+	if to != nil && date.After(*to) {
+		return false
+	}
+	return true
+}
+
+func filterTxRange(txs []domain.Transaction, from, to *time.Time) []domain.Transaction {
+	if from == nil && to == nil {
+		return txs
+	}
+	out := txs[:0:0]
+	for _, t := range txs {
+		if inRange(t.Date, from, to) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func filterStockRange(trades []domain.StockTrade, from, to *time.Time) []domain.StockTrade {
+	if from == nil && to == nil {
+		return trades
+	}
+	out := trades[:0:0]
+	for _, s := range trades {
+		if inRange(s.Date, from, to) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func toAssetExportRows(assets []domain.Asset) []assetExportRow {
 	rows := make([]assetExportRow, len(assets))
 	for i, a := range assets {
@@ -306,13 +454,19 @@ All monetary amounts are in EUR unless otherwise noted. Stock prices may be in U
 // @Success      200  {object}  financeExport
 // @Router       /export/finances.json [get]
 func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
+	from, to, err := parseExportRange(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
 	transactions, err := h.txSvc.ListAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	balances, err := h.balSvc.List(domain.BalanceFilter{}, 0)
+	balances, err := h.balSvc.List(domain.BalanceFilter{DateFrom: from, DateTo: to}, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -330,70 +484,28 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		return
 	}
 
+	transactions = filterTxRange(transactions, from, to)
+	stocks = filterStockRange(stocks, from, to)
 	sortChronologically(transactions, balances)
 
-	txRows := make([]txExportRow, len(transactions))
-	for i, tx := range transactions {
-		txRows[i] = txExportRow{
-			ID:            tx.ID,
-			Date:          tx.Date.Format("2006-01-02"),
-			Type:          string(tx.Type),
-			Amount:        tx.Amount,
-			Category:      string(tx.Category),
-			Comment:       tx.Comment,
-			Labels:        tx.Labels,
-			DebitAccount:  tx.DebitAccount,
-			CreditAccount: tx.CreditAccount,
-			SourceAccount: tx.SourceAccount,
-		}
-	}
-
-	balRows := make([]balExportRow, len(balances))
-	for i, b := range balances {
-		balRows[i] = balExportRow{
-			Date:       b.Date.Format("2006-01-02"),
-			Total:      b.Total,
-			Seb:        b.Seb,
-			Swed:       b.Swed,
-			SwedETF:    b.SwedETF,
-			SebPen:     b.SebPen,
-			Luminor:    b.Luminor,
-			Art:        b.Art,
-			Cash:       b.Cash,
-			RevM:       b.RevM,
-			RevR:       b.RevR,
-			RBTC:       b.RBTC,
-			MBTC:       b.MBTC,
-			BtcPrice:   b.BtcPrice,
-			RevStocks:  b.RevStocks,
-			IBKRStocks: b.IBKRStocks,
-		}
-	}
-
-	stockRows := make([]stockExportRow, len(stocks))
-	for i, s := range stocks {
-		stockRows[i] = stockExportRow{
-			Date:          s.Date.Format("2006-01-02"),
-			Action:        string(s.Action),
-			Ticker:        s.Ticker,
-			Shares:        s.Shares,
-			PricePerShare: s.PricePerShare,
-			Currency:      s.Currency,
-			Source:        string(s.Source),
-			Notes:         s.Notes,
-		}
-	}
-
 	ts := time.Now().Format("2006-01-02")
-	_ = h.exportLogRepo.Save("full")
+	filename := fmt.Sprintf("finances_%s.json", ts)
+	if from != nil || to != nil {
+		// A date-limited export is not a restorable full backup: name it
+		// differently and leave the "last full export" marker untouched.
+		filename = fmt.Sprintf("finances_range_%s.json", ts)
+	} else {
+		_ = h.exportLogRepo.Save("full")
+	}
 	budgetRows, ruleRows := h.budgetRows()
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"finances_%s.json\"", ts))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	c.JSON(http.StatusOK, financeExport{
+		SchemaVersion:   exportSchemaVersion,
 		ExportDate:      ts,
 		SuggestedPrompt: exportPrompt,
-		Transactions:    txRows,
-		Balances:        balRows,
-		StockTrades:     stockRows,
+		Transactions:    toTxExportRows(transactions),
+		Balances:        toBalExportRows(balances),
+		StockTrades:     toStockExportRows(stocks),
 		Assets:          toAssetExportRows(assets),
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,
@@ -444,69 +556,18 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 
 	sortChronologically(transactions, balances)
 
-	txRows := make([]txExportRow, len(transactions))
-	for i, tx := range transactions {
-		txRows[i] = txExportRow{
-			ID:            tx.ID,
-			Date:          tx.Date.Format("2006-01-02"),
-			Type:          string(tx.Type),
-			Amount:        tx.Amount,
-			Category:      string(tx.Category),
-			Comment:       tx.Comment,
-			Labels:        tx.Labels,
-			DebitAccount:  tx.DebitAccount,
-			CreditAccount: tx.CreditAccount,
-			SourceAccount: tx.SourceAccount,
-		}
-	}
-
-	balRows := make([]balExportRow, len(balances))
-	for i, b := range balances {
-		balRows[i] = balExportRow{
-			Date:       b.Date.Format("2006-01-02"),
-			Total:      b.Total,
-			Seb:        b.Seb,
-			Swed:       b.Swed,
-			SwedETF:    b.SwedETF,
-			SebPen:     b.SebPen,
-			Luminor:    b.Luminor,
-			Art:        b.Art,
-			Cash:       b.Cash,
-			RevM:       b.RevM,
-			RevR:       b.RevR,
-			RBTC:       b.RBTC,
-			MBTC:       b.MBTC,
-			BtcPrice:   b.BtcPrice,
-			RevStocks:  b.RevStocks,
-			IBKRStocks: b.IBKRStocks,
-		}
-	}
-
-	stockRows := make([]stockExportRow, len(stocks))
-	for i, s := range stocks {
-		stockRows[i] = stockExportRow{
-			Date:          s.Date.Format("2006-01-02"),
-			Action:        string(s.Action),
-			Ticker:        s.Ticker,
-			Shares:        s.Shares,
-			PricePerShare: s.PricePerShare,
-			Currency:      s.Currency,
-			Source:        string(s.Source),
-			Notes:         s.Notes,
-		}
-	}
-
 	ts := time.Now().Format("2006-01-02")
 	fromStr := since.Format("2006-01-02")
 	_ = h.exportLogRepo.Save("partial")
 	budgetRows, ruleRows := h.budgetRows()
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"finances_partial_%s_from_%s.json\"", ts, fromStr))
 	c.JSON(http.StatusOK, financeExport{
+		SchemaVersion:   exportSchemaVersion,
 		ExportDate:      ts,
 		SuggestedPrompt: fmt.Sprintf("This is a partial export of new financial data added since %s. Please update your analysis with these new records.", fromStr),
-		Transactions:    txRows,
-		Balances:        balRows,
-		StockTrades:     stockRows,
+		Transactions:    toTxExportRows(transactions),
+		Balances:        toBalExportRows(balances),
+		StockTrades:     toStockExportRows(stocks),
 		Assets:          toAssetExportRows(assets),
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,

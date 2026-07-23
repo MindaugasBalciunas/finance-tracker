@@ -68,9 +68,56 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	applyDataCleanups(db)
 	applyCategoryMigrations(db)
 
 	return db, nil
+}
+
+// applyDataCleanups repairs comment text before category/label passes run:
+// mojibake from an early CSV import (UTF-8 read as Latin-1), recurring typos,
+// and vendor-name variants that should consolidate into one canonical form.
+// Idempotent: REPLACE is a no-op once the bad substring is gone and the
+// exact-match UPDATEs only touch rows still carrying an old spelling.
+func applyDataCleanups(db *gorm.DB) {
+	replacements := [][2]string{
+		// Mojibake: ž/ū/š/Š ė Ė double-encoded by the old importer.
+		{"Å½", "Ž"},
+		{"Å«", "ū"},
+		{"Å¡", "š"},
+		{"Å ", "Š"},
+		{"VakarienÄ", "Vakarienė"},
+		{"rogutÄs", "rogutės"},
+		{"Äjimas", "Ėjimas"},
+		// Recurring typos.
+		{"appratment", "apartment"},
+		{"appartment", "apartment"},
+		{"Appartment", "Apartment"},
+		{"(hause)", "(house)"},
+		{"pernsion", "pension"},
+		{"Nest car fuel", "Neste car fuel"},
+		{"Hearcut", "Haircut"},
+		{"Kipykla", "Kirpykla"},
+		{"Pateon ", "Patreon "},
+		{"Wraperija", "Wraperia"},
+		{"flovers", "flowers"},
+		{"iceream", "ice cream"},
+		// Naming consistency.
+		{"partly payment", "partial payment"},
+		{"Nexos 2026", "Nexos.ai 2026"},
+	}
+	for _, r := range replacements {
+		db.Exec(`UPDATE transactions SET comment = REPLACE(comment, ?, ?) WHERE comment LIKE ?`,
+			r[0], r[1], "%"+r[0]+"%")
+	}
+
+	// Same merchant, four spellings → one canonical comment each.
+	db.Exec(`UPDATE transactions SET comment = 'Artea (INVL) 3rd pillar pension'
+		WHERE type = 'investment' AND LOWER(comment) LIKE '%artea%'
+		AND comment != 'Artea (INVL) 3rd pillar pension'`)
+	db.Exec(`UPDATE transactions SET comment = 'Gym Plius'
+		WHERE comment IN ('Gym plius', 'Gymplius', 'GymPlius (health)')`)
+	db.Exec(`UPDATE transactions SET comment = 'iLunch' WHERE LOWER(TRIM(comment)) = 'ilunch'`)
 }
 
 // applyCategoryMigrations recategorizes known-misfiled transactions by vendor.
@@ -81,13 +128,21 @@ func applyCategoryMigrations(db *gorm.DB) {
 		WHERE type = 'investment' AND category = 'Stocks & ETF' AND LOWER(comment) LIKE '%artea%'`)
 
 	// Utility vendors filed under Housing → Utilities.
-	for _, vendor := range []string{"IGNITIS", "TELIA LIETUVA", "VILNIAUS VANDENYS", "ŠILUMOS TINKLAI", "SILUMOS TINKLAI", "SAUGOS TARNYBA ARGUS", "MANO BŪSTAS", "MANO BUSTAS"} {
+	for _, vendor := range []string{"IGNITIS", "TELIA LIETUVA", "VILNIAUS VANDENYS", "ŠILUMOS TINKLAI", "SILUMOS TINKLAI", "SAUGOS TARNYBA ARGUS", "MANO BŪSTAS", "MANO BUSTAS", "MIESTO GIJOS", "ENERGIJOS SKIRSTYMO", "ARGUS"} {
 		db.Exec(`UPDATE transactions SET category = 'Utilities'
 			WHERE type = 'expense' AND category = 'Housing' AND UPPER(comment) LIKE ?`, "%"+vendor+"%")
 	}
+	// Manually-entered utility bills (electricity/gas/water/telecom/heating/
+	// garbage) that pre-date the Utilities category.
+	db.Exec(`UPDATE transactions SET category = 'Utilities'
+		WHERE type = 'expense' AND category = 'Housing' AND (
+			LOWER(comment) LIKE 'electricity%' OR LOWER(comment) = 'gas' OR LOWER(comment) LIKE 'gas %'
+			OR LOWER(comment) LIKE 'water%' OR LOWER(comment) LIKE 'telia%' OR LOWER(comment) = 'bite 3go'
+			OR LOWER(comment) LIKE '%gijos apartment%'
+			OR LOWER(comment) LIKE '%šiukl%' OR LOWER(comment) LIKE '%siuskl%' OR LOWER(comment) LIKE '%šiūkl%')`)
 
 	// Recurring subscription vendors filed under Entertainment → Subscriptions.
-	for _, vendor := range []string{"YOUTUBEPREMIUM", "YOUTUBE PREMIUM", "PATREON", "CONTRIBEE", "NETFLIX", "SPOTIFY", "GOOGLE *GOOGLE ONE", "HBO", "DISNEY"} {
+	for _, vendor := range []string{"YOUTUBEPREMIUM", "YOUTUBE PREMIUM", "PATREON", "CONTRIBEE", "NETFLIX", "SPOTIFY", "GOOGLE *GOOGLE ONE", "HBO", "DISNEY", "YOUTUBE", "CLAUDE.AI", "GOOGLE ONE", "DELFIPLIUS"} {
 		db.Exec(`UPDATE transactions SET category = 'Subscriptions'
 			WHERE type = 'expense' AND category = 'Entertainment' AND UPPER(comment) LIKE ?`, "%"+vendor+"%")
 	}
@@ -135,15 +190,25 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// becomes a rule (future auto-tagging) and is applied to history here.
 	contextLabels := map[string][]string{
 		"flowers":    {"gele", "gėle", "gėlė", "flower", "žiedas"},
-		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine"},
-		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin"},
-		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia"},
-		"groceries":  {"maxima", "lidl", "rimi", "norfa", "moki-vezi"},
+		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine", "cafe"},
+		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin", "baltic petrol", "balticpetroleum"},
+		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia", "anteja", "rossmann"},
+		"groceries":  {"maxima", "lidl", "rimi", "norfa", "moki-vezi", "moki vezi", "moki vež", "iki ", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
 		"delivery":   {"wolt", "bolt food", "maisto mylet"},
-		"taxi":       {"uber", "etransport"},
+		"taxi":       {"uber", "etransport", "bolt.eu", "citybee"},
 		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
 		"bars":       {"alaus", "baras", "vyno"},
 		"aliexpress": {"aliexpress", "alipay"},
+		"insurance":  {"insurance", "draudim", "gjensidige", "compensa"},
+		"fees":       {"banko mokestis", "plan fee", "account fee", "bank fee"},
+		"hotel":      {"hotel", "booking.com", "viesbut"},
+		"flights":    {"ryanair", "wizz", "wizair", "airbaltic"},
+		"restaurant": {"restoran", "restaurant", "pizza", "picer", "kebab", "mcdonald", "hesburger", "grill", "bistro", "drakonai", "sushi"},
+		"lunch":      {"lunch", "darbo piet", "pietūs"},
+		"gym":        {"gym"},
+		"cinema":     {"kinas", "cinema", "apollo"},
+		"beauty":     {"haircut", "barber", "kirpykl", "grozio", "grožio"},
+		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
 	}
 	for label, patterns := range contextLabels {
 		for _, p := range patterns {

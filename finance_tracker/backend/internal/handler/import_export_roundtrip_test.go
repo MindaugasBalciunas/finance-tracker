@@ -55,7 +55,9 @@ type rtTx struct {
 }
 
 type rtBalance struct {
+	ID        uint    `json:"id,omitempty"`
 	Date      string  `json:"date"`
+	Time      string  `json:"time,omitempty"`
 	Total     float64 `json:"total_eur"`
 	Seb       float64 `json:"seb,omitempty"`
 	Swed      float64 `json:"swed,omitempty"`
@@ -644,6 +646,124 @@ func TestExportImportRoundTrip_AccountFieldsPreserved(t *testing.T) {
 	assert.Equal(t, "", created[1].DebitAccount, "income debit_account empty")
 	assert.Equal(t, "swed", created[2].DebitAccount, "investment debit_account round-tripped")
 	assert.Equal(t, "swed_etf", created[2].CreditAccount, "investment credit_account round-tripped")
+}
+
+// TestExportImportRoundTrip_MultiSnapshotDay verifies that several balance
+// snapshots taken on the same day (v1.0.68+ feature) survive a full
+// export → import round-trip: the export carries id + time-of-day, and the
+// import preserves both instead of collapsing the day to a single snapshot.
+func TestExportImportRoundTrip_MultiSnapshotDay(t *testing.T) {
+	morning := time.Date(2026, 7, 1, 9, 30, 0, 0, time.UTC)
+	evening := time.Date(2026, 7, 1, 21, 15, 45, 0, time.UTC)
+	snapshots := []domain.Balance{
+		{ID: 41, Date: morning, Total: 100000, Seb: 60000},
+		{ID: 42, Date: evening, Total: 100500, Seb: 60500},
+	}
+
+	// --- Export ---
+	exportRouter := rtExportRouter([]domain.Transaction{}, snapshots, []domain.StockTrade{}, []domain.Asset{})
+	ew := httptest.NewRecorder()
+	exportRouter.ServeHTTP(ew, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
+	require.Equal(t, http.StatusOK, ew.Code)
+
+	var exported rtExport
+	require.NoError(t, json.Unmarshal(ew.Body.Bytes(), &exported))
+	require.Len(t, exported.Balances, 2)
+	assert.Equal(t, uint(41), exported.Balances[0].ID, "snapshot id exported")
+	assert.Equal(t, "2026-07-01", exported.Balances[0].Date)
+	assert.Equal(t, "09:30:00", exported.Balances[0].Time, "time-of-day exported")
+	assert.Equal(t, "21:15:45", exported.Balances[1].Time)
+
+	// --- Import into an empty DB ---
+	txRepo := &mock.TransactionRepository{}
+	balRepo := &mock.BalanceRepository{}
+	stockRepo := &mock.StockRepository{}
+	assetRepo := &mock.AssetRepository{}
+
+	txRepo.On("ListAll").Return([]domain.Transaction{}, nil)
+	stockRepo.On("ListAll").Return([]domain.StockTrade{}, nil)
+	assetRepo.On("ListAll").Return([]domain.Asset{}, nil)
+	balRepo.On("GetByID", uint(41)).Return(nil, errors.New("not found"))
+	balRepo.On("GetByID", uint(42)).Return(nil, errors.New("not found"))
+	var created []*domain.Balance
+	balRepo.On("Create", tm.AnythingOfType("*domain.Balance")).
+		Run(func(args tm.Arguments) { created = append(created, args.Get(0).(*domain.Balance)) }).
+		Return(nil)
+
+	body, ct := rtMultipartBody(t, ew.Body.Bytes())
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body)
+	importReq.Header.Set("Content-Type", ct)
+	iw := httptest.NewRecorder()
+	rtImportRouter(txRepo, balRepo, stockRepo, assetRepo).ServeHTTP(iw, importReq)
+	require.Equal(t, http.StatusOK, iw.Code)
+
+	require.Len(t, created, 2, "both same-day snapshots imported")
+	assert.Equal(t, uint(41), created[0].ID, "snapshot id preserved")
+	assert.Equal(t, "2026-07-01 09:30:00", created[0].Date.Format("2006-01-02 15:04:05"), "timestamp preserved")
+	assert.Equal(t, "2026-07-01 21:15:45", created[1].Date.Format("2006-01-02 15:04:05"))
+	// Day-based dedup must not have been consulted for rows carrying an ID.
+	balRepo.AssertNotCalled(t, "List", tm.Anything)
+
+	// --- Re-import: both snapshots now exist → skipped, nothing created ---
+	balRepo2 := &mock.BalanceRepository{}
+	balRepo2.On("GetByID", uint(41)).Return(&snapshots[0], nil)
+	balRepo2.On("GetByID", uint(42)).Return(&snapshots[1], nil)
+	txRepo2 := &mock.TransactionRepository{}
+	txRepo2.On("ListAll").Return([]domain.Transaction{}, nil)
+	stockRepo2 := &mock.StockRepository{}
+	stockRepo2.On("ListAll").Return([]domain.StockTrade{}, nil)
+	assetRepo2 := &mock.AssetRepository{}
+	assetRepo2.On("ListAll").Return([]domain.Asset{}, nil)
+
+	body2, ct2 := rtMultipartBody(t, ew.Body.Bytes())
+	reReq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", body2)
+	reReq.Header.Set("Content-Type", ct2)
+	iw2 := httptest.NewRecorder()
+	rtImportRouter(txRepo2, balRepo2, stockRepo2, assetRepo2).ServeHTTP(iw2, reReq)
+	require.Equal(t, http.StatusOK, iw2.Code)
+
+	var result rtImportResult
+	require.NoError(t, json.Unmarshal(iw2.Body.Bytes(), &result))
+	assert.Equal(t, 0, result.Imported.Balances)
+	assert.Equal(t, 2, result.Skipped.Balances)
+	balRepo2.AssertNotCalled(t, "Create", tm.Anything)
+}
+
+// TestExportJSON_RangeFilter verifies ?from/?to limit the export to the
+// requested period and that a range export is NOT recorded as a full backup.
+func TestExportJSON_RangeFilter(t *testing.T) {
+	txSvc := &mockTransactionService{}
+	balSvc := &mockBalanceService{}
+	stockSvc := &mockStockService{}
+	assetSvc := &mockAssetService{}
+	logRepo := &mockExportLog{}
+
+	txSvc.On("ListAll").Return(rtTransactions, nil)
+	balSvc.On("List", tm.AnythingOfType("domain.BalanceFilter"), float64(0)).Return(rtBalances, nil)
+	stockSvc.On("ListAll").Return(rtStocks, nil)
+	assetSvc.On("ListAll").Return(rtAssets, nil)
+
+	r := gin.New()
+	handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json?from=2026-02-01&to=2026-02-28", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var got rtExport
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Len(t, got.Transactions, 1, "only the February transaction exported")
+	assert.Equal(t, "2026-02-01", got.Transactions[0].Date)
+	require.Len(t, got.StockTrades, 1, "only the February trade exported")
+	assert.Equal(t, "MSFT", got.StockTrades[0].Ticker)
+	assert.Len(t, got.Assets, 3, "assets are not date-scoped")
+
+	logRepo.AssertNotCalled(t, "Save", tm.Anything)
+
+	// Invalid date → 400
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json?from=02-01-2026", nil))
+	assert.Equal(t, http.StatusBadRequest, w2.Code)
 }
 
 func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {

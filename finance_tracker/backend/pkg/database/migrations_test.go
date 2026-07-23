@@ -99,6 +99,98 @@ func TestEvelinaLoanMigration(t *testing.T) {
 	assert.Equal(t, "loan,evelina", labelsOf(t, db, loan1))
 }
 
+func TestApplyDataCleanups(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	mojibake := seedTx(t, db, "expense", "Food", "Artistai PietÅ«s su kolega")
+	mojibake2 := seedTx(t, db, "expense", "Health", "Å½ygis")
+	mojibake3 := seedTx(t, db, "expense", "Kids - Food", "Å erbetas  360arena (kids)")
+	artea1 := seedTx(t, db, "investment", "Pension", "Artea 3rd pernsion")
+	artea2 := seedTx(t, db, "investment", "Pension", "Artea pensija")
+	arteaOK := seedTx(t, db, "investment", "Pension", "Artea (INVL) 3rd pillar pension")
+	gym := seedTx(t, db, "expense", "Health", "GymPlius (health)")
+	nexos := seedTx(t, db, "income", "Salary", "Nexos 2026.05 (partly payment)")
+	typo := seedTx(t, db, "expense", "Housing", "Electricity (appartment)")
+	nest := seedTx(t, db, "expense", "Transport", "Nest car fuel (easter trip)")
+	teliaManual := seedTx(t, db, "expense", "Housing", "Telia phone")
+	pateon := seedTx(t, db, "expense", "Entertainment", "Pateon Algis Ramanauskas")
+	claude := seedTx(t, db, "expense", "Entertainment", "claude.ai pro plan")
+
+	applyDataCleanups(db)
+	applyCategoryMigrations(db)
+
+	assert.Equal(t, "Artistai Pietūs su kolega", commentOf(t, db, mojibake))
+	assert.Equal(t, "Žygis", commentOf(t, db, mojibake2))
+	assert.Equal(t, "Šerbetas  360arena (kids)", commentOf(t, db, mojibake3))
+	assert.Equal(t, "Artea (INVL) 3rd pillar pension", commentOf(t, db, artea1), "typo variant consolidates")
+	assert.Equal(t, "Artea (INVL) 3rd pillar pension", commentOf(t, db, artea2), "LT variant consolidates")
+	assert.Equal(t, "Artea (INVL) 3rd pillar pension", commentOf(t, db, arteaOK), "canonical row untouched")
+	assert.Equal(t, "Gym Plius", commentOf(t, db, gym))
+	assert.Equal(t, "Nexos.ai 2026.05 (partial payment)", commentOf(t, db, nexos))
+	assert.Equal(t, "Electricity (apartment)", commentOf(t, db, typo))
+	assert.Equal(t, "Neste car fuel (easter trip)", commentOf(t, db, nest))
+	assert.Equal(t, "Patreon Algis Ramanauskas", commentOf(t, db, pateon))
+
+	// Cleaned comments feed the category/label passes that follow.
+	assert.Equal(t, "Utilities", categoryOf(t, db, typo), "manual electricity bill refiles to Utilities")
+	assert.Equal(t, "Utilities", categoryOf(t, db, teliaManual), "manual Telia bill refiles to Utilities")
+	assert.Equal(t, "Subscriptions", categoryOf(t, db, pateon), "fixed Patreon typo refiles to Subscriptions")
+	assert.Equal(t, "Subscriptions", categoryOf(t, db, claude))
+	assert.Contains(t, labelsOf(t, db, nest), "fuel", "fixed Neste typo picks up fuel label")
+	assert.Contains(t, labelsOf(t, db, mojibake), "lunch", "repaired Pietūs picks up lunch label")
+	assert.Contains(t, labelsOf(t, db, gym), "gym")
+
+	// Idempotent: a second full pass changes nothing.
+	applyDataCleanups(db)
+	applyCategoryMigrations(db)
+	assert.Equal(t, "Artistai Pietūs su kolega", commentOf(t, db, mojibake))
+	assert.Equal(t, "Nexos.ai 2026.05 (partial payment)", commentOf(t, db, nexos))
+	assert.Equal(t, "Gym Plius", commentOf(t, db, gym))
+}
+
+func TestNewContextLabelRules(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	bolt := seedTx(t, db, "expense", "Transport", "BOLT.EU/O/2407191413 10134 Tallinn")
+	boltFood := seedTx(t, db, "expense", "Food", "Bolt food - atviros metalo dirbtuves(food)")
+	iki := seedTx(t, db, "expense", "Food", "IKI PILAITE 06222 VILNIUS")
+	laisvalaikis := seedTx(t, db, "expense", "Gifts", "LAISVALAIKIO DOVANOS, UAB")
+	mokiVezi := seedTx(t, db, "expense", "Food", "MOKI VEZI 06229 VILNIUS")
+	insurance := seedTx(t, db, "expense", "Finance", "SWEDBANK P&C INSURANCE AS LIETUVOS FILIALAS")
+	fee := seedTx(t, db, "expense", "Finance", "Swedbank plan fee")
+	hotel := seedTx(t, db, "expense", "Vacation", "Hotel at Booking.com 1017 CE Amsterdam")
+	flight := seedTx(t, db, "expense", "Vacation", "RYANAIR Milan")
+	pizza := seedTx(t, db, "expense", "Food", "KAVINE BON PIZZA")
+	barbora := seedTx(t, db, "expense", "Food", "BARBORA 03159 VILNIUS")
+
+	applyCategoryMigrations(db)
+
+	assert.Contains(t, labelsOf(t, db, bolt), "taxi", "Bolt ride gets taxi")
+	assert.NotContains(t, labelsOf(t, db, boltFood), "taxi", "Bolt Food stays delivery")
+	assert.Contains(t, labelsOf(t, db, boltFood), "delivery")
+	assert.Contains(t, labelsOf(t, db, iki), "groceries")
+	assert.NotContains(t, labelsOf(t, db, laisvalaikis), "groceries", "'iki ' must not match LAISVALAIKIO")
+	assert.Contains(t, labelsOf(t, db, mokiVezi), "groceries", "unhyphenated MOKI VEZI matches")
+	assert.Contains(t, labelsOf(t, db, insurance), "insurance")
+	assert.Contains(t, labelsOf(t, db, fee), "fees")
+	assert.Contains(t, labelsOf(t, db, hotel), "hotel")
+	assert.Contains(t, labelsOf(t, db, flight), "flights")
+	assert.Contains(t, labelsOf(t, db, pizza), "restaurant")
+	assert.Contains(t, labelsOf(t, db, pizza), "coffee", "kavinė still tags coffee alongside")
+	assert.Contains(t, labelsOf(t, db, barbora), "groceries")
+}
+
+func commentOf(t *testing.T, db *gorm.DB, id uint) string {
+	t.Helper()
+	var tx domain.Transaction
+	require.NoError(t, db.First(&tx, id).Error)
+	return tx.Comment
+}
+
 func seedTxAmount(t *testing.T, db *gorm.DB, typ, category, comment string, amount float64) uint {
 	t.Helper()
 	tx := domain.Transaction{Date: time.Now(), Type: domain.TransactionType(typ), Amount: amount, Category: domain.Category(category), Comment: comment}
