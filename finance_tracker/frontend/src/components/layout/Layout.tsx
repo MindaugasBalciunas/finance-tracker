@@ -5,12 +5,12 @@ import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: '📊' },
-  { to: '/transactions', label: 'Transactions', icon: '💸' },
-  { to: '/balances', label: 'Balances', icon: '🏦' },
-  { to: '/stocks', label: 'Stocks', icon: '📉' },
-  { to: '/assets', label: 'Assets', icon: '🏠' },
-  { to: '/reports', label: 'Reports', icon: '📈' },
+  { to: '/', label: 'Dashboard', short: 'Home', icon: '📊' },
+  { to: '/transactions', label: 'Transactions', short: 'Txns', icon: '💸' },
+  { to: '/balances', label: 'Balances', short: 'Balances', icon: '🏦' },
+  { to: '/stocks', label: 'Stocks', short: 'Stocks', icon: '📉' },
+  { to: '/assets', label: 'Assets', short: 'Assets', icon: '🏠' },
+  { to: '/reports', label: 'Reports', short: 'Reports', icon: '📈' },
 ]
 
 const CSV_EXPORTS = [
@@ -460,7 +460,7 @@ export default function Layout() {
               {/* Date filter */}
               <div className="px-3">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Date Range</p>
-                <DateRangeFilter />
+                <DateRangeFilter className="flex-wrap" />
               </div>
               <div className="border-t border-gray-100" />
               {/* Import */}
@@ -493,16 +493,16 @@ export default function Layout() {
       </main>
 
       {/* ── Mobile bottom tab bar ── */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-cols-6 h-16">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               className={({ isActive }) => clsx(
-                'flex flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors',
+                'flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors px-0.5 min-w-0',
                 isActive ? 'text-blue-600' : 'text-gray-500'
               )}>
               <span className="text-lg leading-none">{item.icon}</span>
-              <span className="leading-none">{item.label.split(' ')[0]}</span>
+              <span className="leading-none truncate max-w-full">{item.short}</span>
             </NavLink>
           ))}
         </div>

@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import type { Transaction, MonthlySummary } from '../../types'
 import { formatEuro } from '../../utils/format'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface Props {
   transactions: Transaction[]
@@ -118,6 +119,9 @@ function buildChartData(transactions: Transaction[], topN: number) {
 
 const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Props) => {
   const { rows, categories } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
+  // The per-month Inc/Exp/Inv labels collide at phone widths — tooltip covers it there.
+  const isMobile = useIsMobile()
+  const showTotals = !!monthTotals && !isMobile
 
   const { totalsMap, avg, hasInvestments } = useMemo(() => {
     const totalsMap: Record<string, MonthlySummary> = {}
@@ -133,7 +137,7 @@ const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Pr
     return { totalsMap, avg, hasInvestments }
   }, [monthTotals])
 
-  const topMargin = monthTotals ? (hasInvestments ? 68 : 48) : 8
+  const topMargin = showTotals ? (hasInvestments ? 68 : 48) : 8
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
@@ -175,7 +179,7 @@ const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Pr
             isAnimationActive={false}
           />
         ))}
-        {monthTotals && (
+        {showTotals && (
           <Customized
             component={(props: any) => (
               <TopLabels {...props} totalsMap={totalsMap} avg={avg} hasInvestments={hasInvestments} />

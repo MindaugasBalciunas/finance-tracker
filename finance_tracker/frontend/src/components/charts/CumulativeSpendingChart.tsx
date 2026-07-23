@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import type { Transaction } from '../../types'
 import { formatEuro } from '../../utils/format'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface Props {
   transactions: Transaction[]
@@ -56,12 +57,19 @@ interface CustomLegendProps {
   hiddenKeys: Set<string>
   latestValues: Record<string, number>
   onToggle: (key: string) => void
+  horizontal?: boolean
 }
 
-function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLegendProps) {
+function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal }: CustomLegendProps) {
   if (!payload) return null
   return (
-    <ul className="flex flex-col gap-1 text-xs pl-2 max-h-72 overflow-y-auto">
+    <ul
+      className={
+        horizontal
+          ? 'flex flex-row flex-wrap justify-center gap-x-3 gap-y-1 text-xs pt-2'
+          : 'flex flex-col gap-1 text-xs pl-2 max-h-72 overflow-y-auto'
+      }
+    >
       {payload.map((entry) => {
         const hidden = hiddenKeys.has(entry.dataKey)
         const latest = latestValues[entry.dataKey]
@@ -92,6 +100,8 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: CustomLeg
 const CumulativeSpendingChart = ({ transactions }: Props) => {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  // Side legend would halve the plot width on phones — stack it below instead.
+  const isMobile = useIsMobile()
 
   const { monthKeys, trimmed, latestValues } = useMemo(() => {
     // Group expenses by "YYYY-MM" month key
@@ -183,10 +193,10 @@ const CumulativeSpendingChart = ({ transactions }: Props) => {
         <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(1)}k`} tick={{ fontSize: 11 }} width={52} />
         <Tooltip content={<CustomTooltip activeKey={activeKey} hiddenKeys={hiddenKeys} />} />
         <Legend
-          layout="vertical"
-          align="right"
-          verticalAlign="middle"
-          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} />}
+          layout={isMobile ? 'horizontal' : 'vertical'}
+          align={isMobile ? 'center' : 'right'}
+          verticalAlign={isMobile ? 'bottom' : 'middle'}
+          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} horizontal={isMobile} />}
         />
         {monthKeys.map((mk, i) => (
           <Line

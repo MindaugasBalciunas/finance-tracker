@@ -5,6 +5,7 @@ import {
 import type { BalanceTrend } from '../../types'
 import { formatEuro } from '../../utils/format'
 import { MIN_VALID_BTC_PRICE } from '../../utils/btc'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface Props {
   trend: BalanceTrend
@@ -113,14 +114,21 @@ interface LegendProps {
   hiddenKeys: Set<string>
   latestValues: Record<string, number>
   onToggle: (key: string) => void
+  horizontal?: boolean
 }
 
-function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: LegendProps) {
+function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal }: LegendProps) {
   if (!payload) return null
   // Show top of stack first in legend
   const reversed = [...payload].reverse()
   return (
-    <ul className="flex flex-col gap-1 text-xs pl-2 max-h-80 overflow-y-auto">
+    <ul
+      className={
+        horizontal
+          ? 'flex flex-row flex-wrap justify-center gap-x-3 gap-y-1 text-xs pt-2'
+          : 'flex flex-col gap-1 text-xs pl-2 max-h-80 overflow-y-auto'
+      }
+    >
       {reversed.map((entry) => {
         const hidden = hiddenKeys.has(entry.dataKey)
         const latest = latestValues[entry.dataKey] ?? 0
@@ -145,6 +153,8 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle }: LegendPro
 
 const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  // On phones the side legend would eat half the plot width — stack it below.
+  const isMobile = useIsMobile()
 
   const data = useMemo(() => trend.dates.map((date, i) => {
     const row: Record<string, number | string> = { date, ts: new Date(date).getTime() }
@@ -203,8 +213,8 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
-      <AreaChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+    <ResponsiveContainer width="100%" height={isMobile ? 480 : 400}>
+      <AreaChart data={data} margin={{ top: 5, right: isMobile ? 8 : 20, left: isMobile ? 0 : 10, bottom: 5 }}>
         <defs>
           {orderedAccounts.map((acc) => {
             const color = ACCOUNT_COLORS[acc] ?? '#94a3b8'
@@ -235,10 +245,17 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
         />
         <Tooltip content={<CustomTooltip hiddenKeys={hiddenKeys} />} />
         <Legend
-          layout="vertical"
-          align="right"
-          verticalAlign="middle"
-          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} />}
+          layout={isMobile ? 'horizontal' : 'vertical'}
+          align={isMobile ? 'center' : 'right'}
+          verticalAlign={isMobile ? 'bottom' : 'middle'}
+          content={
+            <CustomLegend
+              hiddenKeys={hiddenKeys}
+              latestValues={latestValues}
+              onToggle={toggleKey}
+              horizontal={isMobile}
+            />
+          }
         />
         {orderedAccounts.map((acc) => (
           <Area

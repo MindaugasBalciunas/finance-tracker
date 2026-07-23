@@ -221,15 +221,16 @@ export default function Reports() {
                 <h3 className="text-sm font-semibold text-gray-700">Category Detail</h3>
                 <p className="text-xs text-gray-400 mt-0.5">Click a row to see its transactions</p>
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-2 font-semibold text-gray-600">Category</th>
-                    <th className="text-left px-4 py-2 font-semibold text-gray-600">Type</th>
-                    <th className="text-right px-4 py-2 font-semibold text-gray-600">Total</th>
-                    <th className="text-right px-4 py-2 font-semibold text-gray-600">% of type</th>
-                    <th className="text-right px-4 py-2 font-semibold text-gray-600">Count</th>
-                    <th className="text-right px-4 py-2 font-semibold text-gray-600">Avg</th>
+                    <th className="text-left px-3 sm:px-4 py-2 font-semibold text-gray-600">Category</th>
+                    <th className="text-left px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">Type</th>
+                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Total</th>
+                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">% of type</th>
+                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Count</th>
+                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">Avg</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -248,8 +249,8 @@ export default function Reports() {
                           className="hover:bg-gray-50 cursor-pointer"
                           onClick={() => setSelectedCategory({ category: cat.category, type: cat.type })}
                         >
-                          <td className="px-4 py-2 text-gray-700">{cat.category}</td>
-                          <td className="px-4 py-2">
+                          <td className="px-3 sm:px-4 py-2 text-gray-700">{cat.category}</td>
+                          <td className="px-3 sm:px-4 py-2 hidden sm:table-cell">
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                               cat.type === 'expense' ? 'bg-red-100 text-red-700' :
                               cat.type === 'income' ? 'bg-green-100 text-green-700' :
@@ -258,15 +259,16 @@ export default function Reports() {
                               {cat.type}
                             </span>
                           </td>
-                          <td className="px-4 py-2 text-right font-semibold">{formatEuro(cat.total)}</td>
-                          <td className="px-4 py-2 text-right text-gray-500">{pct.toFixed(1)}%</td>
-                          <td className="px-4 py-2 text-right text-gray-500">{cat.count}</td>
-                          <td className="px-4 py-2 text-right text-gray-500">{formatEuro(cat.total / cat.count)}</td>
+                          <td className="px-3 sm:px-4 py-2 text-right font-semibold">{formatEuro(cat.total)}</td>
+                          <td className="px-3 sm:px-4 py-2 text-right text-gray-500 hidden sm:table-cell">{pct.toFixed(1)}%</td>
+                          <td className="px-3 sm:px-4 py-2 text-right text-gray-500">{cat.count}</td>
+                          <td className="px-3 sm:px-4 py-2 text-right text-gray-500 hidden sm:table-cell">{formatEuro(cat.total / cat.count)}</td>
                         </tr>
                       )
                     })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
