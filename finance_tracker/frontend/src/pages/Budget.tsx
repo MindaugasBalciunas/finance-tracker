@@ -107,7 +107,7 @@ function PlanPie({ plan }: { plan: MonthPlan }) {
           <Tooltip formatter={(v: number, name: string) => [formatEuro(v), name]} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
         </PieChart>
       </ResponsiveContainer>
-      <div className="space-y-0.5 mt-1">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 xl:grid-cols-1 mt-1">
         {slices.map((sl) => (
           <div key={sl.name} className="flex items-center justify-between text-xs">
             <span className="inline-flex items-center gap-1.5 text-gray-500 min-w-0">
@@ -360,8 +360,10 @@ export default function Budget() {
             </div>
           </div>
 
-          {/* Fixed obligations + investment targets — side by side on desktop */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 items-start">
+          {/* Desktop: spending limits as the main 2/3 column, fixed +
+              investments as a status sidebar. Mobile: status cards first. */}
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 items-start">
+          <div className="space-y-4 sm:space-y-6 xl:order-2">
           {plan.fixed.length > 0 && (() => {
             const totalPaid = plan.fixed.reduce((s, f) => s + Math.min(f.actual, f.budget.amount), 0)
             const totalOutstanding = Math.max(plan.fixedPlanned - totalPaid, 0)
@@ -456,7 +458,7 @@ export default function Budget() {
           </div>
 
           {/* Spending limits */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 xl:order-1 xl:col-span-2">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.spending.title}</h3>
               <button
@@ -544,6 +546,7 @@ export default function Budget() {
               </div>
             )}
             </div>
+          </div>
           </div>
         </>
       )}
