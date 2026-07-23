@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import type { CategorySummary } from '../../types'
 import { formatEuro } from '../../utils/format'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface Props {
   data: CategorySummary[]
@@ -28,6 +29,9 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 const CategoryDonutChart = ({ data, type, onSelect }: Props) => {
+  // Long outside labels clip at phone widths — the legend table below carries
+  // the detail there, so mobile shows compact percent-only labels.
+  const isMobile = useIsMobile()
   const filtered = data.filter((d) => d.type === type).sort((a, b) => b.total - a.total)
 
   if (filtered.length === 0) {
@@ -39,22 +43,25 @@ const CategoryDonutChart = ({ data, type, onSelect }: Props) => {
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={isMobile ? 220 : 300}>
         <PieChart>
           <Pie
             data={chartData}
             cx="50%"
             cy="50%"
-            innerRadius={60}
-            outerRadius={100}
+            innerRadius={isMobile ? 45 : 60}
+            outerRadius={isMobile ? 75 : 100}
             dataKey="total"
             nameKey="category"
-            label={({ category, total: value, percent }) =>
-              percent >= 0.05
-                ? `${category} ${formatEuro(value)} (${(percent * 100).toFixed(1)}%)`
-                : ''
+            label={isMobile
+              ? ({ percent }) => (percent >= 0.05 ? `${(percent * 100).toFixed(0)}%` : '')
+              : ({ category, total: value, percent }) =>
+                  percent >= 0.05
+                    ? `${category} ${formatEuro(value)} (${(percent * 100).toFixed(1)}%)`
+                    : ''
             }
             labelLine={true}
+            isAnimationActive={false}
             onClick={onSelect ? (d: any) => onSelect(d.category) : undefined}
             style={onSelect ? { cursor: 'pointer' } : undefined}
           >

@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import type { AccountAllocation } from '../../types'
 import { formatEuro } from '../../utils/format'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface Props {
   allocations: AccountAllocation[]
@@ -26,6 +27,9 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 const AllocationPieChart = ({ allocations }: Props) => {
+  // Long outside labels clip at phone widths — the table below carries the
+  // detail there, so mobile shows compact percent-only labels.
+  const isMobile = useIsMobile()
   const sorted = [...allocations].sort((a, b) => b.amount - a.amount)
 
   const main = sorted.filter((a) => a.percentage >= 5)
@@ -43,19 +47,22 @@ const AllocationPieChart = ({ allocations }: Props) => {
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={320}>
+      <ResponsiveContainer width="100%" height={isMobile ? 240 : 320}>
         <PieChart>
           <Pie
             data={data}
             cx="50%"
             cy="50%"
-            outerRadius={110}
+            outerRadius={isMobile ? 80 : 110}
             dataKey="amount"
             nameKey="account"
-            label={({ account, percentage, amount }) =>
-              `${account} ${formatEuro(amount)} (${percentage.toFixed(1)}%)`
+            label={isMobile
+              ? ({ percentage }) => `${percentage.toFixed(0)}%`
+              : ({ account, percentage, amount }) =>
+                  `${account} ${formatEuro(amount)} (${percentage.toFixed(1)}%)`
             }
             labelLine={true}
+            isAnimationActive={false}
           >
             {data.map((_, i) => (
               <Cell key={i} fill={COLORS[i % COLORS.length]} />
