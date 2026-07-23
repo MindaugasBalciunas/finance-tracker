@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useAllTransactions } from '../../hooks/useTransactions'
 import LoadingSpinner from './LoadingSpinner'
-import { formatEuro, formatDate } from '../../utils/format'
+import { formatEuro } from '../../utils/format'
 import type { Category, TransactionType } from '../../types'
 import type { DateRange } from './DateRangeFilter'
 
@@ -39,17 +39,17 @@ export default function CategoryTransactionsModal({ category, type, dateRange, o
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`${category} transactions`}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-start justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
@@ -78,29 +78,33 @@ export default function CategoryTransactionsModal({ category, type, dateRange, o
           </p>
         ) : (
           <>
-            <div className="flex items-center justify-between px-6 py-3 bg-gray-50 border-b border-gray-100 text-sm">
-              <span className="text-gray-500">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-100 text-sm">
+              <span className="text-gray-500 whitespace-nowrap">
                 {transactions.length} transaction{transactions.length === 1 ? '' : 's'}
               </span>
-              <span className="text-gray-500">
+              <span className="text-gray-500 whitespace-nowrap">
                 Avg <span className="font-medium text-gray-700">{formatEuro(total / transactions.length)}</span>
               </span>
-              <span className={`font-semibold ${styles.amount}`}>
+              <span className={`font-semibold whitespace-nowrap ${styles.amount}`}>
                 {styles.sign}{formatEuro(total)}
               </span>
             </div>
             <ul className="overflow-y-auto divide-y divide-gray-100">
               {transactions.map((tx) => (
-                <li key={tx.id} className="flex items-center gap-3 px-6 py-2.5">
-                  <span className="text-xs text-gray-400 w-28 flex-shrink-0">
-                    {formatDate(tx.date)}
-                  </span>
-                  <span className="flex-1 text-sm text-gray-700 truncate">
-                    {tx.comment || '—'}
-                  </span>
-                  <span className={`text-sm font-medium flex-shrink-0 ${styles.amount}`}>
-                    {styles.sign}{formatEuro(tx.amount.value)}
-                  </span>
+                <li key={tx.id} className="px-4 sm:px-6 py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-700 break-words">
+                        {tx.comment || '—'}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                        {tx.date.slice(0, 10)}
+                      </p>
+                    </div>
+                    <span className={`text-sm font-medium whitespace-nowrap flex-shrink-0 ${styles.amount}`}>
+                      {styles.sign}{formatEuro(tx.amount.value)}
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
