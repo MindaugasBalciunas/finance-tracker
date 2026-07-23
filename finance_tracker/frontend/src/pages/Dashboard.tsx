@@ -11,6 +11,7 @@ import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChar
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import AIInsightCard from '../components/ui/AIInsightCard'
+import InsightsPanel from '../components/ui/InsightsPanel'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
@@ -228,6 +229,11 @@ export default function Dashboard() {
             />
           </div>
         </div>
+      )}
+
+      {/* Computed insights for the selected period */}
+      {allExpenses && summary?.by_month && (
+        <InsightsPanel expenses={allExpenses.data} byMonth={summary.by_month} />
       )}
 
       {/* AI financial overview */}
