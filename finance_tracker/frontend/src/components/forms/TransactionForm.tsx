@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType, AccountKey } from '../../types'
 import { ACCOUNT_LABELS } from '../../types'
@@ -72,11 +72,19 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     .map((r) => r.label)
     .filter((l, i, arr) => arr.indexOf(l) === i)
 
-  const labelChips = allLabels
-    .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
-    .slice(0, 8)
-
   const [labelDraft, setLabelDraft] = useState('')
+
+  // All known labels: ones used on transactions plus ones defined by rules
+  // (a fresh rule's label may not exist on any transaction yet).
+  const knownLabels = useMemo(
+    () => [...new Set([...allLabels, ...labelRules.map((r) => r.label)])].sort(),
+    [allLabels, labelRules]
+  )
+
+  // Typing in the labels input filters the chips — that's the autocomplete.
+  const labelChips = knownLabels
+    .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
+    .filter((l) => !labelDraft.trim() || l.includes(labelDraft.trim().toLowerCase()))
 
   function addLabelChip(label: string) {
     const l = label.trim().toLowerCase()
@@ -242,6 +250,10 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               if (e.key === 'Enter') {
                 e.preventDefault()
                 commitLabelDraft()
+              } else if (e.key === 'Tab' && labelDraft.trim() && labelChips.length > 0) {
+                e.preventDefault()
+                addLabelChip(labelChips[0])
+                setLabelDraft('')
               } else if (e.key === 'Backspace' && labelDraft === '' && currentLabels.length > 0) {
                 removeLabel(currentLabels[currentLabels.length - 1])
               }
