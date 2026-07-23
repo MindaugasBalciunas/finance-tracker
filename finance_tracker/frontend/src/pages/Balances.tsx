@@ -10,6 +10,22 @@ import { formatEuro, formatDate, formatTime } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
 
+// Per-account rows for the mobile snapshot cards; mirrors the desktop table columns.
+const ACCOUNT_ROWS: { label: string; value: (b: Balance) => number }[] = [
+  { label: 'SEB', value: (b) => b.seb },
+  { label: 'Swedbank', value: (b) => b.swed },
+  { label: 'IBKR stocks', value: (b) => b.ibkr_stocks },
+  { label: 'Swedbank ETF', value: (b) => b.swed_etf },
+  { label: 'Revolut M', value: (b) => b.rev_m },
+  { label: 'Cash', value: (b) => b.cash },
+  { label: 'M BTC (€)', value: (b) => b.m_btc_eur ?? 0 },
+  { label: 'Rev M stocks', value: (b) => b.rev_stocks },
+  { label: 'SEB pension', value: (b) => b.seb_pen },
+  { label: 'Artea pension', value: (b) => b.art },
+  { label: 'Revolut R', value: (b) => b.rev_r },
+  { label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
+]
+
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
@@ -180,7 +196,74 @@ export default function Balances() {
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h3 className="text-sm font-semibold text-gray-700">Snapshot History</h3>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile cards */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {balances?.map((b) => (
+            <div key={b.id} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">{formatDate(b.date)}</p>
+                  <p className="text-xs text-gray-400">{formatTime(b.created_at)}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-base font-bold text-blue-700 mr-1">{formatEuro(b.total)}</span>
+                  <button
+                    onClick={() => { setEditingBalance(b); setFormError(null) }}
+                    className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => handleDelete(b.id)}
+                    className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Free cash</span>
+                  <span className="font-medium text-green-700">{formatEuro(freeCash(b))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Investments</span>
+                  <span className="font-medium text-blue-700">{formatEuro(investments(b))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Pensions</span>
+                  <span className="font-medium text-purple-700">{formatEuro(pensions(b))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Crypto</span>
+                  <span className="font-medium text-yellow-700">{formatEuro(cryptoEur(b))}</span>
+                </div>
+              </div>
+              <details className="mt-2">
+                <summary className="text-xs text-blue-600 cursor-pointer select-none py-1">
+                  All accounts
+                </summary>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs">
+                  {ACCOUNT_ROWS.filter((r) => r.value(b) !== 0).map((r) => (
+                    <div key={r.label} className="flex justify-between">
+                      <span className="text-gray-400">{r.label}</span>
+                      <span className="text-gray-700">{formatEuro(r.value(b))}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          ))}
+          {!balances?.length && (
+            <p className="px-4 py-12 text-center text-gray-400 text-sm">
+              No balance snapshots yet. Add one above.
+            </p>
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="overflow-x-auto hidden sm:block">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
