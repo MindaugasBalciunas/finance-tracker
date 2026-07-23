@@ -130,4 +130,28 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// of it and keep tagging future rows via a category rule.
 	addLabel("kristina", `type = 'expense' AND category = 'Dating' AND date >= '2026-04-20'`)
 	ensureRule(domain.LabelRule{Label: "kristina", Category: "Dating"})
+
+	// Context labels mined from repetitive comment patterns. Each pattern
+	// becomes a rule (future auto-tagging) and is applied to history here.
+	contextLabels := map[string][]string{
+		"flowers":    {"gele", "gėle", "gėlė", "flower", "žiedas"},
+		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine"},
+		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin"},
+		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia"},
+		"groceries":  {"maxima", "lidl", "rimi", "norfa", "moki-vezi"},
+		"delivery":   {"wolt", "bolt food", "maisto mylet"},
+		"taxi":       {"uber", "etransport"},
+		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
+		"bars":       {"alaus", "baras", "vyno"},
+		"aliexpress": {"aliexpress", "alipay"},
+	}
+	for label, patterns := range contextLabels {
+		for _, p := range patterns {
+			ensureRule(domain.LabelRule{Label: label, CommentMatch: p})
+			addLabel(label, `LOWER(comment) LIKE ?`, "%"+p+"%")
+		}
+	}
+	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
+	// as a standing rule, new ones are caught by the category suggestion.
+	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
 }
