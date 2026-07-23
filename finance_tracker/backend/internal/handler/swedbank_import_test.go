@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -214,4 +215,82 @@ func swedTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	NewImportHandler(txRepo, repository.NewBalanceRepository(db), repository.NewStockRepository(db),
 		repository.NewAssetRepository(db)).WithBudgets(budgetRepo).RegisterRoutes(v1)
 	return r, db
+}
+
+const enrichFixture = `"Sąskaitos Nr.","","Data","Gavėjas","Paaiškinimai","Suma","Valiuta","D/K","Įrašo Nr.","Kodas","Įmokos kodas","Dok. Nr.",
+"LT16","20","2024-03-15","EVELINA PLYTNIKAITĖ","Būsto paskolos įmoka","1650.00","EUR","D","3001","MK","","",
+"LT16","20","2024-03-20","EVELINA BALCIUNIENE","Vaikams","400.00","EUR","D","3002","MK","","",
+"LT16","20","2024-03-25","EVELINA BALČIŪNIENĖ","Dovanoms","500.00","EUR","D","3003","MK","","",
+"LT16","20","2024-04-01","'50182 LIDL PILAITE","PIRKINYS 516793******2950 2024.03.30 55.00 EUR (111111) 50182 LIDL PILAITE","55.00","EUR","D","3004","K","","",
+`
+
+func enrichBody(t *testing.T) (*bytes.Buffer, string) {
+	t.Helper()
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	fw, err := w.CreateFormFile("file", "statement.csv")
+	require.NoError(t, err)
+	_, err = fw.Write([]byte(enrichFixture))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return &b, w.FormDataContentType()
+}
+
+func TestSwedbankEnrich(t *testing.T) {
+	r, db := swedTestRouter(t)
+
+	seed := func(date, comment, category string, amount float64) uint {
+		d, err := time.Parse("2006-01-02", date)
+		require.NoError(t, err)
+		tx := domain.Transaction{Date: d, Type: domain.TransactionTypeExpense, Category: domain.Category(category), Comment: comment, Amount: amount}
+		require.NoError(t, db.Create(&tx).Error)
+		return tx.ID
+	}
+	// Curated rows: two plain payees (should enrich), one hand-written
+	// comment (must stay). The LIDL statement row has no match at all.
+	plain1 := seed("2024-03-15", "EVELINA PLYTNIKAITĖ", "Finance", 1650)
+	plain2 := seed("2024-03-20", "EVELINA BALČIŪNIENĖ", "Kids - General", 400)
+	custom := seed("2024-03-25", "Gift budget for E. (negotiated)", "Gifts", 500)
+
+	body, ctype := enrichBody(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/swedbank?mode=enrich", body)
+	req.Header.Set("Content-Type", ctype)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var res map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.EqualValues(t, 0, res["imported"], "enrich never creates rows")
+	assert.EqualValues(t, 2, res["enriched"])
+	assert.EqualValues(t, 2, res["unmatched"], "custom comment + missing LIDL row skipped")
+
+	byID := func(id uint) domain.Transaction {
+		var tx domain.Transaction
+		require.NoError(t, db.First(&tx, id).Error)
+		return tx
+	}
+	up1 := byID(plain1)
+	assert.Equal(t, "EVELINA PLYTNIKAITĖ (Būsto paskola)", up1.Comment)
+	assert.Contains(t, up1.Labels, "loan")
+	assert.Contains(t, up1.Labels, "evelina")
+	assert.Equal(t, "Finance", string(up1.Category), "category untouched")
+	up2 := byID(plain2)
+	assert.Contains(t, up2.Comment, "(Vaikams)", "diacritic-insensitive match")
+	assert.Equal(t, "Gift budget for E. (negotiated)", byID(custom).Comment, "curated comment preserved")
+
+	var total int64
+	db.Model(&domain.Transaction{}).Count(&total)
+	assert.EqualValues(t, 3, total, "no rows created")
+
+	// Idempotent: enriched comments now match exactly → duplicates, no changes.
+	body2, ctype2 := enrichBody(t)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/import/swedbank?mode=enrich", body2)
+	req2.Header.Set("Content-Type", ctype2)
+	rec2 := httptest.NewRecorder()
+	r.ServeHTTP(rec2, req2)
+	require.Equal(t, 200, rec2.Code)
+	var res2 map[string]any
+	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &res2))
+	assert.EqualValues(t, 0, res2["enriched"])
+	assert.EqualValues(t, 2, res2["duplicate"])
 }

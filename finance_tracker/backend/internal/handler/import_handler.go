@@ -48,8 +48,18 @@ type swedbankImportResult struct {
 	Internal  int    `json:"internal"`
 	Relabeled int    `json:"relabeled"`
 	Balances  int    `json:"balances"`
+	Enriched  int    `json:"enriched"`
+	Unmatched int    `json:"unmatched"`
 	DateFrom  string `json:"date_from,omitempty"`
 	DateTo    string `json:"date_to,omitempty"`
+}
+
+// foldLT lowercases and strips Lithuanian diacritics so "EVELINA
+// BALCIUNIENE" (bank spelling) matches "EVELINA BALČIŪNIENĖ" (curated row).
+func foldLT(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	r := strings.NewReplacer("ą", "a", "č", "c", "ę", "e", "ė", "e", "į", "i", "š", "s", "ų", "u", "ū", "u", "ž", "z")
+	return r.Replace(s)
 }
 
 // ImportSwedbankCSV godoc
@@ -88,12 +98,54 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 		remaining[key(t.Date, t.Type, t.Amount, t.Comment)]++
 	}
 
+	// Enrich mode: never create rows. A statement row whose classified
+	// comment EXTENDS an existing row's comment (same date/type/amount,
+	// diacritic-insensitive prefix — "EVELINA PLYTNIKAITĖ" → "EVELINA
+	// PLYTNIKAITĖ (Būsto paskola)") upgrades that row's comment and merges
+	// labels. Curated comments that aren't a prefix are left alone.
+	enrich := c.Query("mode") == "enrich"
+	candidates := map[string][]*domain.Transaction{}
+	if enrich {
+		for i := range existing {
+			t := &existing[i]
+			ck := fmt.Sprintf("%s|%s|%.2f", t.Date.Format("2006-01-02"), t.Type, t.Amount)
+			candidates[ck] = append(candidates[ck], t)
+		}
+	}
+
 	result := swedbankImportResult{Internal: internal}
 	for _, row := range rows {
 		k := key(row.Date, row.Type, row.Amount, row.Comment)
 		if remaining[k] > 0 {
 			remaining[k]--
 			result.Duplicate++
+			continue
+		}
+		if enrich {
+			ck := fmt.Sprintf("%s|%s|%.2f", row.Date.Format("2006-01-02"), row.Type, row.Amount)
+			matched := false
+			for i, cand := range candidates[ck] {
+				if cand == nil || len(cand.Comment) == 0 || len(row.Comment) <= len(cand.Comment) {
+					continue
+				}
+				if strings.HasPrefix(foldLT(row.Comment), foldLT(cand.Comment)) {
+					cand.Comment = row.Comment
+					for _, l := range strings.Split(domain.NormalizeLabels(row.Labels), ",") {
+						if l != "" {
+							cand.AddLabel(l)
+						}
+					}
+					if err := h.txRepo.Update(cand); err == nil {
+						result.Enriched++
+						candidates[ck][i] = nil // consumed
+						matched = true
+					}
+					break
+				}
+			}
+			if !matched {
+				result.Unmatched++
+			}
 			continue
 		}
 		tx := &domain.Transaction{

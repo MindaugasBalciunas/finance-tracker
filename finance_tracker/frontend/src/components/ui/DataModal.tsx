@@ -46,9 +46,11 @@ export default function DataModal({ onClose }: Props) {
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const swedRef = useRef<HTMLInputElement>(null)
+  const swedModeRef = useRef<'import' | 'enrich'>('import')
   const [swedImporting, setSwedImporting] = useState(false)
   const [swedResult, setSwedResult] = useState<{
     imported: number; duplicate: number; internal: number; relabeled: number
+    balances?: number; enriched?: number; unmatched?: number
     date_from?: string; date_to?: string
   } | null>(null)
 
@@ -126,7 +128,8 @@ export default function DataModal({ onClose }: Props) {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/v1/import/swedbank', { method: 'POST', body: form })
+      const url = swedModeRef.current === 'enrich' ? '/api/v1/import/swedbank?mode=enrich' : '/api/v1/import/swedbank'
+      const res = await fetch(url, { method: 'POST', body: form })
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? `HTTP ${res.status}`) }
       setSwedResult(await res.json())
       qc.invalidateQueries()
@@ -192,13 +195,23 @@ export default function DataModal({ onClose }: Props) {
                 </span>
               </button>
               <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
-              <button onClick={() => { setSwedResult(null); setError(null); swedRef.current?.click() }} disabled={swedImporting}
+              <button onClick={() => { setSwedResult(null); setError(null); swedModeRef.current = 'import'; swedRef.current?.click() }} disabled={swedImporting}
                 className="w-full flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left disabled:opacity-50">
                 <span className="text-lg leading-none mt-0.5">🏦</span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-gray-900">{swedImporting ? 'Importing statement…' : 'Import Swedbank statement (CSV)'}</span>
                   <span className="block text-xs text-gray-500 mt-0.5">
                     Auto-categorizes, labels, and skips rows you already have — safe to re-run.
+                  </span>
+                </span>
+              </button>
+              <button onClick={() => { setSwedResult(null); setError(null); swedModeRef.current = 'enrich'; swedRef.current?.click() }} disabled={swedImporting}
+                className="w-full flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left disabled:opacity-50">
+                <span className="text-lg leading-none mt-0.5">🪄</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">{swedImporting ? 'Working…' : 'Enrich comments from statement (CSV)'}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    Adds statement detail ("Būsto paskola", "Vaikams"…) to matching rows. Never creates or overwrites hand-written comments.
                   </span>
                 </span>
               </button>
@@ -210,12 +223,17 @@ export default function DataModal({ onClose }: Props) {
 
             {swedResult && (
               <div className="mt-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-800 space-y-1">
-                <p className="font-semibold">Statement imported</p>
-                <p>
-                  +{swedResult.imported} transactions
-                  {swedResult.date_from && <> ({swedResult.date_from} → {swedResult.date_to})</>}
-                  {' '}· {swedResult.duplicate} already existed · {swedResult.internal} own-account transfers skipped
-                </p>
+                <p className="font-semibold">{swedResult.enriched !== undefined && swedModeRef.current === 'enrich' ? 'Comments enriched' : 'Statement imported'}</p>
+                {swedModeRef.current === 'enrich' ? (
+                  <p>{swedResult.enriched} comments enriched · {swedResult.duplicate} already descriptive · {swedResult.unmatched} left untouched (nothing added)</p>
+                ) : (
+                  <p>
+                    +{swedResult.imported} transactions
+                    {swedResult.date_from && <> ({swedResult.date_from} → {swedResult.date_to})</>}
+                    {' '}· {swedResult.duplicate} already existed · {swedResult.internal} own-account transfers skipped
+                    {(swedResult.balances ?? 0) > 0 && <> · {swedResult.balances} monthly balance snapshots</>}
+                  </p>
+                )}
                 {swedResult.relabeled > 0 && <p className="text-green-700/80">{swedResult.relabeled} transactions labeled by rules.</p>}
                 <button onClick={() => setSwedResult(null)} className="text-gray-500 underline">Close</button>
               </div>
