@@ -39,6 +39,7 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		l.POST("/reapply", h.ReapplyRules)
 		l.GET("/rules", h.Rules)
 		l.DELETE("/rules/:id", h.DeleteRule)
+		l.GET("/preview", h.PreviewLabel)
 	}
 }
 
@@ -249,6 +250,27 @@ func (h *BudgetHandler) ApplyLabel(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"labeled": count, "rule_created": input.CreateRule})
+}
+
+// PreviewLabel reports what a candidate rule would do — total matching
+// transactions and how many still lack the label — without writing anything.
+// Backs the "make this a rule" suggestion in the transaction form.
+func (h *BudgetHandler) PreviewLabel(c *gin.Context) {
+	label := strings.ToLower(strings.TrimSpace(c.Query("label")))
+	commentMatch := strings.TrimSpace(c.Query("comment_match"))
+	category := strings.TrimSpace(c.Query("category"))
+	if label == "" || (commentMatch == "" && category == "") {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "label plus comment_match or category is required"})
+		return
+	}
+	matches, unlabeled, err := h.repo.PreviewLabel(domain.LabelRule{
+		Label: label, Category: category, CommentMatch: commentMatch,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"matches": matches, "unlabeled": unlabeled})
 }
 
 // ReapplyRules runs every saved label rule over the whole transaction table —

@@ -59,4 +59,19 @@ export const budgetsApi = {
     const { data } = await client.post('/labels/apply', input)
     return data
   },
+
+  // Read-only dry-run of a candidate rule: how many transactions match and
+  // how many of them still lack the label.
+  previewLabel: async (input: {
+    label: string
+    comment_match?: string
+    category?: string
+  }): Promise<{ matches: number; unlabeled: number }> => {
+    const { data } = await client.get('/labels/preview', { params: input })
+    return data
+  },
+
+  deleteRule: async (id: number): Promise<void> => {
+    await client.delete(`/labels/rules/${id}`)
+  },
 }

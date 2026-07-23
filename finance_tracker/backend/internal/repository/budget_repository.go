@@ -20,6 +20,9 @@ type BudgetRepository interface {
 	// ApplyLabel tags every transaction matching the rule with the label.
 	// Returns the number of transactions updated.
 	ApplyLabel(rule domain.LabelRule) (int, error)
+	// PreviewLabel counts what ApplyLabel would touch without writing:
+	// total matching transactions and how many of them lack the label.
+	PreviewLabel(rule domain.LabelRule) (matches, unlabeled int, err error)
 	DistinctLabels() ([]string, error)
 
 	GetSettings() (*domain.BudgetSettings, error)
@@ -103,6 +106,28 @@ func (r *budgetRepository) ApplyLabel(rule domain.LabelRule) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+func (r *budgetRepository) PreviewLabel(rule domain.LabelRule) (int, int, error) {
+	base := func() *gorm.DB {
+		q := r.db.Model(&domain.Transaction{})
+		if rule.Category != "" {
+			q = q.Where("category = ?", rule.Category)
+		}
+		if rule.CommentMatch != "" {
+			q = q.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(rule.CommentMatch)+"%")
+		}
+		return q
+	}
+	var matches, labeled int64
+	if err := base().Count(&matches).Error; err != nil {
+		return 0, 0, err
+	}
+	if err := base().Where("(',' || labels || ',') LIKE ?", "%,"+strings.ToLower(rule.Label)+",%").
+		Count(&labeled).Error; err != nil {
+		return 0, 0, err
+	}
+	return int(matches), int(matches - labeled), nil
 }
 
 func (r *budgetRepository) GetSettings() (*domain.BudgetSettings, error) {

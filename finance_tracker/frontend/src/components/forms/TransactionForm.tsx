@@ -8,6 +8,8 @@ import { useQuery } from '@tanstack/react-query'
 import { transactionsApi } from '../../api/transactions'
 import { useTransactionComments } from '../../hooks/useTransactions'
 import { useLabels, useLabelRules } from '../../hooks/useBudgets'
+import { ruleCoversComment } from '../../utils/rulePattern'
+import RuleSuggestion from './RuleSuggestion'
 
 interface Props {
   onSubmit: (data: CreateTransactionInput) => void
@@ -100,6 +102,22 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     if (labelDraft.trim()) addLabelChip(labelDraft)
     setLabelDraft('')
   }
+
+  // A hand-applied label that no saved rule explains is a rule waiting to be
+  // born — offer to create one (labels teach the app, nothing is hardcoded).
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([])
+  const [createdSuggestion, setCreatedSuggestion] = useState<string | null>(null)
+  const ruleCandidate =
+    commentValue.trim().length >= 3
+      ? currentLabels.find(
+          (l) =>
+            !dismissedSuggestions.includes(l) &&
+            !ruleCoversComment(labelRules, l, commentValue, String(selectedCategory)),
+        )
+      : undefined
+  // Creating a rule makes the label covered, so keep the suggestion mounted
+  // to show its confirmation.
+  const suggestionLabel = ruleCandidate ?? (createdSuggestion && currentLabels.includes(createdSuggestion) ? createdSuggestion : undefined)
 
   // Category suggestion from similar historical transactions (debounced).
   const amountValue = watch('amount')
@@ -286,6 +304,15 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               </button>
             ))}
           </p>
+        )}
+        {suggestionLabel && (
+          <RuleSuggestion
+            key={suggestionLabel}
+            label={suggestionLabel}
+            comment={commentValue}
+            onDismiss={() => setDismissedSuggestions((d) => [...d, suggestionLabel])}
+            onCreated={() => setCreatedSuggestion(suggestionLabel)}
+          />
         )}
       </div>
 

@@ -82,6 +82,18 @@ export function useApplyLabel() {
   return useMutation({
     mutationFn: (input: { label: string; category?: string; comment_match?: string; create_rule?: boolean }) =>
       budgetsApi.applyLabel(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
+      qc.invalidateQueries({ queryKey: ['label-rules'] })
+      qc.invalidateQueries({ queryKey: ['labels'] })
+    },
+  })
+}
+
+export function useDeleteRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => budgetsApi.deleteRule(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['label-rules'] }),
   })
 }

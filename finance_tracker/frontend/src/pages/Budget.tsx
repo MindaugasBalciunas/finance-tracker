@@ -7,6 +7,7 @@ import type { MonthPlan } from '../utils/budget'
 import { ltNetSalary } from '../utils/ltSalary'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
+import LabelRulesModal from '../components/ui/LabelRulesModal'
 import { formatEuro } from '../utils/format'
 import { CATEGORIES } from '../constants/categories'
 import type { Budget, BudgetInput, BudgetKind, BudgetSettings, IncomeMode } from '../types'
@@ -140,6 +141,7 @@ const SUGGESTED = [
 
 export default function Budget() {
   const [month, setMonth] = useState(() => ym(new Date()))
+  const [rulesOpen, setRulesOpen] = useState(false)
   const range = monthRange(month)
 
   const { data: budgets, isLoading: budgetsLoading } = useBudgets()
@@ -263,6 +265,13 @@ export default function Budget() {
           <p className="text-sm text-gray-500 mt-1">Fixed costs, investment targets and spending limits</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRulesOpen(true)}
+            title="View and delete label rules"
+            className="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 font-medium rounded-md hover:bg-gray-100 whitespace-nowrap"
+          >
+            ⚡ Rules
+          </button>
           {hasBudgets && (
             <button
               onClick={handleReapply}
@@ -590,6 +599,8 @@ export default function Budget() {
           onClose={() => setShowIncomeSettings(false)}
         />
       )}
+
+      {rulesOpen && <LabelRulesModal onClose={() => setRulesOpen(false)} />}
     </div>
   )
 }

@@ -346,6 +346,38 @@ func TestLabels_SurviveExportImport(t *testing.T) {
 	assert.Equal(t, "test-label,other", tx.Labels)
 }
 
+func TestLabels_Preview(t *testing.T) {
+	r, _ := budgetTestRouter(t)
+
+	for _, comment := range []string{"Pammukale. Kebab", "Kebab Kebona", "MAXIMA maistas"} {
+		w := budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
+			"date": "2026-07-20", "type": "expense", "amount": 10.0,
+			"category": "Food", "comment": comment,
+		})
+		require.Equal(t, 201, w.Code)
+	}
+	// One kebab row already carries the label.
+	w := budgetDoJSON(r, "POST", "/api/v1/labels/apply", map[string]any{
+		"label": "fast food", "comment_match": "pammukale",
+	})
+	require.Equal(t, 200, w.Code)
+
+	// Preview is read-only: 2 matches, 1 still unlabeled.
+	w = budgetDoJSON(r, "GET", "/api/v1/labels/preview?label=fast+food&comment_match=kebab", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"matches":2`)
+	assert.Contains(t, w.Body.String(), `"unlabeled":1`)
+
+	// Nothing was written by the preview.
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions?label=fast+food", nil)
+	require.Equal(t, 200, w.Code)
+	assert.NotContains(t, w.Body.String(), "Kebona")
+
+	// Validation: label alone is not enough.
+	w = budgetDoJSON(r, "GET", "/api/v1/labels/preview?label=fast+food", nil)
+	assert.Equal(t, 400, w.Code)
+}
+
 func TestLabels_MultipleRulesStack(t *testing.T) {
 	r, _ := budgetTestRouter(t)
 
