@@ -146,6 +146,7 @@ type txExportRow struct {
 	Amount        float64 `json:"amount_eur"`
 	Category      string  `json:"category"`
 	Comment       string  `json:"comment,omitempty"`
+	Labels        string  `json:"labels,omitempty"`
 	DebitAccount  string  `json:"debit_account,omitempty"`
 	CreditAccount string  `json:"credit_account,omitempty"`
 	SourceAccount string  `json:"source_account,omitempty"`
@@ -278,6 +279,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 			Amount:        tx.Amount,
 			Category:      string(tx.Category),
 			Comment:       tx.Comment,
+			Labels:        tx.Labels,
 			DebitAccount:  tx.DebitAccount,
 			CreditAccount: tx.CreditAccount,
 			SourceAccount: tx.SourceAccount,
@@ -385,6 +387,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 			Amount:        tx.Amount,
 			Category:      string(tx.Category),
 			Comment:       tx.Comment,
+			Labels:        tx.Labels,
 			DebitAccount:  tx.DebitAccount,
 			CreditAccount: tx.CreditAccount,
 			SourceAccount: tx.SourceAccount,

@@ -33,6 +33,7 @@ func main() {
 
 	// Repositories
 	authRepo := repository.NewAuthRepository(db)
+	budgetRepo := repository.NewBudgetRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
 	balRepo := repository.NewBalanceRepository(db)
 	insightRepo := repository.NewInsightRepository(db)
@@ -43,13 +44,14 @@ func main() {
 	// Services — balSvc must be created before txSvc (txSvc holds a reference to balSvc)
 	authSvc := service.NewAuthService(authRepo)
 	balSvc := service.NewBalanceService(balRepo, txRepo)
-	txSvc := service.NewTransactionService(txRepo, balSvc)
+	txSvc := service.NewTransactionServiceWithRules(txRepo, balSvc, budgetRepo)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
 	stockSvc := service.NewStockService(stockRepo)
 	assetSvc := service.NewAssetService(assetRepo)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
+	budgetHandler := handler.NewBudgetHandler(budgetRepo)
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
@@ -75,6 +77,7 @@ func main() {
 	v1 := r.Group("/api/v1")
 	authHandler.RegisterRoutes(v1)
 	v1.Use(authHandler.Middleware())
+	budgetHandler.RegisterRoutes(v1)
 	txHandler.RegisterRoutes(v1)
 	balHandler.RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)

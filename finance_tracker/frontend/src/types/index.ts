@@ -38,6 +38,8 @@ export interface Transaction {
   amount: Money // always EUR
   comment: string
   category: Category
+  // Comma-separated lowercase tags, e.g. "loan,fixed"
+  labels: string
   // Legacy field — present on old rows, empty on new rows
   source_account: string
   // New fields — one or both set depending on transaction type
@@ -53,6 +55,7 @@ export interface CreateTransactionInput {
   amount: number
   comment?: string
   category: Category
+  labels?: string
   debit_account?: string
   credit_account?: string
 }
@@ -63,8 +66,30 @@ export interface UpdateTransactionInput {
   amount?: number
   comment?: string
   category?: Category
+  labels?: string
   debit_account?: string
   credit_account?: string
+}
+
+export type BudgetKind = 'fixed' | 'investment' | 'spending'
+
+export interface Budget {
+  id: number
+  name: string
+  kind: BudgetKind
+  label: string
+  category: string
+  amount: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BudgetInput {
+  name: string
+  kind: BudgetKind
+  label?: string
+  category?: string
+  amount: number
 }
 
 export interface PaginatedTransactions {

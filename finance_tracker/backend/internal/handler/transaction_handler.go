@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -242,6 +243,9 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 	if v := c.Query("category"); v != "" {
 		cat := domain.Category(v)
 		filter.Category = &cat
+	}
+	if v := c.Query("label"); v != "" {
+		filter.Label = strings.ToLower(strings.TrimSpace(v))
 	}
 	if v := c.Query("page"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p > 0 {

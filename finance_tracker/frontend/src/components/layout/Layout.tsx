@@ -11,6 +11,7 @@ const navItems = [
   { to: '/balances', label: 'Balances', short: 'Balances', icon: '🏦' },
   { to: '/stocks', label: 'Stocks', short: 'Stocks', icon: '📉' },
   { to: '/assets', label: 'Assets', short: 'Assets', icon: '🏠' },
+  { to: '/budget', label: 'Budget', short: 'Budget', icon: '🎯' },
   { to: '/reports', label: 'Reports', short: 'Reports', icon: '📈' },
 ]
 
@@ -514,7 +515,7 @@ export default function Layout() {
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-6 h-16">
+        <div className="grid grid-cols-7 h-16">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               className={({ isActive }) => clsx(

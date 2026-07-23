@@ -14,6 +14,7 @@ const Balances = lazy(() => import('./pages/Balances'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Stocks = lazy(() => import('./pages/Stocks'))
 const Assets = lazy(() => import('./pages/Assets'))
+const Budget = lazy(() => import('./pages/Budget'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="balances" element={<Suspense fallback={<LoadingSpinner />}><Balances /></Suspense>} />
               <Route path="stocks" element={<Suspense fallback={<LoadingSpinner />}><Stocks /></Suspense>} />
               <Route path="assets" element={<Suspense fallback={<LoadingSpinner />}><Assets /></Suspense>} />
+              <Route path="budget" element={<Suspense fallback={<LoadingSpinner />}><Budget /></Suspense>} />
               <Route path="reports" element={<Suspense fallback={<LoadingSpinner />}><Reports /></Suspense>} />
             </Route>
           </Routes>

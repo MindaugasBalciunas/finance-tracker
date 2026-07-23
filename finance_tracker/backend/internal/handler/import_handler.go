@@ -115,6 +115,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			Amount:        row.Amount,
 			Category:      cat,
 			Comment:       row.Comment,
+			Labels:        domain.NormalizeLabels(row.Labels),
 			DebitAccount:  row.DebitAccount,
 			CreditAccount: row.CreditAccount,
 			SourceAccount: row.SourceAccount,

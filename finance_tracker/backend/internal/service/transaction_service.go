@@ -16,6 +16,7 @@ type CreateTransactionInput struct {
 	Amount        float64                `json:"amount" binding:"required,gt=0"`
 	Comment       string                 `json:"comment"`
 	Category      domain.Category        `json:"category" binding:"required"`
+	Labels        string                 `json:"labels"`
 	DebitAccount  string                 `json:"debit_account"`
 	CreditAccount string                 `json:"credit_account"`
 }
@@ -27,8 +28,14 @@ type UpdateTransactionInput struct {
 	Amount        float64                `json:"amount" binding:"omitempty,gt=0"`
 	Comment       string                 `json:"comment"`
 	Category      domain.Category        `json:"category"`
+	Labels        *string                `json:"labels"`
 	DebitAccount  string                 `json:"debit_account"`
 	CreditAccount string                 `json:"credit_account"`
+}
+
+// LabelRuleSource provides auto-labeling rules applied on transaction create.
+type LabelRuleSource interface {
+	ListRules() ([]domain.LabelRule, error)
 }
 
 //go:generate mockery --name=TransactionService --output=../handler/mock --outpkg=mock
@@ -47,12 +54,18 @@ type TransactionService interface {
 }
 
 type transactionService struct {
-	repo   repository.TransactionRepository
-	balSvc BalanceService
+	repo    repository.TransactionRepository
+	balSvc  BalanceService
+	ruleSrc LabelRuleSource
 }
 
 func NewTransactionService(repo repository.TransactionRepository, balSvc BalanceService) TransactionService {
 	return &transactionService{repo: repo, balSvc: balSvc}
+}
+
+// NewTransactionServiceWithRules also auto-applies label rules on create.
+func NewTransactionServiceWithRules(repo repository.TransactionRepository, balSvc BalanceService, ruleSrc LabelRuleSource) TransactionService {
+	return &transactionService{repo: repo, balSvc: balSvc, ruleSrc: ruleSrc}
 }
 
 func populateTx(tx *domain.Transaction) {
@@ -77,8 +90,20 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		Amount:        input.Amount,
 		Comment:       input.Comment,
 		Category:      input.Category,
+		Labels:        domain.NormalizeLabels(input.Labels),
 		DebitAccount:  input.DebitAccount,
 		CreditAccount: input.CreditAccount,
+	}
+
+	// Auto-apply label rules (e.g. Finance + "loan" → loan).
+	if s.ruleSrc != nil {
+		if rules, err := s.ruleSrc.ListRules(); err == nil {
+			for _, rule := range rules {
+				if rule.Matches(tx) {
+					tx.AddLabel(rule.Label)
+				}
+			}
+		}
 	}
 
 	if err := s.repo.Create(tx); err != nil {
@@ -124,6 +149,9 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	}
 	if input.Category != "" {
 		tx.Category = input.Category
+	}
+	if input.Labels != nil {
+		tx.Labels = domain.NormalizeLabels(*input.Labels)
 	}
 	tx.DebitAccount = input.DebitAccount
 	tx.CreditAccount = input.CreditAccount

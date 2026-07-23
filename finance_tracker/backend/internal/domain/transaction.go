@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"time"
 )
 
@@ -100,6 +101,10 @@ type Transaction struct {
 	Comment  string   `json:"comment"`
 	Category Category `json:"category" gorm:"index"`
 
+	// Labels are free-form lowercase tags stored as a comma-separated list
+	// (e.g. "loan,fixed"). Applied manually or by LabelRule on create.
+	Labels string `json:"labels" gorm:"not null;default:''"`
+
 	// Legacy field — kept for backward compat with existing rows. New rows use DebitAccount/CreditAccount.
 	SourceAccount string `json:"source_account" gorm:"default:''"`
 
@@ -124,8 +129,93 @@ type TransactionFilter struct {
 	DateTo   *time.Time
 	Type     *TransactionType
 	Category *Category
+	Label    string
 	Page     int
 	PageSize int
+}
+
+// NormalizeLabels canonicalizes a comma-separated label list: lowercase,
+// trimmed, deduplicated, no empties.
+func NormalizeLabels(raw string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		l := strings.ToLower(strings.TrimSpace(part))
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		out = append(out, l)
+	}
+	return strings.Join(out, ",")
+}
+
+// HasLabel reports whether the transaction carries the given label.
+func (t *Transaction) HasLabel(label string) bool {
+	label = strings.ToLower(strings.TrimSpace(label))
+	for _, l := range strings.Split(t.Labels, ",") {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+// AddLabel appends a label if not already present.
+func (t *Transaction) AddLabel(label string) {
+	if t.HasLabel(label) {
+		return
+	}
+	t.Labels = NormalizeLabels(t.Labels + "," + label)
+}
+
+// LabelRule auto-applies a label to transactions on create when the category
+// matches (empty = any) and the comment contains CommentMatch (empty = any).
+type LabelRule struct {
+	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Label        string    `json:"label" gorm:"not null"`
+	Category     string    `json:"category" gorm:"not null;default:''"`
+	CommentMatch string    `json:"comment_match" gorm:"not null;default:''"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Matches reports whether the rule applies to the transaction.
+func (r *LabelRule) Matches(t *Transaction) bool {
+	if r.Category != "" && !strings.EqualFold(r.Category, string(t.Category)) {
+		return false
+	}
+	if r.CommentMatch != "" && !strings.Contains(strings.ToLower(t.Comment), strings.ToLower(r.CommentMatch)) {
+		return false
+	}
+	return r.Category != "" || r.CommentMatch != ""
+}
+
+// Budget is a monthly financial plan line. Kind semantics:
+//   - fixed: a known obligation (loan, alimony) — tracked as paid/pending
+//   - investment: a monthly contribution target to reach
+//   - spending: a monthly limit for discretionary spending
+//
+// Matching: transactions with Label (when set), otherwise by Category.
+type Budget struct {
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name      string    `json:"name" gorm:"not null"`
+	Kind      string    `json:"kind" gorm:"not null"`
+	Label     string    `json:"label" gorm:"not null;default:''"`
+	Category  string    `json:"category" gorm:"not null;default:''"`
+	Amount    float64   `json:"amount" gorm:"not null"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+var ValidBudgetKinds = []string{"fixed", "investment", "spending"}
+
+func IsValidBudgetKind(k string) bool {
+	for _, v := range ValidBudgetKinds {
+		if v == k {
+			return true
+		}
+	}
+	return false
 }
 
 // TransactionSummary holds aggregated transaction data

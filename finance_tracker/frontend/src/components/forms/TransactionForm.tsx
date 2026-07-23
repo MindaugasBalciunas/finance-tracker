@@ -139,6 +139,17 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         )}
       </div>
 
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Labels</label>
+        <input
+          type="text"
+          {...register('labels')}
+          placeholder="Optional tags, comma-separated (e.g. loan, fixed)"
+          autoComplete="off"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
       {/* Account fields — context-aware based on transaction type */}
       {selectedType === 'expense' && (
         <AccountSelect label="From Account" name="debit_account" register={register} />

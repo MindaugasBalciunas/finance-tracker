@@ -120,6 +120,7 @@ export default function Transactions() {
                 amount: editingTx.amount.value,
                 category: editingTx.category,
                 comment: editingTx.comment,
+                labels: editingTx.labels || '',
                 debit_account: editingTx.debit_account || '',
                 credit_account: editingTx.credit_account || '',
               }}
@@ -174,6 +175,13 @@ export default function Transactions() {
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate">{tx.category}</p>
                   {tx.comment && <p className="text-xs text-gray-400 truncate">{tx.comment}</p>}
+                  {tx.labels && (
+                    <p className="mt-0.5">
+                      {tx.labels.split(',').map((l) => (
+                        <span key={l} className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 mr-1">{l}</span>
+                      ))}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className={`text-sm font-bold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
@@ -215,7 +223,16 @@ export default function Transactions() {
                     <td className="px-4 py-3 text-gray-700">{formatDate(tx.date)}</td>
                     <td className="px-4 py-3"><Badge type={tx.type} /></td>
                     <td className="px-4 py-3 text-gray-600">{tx.category}</td>
-                    <td className="px-4 py-3 text-gray-500">{tx.comment || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {tx.comment || '—'}
+                      {tx.labels && (
+                        <span className="block mt-0.5">
+                          {tx.labels.split(',').map((l) => (
+                            <span key={l} className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 mr-1">{l}</span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{formatAccount(tx)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                       {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
