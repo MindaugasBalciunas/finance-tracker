@@ -5,6 +5,7 @@ import { ACCOUNT_LABELS } from '../../types'
 import { CATEGORIES_BY_TYPE } from '../../constants/categories'
 import DateInput from '../ui/DateInput'
 import { useTransactionComments } from '../../hooks/useTransactions'
+import { useLabels, useLabelRules } from '../../hooks/useBudgets'
 
 interface Props {
   onSubmit: (data: CreateTransactionInput) => void
@@ -51,6 +52,32 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   const suggestions = commentValue.length > 0
     ? allComments.filter(c => c.toLowerCase().includes(commentValue.toLowerCase()) && c !== commentValue).slice(0, 8)
     : []
+
+  // Label suggestions: existing labels as one-tap chips, plus a live preview
+  // of labels the saved rules will apply automatically on save.
+  const { data: allLabels = [] } = useLabels()
+  const { data: labelRules = [] } = useLabelRules()
+  const labelsValue = watch('labels') ?? ''
+  const selectedCategory = watch('category') ?? ''
+  const currentLabels = labelsValue.split(',').map((l) => l.trim().toLowerCase()).filter(Boolean)
+
+  const autoLabels = labelRules
+    .filter((r) => {
+      const catOk = !r.category || r.category.toLowerCase() === String(selectedCategory).toLowerCase()
+      const commentOk = !r.comment_match || commentValue.toLowerCase().includes(r.comment_match.toLowerCase())
+      return (r.category !== '' || r.comment_match !== '') && catOk && commentOk
+    })
+    .map((r) => r.label)
+    .filter((l, i, arr) => arr.indexOf(l) === i)
+
+  const labelChips = allLabels
+    .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
+    .slice(0, 8)
+
+  function addLabelChip(label: string) {
+    const next = [...currentLabels, label].join(',')
+    setValue('labels', next)
+  }
 
   useEffect(() => {
     if (!defaultValues?.category) {
@@ -148,6 +175,29 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
           autoComplete="off"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {autoLabels.length > 0 && (
+          <p className="text-xs text-gray-500 mt-1.5">
+            <span className="text-green-600">⚡ auto:</span>{' '}
+            {autoLabels.map((l) => (
+              <span key={l} className="inline-block text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 mr-1">{l}</span>
+            ))}
+            <span className="text-gray-400">will be applied by your rules</span>
+          </p>
+        )}
+        {labelChips.length > 0 && (
+          <p className="mt-1.5">
+            {labelChips.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => addLabelChip(l)}
+                className="inline-block text-[11px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded px-1.5 py-0.5 mr-1 mb-1 hover:bg-indigo-100"
+              >
+                + {l}
+              </button>
+            ))}
+          </p>
+        )}
       </div>
 
       {/* Account fields — context-aware based on transaction type */}

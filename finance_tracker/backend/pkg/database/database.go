@@ -68,5 +68,27 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	applyCategoryMigrations(db)
+
 	return db, nil
+}
+
+// applyCategoryMigrations recategorizes known-misfiled transactions by vendor.
+// Idempotent: each statement only touches rows still in the old category.
+func applyCategoryMigrations(db *gorm.DB) {
+	// Artea 3rd-pillar contributions belong under Pension, not Stocks & ETF.
+	db.Exec(`UPDATE transactions SET category = 'Pension'
+		WHERE type = 'investment' AND category = 'Stocks & ETF' AND LOWER(comment) LIKE '%artea%'`)
+
+	// Utility vendors filed under Housing → Utilities.
+	for _, vendor := range []string{"IGNITIS", "TELIA LIETUVA", "VILNIAUS VANDENYS", "ŠILUMOS TINKLAI", "SILUMOS TINKLAI", "SAUGOS TARNYBA ARGUS", "MANO BŪSTAS", "MANO BUSTAS"} {
+		db.Exec(`UPDATE transactions SET category = 'Utilities'
+			WHERE type = 'expense' AND category = 'Housing' AND UPPER(comment) LIKE ?`, "%"+vendor+"%")
+	}
+
+	// Recurring subscription vendors filed under Entertainment → Subscriptions.
+	for _, vendor := range []string{"YOUTUBEPREMIUM", "YOUTUBE PREMIUM", "PATREON", "CONTRIBEE", "NETFLIX", "SPOTIFY", "GOOGLE *GOOGLE ONE", "HBO", "DISNEY"} {
+		db.Exec(`UPDATE transactions SET category = 'Subscriptions'
+			WHERE type = 'expense' AND category = 'Entertainment' AND UPPER(comment) LIKE ?`, "%"+vendor+"%")
+	}
 }

@@ -24,7 +24,9 @@ const (
 	CategoryKidsEntertainment Category = "Kids - Entertainment"
 	CategoryKidsFood          Category = "Kids - Food"
 	CategoryKidsGeneral       Category = "Kids - General"
+	CategorySubscriptions     Category = "Subscriptions"
 	CategoryTransport         Category = "Transport"
+	CategoryUtilities         Category = "Utilities"
 	CategoryVacation          Category = "Vacation"
 
 	// Income categories
@@ -57,7 +59,9 @@ var ValidCategories = []Category{
 	CategoryKidsEntertainment,
 	CategoryKidsFood,
 	CategoryKidsGeneral,
+	CategorySubscriptions,
 	CategoryTransport,
+	CategoryUtilities,
 	CategoryVacation,
 	// Income
 	CategorySalary,

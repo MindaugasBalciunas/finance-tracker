@@ -15,7 +15,9 @@ export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
     'Kids - Entertainment',
     'Kids - Food',
     'Kids - General',
+    'Subscriptions',
     'Transport',
+    'Utilities',
     'Vacation',
   ],
   income: [

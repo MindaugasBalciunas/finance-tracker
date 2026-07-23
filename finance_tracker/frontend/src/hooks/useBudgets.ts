@@ -36,6 +36,22 @@ export function useDeleteBudget() {
   })
 }
 
+export function useLabels() {
+  return useQuery({
+    queryKey: ['labels'],
+    queryFn: () => budgetsApi.labels(),
+    staleTime: 60_000,
+  })
+}
+
+export function useLabelRules() {
+  return useQuery({
+    queryKey: ['label-rules'],
+    queryFn: () => budgetsApi.rules(),
+    staleTime: 60_000,
+  })
+}
+
 export const BUDGET_SETTINGS_KEY = 'budget-settings'
 
 export function useBudgetSettings() {

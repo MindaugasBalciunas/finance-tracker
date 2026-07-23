@@ -36,6 +36,11 @@ export const budgetsApi = {
     return data
   },
 
+  rules: async (): Promise<{ id: number; label: string; category: string; comment_match: string }[]> => {
+    const { data } = await client.get('/labels/rules')
+    return data
+  },
+
   // Runs every saved rule over all transactions — deterministic re-labeling
   // for historical records.
   reapplyRules: async (): Promise<{ relabeled: number; rules: number }> => {
