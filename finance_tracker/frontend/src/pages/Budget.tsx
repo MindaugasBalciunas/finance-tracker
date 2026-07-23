@@ -6,6 +6,7 @@ import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
 import type { MonthPlan } from '../utils/budget'
 import { ltNetSalary } from '../utils/ltSalary'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import { formatEuro } from '../utils/format'
 import { CATEGORIES } from '../constants/categories'
 import type { Budget, BudgetInput, BudgetKind, BudgetSettings, IncomeMode } from '../types'
@@ -157,6 +158,16 @@ export default function Budget() {
   const [notice, setNotice] = useState<string | null>(null)
   const [settingUp, setSettingUp] = useState(false)
   const [prefill, setPrefill] = useState<BudgetInput | null>(null)
+  const [viewing, setViewing] = useState<{ title: string; type: 'expense' | 'investment'; category?: string; label?: string } | null>(null)
+
+  function viewBudget(b: Budget) {
+    setViewing({
+      title: b.name,
+      type: b.kind === 'investment' ? 'investment' : 'expense',
+      category: b.label ? undefined : b.category,
+      label: b.label || undefined,
+    })
+  }
 
   async function handleReapply() {
     setNotice(null)
@@ -386,7 +397,7 @@ export default function Budget() {
                     return (
                       <div key={budget.id}>
                         <div className="flex items-center justify-between gap-3 mb-1">
-                          <p className="text-sm font-medium text-gray-800 min-w-0 truncate">{budget.name}</p>
+                          <button onClick={() => viewBudget(budget)} className="text-sm font-medium text-gray-800 min-w-0 truncate text-left hover:text-blue-700">{budget.name}</button>
                           <div className="flex items-center gap-2">
                             <span className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-green-600' : 'text-gray-600'}`}>
                               {paid ? `✓ Paid ${formatEuro(actual)}` : `${formatEuro(actual)} / ${formatEuro(budget.amount)}`}
@@ -434,7 +445,7 @@ export default function Budget() {
                   return (
                     <div key={budget.id}>
                       <div className="flex items-center justify-between gap-3 mb-1">
-                        <p className="text-sm font-medium text-gray-800">{budget.name}</p>
+                        <button onClick={() => viewBudget(budget)} className="text-sm font-medium text-gray-800 text-left hover:text-blue-700">{budget.name}</button>
                         <div className="flex items-center gap-2">
                           <span className={`text-sm font-semibold ${reached ? 'text-green-600' : 'text-blue-700'}`}>
                             {formatEuro(actual)} / {formatEuro(budget.amount)}
@@ -482,9 +493,9 @@ export default function Budget() {
                 return (
                   <div key={budget.id} className={over ? 'bg-red-50 border border-red-200 rounded-lg p-3 -mx-1' : ''}>
                     <div className="flex items-center justify-between gap-3 mb-1">
-                      <p className={`text-sm font-medium ${over ? 'text-red-800' : 'text-gray-800'}`}>
+                      <button onClick={() => viewBudget(budget)} className={`text-sm font-medium text-left hover:text-blue-700 ${over ? 'text-red-800' : 'text-gray-800'}`}>
                         {over && '⚠ '}{budget.name}
-                      </p>
+                      </button>
                       <div className="flex items-center gap-2">
                         <span className={`text-sm font-semibold ${over ? 'text-red-600' : near ? 'text-yellow-600' : 'text-gray-700'}`}>
                           {formatEuro(actual)} / {formatEuro(budget.amount)}
@@ -525,7 +536,7 @@ export default function Budget() {
                 <div className="space-y-1">
                   {plan.unbudgeted.map(({ category, spent }) => (
                     <div key={category} className="flex items-center justify-between text-sm py-1">
-                      <span className="text-gray-600">{category}</span>
+                      <button onClick={() => setViewing({ title: category, type: 'expense', category })} className="text-gray-600 text-left hover:text-blue-700">{category}</button>
                       <div className="flex items-center gap-3">
                         <span className="font-medium text-gray-800">{formatEuro(spent)}</span>
                         <button
@@ -558,6 +569,17 @@ export default function Budget() {
           error={formError}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditing(null); setFormError(null); setPrefill(null) }}
+        />
+      )}
+
+      {viewing && (
+        <CategoryTransactionsModal
+          title={`${viewing.title} — ${monthLabel(month)}`}
+          category={viewing.category as never}
+          label={viewing.label}
+          type={viewing.type}
+          dateRange={range}
+          onClose={() => setViewing(null)}
         />
       )}
 

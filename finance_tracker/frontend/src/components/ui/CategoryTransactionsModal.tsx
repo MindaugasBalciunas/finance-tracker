@@ -6,7 +6,9 @@ import type { Category, TransactionType } from '../../types'
 import type { DateRange } from './DateRangeFilter'
 
 interface Props {
-  category: Category
+  category?: Category
+  label?: string
+  title?: string
   type: TransactionType
   dateRange: DateRange
   onClose: () => void
@@ -18,8 +20,13 @@ const TYPE_STYLES: Record<TransactionType, { badge: string; amount: string; sign
   investment: { badge: 'bg-blue-100 text-blue-700', amount: 'text-blue-600', sign: '' },
 }
 
-export default function CategoryTransactionsModal({ category, type, dateRange, onClose }: Props) {
-  const { data, isLoading } = useAllTransactions({ category, type, ...dateRange })
+export default function CategoryTransactionsModal({ category, label, title, type, dateRange, onClose }: Props) {
+  const { data, isLoading } = useAllTransactions({
+    ...(category ? { category } : {}),
+    ...(label ? { label } : {}),
+    type,
+    ...dateRange,
+  })
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -43,7 +50,7 @@ export default function CategoryTransactionsModal({ category, type, dateRange, o
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={`${category} transactions`}
+      aria-label={`${title ?? category ?? label} transactions`}
     >
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] flex flex-col"
@@ -52,7 +59,7 @@ export default function CategoryTransactionsModal({ category, type, dateRange, o
         <div className="flex items-start justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{title ?? category ?? label}</h3>
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${styles.badge}`}>
                 {type}
               </span>
@@ -99,6 +106,10 @@ export default function CategoryTransactionsModal({ category, type, dateRange, o
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
                         {tx.date.slice(0, 10)}
+                        {!category && <span className="ml-1.5 inline-block text-[10px] font-medium bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">{tx.category}</span>}
+                        {tx.labels && tx.labels.split(',').map((l) => (
+                          <span key={l} className="ml-1 inline-block text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">{l}</span>
+                        ))}
                       </p>
                     </div>
                     <span className={`text-sm font-medium whitespace-nowrap flex-shrink-0 ${styles.amount}`}>
