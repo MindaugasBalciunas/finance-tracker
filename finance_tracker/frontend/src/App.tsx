@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/layout/Layout'
 import LoadingSpinner from './components/ui/LoadingSpinner'
+import AuthGate from './components/ui/AuthGate'
 import { DateRangeProvider } from './context/DateRangeContext'
 
 // Each page (and the charts only it uses) loads as its own chunk, so first
@@ -29,6 +30,7 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AuthGate>
       <DateRangeProvider>
         <HashRouter>
           <Routes>
@@ -43,6 +45,7 @@ export default function App() {
           </Routes>
         </HashRouter>
       </DateRangeProvider>
+      </AuthGate>
     </QueryClientProvider>
   )
 }

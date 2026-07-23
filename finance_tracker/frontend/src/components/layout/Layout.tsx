@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
+import SecurityModal from '../ui/SecurityModal'
 
 const navItems = [
   { to: '/', label: 'Dashboard', short: 'Home', icon: '📊' },
@@ -398,6 +399,7 @@ function DeleteAllTransactionsButton({ onDone }: { onDone?: () => void }) {
 
 export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [securityOpen, setSecurityOpen] = useState(false)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -425,6 +427,10 @@ export default function Layout() {
           <div className="flex items-center gap-3 shrink-0">
             <DesktopImportButton />
             <ExportDropdown />
+            <button onClick={() => setSecurityOpen(true)}
+              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
+              Security
+            </button>
             <DesktopDeleteAllButton />
             <a href="http://localhost:8080/swagger/index.html" target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline">API Docs</a>
@@ -472,6 +478,17 @@ export default function Layout() {
               {/* Export */}
               <ExportSection />
               <div className="border-t border-gray-100" />
+              {/* Security */}
+              <div>
+                <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Security</p>
+                <button
+                  onClick={() => { setSecurityOpen(true); setDrawerOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  🔒 App lock & fingerprint
+                </button>
+              </div>
+              <div className="border-t border-gray-100" />
               {/* Danger zone */}
               <div>
                 <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Danger zone</p>
@@ -486,6 +503,9 @@ export default function Layout() {
           </div>
         </div>
       )}
+
+      {/* ── Security settings ── */}
+      {securityOpen && <SecurityModal onClose={() => setSecurityOpen(false)} />}
 
       {/* ── Main content ── */}
       <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">

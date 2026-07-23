@@ -32,6 +32,7 @@ func main() {
 	}
 
 	// Repositories
+	authRepo := repository.NewAuthRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
 	balRepo := repository.NewBalanceRepository(db)
 	insightRepo := repository.NewInsightRepository(db)
@@ -40,6 +41,7 @@ func main() {
 	exportLogRepo := repository.NewExportLogRepository(db)
 
 	// Services — balSvc must be created before txSvc (txSvc holds a reference to balSvc)
+	authSvc := service.NewAuthService(authRepo)
 	balSvc := service.NewBalanceService(balRepo, txRepo)
 	txSvc := service.NewTransactionService(txRepo, balSvc)
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc)
@@ -47,6 +49,7 @@ func main() {
 	assetSvc := service.NewAssetService(assetRepo)
 
 	// Handlers
+	authHandler := handler.NewAuthHandler(authSvc)
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
@@ -67,8 +70,11 @@ func main() {
 	// Swagger UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API routes
+	// API routes — auth routes register before the lock middleware so the
+	// lock screen can talk to them; everything after is guarded.
 	v1 := r.Group("/api/v1")
+	authHandler.RegisterRoutes(v1)
+	v1.Use(authHandler.Middleware())
 	txHandler.RegisterRoutes(v1)
 	balHandler.RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
