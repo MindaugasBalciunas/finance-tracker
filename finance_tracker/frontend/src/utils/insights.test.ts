@@ -4,10 +4,12 @@ import {
   categoryMoverInsights,
   topPayeeInsight,
   largestExpenseInsight,
+  fixedShareInsight,
+  eatingOutInsight,
 } from './insights'
 import type { Transaction, MonthlySummary } from '../types'
 
-function tx(date: string, value: number, category = 'Food', comment = ''): Transaction {
+function tx(date: string, value: number, category = 'Food', comment = '', labels = ''): Transaction {
   return {
     id: Math.round(Math.random() * 1e9),
     date,
@@ -15,6 +17,7 @@ function tx(date: string, value: number, category = 'Food', comment = ''): Trans
     category,
     amount: { value, currency: 'EUR' },
     comment,
+    labels,
     created_at: '',
     updated_at: '',
   } as Transaction
@@ -138,5 +141,70 @@ describe('largestExpenseInsight', () => {
 
   it('stays quiet when everything is small', () => {
     expect(largestExpenseInsight([tx('2026-07-01', 40, 'Food', 'coffee')])).toBeNull()
+  })
+})
+
+describe('label-aware insights', () => {
+  const loanRows = [
+    tx('2026-07-05', 1284, 'Finance', 'EVELINA BALČIŪNIENĖ', 'loan,evelina'),
+    tx('2026-06-05', 1284, 'Finance', 'EVELINA BALČIŪNIENĖ', 'loan,evelina'),
+    tx('2026-05-05', 1284, 'Finance', 'EVELINA BALČIŪNIENĖ', 'loan,evelina'),
+  ]
+  const shopping = [
+    tx('2026-07-06', 120, 'Food', 'LIDL Pilaite', 'groceries,lidl'),
+    tx('2026-07-08', 110, 'Food', 'LIDL Pilaite', 'groceries,lidl'),
+  ]
+
+  it('topPayee skips fixed obligations — a loan is not a merchant', () => {
+    const ins = topPayeeInsight([...loanRows, ...shopping])
+    expect(ins).not.toBeNull()
+    expect(ins!.text).toContain('LIDL')
+    expect(ins!.text).not.toContain('EVELINA')
+  })
+
+  it('largestExpense skips fixed obligations', () => {
+    const ins = largestExpenseInsight([...loanRows, tx('2026-07-09', 450, 'Housing', 'BigBox: Fridge')])
+    expect(ins!.text).toContain('Fridge')
+  })
+
+  it('fixedShare reports pre-committed money', () => {
+    const ins = fixedShareInsight([...loanRows, ...shopping])
+    expect(ins).not.toBeNull()
+    expect(ins!.text).toContain('94%') // 3852 of 4082
+  })
+
+  it('eatingOut compares out vs groceries', () => {
+    const rows = [
+      ...shopping,
+      tx('2026-07-10', 60, 'Food', 'KAVINE BON PIZZA', 'coffee,restaurant'),
+      tx('2026-07-11', 70, 'Food', 'Bolt food', 'delivery'),
+    ]
+    const ins = eatingOutInsight(rows)
+    expect(ins).not.toBeNull()
+    expect(ins!.text).toContain('36%') // 130 out of 360 food money
+    expect(ins!.tone).toBe('info')
+  })
+
+  it('eatingOut warns when eating out beats groceries', () => {
+    const rows = [
+      tx('2026-07-06', 100, 'Food', 'LIDL', 'groceries,lidl'),
+      tx('2026-07-10', 200, 'Food', 'Restoranas', 'restaurant'),
+    ]
+    expect(eatingOutInsight(rows)!.tone).toBe('warn')
+  })
+})
+
+describe('categoryMoverInsights with fixed obligations', () => {
+  it('a recurring alimony starting mid-period is not a category trend', () => {
+    const expenses = [
+      // Kids - General discretionary is flat…
+      tx('2026-05-10', 500, 'Kids - General', 'toys'),
+      tx('2026-06-10', 520, 'Kids - General', 'clothes'),
+      tx('2026-07-10', 510, 'Kids - General', 'books'),
+      // …but alimony transfers begin in June.
+      tx('2026-06-15', 1000, 'Kids - General', 'Aliments 2026.05', 'alimony'),
+      tx('2026-07-17', 1000, 'Kids - General', 'Aliments 2026.06', 'alimony'),
+    ]
+    expect(categoryMoverInsights(expenses, NOW)).toHaveLength(0)
   })
 })

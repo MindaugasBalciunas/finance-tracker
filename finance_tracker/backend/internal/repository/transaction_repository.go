@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -252,6 +253,9 @@ func applyTransactionFilters(query *gorm.DB, filter domain.TransactionFilter) *g
 	if filter.Label != "" {
 		// Labels are stored as "a,b,c" — wrap both sides with commas for exact-token match.
 		query = query.Where("(',' || labels || ',') LIKE ?", "%,"+filter.Label+",%")
+	}
+	if filter.Search != "" {
+		query = query.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(filter.Search)+"%")
 	}
 	return query
 }

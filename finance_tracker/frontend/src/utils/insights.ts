@@ -66,7 +66,10 @@ export function categoryMoverInsights(
   const byCatMonth: Record<string, Record<string, number>> = {}
   const monthSet = new Set<string>()
 
-  for (const tx of expenses) {
+  // Fixed obligations (alimony inside Kids - General, loan inside Finance…)
+  // are not spending decisions — with them in, a recurring transfer that
+  // started mid-period reads as a fake "category up X%" trend.
+  for (const tx of discretionary(expenses)) {
     const mk = monthKey(tx.date)
     monthSet.add(mk)
     const cat = tx.category as string
@@ -110,11 +113,64 @@ export function categoryMoverInsights(
     })
 }
 
-// Groups expenses by comment (the de-facto merchant field) and reports where
-// the most money went in the period.
+// Labels marking fixed obligations and counterparty transfers — money that
+// isn't a spending decision, so it shouldn't dominate spending stories
+// ("most money went to Evelina — 44k across 39 payments" is a loan, not news).
+const FIXED_LABELS = ['loan', 'alimony', 'leasing', 'evelina']
+
+function txLabels(tx: Transaction): string[] {
+  return (tx.labels ?? '').split(',').map((l) => l.trim()).filter(Boolean)
+}
+
+function hasAnyLabel(tx: Transaction, labels: string[]): boolean {
+  const own = txLabels(tx)
+  return labels.some((l) => own.includes(l))
+}
+
+// Discretionary spending only — fixed obligations excluded via labels.
+function discretionary(expenses: Transaction[]): Transaction[] {
+  return expenses.filter((tx) => !hasAnyLabel(tx, FIXED_LABELS))
+}
+
+// Fixed obligations as one line: how much of the period's spending is
+// pre-committed (loan, alimony, leasing) before any choices are made.
+export function fixedShareInsight(expenses: Transaction[]): Insight | null {
+  const total = expenses.reduce((s, tx) => s + tx.amount.value, 0)
+  const fixed = expenses.filter((tx) => hasAnyLabel(tx, FIXED_LABELS))
+  const fixedSum = fixed.reduce((s, tx) => s + tx.amount.value, 0)
+  if (total <= 0 || fixedSum <= 0 || fixed.length < 2) return null
+  const pct = (fixedSum / total) * 100
+  return {
+    icon: '🔒',
+    tone: 'info',
+    text: `Fixed obligations (loan, alimony, leasing): ${formatEuro(fixedSum)} — ${pct.toFixed(0)}% of all spending in the period.`,
+  }
+}
+
+// Eating out (restaurants, fast food, delivery, coffee, bars, lunches)
+// against grocery runs — the classic discretionary lever.
+export function eatingOutInsight(expenses: Transaction[]): Insight | null {
+  const OUT = ['restaurant', 'fast food', 'delivery', 'coffee', 'bars', 'lunch']
+  let out = 0
+  let groceries = 0
+  for (const tx of expenses) {
+    if (hasAnyLabel(tx, OUT)) out += tx.amount.value
+    else if (hasAnyLabel(tx, ['groceries'])) groceries += tx.amount.value
+  }
+  if (out < 50 || groceries <= 0) return null
+  const ratio = (out / (out + groceries)) * 100
+  return {
+    icon: '🍽',
+    tone: ratio >= 50 ? 'warn' : 'info',
+    text: `Eating out cost ${formatEuro(out)} vs ${formatEuro(groceries)} groceries — ${ratio.toFixed(0)}% of food money spent out.`,
+  }
+}
+
+// Groups discretionary expenses by comment (the de-facto merchant field) and
+// reports where the most freely-spent money went.
 export function topPayeeInsight(expenses: Transaction[]): Insight | null {
   const totals: Record<string, { total: number; count: number; label: string }> = {}
-  for (const tx of expenses) {
+  for (const tx of discretionary(expenses)) {
     const raw = (tx.comment ?? '').trim()
     if (!raw) continue
     const key = raw.toLowerCase()
@@ -128,13 +184,13 @@ export function topPayeeInsight(expenses: Transaction[]): Insight | null {
   return {
     icon: '🏷',
     tone: 'info',
-    text: `Most money went to “${label}” — ${formatEuro(top.total)} across ${top.count} payments.`,
+    text: `Top merchant (excluding fixed obligations): “${label}” — ${formatEuro(top.total)} across ${top.count} payments.`,
   }
 }
 
 export function largestExpenseInsight(expenses: Transaction[]): Insight | null {
   let max: Transaction | null = null
-  for (const tx of expenses) {
+  for (const tx of discretionary(expenses)) {
     if (max == null || tx.amount.value > max.amount.value) max = tx
   }
   if (!max || max.amount.value < 100) return null
@@ -156,6 +212,10 @@ export function buildInsights(
   const pace = spendPaceInsight(byMonth, now)
   if (pace) items.push(pace)
   items.push(...categoryMoverInsights(expenses, now))
+  const fixed = fixedShareInsight(expenses)
+  if (fixed) items.push(fixed)
+  const eating = eatingOutInsight(expenses)
+  if (eating) items.push(eating)
   const payee = topPayeeInsight(expenses)
   if (payee) items.push(payee)
   const largest = largestExpenseInsight(expenses)

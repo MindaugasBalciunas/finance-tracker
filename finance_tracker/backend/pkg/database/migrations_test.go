@@ -174,7 +174,8 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.Contains(t, labelsOf(t, db, boltFood), "delivery")
 	assert.Contains(t, labelsOf(t, db, iki), "groceries")
 	assert.NotContains(t, labelsOf(t, db, laisvalaikis), "groceries", "'iki ' must not match LAISVALAIKIO")
-	assert.Contains(t, labelsOf(t, db, mokiVezi), "groceries", "unhyphenated MOKI VEZI matches")
+	assert.Contains(t, labelsOf(t, db, mokiVezi), "diy", "Moki Veži is a DIY chain")
+	assert.NotContains(t, labelsOf(t, db, mokiVezi), "groceries", "Moki Veži is not groceries")
 	assert.Contains(t, labelsOf(t, db, insurance), "insurance")
 	assert.Contains(t, labelsOf(t, db, fee), "fees")
 	assert.Contains(t, labelsOf(t, db, hotel), "hotel")
@@ -185,7 +186,6 @@ func TestNewContextLabelRules(t *testing.T) {
 
 	// Store labels stack on top of the generic groceries label.
 	assert.Contains(t, labelsOf(t, db, iki), "iki")
-	assert.Contains(t, labelsOf(t, db, mokiVezi), "moki-vezi")
 	assert.Contains(t, labelsOf(t, db, barbora), "barbora")
 	assert.NotContains(t, labelsOf(t, db, laisvalaikis), "iki", "'iki ' store label must not match LAISVALAIKIO")
 
@@ -195,6 +195,56 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.Contains(t, labelsOf(t, db, maxima), "maxima")
 	assert.Contains(t, labelsOf(t, db, maxima), "groceries")
 	assert.NotContains(t, labelsOf(t, db, norfaPharm), "norfa", "NORFOS VAISTINE is pharmacy, not the store")
+}
+
+func TestRetailChainCorrections(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	moki := seedTx(t, db, "expense", "Food", "MOKI-VEZI 06232 VILNIUS")
+	// Simulate the retired grocery labeling from a previous version.
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", moki).
+		Update("labels", "groceries,moki-vezi").Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "groceries", CommentMatch: "moki vezi"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "moki-vezi", CommentMatch: "moki vezi"}).Error)
+	mokiCtx := seedTx(t, db, "expense", "Housing", "Moki vezi, Chemical spray for bugs and water filter salt")
+	tokvila := seedTx(t, db, "expense", "Housing", "TOKVILA ZAL122")
+	senukai := seedTx(t, db, "expense", "Housing", "UAB KESKO SENUKAI DIGITAL")
+	pigu := seedTx(t, db, "expense", "Entertainment", "UAB PIGU")
+	lidl := seedTx(t, db, "expense", "Food", "LIDL/60182 LIDL PILAIT 06293 VILNIUS")
+
+	applyDataCleanups(db)
+	applyCategoryMigrations(db)
+
+	// Comments unified for pure bank strings, context comments untouched.
+	assert.Equal(t, "Moki Veži", commentOf(t, db, moki))
+	assert.Equal(t, "Moki vezi, Chemical spray for bugs and water filter salt", commentOf(t, db, mokiCtx))
+	assert.Equal(t, "Kesko Senukai", commentOf(t, db, senukai))
+	assert.Equal(t, "Pigu.lt", commentOf(t, db, pigu))
+
+	// Categories: Moki Veži Food→Housing, Tokvila Housing→Transport.
+	assert.Equal(t, "Housing", categoryOf(t, db, moki))
+	assert.Equal(t, "Transport", categoryOf(t, db, tokvila))
+	assert.Equal(t, "Food", categoryOf(t, db, lidl), "real groceries stay")
+
+	// Labels: diy replaces groceries/moki-vezi on DIY chains.
+	assert.Equal(t, "diy", labelsOf(t, db, moki))
+	assert.Contains(t, labelsOf(t, db, mokiCtx), "diy")
+	assert.Contains(t, labelsOf(t, db, senukai), "diy")
+	assert.Contains(t, labelsOf(t, db, pigu), "electronics")
+	assert.Contains(t, labelsOf(t, db, lidl), "groceries")
+
+	// Retired rules gone even if imported back from an old export.
+	var stale int64
+	db.Model(&domain.LabelRule{}).Where("label = 'moki-vezi' OR (label = 'groceries' AND comment_match LIKE 'moki%')").Count(&stale)
+	assert.EqualValues(t, 0, stale)
+
+	// Idempotent.
+	applyDataCleanups(db)
+	applyCategoryMigrations(db)
+	assert.Equal(t, "diy", labelsOf(t, db, moki))
+	assert.Equal(t, "Moki Veži", commentOf(t, db, moki))
 }
 
 func TestUserLabelRules(t *testing.T) {

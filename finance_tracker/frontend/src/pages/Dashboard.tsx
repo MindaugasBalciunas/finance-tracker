@@ -13,6 +13,8 @@ import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import AIInsightCard from '../components/ui/AIInsightCard'
 import InsightsPanel from '../components/ui/InsightsPanel'
+import BudgetPulseCard from '../components/ui/BudgetPulseCard'
+import TopLabelsCard from '../components/ui/TopLabelsCard'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { useDateRange } from '../context/DateRangeContext'
 
@@ -166,6 +168,12 @@ export default function Dashboard() {
       {allExpenses && summary?.by_month && (
         <InsightsPanel expenses={allExpenses.data} byMonth={summary.by_month} />
       )}
+      </div>
+
+      {/* Budget pulse + label story — the "what can I spend, where does it go" row */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+        <BudgetPulseCard />
+        {allExpenses && <TopLabelsCard expenses={allExpenses.data} />}
       </div>
 
       {/* AI financial overview */}

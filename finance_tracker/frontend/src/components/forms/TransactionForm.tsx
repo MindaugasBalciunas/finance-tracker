@@ -297,7 +297,10 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               <button
                 key={l}
                 type="button"
-                onClick={() => addLabelChip(l)}
+                // preventDefault on mousedown keeps focus in the input, so its
+                // onBlur can't commit a half-typed draft before this click.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { addLabelChip(l); setLabelDraft('') }}
                 className="inline-block text-[11px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded px-1.5 py-0.5 mr-1 mb-1 hover:bg-indigo-100"
               >
                 + {l}

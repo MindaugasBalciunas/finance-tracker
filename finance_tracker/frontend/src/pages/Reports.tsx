@@ -19,7 +19,6 @@ const STORE_NAMES: Record<string, string> = {
   iki: 'IKI',
   rimi: 'Rimi',
   norfa: 'Norfa',
-  'moki-vezi': 'Moki-Veži',
   barbora: 'Barbora (delivery)',
 }
 

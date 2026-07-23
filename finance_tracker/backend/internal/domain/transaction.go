@@ -134,6 +134,8 @@ type TransactionFilter struct {
 	Type     *TransactionType
 	Category *Category
 	Label    string
+	// Search is a case-insensitive substring match on the comment.
+	Search   string
 	Page     int
 	PageSize int
 }

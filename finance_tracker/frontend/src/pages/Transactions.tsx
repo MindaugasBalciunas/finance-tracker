@@ -37,11 +37,20 @@ export default function Transactions() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20, ...dateRange })
+  const [searchDraft, setSearchDraft] = useState('')
 
   // Sync global date range into local filter
   useEffect(() => {
     setFilter((f) => ({ ...f, date_from: dateRange.date_from, date_to: dateRange.date_to, page: 1 }))
   }, [dateRange])
+
+  // Debounced comment search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilter((f) => ({ ...f, search: searchDraft.trim() || undefined, page: 1 }))
+    }, 350)
+    return () => clearTimeout(t)
+  }, [searchDraft])
 
   const { data, isLoading } = useTransactions(filter)
   const { data: allLabels = [] } = useLabels()
@@ -133,6 +142,16 @@ export default function Transactions() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-40">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+          <input
+            type="search"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Search comments…"
+            className="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <select
           value={filter.type ?? ''}
           onChange={(e) => setFilter((f) => ({ ...f, type: (e.target.value as TransactionType) || undefined, page: 1 }))}
@@ -164,7 +183,7 @@ export default function Transactions() {
           ))}
         </select>
         <button
-          onClick={() => { setFilter({ page: 1, page_size: 20, ...dateRange }) }}
+          onClick={() => { setSearchDraft(''); setFilter({ page: 1, page_size: 20, ...dateRange }) }}
           className="text-sm text-gray-500 hover:text-gray-800 underline"
         >
           Clear

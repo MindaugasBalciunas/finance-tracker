@@ -131,6 +131,21 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 		return nil, err
 	}
 
+	// Remember which rules matched the row BEFORE the edit: a rule that
+	// matched then and still matches now must NOT re-add its label — the
+	// user removing it is an explicit decision. Only rules that start
+	// matching because of this edit (changed comment/category) may add.
+	matchedBefore := map[string]bool{}
+	if s.ruleSrc != nil {
+		if rules, err := s.ruleSrc.ListRules(); err == nil {
+			for _, rule := range rules {
+				if rule.Matches(tx) {
+					matchedBefore[rule.Label+"|"+rule.Category+"|"+rule.CommentMatch] = true
+				}
+			}
+		}
+	}
+
 	if input.Date != "" {
 		date, err := timeutil.ParseDate(input.Date)
 		if err != nil {
@@ -156,13 +171,14 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	tx.DebitAccount = input.DebitAccount
 	tx.CreditAccount = input.CreditAccount
 
-	// Deterministic labeling: re-evaluate rules after edits so a changed
-	// comment/category still ends up correctly tagged (labels only added,
-	// never removed — manual tags stay).
+	// Deterministic labeling on edits: only rules that NEWLY match (because
+	// the comment/category changed) add their label. Rules that already
+	// matched before the edit stay silent, so explicit label removals stick.
 	if s.ruleSrc != nil {
 		if rules, err := s.ruleSrc.ListRules(); err == nil {
 			for _, rule := range rules {
-				if rule.Matches(tx) {
+				key := rule.Label + "|" + rule.Category + "|" + rule.CommentMatch
+				if rule.Matches(tx) && !matchedBefore[key] {
 					tx.AddLabel(rule.Label)
 				}
 			}

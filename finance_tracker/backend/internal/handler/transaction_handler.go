@@ -247,6 +247,9 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 	if v := c.Query("label"); v != "" {
 		filter.Label = strings.ToLower(strings.TrimSpace(v))
 	}
+	if v := c.Query("search"); v != "" {
+		filter.Search = strings.TrimSpace(v)
+	}
 	if v := c.Query("page"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p > 0 {
 			filter.Page = p

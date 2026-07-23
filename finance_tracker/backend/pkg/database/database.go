@@ -118,6 +118,18 @@ func applyDataCleanups(db *gorm.DB) {
 	db.Exec(`UPDATE transactions SET comment = 'Gym Plius'
 		WHERE comment IN ('Gym plius', 'Gymplius', 'GymPlius (health)')`)
 	db.Exec(`UPDATE transactions SET comment = 'iLunch' WHERE LOWER(TRIM(comment)) = 'ilunch'`)
+
+	// Retail-chain bank strings (merchant + terminal + city noise) → one
+	// canonical merchant name. User-written comments with extra context
+	// (e.g. "Moki vezi, Chemical spray…") are left untouched.
+	db.Exec(`UPDATE transactions SET comment = 'Moki Veži'
+		WHERE comment LIKE 'MOKI VEZI %' OR comment LIKE 'MOKI-VEZI %' OR LOWER(TRIM(comment)) IN ('moki veži.', 'moki veži', 'moki vezi')`)
+	db.Exec(`UPDATE transactions SET comment = 'Kesko Senukai'
+		WHERE UPPER(comment) LIKE '%KESKO SENUKAI%'`)
+	db.Exec(`UPDATE transactions SET comment = 'Depo'
+		WHERE comment IN ('DEPO VILNIUS', 'DEPO PANEVEZYS')`)
+	db.Exec(`UPDATE transactions SET comment = 'Pigu.lt' WHERE comment = 'UAB PIGU'`)
+	db.Exec(`UPDATE transactions SET comment = 'Varlė.lt' WHERE comment = 'Varle UAB'`)
 }
 
 // applyCategoryMigrations recategorizes known-misfiled transactions by vendor.
@@ -193,7 +205,7 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine", "cafe"},
 		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin", "baltic petrol", "balticpetroleum"},
 		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia", "anteja", "rossmann"},
-		"groceries":  {"maxima", "lidl", "rimi", "norfa", "moki-vezi", "moki vezi", "moki vež", "iki ", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
+		"groceries":  {"maxima", "lidl", "rimi", "norfa", "iki ", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
 		"delivery":   {"wolt", "bolt food", "maisto mylet"},
 		"taxi":       {"uber", "etransport", "bolt.eu", "citybee"},
 		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
@@ -211,13 +223,16 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
 		// Per-store labels (alongside the generic groceries label) so store
 		// totals and average basket size can be compared in Reports.
-		"maxima":    {"maxima"},
-		"lidl":      {"lidl"},
-		"iki":       {"iki "},
-		"rimi":      {"rimi"},
-		"norfa":     {"norfa"},
-		"moki-vezi": {"moki-vezi", "moki vezi", "moki vež"},
-		"barbora":   {"barbora"},
+		"maxima":  {"maxima"},
+		"lidl":    {"lidl"},
+		"iki":     {"iki "},
+		"rimi":    {"rimi"},
+		"norfa":   {"norfa"},
+		"barbora": {"barbora"},
+		// Moki Veži/Senukai/Depo are DIY & building-materials chains, and
+		// Pigu/Varlė are electronics e-shops — not groceries.
+		"diy":         {"moki vež", "moki vezi", "moki-vezi", "senukai", "kesko", "depo", "ermita", "ikea"},
+		"electronics": {"pigu", "varle", "varlė", "electronic trade", "mk trade", "samsung", "technikos centr"},
 		// Rules behind labels the user created by hand, so future rows
 		// self-apply and history backfills.
 		"security":   {"argus", "saugos tarnyba"},
@@ -253,6 +268,31 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`UPDATE transactions
 		SET labels = TRIM(REPLACE(',' || labels || ',', ',fast food,', ','), ',')
 		WHERE LOWER(comment) LIKE '%bbq burger%' AND (',' || labels || ',') LIKE '%,fast food,%'`)
+
+	// Moki Veži is a DIY chain, not a grocery store: retire its groceries
+	// patterns and per-store label, strip both labels from its rows, and
+	// refile the rows misfiled under Food. Tokvila is RAV4 tyre service →
+	// Transport.
+	db.Exec(`DELETE FROM label_rules WHERE label = 'groceries' AND comment_match IN ('moki-vezi', 'moki vezi', 'moki vež')`)
+	db.Exec(`DELETE FROM label_rules WHERE label = 'moki-vezi'`)
+	for _, l := range []string{"groceries", "moki-vezi"} {
+		db.Exec(`UPDATE transactions
+			SET labels = TRIM(REPLACE(',' || labels || ',', ',`+l+`,', ','), ',')
+			WHERE (LOWER(comment) LIKE '%moki vež%' OR LOWER(comment) LIKE '%moki vezi%' OR LOWER(comment) LIKE '%moki-vezi%')
+			AND (',' || labels || ',') LIKE '%,`+l+`,%'`)
+	}
+	db.Exec(`UPDATE transactions SET category = 'Housing'
+		WHERE type = 'expense' AND category = 'Food'
+		AND (LOWER(comment) LIKE '%moki vež%' OR LOWER(comment) LIKE '%moki vezi%' OR LOWER(comment) LIKE '%moki-vezi%')`)
+	db.Exec(`UPDATE transactions SET category = 'Transport'
+		WHERE type = 'expense' AND category = 'Housing' AND UPPER(comment) LIKE '%TOKVILA%'`)
+
+	// Rows entered without an account almost certainly went through the
+	// Swedbank card (the everyday account) — default the money side.
+	db.Exec(`UPDATE transactions SET debit_account = 'swed'
+		WHERE type IN ('expense', 'investment') AND (debit_account IS NULL OR debit_account = '')`)
+	db.Exec(`UPDATE transactions SET credit_account = 'swed'
+		WHERE type = 'income' AND (credit_account IS NULL OR credit_account = '')`)
 	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
 	// as a standing rule, new ones are caught by the category suggestion.
 	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
