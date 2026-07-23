@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAllTransactions } from '../../hooks/useTransactions'
 import LoadingSpinner from './LoadingSpinner'
 import { formatEuro } from '../../utils/format'
@@ -36,7 +36,24 @@ export default function CategoryTransactionsModal({ category, label, title, type
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const transactions = data?.data ?? []
+  const allTransactions = data?.data ?? []
+  const [activeLabel, setActiveLabel] = useState<string | null>(null)
+
+  // Sums per label across the fetched set — a transaction with several labels
+  // counts toward each (labels are overlapping views, not splits).
+  const labelSums = useMemo(() => {
+    const sums: Record<string, number> = {}
+    for (const tx of allTransactions) {
+      for (const l of (tx.labels ?? '').split(',').filter(Boolean)) {
+        sums[l] = (sums[l] ?? 0) + tx.amount.value
+      }
+    }
+    return Object.entries(sums).sort((a, b) => b[1] - a[1])
+  }, [allTransactions])
+
+  const transactions = activeLabel
+    ? allTransactions.filter((tx) => (tx.labels ?? '').split(',').includes(activeLabel))
+    : allTransactions
   const total = transactions.reduce((s, tx) => s + tx.amount.value, 0)
   const styles = TYPE_STYLES[type]
 
@@ -74,6 +91,28 @@ export default function CategoryTransactionsModal({ category, label, title, type
             ×
           </button>
         </div>
+
+        {labelSums.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-4 sm:px-6 py-2.5 border-b border-gray-100">
+            {labelSums.map(([l, sum]) => (
+              <button
+                key={l}
+                onClick={() => setActiveLabel(activeLabel === l ? null : l)}
+                className={`inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1 border transition-colors ${
+                  activeLabel === l
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+                }`}
+              >
+                {l}
+                <span className={activeLabel === l ? 'text-indigo-200' : 'text-indigo-400'}>{formatEuro(sum)}</span>
+              </button>
+            ))}
+            {activeLabel && (
+              <button onClick={() => setActiveLabel(null)} className="text-xs text-gray-400 hover:text-gray-600 px-1">clear</button>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="py-12">

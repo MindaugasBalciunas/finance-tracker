@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
@@ -17,9 +17,23 @@ export default function Reports() {
     category: Category
     type: TransactionType
   } | null>(null)
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
 
   const { data: summary, isLoading } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
+
+  // Spending grouped by label — a transaction with several labels counts in each.
+  const labelSpend = useMemo(() => {
+    const sums: Record<string, { total: number; count: number }> = {}
+    for (const tx of allExpenses?.data ?? []) {
+      for (const l of (tx.labels ?? '').split(',').filter(Boolean)) {
+        if (!sums[l]) sums[l] = { total: 0, count: 0 }
+        sums[l].total += tx.amount.value
+        sums[l].count += 1
+      }
+    }
+    return Object.entries(sums).sort((a, b) => b[1].total - a[1].total).slice(0, 14)
+  }, [allExpenses])
 
   const savings = summary ? summary.total_income - summary.total_expenses : null
   const savingsRate = summary && summary.total_income > 0
@@ -278,6 +292,40 @@ export default function Reports() {
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-16 text-center">
           <p className="text-gray-500">No transaction data available yet.</p>
         </div>
+      )}
+
+      {/* Spending by label */}
+      {labelSpend.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">Spending by Label</h3>
+          <p className="text-xs text-gray-400 mb-4">Labels across all categories in the period — click one to see its transactions</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-2">
+            {labelSpend.map(([label, { total, count }]) => {
+              const max = labelSpend[0][1].total
+              return (
+                <button key={label} onClick={() => setSelectedLabel(label)} className="text-left group">
+                  <div className="flex items-center justify-between text-sm mb-0.5">
+                    <span className="font-medium text-indigo-700 group-hover:text-indigo-900">{label}</span>
+                    <span className="text-gray-700 font-semibold">{formatEuro(total)} <span className="text-xs text-gray-400 font-normal">({count})</span></span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-400 rounded-full group-hover:bg-indigo-600" style={{ width: `${(total / max) * 100}%` }} />
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {selectedLabel && (
+        <CategoryTransactionsModal
+          title={`Label: ${selectedLabel}`}
+          label={selectedLabel}
+          type="expense"
+          dateRange={dateRange}
+          onClose={() => setSelectedLabel(null)}
+        />
       )}
 
       {selectedCategory && (
