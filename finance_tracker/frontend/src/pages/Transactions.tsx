@@ -13,6 +13,7 @@ import type { Transaction, TransactionFilter, TransactionType, Category, CreateT
 import { ACCOUNT_LABELS } from '../types'
 import { CATEGORIES } from '../constants/categories'
 import { useDateRange } from '../context/DateRangeContext'
+import { useLabels } from '../hooks/useBudgets'
 
 function label(key: string) {
   return ACCOUNT_LABELS[key as AccountKey] ?? key
@@ -43,6 +44,7 @@ export default function Transactions() {
   }, [dateRange])
 
   const { data, isLoading } = useTransactions(filter)
+  const { data: allLabels = [] } = useLabels()
   const createMutation = useCreateTransaction()
   const updateMutation = useUpdateTransaction()
   const deleteMutation = useDeleteTransaction()
@@ -149,6 +151,16 @@ export default function Transactions() {
           <option value="">All categories</option>
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select
+          value={filter.label ?? ''}
+          onChange={(e) => setFilter((f) => ({ ...f, label: e.target.value || undefined, page: 1 }))}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+        >
+          <option value="">All labels</option>
+          {allLabels.map((l) => (
+            <option key={l} value={l}>{l}</option>
           ))}
         </select>
         <button

@@ -305,6 +305,7 @@ export interface TransactionFilter {
   date_to?: string
   type?: TransactionType
   category?: Category
+  label?: string
   page?: number
   page_size?: number
 }

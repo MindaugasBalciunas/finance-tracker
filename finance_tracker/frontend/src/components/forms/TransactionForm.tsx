@@ -76,9 +76,21 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
     .slice(0, 8)
 
+  const [labelDraft, setLabelDraft] = useState('')
+
   function addLabelChip(label: string) {
-    const next = [...currentLabels, label].join(',')
-    setValue('labels', next)
+    const l = label.trim().toLowerCase()
+    if (!l || currentLabels.includes(l)) return
+    setValue('labels', [...currentLabels, l].join(','))
+  }
+
+  function removeLabel(label: string) {
+    setValue('labels', currentLabels.filter((x) => x !== label).join(','))
+  }
+
+  function commitLabelDraft() {
+    if (labelDraft.trim()) addLabelChip(labelDraft)
+    setLabelDraft('')
   }
 
   // Category suggestion from similar historical transactions (debounced).
@@ -207,13 +219,39 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Labels</label>
-        <input
-          type="text"
-          {...register('labels')}
-          placeholder="Optional tags, comma-separated (e.g. loan, fixed)"
-          autoComplete="off"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex flex-wrap items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
+          {currentLabels.map((l) => (
+            <span key={l} className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
+              {l}
+              <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 leading-none">×</button>
+            </span>
+          ))}
+          <input
+            type="text"
+            value={labelDraft}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v.includes(',')) {
+                v.split(',').map((part) => part.trim().toLowerCase()).filter(Boolean).forEach(addLabelChip)
+                setLabelDraft('')
+              } else {
+                setLabelDraft(v)
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitLabelDraft()
+              } else if (e.key === 'Backspace' && labelDraft === '' && currentLabels.length > 0) {
+                removeLabel(currentLabels[currentLabels.length - 1])
+              }
+            }}
+            onBlur={commitLabelDraft}
+            placeholder={currentLabels.length === 0 ? 'Add labels (Enter or comma to confirm)…' : ''}
+            autoComplete="off"
+            className="flex-1 min-w-28 text-sm focus:outline-none py-0.5"
+          />
+        </div>
         {autoLabels.length > 0 && (
           <p className="text-xs text-gray-500 mt-1.5">
             <span className="text-green-600">⚡ auto:</span>{' '}

@@ -345,3 +345,31 @@ func TestLabels_SurviveExportImport(t *testing.T) {
 	require.NoError(t, db.First(&tx).Error)
 	assert.Equal(t, "test-label,other", tx.Labels)
 }
+
+func TestLabels_MultipleRulesStack(t *testing.T) {
+	r, _ := budgetTestRouter(t)
+
+	// Two independent rules both match one transaction.
+	w := budgetDoJSON(r, "POST", "/api/v1/labels/apply", map[string]any{
+		"label": "groceries", "comment_match": "maxima", "create_rule": true,
+	})
+	require.Equal(t, 200, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/labels/apply", map[string]any{
+		"label": "flowers", "comment_match": "gele", "create_rule": true,
+	})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
+		"date": "2026-07-20", "type": "expense", "amount": 45.0,
+		"category": "Food", "comment": "MAXIMA gėlės ir maistas (geles)",
+	})
+	require.Equal(t, 201, w.Code)
+	assert.Contains(t, w.Body.String(), `"labels":"groceries,flowers"`)
+
+	// Both label filters find it.
+	for _, l := range []string{"groceries", "flowers"} {
+		w = budgetDoJSON(r, "GET", "/api/v1/transactions?label="+l, nil)
+		require.Equal(t, 200, w.Code)
+		assert.Contains(t, w.Body.String(), "MAXIMA")
+	}
+}
