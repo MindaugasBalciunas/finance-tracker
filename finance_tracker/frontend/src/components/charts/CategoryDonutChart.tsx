@@ -5,6 +5,7 @@ import { formatEuro } from '../../utils/format'
 interface Props {
   data: CategorySummary[]
   type: 'expense' | 'income' | 'investment'
+  onSelect?: (category: CategorySummary['category']) => void
 }
 
 const COLORS = [
@@ -25,7 +26,7 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-export default function CategoryDonutChart({ data, type }: Props) {
+export default function CategoryDonutChart({ data, type, onSelect }: Props) {
   const filtered = data.filter((d) => d.type === type).sort((a, b) => b.total - a.total)
 
   if (filtered.length === 0) {
@@ -53,6 +54,8 @@ export default function CategoryDonutChart({ data, type }: Props) {
                 : ''
             }
             labelLine={true}
+            onClick={onSelect ? (d: any) => onSelect(d.category) : undefined}
+            style={onSelect ? { cursor: 'pointer' } : undefined}
           >
             {chartData.map((_, i) => (
               <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -72,7 +75,11 @@ export default function CategoryDonutChart({ data, type }: Props) {
         </thead>
         <tbody>
           {chartData.map((d, i) => (
-            <tr key={d.category} className="border-b border-gray-50 hover:bg-gray-50">
+            <tr
+              key={d.category}
+              className={`border-b border-gray-50 hover:bg-gray-50 ${onSelect ? 'cursor-pointer' : ''}`}
+              onClick={onSelect ? () => onSelect(d.category) : undefined}
+            >
               <td className="py-1.5 pr-2">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />

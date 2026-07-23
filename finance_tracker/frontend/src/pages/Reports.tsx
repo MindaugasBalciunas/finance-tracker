@@ -1,15 +1,22 @@
+import { useState } from 'react'
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
 import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import NetCashFlowChart from '../components/charts/NetCashFlowChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
+import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
+import type { Category, TransactionType } from '../types'
 
 export default function Reports() {
   const { dateRange } = useDateRange()
+  const [selectedCategory, setSelectedCategory] = useState<{
+    category: Category
+    type: TransactionType
+  } | null>(null)
 
   const { data: summary, isLoading } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
@@ -187,12 +194,22 @@ export default function Reports() {
           {summary.by_category?.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-4">Expense Categories</h3>
-                <CategoryDonutChart data={summary.by_category} type="expense" />
+                <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Categories</h3>
+                <p className="text-xs text-gray-400 mb-4">Click a category to see its transactions</p>
+                <CategoryDonutChart
+                  data={summary.by_category}
+                  type="expense"
+                  onSelect={(category) => setSelectedCategory({ category, type: 'expense' })}
+                />
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-4">Investment Categories</h3>
-                <CategoryDonutChart data={summary.by_category} type="investment" />
+                <h3 className="text-base font-semibold text-gray-900 mb-1">Investment Categories</h3>
+                <p className="text-xs text-gray-400 mb-4">Click a category to see its transactions</p>
+                <CategoryDonutChart
+                  data={summary.by_category}
+                  type="investment"
+                  onSelect={(category) => setSelectedCategory({ category, type: 'investment' })}
+                />
               </div>
             </div>
           )}
@@ -202,6 +219,7 @@ export default function Reports() {
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
                 <h3 className="text-sm font-semibold text-gray-700">Category Detail</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Click a row to see its transactions</p>
               </div>
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
@@ -225,7 +243,11 @@ export default function Reports() {
                         : summary.total_investments
                       const pct = typeTotal > 0 ? (cat.total / typeTotal) * 100 : 0
                       return (
-                        <tr key={i} className="hover:bg-gray-50">
+                        <tr
+                          key={i}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => setSelectedCategory({ category: cat.category, type: cat.type })}
+                        >
                           <td className="px-4 py-2 text-gray-700">{cat.category}</td>
                           <td className="px-4 py-2">
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
@@ -252,6 +274,15 @@ export default function Reports() {
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-16 text-center">
           <p className="text-gray-500">No transaction data available yet.</p>
         </div>
+      )}
+
+      {selectedCategory && (
+        <CategoryTransactionsModal
+          category={selectedCategory.category}
+          type={selectedCategory.type}
+          dateRange={dateRange}
+          onClose={() => setSelectedCategory(null)}
+        />
       )}
     </div>
   )

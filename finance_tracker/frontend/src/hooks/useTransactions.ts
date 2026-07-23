@@ -25,6 +25,17 @@ export function useAllExpenses(filter: Pick<TransactionFilter, 'date_from' | 'da
   })
 }
 
+export function useAllTransactions(
+  filter: Omit<TransactionFilter, 'page' | 'page_size'> = {},
+  enabled = true
+) {
+  return useQuery({
+    queryKey: [TRANSACTIONS_KEY, 'all', filter],
+    queryFn: () => transactionsApi.listAll(filter),
+    enabled,
+  })
+}
+
 export function useTransactionSummary(filter: Pick<TransactionFilter, 'date_from' | 'date_to'> = {}) {
   return useQuery({
     queryKey: [SUMMARY_KEY, filter],
