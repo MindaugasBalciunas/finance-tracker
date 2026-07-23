@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAllTransactions, useTransactionSummary } from '../hooks/useTransactions'
 import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings } from '../hooks/useBudgets'
 import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
+import type { MonthPlan } from '../utils/budget'
 import { ltNetSalary } from '../utils/ltSalary'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
@@ -59,6 +61,61 @@ function AllocationBar({ incomeBase, fixed, investments, spent, remaining }: {
             <span className="text-gray-500">{s.key}</span>
             <span className="font-semibold text-gray-800">{formatEuro(s.key === 'Left' ? remaining : s.value)}</span>
           </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const PLAN_COLORS = ['#f97316', '#eab308', '#14b8a6', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e']
+
+// Donut of the month's plan: fixed as one prominent slice, investments,
+// each spending limit, and whatever income stays unallocated.
+function PlanPie({ plan }: { plan: MonthPlan }) {
+  const slices: { name: string; value: number; color: string }[] = []
+  if (plan.fixedPlanned > 0) slices.push({ name: 'Fixed obligations', value: plan.fixedPlanned, color: '#475569' })
+  if (plan.investmentPlanned > 0) slices.push({ name: 'Investments', value: plan.investmentPlanned, color: '#3b82f6' })
+  plan.spending.forEach(({ budget }, i) => {
+    slices.push({ name: budget.name, value: budget.amount, color: PLAN_COLORS[i % PLAN_COLORS.length] })
+  })
+  if (plan.incomeBase != null) {
+    const allocated = slices.reduce((s, x) => s + x.value, 0)
+    const free = plan.incomeBase - allocated
+    if (free > 0.5) slices.push({ name: 'Unallocated', value: free, color: '#22c55e' })
+  }
+  if (slices.length === 0) return null
+  const total = slices.reduce((s, x) => s + x.value, 0)
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Plan composition</p>
+      <ResponsiveContainer width="100%" height={215}>
+        <PieChart>
+          <Pie
+            data={slices}
+            cx="50%" cy="50%"
+            innerRadius={44} outerRadius={72}
+            dataKey="value" nameKey="name"
+            label={({ percent }) => (percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : '')}
+            labelLine={false}
+            isAnimationActive={false}
+          >
+            {slices.map((sl, i) => (
+              <Cell key={i} fill={sl.color} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v: number, name: string) => [formatEuro(v), name]} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="space-y-0.5 mt-1">
+        {slices.map((sl) => (
+          <div key={sl.name} className="flex items-center justify-between text-xs">
+            <span className="inline-flex items-center gap-1.5 text-gray-500 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: sl.color }} />
+              <span className="truncate">{sl.name}</span>
+            </span>
+            <span className="text-gray-700 font-medium whitespace-nowrap">{formatEuro(sl.value)} <span className="text-gray-400 font-normal">{((sl.value / total) * 100).toFixed(0)}%</span></span>
+          </div>
         ))}
       </div>
     </div>
@@ -253,6 +310,8 @@ export default function Budget() {
         <>
           {/* Safe to spend */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr,320px] gap-6">
+            <div>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
               {daysLeft != null && plan.safeToSpend != null && plan.safeToSpend > 0 && (
@@ -296,6 +355,9 @@ export default function Budget() {
                 ✎ edit
               </button>
             </p>
+            </div>
+            <PlanPie plan={plan} />
+            </div>
           </div>
 
           {/* Fixed obligations + investment targets — side by side on desktop */}
@@ -412,28 +474,41 @@ export default function Budget() {
             )}
             <div className="space-y-3">
               {plan.spending.map(({ budget, actual }) => {
-                const pct = Math.min((actual / budget.amount) * 100, 100)
+                const usedPct = budget.amount > 0 ? (actual / budget.amount) * 100 : 0
                 const over = actual > budget.amount
                 const near = !over && actual > budget.amount * 0.8
                 return (
-                  <div key={budget.id}>
+                  <div key={budget.id} className={over ? 'bg-red-50 border border-red-200 rounded-lg p-3 -mx-1' : ''}>
                     <div className="flex items-center justify-between gap-3 mb-1">
-                      <p className="text-sm font-medium text-gray-800">{budget.name}</p>
+                      <p className={`text-sm font-medium ${over ? 'text-red-800' : 'text-gray-800'}`}>
+                        {over && '⚠ '}{budget.name}
+                      </p>
                       <div className="flex items-center gap-2">
                         <span className={`text-sm font-semibold ${over ? 'text-red-600' : near ? 'text-yellow-600' : 'text-gray-700'}`}>
                           {formatEuro(actual)} / {formatEuro(budget.amount)}
+                          <span className={`ml-1.5 text-xs font-bold ${over ? 'text-red-600' : near ? 'text-yellow-600' : 'text-gray-400'}`}>
+                            {usedPct.toFixed(0)}%
+                          </span>
                         </span>
                         <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
                       </div>
                     </div>
-                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${over ? 'bg-red-500' : near ? 'bg-yellow-400' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
-                    </div>
+                    {over ? (
+                      // Full bar = actual spend; light part is the limit, dark red is the overflow.
+                      <div className="flex h-2.5 rounded-full overflow-hidden bg-red-100">
+                        <div className="h-full bg-red-400" style={{ width: `${(budget.amount / actual) * 100}%` }} />
+                        <div className="h-full bg-red-700" style={{ width: `${(1 - budget.amount / actual) * 100}%` }} />
+                      </div>
+                    ) : (
+                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${near ? 'bg-yellow-400' : 'bg-green-500'}`} style={{ width: `${Math.min(usedPct, 100)}%` }} />
+                      </div>
+                    )}
                     <p className="text-xs mt-1 text-gray-400">
                       Spent <span className="font-medium text-gray-600">{formatEuro(actual)}</span>
                       {over
-                        ? <> · <span className="text-red-500 font-medium">{formatEuro(actual - budget.amount)} over budget</span></>
-                        : <> · <span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</>}
+                        ? <> · <span className="text-red-600 font-semibold">{formatEuro(actual - budget.amount)} over (+{(usedPct - 100).toFixed(0)}%)</span></>
+                        : <> · <span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left ({Math.max(100 - usedPct, 0).toFixed(0)}%)</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</>}
                     </p>
                   </div>
                 )
