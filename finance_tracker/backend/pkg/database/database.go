@@ -251,6 +251,15 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"work lunch": {"work lunch", "team lunch", "su kolega", "colleag", "ilunch", "darbo piet"},
 		"nexos":      {"nexos"},
 		"ibkr":       {"ibkr"},
+		// Employer labels on salary rows — backfills statement imports that
+		// predate employer labeling and keeps future rows consistent.
+		"vipps mobilepay": {"vipps"},
+		"mobilepay":       {"mobilepay a/s"},
+		"danske":          {"danske bank"},
+		"barclays":        {"barclays"},
+		"doclogix":        {"doclogix"},
+		"app camp":        {"app camp"},
+		"pvcase":          {"pvcase"},
 	}
 	for label, patterns := range contextLabels {
 		for _, p := range patterns {

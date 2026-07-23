@@ -293,9 +293,14 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 			if payee == "" {
 				base.Comment = "Card refund (Swedbank)"
 			}
-		case strings.Contains(up, "MOBILEPAY") || strings.Contains(up, "VIPPS"):
+		case strings.Contains(up, "VIPPS"):
 			base.Category = "Salary"
 			base.Comment = payee
+			base.Labels = "vipps mobilepay"
+		case strings.Contains(up, "MOBILEPAY"):
+			base.Category = "Salary"
+			base.Comment = payee
+			base.Labels = "mobilepay"
 		case strings.Contains(up, "DANSKE"):
 			base.Category = "Salary"
 			base.Comment = payee
