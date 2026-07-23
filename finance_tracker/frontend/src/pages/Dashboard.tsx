@@ -1,8 +1,9 @@
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { useBtcEur } from '../hooks/useBtcPrice'
-import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
-import StatCard from '../components/ui/StatCard'
+import { freeCash } from '../utils/balanceGroups'
+import NetWorthHero from '../components/ui/NetWorthHero'
+import CashFlowCard from '../components/ui/CashFlowCard'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
@@ -13,7 +14,6 @@ import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCate
 import AIInsightCard from '../components/ui/AIInsightCard'
 import InsightsPanel from '../components/ui/InsightsPanel'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
-import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
 
 export default function Dashboard() {
@@ -116,119 +116,50 @@ export default function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-8">
 
-      {/* Balance KPI cards — always from latest snapshot */}
+      {/* Net worth hero — latest snapshot + trend + composition */}
       {latestBalance && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-          <StatCard
-            title="Net Worth"
-            value={formatEuro(latestBalance.total)}
-            subtitle="All accounts combined"
-            color="blue"
-          />
-          <StatCard
-            title="Free Cash"
-            value={formatEuro(freeCash(latestBalance))}
-            subtitle="Banks + Cash + Revolut"
-            color="green"
-          />
-          <StatCard
-            title="Investments"
-            value={formatEuro(investments(latestBalance))}
-            subtitle="ETF + Revolut + IBKR"
-            color="blue"
-          />
-          <StatCard
-            title="Pensions"
-            value={formatEuro(pensions(latestBalance))}
-            subtitle="2nd + 3rd Pillar"
-            color="purple"
-          />
-          <StatCard
-            title="Crypto"
-            value={formatEuro(cryptoEur(latestBalance))}
-            subtitle={cryptoSubtitle(latestBalance, liveBtcPrice)}
-            color="yellow"
-          />
-        </div>
+        <NetWorthHero
+          balance={latestBalance}
+          btcPrice={liveBtcPrice}
+          trend={trend}
+          change={netWorthChange}
+          changePct={netWorthChangePct}
+        />
       )}
 
-      {/* Period insights */}
+      {/* Cash flow of the selected period */}
       {summary && (
-        <div>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-            {dateRange.date_from ? `From ${dateRange.date_from}${dateRange.date_to ? ` to ${dateRange.date_to}` : ''}` : 'All-time'} period insights
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <StatCard
-              title="Net Saved"
-              value={netSaved != null ? formatEuro(netSaved) : '—'}
-              subtitle="Income minus expenses"
-              color={netSaved != null && netSaved >= 0 ? 'green' : 'red'}
-            />
-            <StatCard
-              title="Savings Rate"
-              value={
-                savingsRate != null
-                  ? `${savingsRate.toFixed(1)}%`
-                  : projectedSavingsRate != null
-                  ? `~${projectedSavingsRate.toFixed(1)}%`
-                  : '—'
-              }
-              subtitle={
-                savingsRate != null
-                  ? (periodIncludesCurrentMonth && salaryDropped ? 'Month in progress' : periodIncludesCurrentMonth ? 'Complete months only' : 'Of income kept')
-                  : projectedSavingsRate != null
-                  ? `⚠ Projected — salary pending`
-                  : 'No data yet'
-              }
-              color={
-                savingsRate != null
-                  ? (savingsRate >= 20 ? 'green' : savingsRate >= 0 ? 'yellow' : 'red')
-                  : projectedSavingsRate != null
-                  ? (projectedSavingsRate >= 20 ? 'green' : projectedSavingsRate >= 0 ? 'yellow' : 'red')
-                  : 'yellow'
-              }
-            />
-            <StatCard
-              title="Avg Monthly Spend"
-              value={avgMonthlySpend != null ? formatEuro(avgMonthlySpend) : '—'}
-              subtitle={`Over ${completeMonths.length} complete month${completeMonths.length !== 1 ? 's' : ''}`}
-              color="blue"
-            />
-            <StatCard
-              title="Net Worth Change"
-              value={netWorthChange != null ? formatEuro(netWorthChange) : '—'}
-              subtitle={netWorthChangePct != null ? `${netWorthChangePct >= 0 ? '+' : ''}${netWorthChangePct.toFixed(1)}% in period` : 'From first to last snapshot'}
-              color={netWorthChange != null && netWorthChange >= 0 ? 'green' : 'red'}
-            />
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-3 sm:mt-4">
-            <StatCard
-              title="Total Income"
-              value={formatEuro(summary.total_income)}
-              subtitle="All recorded income"
-              color="green"
-            />
-            <StatCard
-              title="Total Expenses"
-              value={formatEuro(summary.total_expenses)}
-              subtitle="All recorded expenses"
-              color="red"
-            />
-            <StatCard
-              title="Total Invested"
-              value={formatEuro(summary.total_investments)}
-              subtitle="Investment transactions"
-              color="purple"
-            />
-            <StatCard
-              title="Savings Runway"
-              value={runwayMonths != null ? `${runwayMonths.toFixed(1)} months` : '—'}
-              subtitle="Free cash ÷ avg monthly spend"
-              color={runwayMonths == null ? 'yellow' : runwayMonths >= 6 ? 'green' : runwayMonths >= 3 ? 'yellow' : 'red'}
-            />
-          </div>
-        </div>
+        <CashFlowCard
+          periodLabel={dateRange.date_from ? `From ${dateRange.date_from}${dateRange.date_to ? ` to ${dateRange.date_to}` : ''}` : 'All time'}
+          income={summary.total_income}
+          expenses={summary.total_expenses}
+          invested={summary.total_investments}
+          netSaved={netSaved}
+          savingsRateValue={
+            savingsRate != null
+              ? `${savingsRate.toFixed(1)}%`
+              : projectedSavingsRate != null
+              ? `~${projectedSavingsRate.toFixed(1)}%`
+              : '—'
+          }
+          savingsRateSubtitle={
+            savingsRate != null
+              ? (periodIncludesCurrentMonth && salaryDropped ? 'month in progress' : periodIncludesCurrentMonth ? 'complete months only' : 'of income kept')
+              : projectedSavingsRate != null
+              ? '⚠ projected — salary pending'
+              : 'no data yet'
+          }
+          savingsRateTone={
+            savingsRate != null
+              ? (savingsRate >= 20 ? 'green' : savingsRate >= 0 ? 'yellow' : 'red')
+              : projectedSavingsRate != null
+              ? (projectedSavingsRate >= 20 ? 'green' : projectedSavingsRate >= 0 ? 'yellow' : 'red')
+              : 'yellow'
+          }
+          avgMonthlySpend={avgMonthlySpend}
+          completeMonthsCount={completeMonths.length}
+          runwayMonths={runwayMonths}
+        />
       )}
 
       {/* Computed insights for the selected period */}
