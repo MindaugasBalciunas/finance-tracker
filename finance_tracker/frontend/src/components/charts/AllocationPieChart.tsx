@@ -58,8 +58,7 @@ const AllocationPieChart = ({ allocations }: Props) => {
             nameKey="account"
             label={isMobile
               ? ({ percentage }) => `${percentage.toFixed(0)}%`
-              : ({ account, percentage, amount }) =>
-                  `${account} ${formatEuro(amount)} (${percentage.toFixed(1)}%)`
+              : ({ account, percentage }) => `${account} ${percentage.toFixed(0)}%`
             }
             labelLine={true}
             isAnimationActive={false}

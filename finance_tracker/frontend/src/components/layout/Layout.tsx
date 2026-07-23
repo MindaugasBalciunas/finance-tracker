@@ -488,7 +488,7 @@ export default function Layout() {
       )}
 
       {/* ── Main content ── */}
-      <main className="flex-1 w-full px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
+      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
         <Outlet />
       </main>
 

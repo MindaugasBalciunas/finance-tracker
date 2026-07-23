@@ -127,7 +127,8 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Cash flow of the selected period */}
+      {/* Cash flow + computed insights — side by side on desktop */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
       {summary && (
         <CashFlowCard
           periodLabel={dateRange.date_from ? `From ${dateRange.date_from}${dateRange.date_to ? ` to ${dateRange.date_to}` : ''}` : 'All time'}
@@ -162,10 +163,10 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Computed insights for the selected period */}
       {allExpenses && summary?.by_month && (
         <InsightsPanel expenses={allExpenses.data} byMonth={summary.by_month} />
       )}
+      </div>
 
       {/* AI financial overview */}
       <AIInsightCard />
@@ -193,14 +194,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Monthly spending pace */}
-      {allExpenses && allExpenses.data.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Spending Pace</h3>
-          <p className="text-xs text-gray-400 mb-4">Cumulative daily expenses per month — steeper slope = faster spending</p>
-          <CumulativeSpendingChart transactions={allExpenses.data} />
-        </div>
-      )}
+      {/* Monthly spending pace + monthly cash flow — side by side on desktop */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+        {allExpenses && allExpenses.data.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Spending Pace</h3>
+            <p className="text-xs text-gray-400 mb-4">Cumulative daily expenses per month — steeper slope = faster spending</p>
+            <CumulativeSpendingChart transactions={allExpenses.data} />
+          </div>
+        )}
+
+        {summary?.by_month && summary.by_month.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Cash Flow</h3>
+            <p className="text-xs text-gray-400 mb-4">Income vs expenses vs investments by month</p>
+            <MonthlyBarChart data={summary.by_month} />
+          </div>
+        )}
+      </div>
 
       {/* Savings rate trend + allocation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -221,32 +232,23 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Monthly cash flow */}
-      {summary?.by_month && summary.by_month.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">Monthly Cash Flow</h3>
-          <p className="text-xs text-gray-400 mb-4">Income vs expenses vs investments by month</p>
-          <MonthlyBarChart data={summary.by_month} />
-        </div>
-      )}
-
       {/* Category breakdown */}
       {summary?.by_category && summary.by_category.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Expenses by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where money is spent</p>
-            <CategoryDonutChart data={summary.by_category} type="expense" />
+            <CategoryDonutChart data={summary.by_category} type="expense" compact />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Income by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where money comes from</p>
-            <CategoryDonutChart data={summary.by_category} type="income" />
+            <CategoryDonutChart data={summary.by_category} type="income" compact />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-1">Investments by Category</h3>
             <p className="text-xs text-gray-400 mb-4">Where capital is deployed</p>
-            <CategoryDonutChart data={summary.by_category} type="investment" />
+            <CategoryDonutChart data={summary.by_category} type="investment" compact />
           </div>
         </div>
       )}

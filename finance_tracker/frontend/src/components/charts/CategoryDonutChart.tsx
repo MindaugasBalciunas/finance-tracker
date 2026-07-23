@@ -8,6 +8,8 @@ interface Props {
   data: CategorySummary[]
   type: 'expense' | 'income' | 'investment'
   onSelect?: (category: CategorySummary['category']) => void
+  // Percent-only labels for narrow containers (e.g. three-across grids).
+  compact?: boolean
 }
 
 const COLORS = [
@@ -28,10 +30,11 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-const CategoryDonutChart = ({ data, type, onSelect }: Props) => {
-  // Long outside labels clip at phone widths — the legend table below carries
-  // the detail there, so mobile shows compact percent-only labels.
+const CategoryDonutChart = ({ data, type, onSelect, compact = false }: Props) => {
+  // Long outside labels clip in narrow containers — the legend table below
+  // carries the detail, so those cases show compact percent-only labels.
   const isMobile = useIsMobile()
+  const compactLabels = compact || isMobile
   const filtered = data.filter((d) => d.type === type).sort((a, b) => b.total - a.total)
 
   if (filtered.length === 0) {
@@ -53,12 +56,10 @@ const CategoryDonutChart = ({ data, type, onSelect }: Props) => {
             outerRadius={isMobile ? 75 : 100}
             dataKey="total"
             nameKey="category"
-            label={isMobile
+            label={compactLabels
               ? ({ percent }) => (percent >= 0.05 ? `${(percent * 100).toFixed(0)}%` : '')
-              : ({ category, total: value, percent }) =>
-                  percent >= 0.05
-                    ? `${category} ${formatEuro(value)} (${(percent * 100).toFixed(1)}%)`
-                    : ''
+              : ({ category, percent }) =>
+                  percent >= 0.05 ? `${category} ${(percent * 100).toFixed(0)}%` : ''
             }
             labelLine={true}
             isAnimationActive={false}
