@@ -285,7 +285,8 @@ export default function Budget() {
             </p>
           </div>
 
-          {/* Fixed obligations */}
+          {/* Fixed obligations + investment targets — side by side on desktop */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 items-start">
           {plan.fixed.length > 0 && (() => {
             const totalPaid = plan.fixed.reduce((s, f) => s + Math.min(f.actual, f.budget.amount), 0)
             const totalOutstanding = Math.max(plan.fixedPlanned - totalPaid, 0)
@@ -376,6 +377,7 @@ export default function Budget() {
               </div>
             </div>
           )}
+          </div>
 
           {/* Spending limits */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
@@ -389,8 +391,10 @@ export default function Budget() {
               </button>
             </div>
             <p className="text-xs text-gray-400 mb-3">{KIND_INFO.spending.hint}</p>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-10">
+            <div>
             {plan.spending.length === 0 && (
-              <p className="text-sm text-gray-400 py-2">No spending limits yet — add one, or pick a category below.</p>
+              <p className="text-sm text-gray-400 py-2">No spending limits yet — add one, or pick a category from the unbudgeted list.</p>
             )}
             <div className="space-y-3">
               {plan.spending.map(({ budget, actual }) => {
@@ -420,10 +424,11 @@ export default function Budget() {
                 )
               })}
             </div>
+            </div>
 
             {/* Unbudgeted categories */}
             {plan.unbudgeted.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="mt-4 pt-4 border-t border-gray-100 xl:mt-0 xl:pt-0 xl:border-t-0 xl:border-l xl:border-gray-100 xl:pl-10">
                 <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Unbudgeted spending this month</p>
                 <div className="space-y-1">
                   {plan.unbudgeted.map(({ category, spent }) => (
@@ -448,6 +453,7 @@ export default function Budget() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </>
       )}
