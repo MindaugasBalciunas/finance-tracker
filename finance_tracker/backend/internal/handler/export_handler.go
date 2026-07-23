@@ -110,8 +110,12 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 	transactions = filterTxRange(transactions, from, to)
 
 	ts := time.Now().Format("2006-01-02")
+	name := fmt.Sprintf("export_transactions_%s%s.csv", ts, rangeSuffix(from, to))
+	if from == nil && to == nil {
+		name = fmt.Sprintf("export_transactions_all_%s.csv", ts)
+	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"transactions_%s.csv\"", ts))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
 
 	w := csv.NewWriter(c.Writer)
 	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment", "labels"})
@@ -148,8 +152,12 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 	}
 
 	ts := time.Now().Format("2006-01-02")
+	name := fmt.Sprintf("export_balances_%s%s.csv", ts, rangeSuffix(from, to))
+	if from == nil && to == nil {
+		name = fmt.Sprintf("export_balances_all_%s.csv", ts)
+	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"balances_%s.csv\"", ts))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
 
 	w := csv.NewWriter(c.Writer)
 	_ = w.Write([]string{
@@ -379,6 +387,20 @@ func parseExportRange(c *gin.Context) (from, to *time.Time, err error) {
 	return from, to, nil
 }
 
+// rangeSuffix renders the selected period for filenames: "_2026-06-01_to_2026-06-30",
+// "_from_2026-06-01" or "_until_2026-06-30".
+func rangeSuffix(from, to *time.Time) string {
+	switch {
+	case from != nil && to != nil:
+		return "_" + from.Format("2006-01-02") + "_to_" + to.Format("2006-01-02")
+	case from != nil:
+		return "_from_" + from.Format("2006-01-02")
+	case to != nil:
+		return "_until_" + to.Format("2006-01-02")
+	}
+	return ""
+}
+
 func inRange(date time.Time, from, to *time.Time) bool {
 	if from != nil && date.Before(*from) {
 		return false
@@ -489,11 +511,13 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	sortChronologically(transactions, balances)
 
 	ts := time.Now().Format("2006-01-02")
-	filename := fmt.Sprintf("finances_%s.json", ts)
+	// Filename prefixes tell the files apart in a downloads folder:
+	// backup_… restores everything, export_… is a date-scoped extract.
+	filename := fmt.Sprintf("backup_finances_%s.json", ts)
 	if from != nil || to != nil {
 		// A date-limited export is not a restorable full backup: name it
 		// differently and leave the "last full export" marker untouched.
-		filename = fmt.Sprintf("finances_range_%s.json", ts)
+		filename = fmt.Sprintf("export_finances_%s%s.json", ts, rangeSuffix(from, to))
 	} else {
 		_ = h.exportLogRepo.Save("full")
 	}
@@ -560,7 +584,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 	fromStr := since.Format("2006-01-02")
 	_ = h.exportLogRepo.Save("partial")
 	budgetRows, ruleRows := h.budgetRows()
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"finances_partial_%s_from_%s.json\"", ts, fromStr))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"partial_finances_%s_since_%s.json\"", ts, fromStr))
 	c.JSON(http.StatusOK, financeExport{
 		SchemaVersion:   exportSchemaVersion,
 		ExportDate:      ts,

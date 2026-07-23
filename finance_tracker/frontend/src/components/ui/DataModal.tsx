@@ -45,6 +45,12 @@ export default function DataModal({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const swedRef = useRef<HTMLInputElement>(null)
+  const [swedImporting, setSwedImporting] = useState(false)
+  const [swedResult, setSwedResult] = useState<{
+    imported: number; duplicate: number; internal: number; relabeled: number
+    date_from?: string; date_to?: string
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/v1/export/status').then(r => r.json()).then(setStatus).catch(() => {})
@@ -113,6 +119,23 @@ export default function DataModal({ onClose }: Props) {
     } finally { setUndoing(false) }
   }
 
+  const handleSwedbankFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSwedImporting(true); setSwedResult(null); setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/v1/import/swedbank', { method: 'POST', body: form })
+      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setSwedResult(await res.json())
+      qc.invalidateQueries()
+      e.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Statement import failed')
+    } finally { setSwedImporting(false) }
+  }
+
   const handleDeleteAll = async () => {
     if (!confirm('Delete ALL transactions, balances, stock trades and assets? This cannot be undone.')) return
     if (!confirm('Are you sure? Download a full backup first if you have not.')) return
@@ -169,10 +192,34 @@ export default function DataModal({ onClose }: Props) {
                 </span>
               </button>
               <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
+              <button onClick={() => { setSwedResult(null); setError(null); swedRef.current?.click() }} disabled={swedImporting}
+                className="w-full flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left disabled:opacity-50">
+                <span className="text-lg leading-none mt-0.5">🏦</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">{swedImporting ? 'Importing statement…' : 'Import Swedbank statement (CSV)'}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    Auto-categorizes, labels, and skips rows you already have — safe to re-run.
+                  </span>
+                </span>
+              </button>
+              <input ref={swedRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleSwedbankFile} />
               <p className="text-[11px] text-gray-400 px-1">
                 App lock (PIN/fingerprint) is device-specific and intentionally not part of backups.
               </p>
             </div>
+
+            {swedResult && (
+              <div className="mt-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-800 space-y-1">
+                <p className="font-semibold">Statement imported</p>
+                <p>
+                  +{swedResult.imported} transactions
+                  {swedResult.date_from && <> ({swedResult.date_from} → {swedResult.date_to})</>}
+                  {' '}· {swedResult.duplicate} already existed · {swedResult.internal} own-account transfers skipped
+                </p>
+                {swedResult.relabeled > 0 && <p className="text-green-700/80">{swedResult.relabeled} transactions labeled by rules.</p>}
+                <button onClick={() => setSwedResult(null)} className="text-gray-500 underline">Close</button>
+              </div>
+            )}
 
             {error && (
               <div className="mt-2 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start justify-between gap-2">

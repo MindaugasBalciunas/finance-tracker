@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,98 @@ func (h *ImportHandler) WithBudgets(repo repository.BudgetRepository) *ImportHan
 
 func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/import/json", h.ImportJSON)
+	rg.POST("/import/swedbank", h.ImportSwedbankCSV)
+}
+
+type swedbankImportResult struct {
+	Imported  int    `json:"imported"`
+	Duplicate int    `json:"duplicate"`
+	Internal  int    `json:"internal"`
+	Relabeled int    `json:"relabeled"`
+	DateFrom  string `json:"date_from,omitempty"`
+	DateTo    string `json:"date_to,omitempty"`
+}
+
+// ImportSwedbankCSV godoc
+// @Summary      Import a Swedbank account statement CSV
+// @Tags         import
+// @Accept       multipart/form-data
+// @Produce      application/json
+// @Param        file formData file true "Swedbank statement .csv"
+// @Success      200  {object}  swedbankImportResult
+// @Router       /import/swedbank [post]
+func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "missing 'file' field in form"})
+		return
+	}
+	defer file.Close()
+
+	rows, internal, err := parseSwedbankCSV(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "failed to parse statement: " + err.Error()})
+		return
+	}
+
+	// Dedup by date|type|amount|comment as a MULTISET: each existing row
+	// absorbs one matching statement row, so re-imports are no-ops while
+	// genuine repeats (two identical rounds at the same bar) still import.
+	// Category is deliberately excluded from the key: the same bank row may
+	// have been categorised differently by an earlier import.
+	existing, _ := h.txRepo.ListAll()
+	remaining := make(map[string]int, len(existing))
+	key := func(date time.Time, typ domain.TransactionType, amount float64, comment string) string {
+		return fmt.Sprintf("%s|%s|%.2f|%s", date.Format("2006-01-02"), typ, amount, strings.ToLower(strings.TrimSpace(comment)))
+	}
+	for _, t := range existing {
+		remaining[key(t.Date, t.Type, t.Amount, t.Comment)]++
+	}
+
+	result := swedbankImportResult{Internal: internal}
+	for _, row := range rows {
+		k := key(row.Date, row.Type, row.Amount, row.Comment)
+		if remaining[k] > 0 {
+			remaining[k]--
+			result.Duplicate++
+			continue
+		}
+		tx := &domain.Transaction{
+			Date:          row.Date,
+			Type:          row.Type,
+			Amount:        row.Amount,
+			Category:      row.Category,
+			Comment:       row.Comment,
+			Labels:        domain.NormalizeLabels(row.Labels),
+			DebitAccount:  row.Debit,
+			CreditAccount: row.Credit,
+		}
+		if err := h.txRepo.Create(tx); err != nil {
+			result.Duplicate++
+			continue
+		}
+		result.Imported++
+		d := row.Date.Format("2006-01-02")
+		if result.DateFrom == "" || d < result.DateFrom {
+			result.DateFrom = d
+		}
+		if d > result.DateTo {
+			result.DateTo = d
+		}
+	}
+
+	// Deterministic labeling over the new rows (groceries, fuel, security…).
+	if h.budgetRepo != nil {
+		if rules, err := h.budgetRepo.ListRules(); err == nil {
+			for _, rule := range rules {
+				if n, err := h.budgetRepo.ApplyLabel(rule); err == nil {
+					result.Relabeled += n
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 type importResult struct {
