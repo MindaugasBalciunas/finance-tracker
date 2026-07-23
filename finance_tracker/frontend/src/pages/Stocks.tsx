@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAx
 import { useStockTrades, useStockPortfolio, useCreateStockTrade, useUpdateStockTrade, useDeleteStockTrade, useUsdEurRate, useAllStockPrices } from '../hooks/useStocks'
 import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
-import PortfolioRow, { DualAmount, DualAmountEur } from '../components/stocks/PortfolioRow'
+import PortfolioRow, { PortfolioCard, DualAmount, DualAmountEur } from '../components/stocks/PortfolioRow'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatDate, formatEuro, formatUsd, gainColor } from '../utils/format'
 import { computeSellPnL } from '../utils/stockCalculations'
@@ -303,7 +303,15 @@ export default function Stocks() {
             <h3 className="text-sm font-semibold text-gray-700">Open Positions</h3>
             <p className="text-xs text-gray-400 mt-0.5">Live prices from Yahoo Finance · EUR primary · USD secondary · click ticker to expand price chart</p>
           </div>
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {activeHoldings.map((h) => (
+              <PortfolioCard key={h.ticker} holding={h} usdToEur={usdToEur} eurToUsd={eurToUsd}
+                totalCostEur={totalInvestedEur} trades={(trades ?? []).filter((t) => t.ticker === h.ticker)} />
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="overflow-x-auto hidden sm:block">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -555,8 +563,8 @@ export default function Stocks() {
                       <th className="text-left py-1.5 pr-4 text-xs font-semibold text-gray-500">Date</th>
                       <th className="text-left py-1.5 pr-4 text-xs font-semibold text-gray-500">Ticker</th>
                       <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Shares</th>
-                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Sell Price</th>
-                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500">Avg Cost</th>
+                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500 hidden sm:table-cell">Sell Price</th>
+                      <th className="text-right py-1.5 pr-4 text-xs font-semibold text-gray-500 hidden sm:table-cell">Avg Cost</th>
                       <th className="text-right py-1.5 text-xs font-semibold text-gray-500">P&L</th>
                     </tr>
                   </thead>
@@ -571,8 +579,8 @@ export default function Stocks() {
                             {costRecoveredSet.has(s.ticker) && <span className="ml-1 text-amber-500 text-xs">★</span>}
                           </td>
                           <td className="py-2 pr-4 text-right text-gray-600 text-xs">{s.shares}</td>
-                          <td className="py-2 pr-4 text-right text-gray-600 text-xs">{fmt(s.sellPrice)}</td>
-                          <td className="py-2 pr-4 text-right text-gray-500 text-xs">{fmt(s.avgCost)}</td>
+                          <td className="py-2 pr-4 text-right text-gray-600 text-xs hidden sm:table-cell">{fmt(s.sellPrice)}</td>
+                          <td className="py-2 pr-4 text-right text-gray-500 text-xs hidden sm:table-cell">{fmt(s.avgCost)}</td>
                           <td className={`py-2 text-right font-semibold text-sm ${gainColor(s.pnlEur)}`}>
                             {s.pnlEur >= 0 ? '+' : ''}{formatEuro(s.pnlEur)}
                             {s.currency !== 'EUR' && (
@@ -640,7 +648,47 @@ export default function Stocks() {
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h3 className="text-sm font-semibold text-gray-700">Trade History</h3>
         </div>
-        <div className="overflow-x-auto">
+        {/* Mobile cards */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {[...(trades ?? [])].reverse().map((t) => {
+            const price = t.price_per_share.value
+            const total = t.shares * price
+            const isEur = t.currency === 'EUR'
+            const totalEur = isEur ? total : usdToEur(total)
+            const fmtNative = isEur ? formatEuro : formatUsd
+            return (
+              <div key={t.id} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-bold text-gray-900">{t.ticker}</span>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold ${
+                      t.action === 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    }`}>{t.action.toUpperCase()}</span>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                      t.source === 'IBKR' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{t.source}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-semibold text-gray-900 mr-1">
+                      {totalEur != null ? formatEuro(totalEur) : fmtNative(total)}
+                    </span>
+                    <button onClick={() => { setEditingTrade(t); setFormError(null) }} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                    <button onClick={() => handleDelete(t.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  {t.date.slice(0, 10)} · {t.shares} × {fmtNative(price)}
+                  {t.notes ? ` · ${t.notes}` : ''}
+                </p>
+              </div>
+            )
+          })}
+          {!trades?.length && (
+            <p className="px-4 py-12 text-center text-gray-400 text-sm">No trades yet. Add your first trade above.</p>
+          )}
+        </div>
+        {/* Desktop table */}
+        <div className="overflow-x-auto hidden sm:block">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
