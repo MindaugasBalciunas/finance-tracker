@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -73,16 +74,20 @@ func (h *AuthHandler) requireUnlocked(c *gin.Context) bool {
 }
 
 func (h *AuthHandler) hostAndOrigin(c *gin.Context) (string, string) {
-	host := c.Request.Host
-	origin := c.GetHeader("Origin")
-	if origin == "" {
-		scheme := "http"
-		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-			scheme = "https"
+	// Prefer the browser's Origin header: reverse proxies (Tailscale serve,
+	// nginx) may rewrite Host, but Origin always names what the user sees —
+	// and the WebAuthn RP ID must match that.
+	if origin := c.GetHeader("Origin"); origin != "" {
+		if u, err := url.Parse(origin); err == nil && u.Host != "" {
+			return u.Host, origin
 		}
-		origin = scheme + "://" + host
 	}
-	return host, origin
+	host := c.Request.Host
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return host, scheme + "://" + host
 }
 
 func (h *AuthHandler) setSessionCookie(c *gin.Context, token string) {
