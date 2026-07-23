@@ -197,6 +197,32 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.NotContains(t, labelsOf(t, db, norfaPharm), "norfa", "NORFOS VAISTINE is pharmacy, not the store")
 }
 
+func TestCinemaRuleDoesNotMatchPekinas(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	// Row mislabeled by the old bare-"kinas" rule (kept its other labels).
+	pekinas := seedTx(t, db, "expense", "Food", "Pekinas. guanbao")
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", pekinas).
+		Update("labels", "work lunch,cinema").Error)
+	apollo := seedTx(t, db, "expense", "Entertainment", "APOLLO KINAS, UAB")
+	// Simulate the retired rule existing from a previous version.
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "cinema", CommentMatch: "kinas"}).Error)
+
+	applyCategoryMigrations(db)
+
+	assert.Equal(t, "work lunch", labelsOf(t, db, pekinas), "mislabel stripped, other labels kept")
+	assert.Contains(t, labelsOf(t, db, apollo), "cinema", "real cinema still matches via ' kinas'")
+	var oldRule int64
+	db.Model(&domain.LabelRule{}).Where("label = 'cinema' AND comment_match = 'kinas'").Count(&oldRule)
+	assert.EqualValues(t, 0, oldRule, "retired rule removed")
+
+	// Idempotent on rerun.
+	applyCategoryMigrations(db)
+	assert.Equal(t, "work lunch", labelsOf(t, db, pekinas))
+}
+
 func commentOf(t *testing.T, db *gorm.DB, id uint) string {
 	t.Helper()
 	var tx domain.Transaction

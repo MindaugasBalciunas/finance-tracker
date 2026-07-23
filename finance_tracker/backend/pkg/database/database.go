@@ -206,7 +206,7 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"restaurant": {"restoran", "restaurant", "pizza", "picer", "kebab", "mcdonald", "hesburger", "grill", "bistro", "drakonai", "sushi"},
 		"lunch":      {"lunch", "darbo piet", "pietūs"},
 		"gym":        {"gym"},
-		"cinema":     {"kinas", "cinema", "apollo"},
+		"cinema":     {" kinas", "cinema", "apollo"},
 		"beauty":     {"haircut", "barber", "kirpykl", "grozio", "grožio"},
 		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
 		// Per-store labels (alongside the generic groceries label) so store
@@ -225,6 +225,14 @@ func applyCategoryMigrations(db *gorm.DB) {
 			addLabel(label, `LOWER(comment) LIKE ?`, "%"+p+"%")
 		}
 	}
+
+	// The bare "kinas" cinema pattern false-positived on restaurant names
+	// containing it as a suffix (Pekinas); replaced by " kinas" above.
+	// Retire the old rule and strip the mislabel from affected rows.
+	db.Exec(`DELETE FROM label_rules WHERE label = 'cinema' AND comment_match = 'kinas'`)
+	db.Exec(`UPDATE transactions
+		SET labels = TRIM(REPLACE(',' || labels || ',', ',cinema,', ','), ',')
+		WHERE LOWER(comment) LIKE '%pekinas%' AND (',' || labels || ',') LIKE '%,cinema,%'`)
 	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
 	// as a standing rule, new ones are caught by the category suggestion.
 	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
