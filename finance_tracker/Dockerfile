@@ -1,5 +1,5 @@
 # Stage 1 — build Go backend (natively on build runner, cross-compile to target arch)
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend-builder
 ARG TARGETARCH
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
