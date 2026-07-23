@@ -11,6 +11,18 @@ import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
 import type { Category, TransactionType } from '../types'
 
+// Grocery-store labels applied by backend rules; shown in their own
+// comparison card (and therefore excluded from the generic label list).
+const STORE_NAMES: Record<string, string> = {
+  maxima: 'Maxima',
+  lidl: 'Lidl',
+  iki: 'IKI',
+  rimi: 'Rimi',
+  norfa: 'Norfa',
+  'moki-vezi': 'Moki-Veži',
+  barbora: 'Barbora (delivery)',
+}
+
 export default function Reports() {
   const { dateRange } = useDateRange()
   const [selectedCategory, setSelectedCategory] = useState<{
@@ -23,10 +35,12 @@ export default function Reports() {
   const { data: allExpenses } = useAllExpenses(dateRange)
 
   // Spending grouped by label — a transaction with several labels counts in each.
+  // Store labels get their own comparison card below, so they are skipped here.
   const labelSpend = useMemo(() => {
     const sums: Record<string, { total: number; count: number }> = {}
     for (const tx of allExpenses?.data ?? []) {
       for (const l of (tx.labels ?? '').split(',').filter(Boolean)) {
+        if (STORE_NAMES[l]) continue
         if (!sums[l]) sums[l] = { total: 0, count: 0 }
         sums[l].total += tx.amount.value
         sums[l].count += 1
@@ -34,6 +48,31 @@ export default function Reports() {
     }
     return Object.entries(sums).sort((a, b) => b[1].total - a[1].total).slice(0, 14)
   }, [allExpenses])
+
+  // Per-store totals, visit counts and average basket size.
+  const storeSpend = useMemo(() => {
+    const sums: Record<string, { total: number; count: number }> = {}
+    for (const tx of allExpenses?.data ?? []) {
+      for (const l of (tx.labels ?? '').split(',').filter(Boolean)) {
+        if (!STORE_NAMES[l]) continue
+        if (!sums[l]) sums[l] = { total: 0, count: 0 }
+        sums[l].total += tx.amount.value
+        sums[l].count += 1
+      }
+    }
+    return Object.entries(sums)
+      .map(([store, s]) => ({ store, ...s, avg: s.total / s.count }))
+      .sort((a, b) => b.total - a.total)
+  }, [allExpenses])
+
+  // Basket comparison only means something with a few visits per store.
+  const comparableStores = storeSpend.filter(s => s.count >= 5)
+  const cheapestBasket = comparableStores.length >= 2
+    ? [...comparableStores].sort((a, b) => a.avg - b.avg)[0]
+    : null
+  const priciestBasket = comparableStores.length >= 2
+    ? [...comparableStores].sort((a, b) => b.avg - a.avg)[0]
+    : null
 
   const savings = summary ? summary.total_income - summary.total_expenses : null
   const savingsRate = summary && summary.total_income > 0
@@ -318,9 +357,56 @@ export default function Reports() {
         </div>
       )}
 
+      {/* Grocery store comparison */}
+      {storeSpend.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">🛒 Grocery Stores</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Totals and average basket per store in the period — click a store to see its transactions
+          </p>
+          <div className="space-y-3">
+            {storeSpend.map((s) => {
+              const max = storeSpend[0].total
+              const isCheapest = cheapestBasket?.store === s.store
+              const isPriciest = priciestBasket?.store === s.store
+              return (
+                <button key={s.store} onClick={() => setSelectedLabel(s.store)} className="w-full text-left group">
+                  <div className="flex items-center justify-between gap-2 text-sm mb-0.5">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="font-medium text-emerald-700 group-hover:text-emerald-900 truncate">{STORE_NAMES[s.store]}</span>
+                      {isCheapest && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold">cheapest basket</span>
+                      )}
+                      {isPriciest && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">priciest basket</span>
+                      )}
+                    </span>
+                    <span className="text-gray-700 font-semibold shrink-0">{formatEuro(s.total)}</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-400 rounded-full group-hover:bg-emerald-600" style={{ width: `${(s.total / max) * 100}%` }} />
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {s.count} {s.count === 1 ? 'visit' : 'visits'} · avg basket {formatEuro(s.avg)}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+          {cheapestBasket && priciestBasket && cheapestBasket.store !== priciestBasket.store && (
+            <p className="mt-3 text-xs text-gray-500 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+              💡 Average basket at <span className="font-semibold">{STORE_NAMES[priciestBasket.store]}</span> is{' '}
+              {formatEuro(priciestBasket.avg)} vs {formatEuro(cheapestBasket.avg)} at{' '}
+              <span className="font-semibold">{STORE_NAMES[cheapestBasket.store]}</span>. Basket sizes differ per trip,
+              but shifting routine runs toward the cheaper store adds up.
+            </p>
+          )}
+        </div>
+      )}
+
       {selectedLabel && (
         <CategoryTransactionsModal
-          title={`Label: ${selectedLabel}`}
+          title={STORE_NAMES[selectedLabel] ? `Store: ${STORE_NAMES[selectedLabel]}` : `Label: ${selectedLabel}`}
           label={selectedLabel}
           type="expense"
           dateRange={dateRange}

@@ -209,6 +209,15 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"cinema":     {"kinas", "cinema", "apollo"},
 		"beauty":     {"haircut", "barber", "kirpykl", "grozio", "grožio"},
 		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
+		// Per-store labels (alongside the generic groceries label) so store
+		// totals and average basket size can be compared in Reports.
+		"maxima":    {"maxima"},
+		"lidl":      {"lidl"},
+		"iki":       {"iki "},
+		"rimi":      {"rimi"},
+		"norfa":     {"norfa"},
+		"moki-vezi": {"moki-vezi", "moki vezi", "moki vež"},
+		"barbora":   {"barbora"},
 	}
 	for label, patterns := range contextLabels {
 		for _, p := range patterns {

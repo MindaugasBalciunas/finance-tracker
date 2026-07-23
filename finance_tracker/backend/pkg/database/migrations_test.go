@@ -182,6 +182,19 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.Contains(t, labelsOf(t, db, pizza), "restaurant")
 	assert.Contains(t, labelsOf(t, db, pizza), "coffee", "kavinė still tags coffee alongside")
 	assert.Contains(t, labelsOf(t, db, barbora), "groceries")
+
+	// Store labels stack on top of the generic groceries label.
+	assert.Contains(t, labelsOf(t, db, iki), "iki")
+	assert.Contains(t, labelsOf(t, db, mokiVezi), "moki-vezi")
+	assert.Contains(t, labelsOf(t, db, barbora), "barbora")
+	assert.NotContains(t, labelsOf(t, db, laisvalaikis), "iki", "'iki ' store label must not match LAISVALAIKIO")
+
+	maxima := seedTx(t, db, "expense", "Food", "MAXIMA LT, X-559 VILNIUS")
+	norfaPharm := seedTx(t, db, "expense", "Health", "NORFOS VAISTINE 06200 VILNIUS")
+	applyCategoryMigrations(db)
+	assert.Contains(t, labelsOf(t, db, maxima), "maxima")
+	assert.Contains(t, labelsOf(t, db, maxima), "groceries")
+	assert.NotContains(t, labelsOf(t, db, norfaPharm), "norfa", "NORFOS VAISTINE is pharmacy, not the store")
 }
 
 func commentOf(t *testing.T, db *gorm.DB, id uint) string {
