@@ -64,18 +64,20 @@ export default function Reports() {
       {isLoading ? <LoadingSpinner /> : summary ? (
         <>
           {/* Summary KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Income', value: formatEuro(summary.total_income), color: 'text-green-600' },
-              { label: 'Total Expenses', value: formatEuro(summary.total_expenses), color: 'text-red-600' },
-              { label: 'Net Savings', value: savings != null ? formatEuro(savings) : '—', color: savings != null && savings >= 0 ? 'text-green-600' : 'text-red-600' },
-              { label: 'Savings Rate', value: savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—', color: savingsRate != null && savingsRate >= 20 ? 'text-green-600' : 'text-yellow-600' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
-                <p className="text-sm font-medium text-gray-500">{label}</p>
-                <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-              </div>
-            ))}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
+              {[
+                { label: 'Total Income', value: formatEuro(summary.total_income), color: 'text-green-600' },
+                { label: 'Total Expenses', value: formatEuro(summary.total_expenses), color: 'text-red-600' },
+                { label: 'Net Savings', value: savings != null ? formatEuro(savings) : '—', color: savings != null && savings >= 0 ? 'text-green-600' : 'text-red-600' },
+                { label: 'Savings Rate', value: savingsRate != null ? `${savingsRate.toFixed(1)}%` : '—', color: savingsRate != null && savingsRate >= 20 ? 'text-green-600' : 'text-yellow-600' },
+              ].map(({ label, value, color }) => (
+                <div key={label}>
+                  <p className="text-xs font-medium text-gray-500">{label}</p>
+                  <p className={`text-lg sm:text-xl font-bold mt-0.5 ${color}`}>{value}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Financial health panel */}
