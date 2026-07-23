@@ -273,7 +273,20 @@ export default function Budget() {
                 remaining={plan.safeToSpend}
               />
             )}
-            <p className="mt-3 text-xs text-gray-500">
+            {(() => {
+              const txs = monthTxs?.data ?? []
+              const totalSpent = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount.value, 0)
+              const totalIncome = txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount.value, 0)
+              const pct = totalIncome > 0 ? (totalSpent / totalIncome) * 100 : null
+              return (
+                <p className="mt-3 text-xs text-gray-500">
+                  This month: spent <span className={`font-semibold ${pct != null && pct > 100 ? 'text-red-600' : 'text-gray-700'}`}>{formatEuro(totalSpent)}</span>
+                  {' '}· income received <span className="font-semibold text-gray-700">{formatEuro(totalIncome)}</span>
+                  {pct != null && <span className={pct > 100 ? 'text-red-500 font-medium' : 'text-gray-400'}> ({pct.toFixed(0)}% of income)</span>}
+                </p>
+              )
+            })()}
+            <p className="mt-1 text-xs text-gray-500">
               Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span>{' '}
               <span className="text-gray-400">({incomeSource})</span>
               <button

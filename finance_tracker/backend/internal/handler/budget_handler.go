@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,10 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		b.GET("/settings", h.GetSettings)
 		b.PUT("/settings", h.SaveSettings)
 	}
+	// Registered here (not in the transaction handler) because the suggestion
+	// query lives on the budget repository alongside the other cross-cutting
+	// transaction lookups (labels, bulk apply).
+	rg.GET("/transactions/suggest-category", h.SuggestCategory)
 	l := rg.Group("/labels")
 	{
 		l.GET("", h.Labels)
@@ -125,6 +130,25 @@ func (h *BudgetHandler) Delete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+// SuggestCategory proposes a category for a new transaction based on similar
+// historical ones. Returns {category:"", matches:0} when nothing similar exists.
+func (h *BudgetHandler) SuggestCategory(c *gin.Context) {
+	comment := c.Query("comment")
+	txType := c.Query("type")
+	amount := 0.0
+	if v := c.Query("amount"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			amount = f
+		}
+	}
+	category, matches, basis, err := h.repo.SuggestCategory(txType, comment, amount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"category": category, "matches": matches, "basis": basis})
 }
 
 func (h *BudgetHandler) GetSettings(c *gin.Context) {

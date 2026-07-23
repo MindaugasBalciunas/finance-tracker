@@ -52,6 +52,11 @@ export const transactionsApi = {
     return data
   },
 
+  suggestCategory: async (params: { type?: string; comment?: string; amount?: number }): Promise<{ category: string; matches: number; basis: string }> => {
+    const { data } = await client.get('/transactions/suggest-category', { params })
+    return data
+  },
+
   getComments: async (): Promise<string[]> => {
     const { data } = await client.get<string[]>('/transactions/comments')
     return data

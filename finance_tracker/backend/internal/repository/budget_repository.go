@@ -24,6 +24,10 @@ type BudgetRepository interface {
 
 	GetSettings() (*domain.BudgetSettings, error)
 	SaveSettings(s *domain.BudgetSettings) error
+
+	// SuggestCategory proposes a category for a new transaction from similar
+	// historical rows (comment substring first, exact amount as fallback).
+	SuggestCategory(txType, comment string, amount float64) (category string, matches int, basis string, err error)
 }
 
 type budgetRepository struct {
@@ -115,6 +119,49 @@ func (r *budgetRepository) GetSettings() (*domain.BudgetSettings, error) {
 func (r *budgetRepository) SaveSettings(s *domain.BudgetSettings) error {
 	s.ID = 1
 	return r.db.Save(s).Error
+}
+
+func (r *budgetRepository) SuggestCategory(txType, comment string, amount float64) (string, int, string, error) {
+	type row struct {
+		Category string
+		N        int
+	}
+	comment = strings.TrimSpace(comment)
+
+	// Primary signal: same words in the comment (merchant names recur).
+	if len(comment) >= 3 {
+		var res row
+		q := r.db.Model(&domain.Transaction{}).
+			Select("category, COUNT(*) as n").
+			Where("comment != '' AND LOWER(comment) LIKE ?", "%"+strings.ToLower(comment)+"%")
+		if txType != "" {
+			q = q.Where("type = ?", txType)
+		}
+		if err := q.Group("category").Order("n DESC").Limit(1).Scan(&res).Error; err != nil {
+			return "", 0, "", err
+		}
+		if res.N >= 2 {
+			return res.Category, res.N, "comment", nil
+		}
+	}
+
+	// Fallback: recurring identical amounts (subscriptions, standing orders).
+	if amount > 0 {
+		var res row
+		q := r.db.Model(&domain.Transaction{}).
+			Select("category, COUNT(*) as n").
+			Where("ABS(amount - ?) < 0.005", amount)
+		if txType != "" {
+			q = q.Where("type = ?", txType)
+		}
+		if err := q.Group("category").Order("n DESC").Limit(1).Scan(&res).Error; err != nil {
+			return "", 0, "", err
+		}
+		if res.N >= 3 {
+			return res.Category, res.N, "amount", nil
+		}
+	}
+	return "", 0, "", nil
 }
 
 func (r *budgetRepository) DistinctLabels() ([]string, error) {

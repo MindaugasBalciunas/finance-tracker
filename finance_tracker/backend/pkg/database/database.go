@@ -91,4 +91,43 @@ func applyCategoryMigrations(db *gorm.DB) {
 		db.Exec(`UPDATE transactions SET category = 'Subscriptions'
 			WHERE type = 'expense' AND category = 'Entertainment' AND UPPER(comment) LIKE ?`, "%"+vendor+"%")
 	}
+
+	// addLabelSQL appends a label to matching rows without duplicating it.
+	addLabel := func(label, where string, args ...interface{}) {
+		db.Exec(`UPDATE transactions SET labels = CASE
+			WHEN labels = '' THEN '`+label+`'
+			WHEN (',' || labels || ',') LIKE '%,`+label+`,%' THEN labels
+			ELSE labels || ',`+label+`' END
+			WHERE `+where, args...)
+	}
+
+	// Pre-refinance house-loan payments were paid via the ex-wife's account
+	// and imported under Housing: monthly ~1,284–1,650 annuity that hands over
+	// to the direct SEB 'Loan return/interest' rows in 2026 → Finance + loan.
+	db.Exec(`UPDATE transactions SET category = 'Finance'
+		WHERE type = 'expense' AND category = 'Housing'
+		AND (UPPER(comment) LIKE '%EVELINA%' OR UPPER(comment) LIKE '%PLYTNIKAIT%')`)
+	addLabel("loan", `type = 'expense' AND category = 'Finance'
+		AND (UPPER(comment) LIKE '%EVELINA%' OR UPPER(comment) LIKE '%PLYTNIKAIT%')
+		AND amount >= 1200 AND amount <= 1700`)
+
+	// RAV4 leasing rows get a leasing label for filtering.
+	addLabel("leasing", `type = 'investment' AND category = 'Vehicle' AND LOWER(comment) LIKE '%rav4%'`)
+
+	// Counterparty label for every Evelina-related row (review aid), plus a
+	// rule so future ones are tagged automatically.
+	addLabel("evelina", `UPPER(comment) LIKE '%EVELINA%' OR UPPER(comment) LIKE '%PLYTNIKAIT%'`)
+	ensureRule := func(rule domain.LabelRule) {
+		var count int64
+		db.Model(&domain.LabelRule{}).Where("label = ? AND category = ? AND comment_match = ?", rule.Label, rule.Category, rule.CommentMatch).Count(&count)
+		if count == 0 {
+			db.Create(&rule)
+		}
+	}
+	ensureRule(domain.LabelRule{Label: "evelina", CommentMatch: "evelina"})
+
+	// Dating category exists only since end of April 2026 (Kristina) — tag all
+	// of it and keep tagging future rows via a category rule.
+	addLabel("kristina", `type = 'expense' AND category = 'Dating' AND date >= '2026-04-20'`)
+	ensureRule(domain.LabelRule{Label: "kristina", Category: "Dating"})
 }

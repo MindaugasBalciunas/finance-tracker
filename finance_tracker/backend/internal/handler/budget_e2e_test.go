@@ -295,6 +295,42 @@ func importRouterFor(t *testing.T) (*gin.Engine, *gorm.DB) {
 	return r, db
 }
 
+func TestSuggestCategory(t *testing.T) {
+	r, _ := budgetTestRouter(t)
+
+	for i := 0; i < 3; i++ {
+		w := budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
+			"date": "2026-07-0" + string(rune('1'+i)), "type": "expense", "amount": 45.5 + float64(i),
+			"category": "Utilities", "comment": "UAB IGNITIS",
+		})
+		require.Equal(t, 201, w.Code)
+	}
+	for i := 0; i < 3; i++ {
+		w := budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
+			"date": "2026-07-1" + string(rune('1'+i)), "type": "expense", "amount": 11.99,
+			"category": "Subscriptions", "comment": "Netflix monthly",
+		})
+		require.Equal(t, 201, w.Code)
+	}
+
+	// Comment-based match wins.
+	w := budgetDoJSON(r, "GET", "/api/v1/transactions/suggest-category?type=expense&comment=ignitis", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"category":"Utilities"`)
+	assert.Contains(t, w.Body.String(), `"basis":"comment"`)
+
+	// Amount-based fallback for recurring identical amounts.
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions/suggest-category?type=expense&amount=11.99", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"category":"Subscriptions"`)
+	assert.Contains(t, w.Body.String(), `"basis":"amount"`)
+
+	// Nothing similar → empty suggestion.
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions/suggest-category?comment=zzznotfound", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"category":""`)
+}
+
 func TestLabels_SurviveExportImport(t *testing.T) {
 	r, db := budgetTestRouter(t)
 

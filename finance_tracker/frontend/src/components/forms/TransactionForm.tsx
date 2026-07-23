@@ -2,8 +2,10 @@ import { useEffect, useState, useRef } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType, AccountKey } from '../../types'
 import { ACCOUNT_LABELS } from '../../types'
-import { CATEGORIES_BY_TYPE } from '../../constants/categories'
+import { CATEGORIES_BY_TYPE, CATEGORY_HINTS } from '../../constants/categories'
 import DateInput from '../ui/DateInput'
+import { useQuery } from '@tanstack/react-query'
+import { transactionsApi } from '../../api/transactions'
 import { useTransactionComments } from '../../hooks/useTransactions'
 import { useLabels, useLabelRules } from '../../hooks/useBudgets'
 
@@ -79,6 +81,25 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     setValue('labels', next)
   }
 
+  // Category suggestion from similar historical transactions (debounced).
+  const amountValue = watch('amount')
+  const [debounced, setDebounced] = useState({ comment: '', amount: 0 })
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced({ comment: commentValue, amount: Number(amountValue) || 0 }), 400)
+    return () => clearTimeout(t)
+  }, [commentValue, amountValue])
+
+  const { data: suggestion } = useQuery({
+    queryKey: ['suggest-category', selectedType, debounced.comment, debounced.amount],
+    queryFn: () => transactionsApi.suggestCategory({
+      type: selectedType,
+      comment: debounced.comment,
+      amount: debounced.amount,
+    }),
+    enabled: debounced.comment.trim().length >= 3 || debounced.amount > 0,
+    staleTime: 30_000,
+  })
+
   useEffect(() => {
     if (!defaultValues?.category) {
       setValue('category', '' as any)
@@ -137,8 +158,26 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
             ))}
           </select>
           {errors.category && <p className="text-xs text-red-600 mt-1">{errors.category.message}</p>}
+          {selectedCategory && CATEGORY_HINTS[String(selectedCategory)] && (
+            <p className="text-xs text-gray-400 mt-1">{CATEGORY_HINTS[String(selectedCategory)]}</p>
+          )}
         </div>
       </div>
+
+      {suggestion && suggestion.category && suggestion.category !== String(selectedCategory) && (
+        <p className="text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 -mt-1">
+          💡 {suggestion.matches} similar transaction{suggestion.matches === 1 ? '' : 's'}{' '}
+          ({suggestion.basis === 'amount' ? 'same amount' : 'matching comment'}) are usually{' '}
+          <span className="font-semibold text-gray-800">{suggestion.category}</span>
+          <button
+            type="button"
+            onClick={() => setValue('category', suggestion.category as any)}
+            className="ml-2 text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Use it
+          </button>
+        </p>
+      )}
 
       <div className="relative" ref={commentRef}>
         <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
