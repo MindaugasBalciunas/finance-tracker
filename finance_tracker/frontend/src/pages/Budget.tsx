@@ -322,7 +322,7 @@ export default function Budget() {
                         </div>
                         <p className="text-xs text-gray-400 mt-1">
                           {budget.label ? `label: ${budget.label}` : budget.category}
-                          {!paid && <span className="text-yellow-600 font-medium"> · {formatEuro(outstanding)} outstanding</span>}
+                          {!paid && <> · paid <span className="font-medium text-gray-600">{formatEuro(actual)}</span> · <span className="text-yellow-600 font-medium">{formatEuro(outstanding)} outstanding</span></>}
                         </p>
                       </div>
                     )
@@ -369,7 +369,8 @@ export default function Budget() {
                         <div className={`h-full rounded-full ${reached ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
                       </div>
                       <p className="text-xs text-gray-400 mt-1">
-                        {reached ? '✓ Target reached' : `${formatEuro(budget.amount - actual)} to go`}
+                        Invested <span className="font-medium text-gray-600">{formatEuro(actual)}</span>
+                        {reached ? ' · ✓ Target reached' : <> · <span className="font-medium text-blue-700">{formatEuro(budget.amount - actual)} to go</span></>}
                       </p>
                     </div>
                   )
@@ -415,10 +416,11 @@ export default function Budget() {
                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${over ? 'bg-red-500' : near ? 'bg-yellow-400' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
                     </div>
-                    <p className="text-xs mt-1">
+                    <p className="text-xs mt-1 text-gray-400">
+                      Spent <span className="font-medium text-gray-600">{formatEuro(actual)}</span>
                       {over
-                        ? <span className="text-red-500 font-medium">{formatEuro(actual - budget.amount)} over budget</span>
-                        : <span className="text-gray-400"><span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</span>}
+                        ? <> · <span className="text-red-500 font-medium">{formatEuro(actual - budget.amount)} over budget</span></>
+                        : <> · <span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</>}
                     </p>
                   </div>
                 )
