@@ -28,6 +28,43 @@ function shiftMonth(month: string, delta: number): string {
   return ym(new Date(y, m - 1 + delta))
 }
 
+// Stacked bar showing how the month's income base is allocated.
+function AllocationBar({ incomeBase, fixed, investments, spent, remaining }: {
+  incomeBase: number
+  fixed: number
+  investments: number
+  spent: number
+  remaining: number
+}) {
+  const total = Math.max(incomeBase, fixed + investments + spent)
+  if (total <= 0) return null
+  const w = (v: number) => `${Math.max((v / total) * 100, 0)}%`
+  const SEGMENTS = [
+    { key: 'Fixed', value: fixed, cls: 'bg-slate-500' },
+    { key: 'Investments', value: investments, cls: 'bg-blue-500' },
+    { key: 'Spent', value: spent, cls: 'bg-orange-400' },
+    { key: 'Left', value: Math.max(remaining, 0), cls: 'bg-green-500' },
+  ]
+  return (
+    <div className="mt-4">
+      <div className="flex h-5 rounded-lg overflow-hidden bg-gray-100">
+        {SEGMENTS.filter((s) => s.value > 0).map((s) => (
+          <div key={s.key} className={s.cls} style={{ width: w(s.value) }} title={`${s.key}: ${formatEuro(s.value)}`} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
+        {SEGMENTS.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5 text-xs">
+            <span className={`w-2.5 h-2.5 rounded-sm ${s.cls}`} />
+            <span className="text-gray-500">{s.key}</span>
+            <span className="font-semibold text-gray-800">{formatEuro(s.key === 'Left' ? remaining : s.value)}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const KIND_INFO: Record<BudgetKind, { title: string; hint: string }> = {
   fixed: { title: 'Fixed obligations', hint: 'Known monthly payments — tracked as paid / pending' },
   investment: { title: 'Investment targets', hint: 'Monthly contributions you aim to reach' },
@@ -100,6 +137,14 @@ export default function Budget() {
   )
 
   const isCurrentMonth = month === ym(new Date())
+
+  // Daily allowance for the rest of the current month.
+  const daysLeft = (() => {
+    if (!isCurrentMonth) return null
+    const now = new Date()
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    return daysInMonth - now.getDate() + 1
+  })()
 
   async function setupSuggested() {
     setSettingUp(true)
@@ -208,60 +253,101 @@ export default function Budget() {
         <>
           {/* Safe to spend */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-            <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
+              {daysLeft != null && plan.safeToSpend != null && plan.safeToSpend > 0 && (
+                <p className="text-sm text-gray-500">
+                  ≈ <span className="font-bold text-green-600">{formatEuro(plan.safeToSpend / daysLeft)}</span>/day for the next {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
             <p className={`text-3xl sm:text-4xl font-bold mt-1 ${plan.safeToSpend != null && plan.safeToSpend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {plan.safeToSpend != null ? formatEuro(plan.safeToSpend) : '—'}
             </p>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-gray-500">
-              <span>
-                Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span>{' '}
-                <span className="text-gray-400">({incomeSource})</span>
-                <button
-                  onClick={() => setShowIncomeSettings(true)}
-                  className="ml-1.5 text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  ✎ edit
-                </button>
-              </span>
-              <span>− Fixed <span className="font-semibold text-gray-700">{formatEuro(plan.fixedPlanned)}</span></span>
-              <span>− Investments <span className="font-semibold text-gray-700">{formatEuro(plan.investmentPlanned)}</span></span>
-              <span>− Spent so far <span className="font-semibold text-gray-700">{formatEuro(plan.discretionarySpent)}</span></span>
-            </div>
+            {plan.incomeBase != null && plan.safeToSpend != null && (
+              <AllocationBar
+                incomeBase={plan.incomeBase}
+                fixed={plan.fixedPlanned}
+                investments={plan.investmentPlanned}
+                spent={plan.discretionarySpent}
+                remaining={plan.safeToSpend}
+              />
+            )}
+            <p className="mt-3 text-xs text-gray-500">
+              Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span>{' '}
+              <span className="text-gray-400">({incomeSource})</span>
+              <button
+                onClick={() => setShowIncomeSettings(true)}
+                className="ml-1.5 text-blue-600 hover:text-blue-800 font-medium"
+              >
+                ✎ edit
+              </button>
+            </p>
           </div>
 
           {/* Fixed obligations */}
-          {plan.fixed.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">{KIND_INFO.fixed.title}</h3>
-              <p className="text-xs text-gray-400 mb-3">{KIND_INFO.fixed.hint}</p>
-              <div className="space-y-2">
-                {plan.fixed.map(({ budget, actual }) => {
-                  const paid = actual >= budget.amount * 0.95
-                  return (
-                    <div key={budget.id} className="flex items-center justify-between gap-3 py-1.5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800">{budget.name}</p>
-                        <p className="text-xs text-gray-400">
-                          {budget.label ? `label: ${budget.label}` : budget.category} · planned {formatEuro(budget.amount)}
+          {plan.fixed.length > 0 && (() => {
+            const totalPaid = plan.fixed.reduce((s, f) => s + Math.min(f.actual, f.budget.amount), 0)
+            const totalOutstanding = Math.max(plan.fixedPlanned - totalPaid, 0)
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                  <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.fixed.title}</h3>
+                  <span className="text-sm">
+                    {totalOutstanding > 0.5
+                      ? <span className="font-semibold text-yellow-600">{formatEuro(totalOutstanding)} still outstanding</span>
+                      : <span className="font-semibold text-green-600">✓ All paid</span>}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mb-3">{KIND_INFO.fixed.hint}</p>
+                <div className="space-y-3">
+                  {plan.fixed.map(({ budget, actual }) => {
+                    const paid = actual >= budget.amount * 0.95
+                    const pct = Math.min((actual / budget.amount) * 100, 100)
+                    const outstanding = Math.max(budget.amount - actual, 0)
+                    return (
+                      <div key={budget.id}>
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <p className="text-sm font-medium text-gray-800 min-w-0 truncate">{budget.name}</p>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-green-600' : 'text-gray-600'}`}>
+                              {paid ? `✓ Paid ${formatEuro(actual)}` : `${formatEuro(actual)} / ${formatEuro(budget.amount)}`}
+                            </span>
+                            <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
+                          </div>
+                        </div>
+                        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${paid ? 'bg-green-500' : 'bg-slate-400'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {budget.label ? `label: ${budget.label}` : budget.category}
+                          {!paid && <span className="text-yellow-600 font-medium"> · {formatEuro(outstanding)} outstanding</span>}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${paid ? 'text-green-600' : 'text-gray-500'}`}>
-                          {paid ? `✓ Paid ${formatEuro(actual)}` : actual > 0 ? `${formatEuro(actual)} of ${formatEuro(budget.amount)}` : 'Pending'}
-                        </span>
-                        <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Investment targets */}
           {plan.investments.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">{KIND_INFO.investment.title}</h3>
+              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.investment.title}</h3>
+                {(() => {
+                  const invested = plan.investments.reduce((s, i) => s + Math.min(i.actual, i.budget.amount), 0)
+                  const toGo = Math.max(plan.investmentPlanned - invested, 0)
+                  return (
+                    <span className="text-sm">
+                      {toGo > 0.5
+                        ? <span className="font-semibold text-blue-700">{formatEuro(toGo)} left to invest</span>
+                        : <span className="font-semibold text-green-600">✓ All targets reached</span>}
+                    </span>
+                  )
+                })()}
+              </div>
               <p className="text-xs text-gray-400 mb-3">{KIND_INFO.investment.hint}</p>
               <div className="space-y-3">
                 {plan.investments.map(({ budget, actual }) => {
@@ -325,7 +411,11 @@ export default function Budget() {
                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${over ? 'bg-red-500' : near ? 'bg-yellow-400' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
                     </div>
-                    {over && <p className="text-xs text-red-500 mt-1">{formatEuro(actual - budget.amount)} over budget</p>}
+                    <p className="text-xs mt-1">
+                      {over
+                        ? <span className="text-red-500 font-medium">{formatEuro(actual - budget.amount)} over budget</span>
+                        : <span className="text-gray-400"><span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</span>}
+                    </p>
                   </div>
                 )
               })}
