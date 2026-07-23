@@ -237,6 +237,73 @@ var swedMerchantRules = []merchantRule{
 // Wolt bills from Helsinki year-round, so Helsinki is deliberately absent.
 var vacationCityTokens = []string{"KOEBENHAVN", "KOBENHAVN", "OSLO", "GARDERMOEN", "LONDON", "WARSZAWA", "ANTALYA", "VEJLE", "BIRMINGHAM"}
 
+// Details that are bank/technical noise rather than a human-written purpose.
+var detailNoisePrefixes = []string{
+	"PIRKINYS", "GRYNIEJI", "GRĄŽIN", "INESIMAS", "ĮNEŠIMAS", "TMP", "#",
+	"E-SĄSKAITA", "E.SĄSKAITOS", "E-SASKAITA", "SĄSKAITA MB", "SASKAITA MB",
+	"PSD2", "NIPS", "LB PAPILDYTA", "MOKESTIS UŽ", "MOKESTIS UZ", "EAP-FN",
+	"ORDER ID", "ORDER NO", "UZSAKYMO", "UŽSAKYMO", "PAYMENT FOR ORDER",
+	"PIGU.LT", "WWW.", "MOKĖJIMAS MOBILI", "MOKEJIMAS MOBILI", "H202",
+	"VIRC SAVITARNA", "P.P.MOK",
+}
+
+var sellerRe = regexp.MustCompile(`(?i)(?:pardav[eė]jas|seller):\s*([^.,]+)`)
+var urlHostRe = regexp.MustCompile(`https?://(?:www\.)?([^\s/]+)`)
+
+// describe keeps imports descriptive: transfers whose details carry a
+// human-written purpose ("Pool", "tvoros statyba Platiniskiu 21a",
+// "MS2022 NR.: 969 Leonardas B.") get it appended to the payee; card noise,
+// invoice references and generic phrases don't. Payment intermediaries
+// (Paysera & co) get the actual seller or shop host extracted instead.
+func describe(payee, details string) string {
+	if payee == "" {
+		return payee
+	}
+	d := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(details), "'"))
+	if d == "" || strings.EqualFold(d, payee) {
+		return payee
+	}
+	upPayee := strings.ToUpper(payee)
+	if strings.Contains(upPayee, "PAYSERA") || strings.Contains(upPayee, "OPAY") ||
+		strings.Contains(upPayee, "MAKSEKESKUS") || strings.Contains(upPayee, "TRUSTLY") ||
+		strings.Contains(upPayee, "ELEKTRONINIŲ MOKĖJIMŲ") {
+		if m := sellerRe.FindStringSubmatch(d); m != nil {
+			return payee + " (" + strings.Trim(strings.TrimSpace(m[1]), ")(\"") + ")"
+		}
+		if m := urlHostRe.FindStringSubmatch(d); m != nil {
+			return payee + " (" + m[1] + ")"
+		}
+		return payee
+	}
+	upD := strings.ToUpper(d)
+	for _, p := range detailNoisePrefixes {
+		if strings.HasPrefix(upD, p) {
+			return payee
+		}
+	}
+	low := strings.ToLower(d)
+	if low == "transfer" || low == "pervedimas" {
+		return payee
+	}
+	runes := []rune(d)
+	if len(runes) > 60 {
+		return payee
+	}
+	letters, digits := 0, 0
+	for _, r := range runes {
+		switch {
+		case ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || r > 127:
+			letters++
+		case '0' <= r && r <= '9':
+			digits++
+		}
+	}
+	if letters < 4 || letters <= digits {
+		return payee
+	}
+	return payee + " (" + d + ")"
+}
+
 // canonicalMerchant mirrors the startup comment-cleanup migration for retail
 // chains, so statement re-imports dedup against already-canonicalised rows
 // instead of re-adding the raw bank strings.
@@ -338,11 +405,11 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 			base.Comment = "SoDra išmoka"
 		case strings.Contains(up, "EVELINA") || strings.Contains(up, "BALČIŪNIEN"):
 			base.Category = "Reimbursement"
-			base.Comment = payee
+			base.Comment = describe(payee, details)
 			base.Labels = "evelina"
 		default:
 			base.Category = "Reimbursement"
-			base.Comment = canonicalMerchant(up, payee)
+			base.Comment = describe(canonicalMerchant(up, payee), details)
 			if base.Comment == "" {
 				base.Comment = details
 			}
@@ -388,12 +455,12 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 	// Trips: foreign-currency card purchases (except online USD shops).
 	if fxCurrencyRe.MatchString(details) {
 		return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-			Category: "Vacation", Comment: payee, Debit: "swed"}, false
+			Category: "Vacation", Comment: describe(payee, details), Debit: "swed"}, false
 	}
 	for _, city := range vacationCityTokens {
 		if strings.Contains(up, city) && !strings.Contains(up, "WOLT") {
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-				Category: "Vacation", Comment: payee, Debit: "swed"}, false
+				Category: "Vacation", Comment: describe(payee, details), Debit: "swed"}, false
 		}
 	}
 
@@ -401,7 +468,7 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 		for _, p := range rule.patterns {
 			if strings.Contains(up, p) {
 				return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-					Category: rule.category, Comment: canonicalMerchant(up, payee), Debit: "swed"}, false
+					Category: rule.category, Comment: describe(canonicalMerchant(up, payee), details), Debit: "swed"}, false
 			}
 		}
 	}
@@ -409,9 +476,9 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 	// Person-to-person transfers with a gift-ish note.
 	if strings.Contains(up, "BDAY") || strings.Contains(up, "BIRTHDAY") || strings.Contains(up, "GIMTADIEN") || strings.Contains(up, "DOVAN") {
 		return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-			Category: "Gifts", Comment: payee + " (" + details + ")", Debit: "swed"}, false
+			Category: "Gifts", Comment: describe(payee, details), Debit: "swed"}, false
 	}
 
 	return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-		Category: "Entertainment", Comment: payee, Debit: "swed"}, false
+		Category: "Entertainment", Comment: describe(payee, details), Debit: "swed"}, false
 }
