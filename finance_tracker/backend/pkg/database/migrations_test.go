@@ -197,6 +197,39 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.NotContains(t, labelsOf(t, db, norfaPharm), "norfa", "NORFOS VAISTINE is pharmacy, not the store")
 }
 
+func TestUserLabelRules(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	argus := seedTx(t, db, "expense", "Utilities", "UAB SAUGOS TARNYBA ARGUS")
+	argusManual := seedTx(t, db, "expense", "Utilities", "Argus (security)")
+	kebab := seedTx(t, db, "expense", "Food", "Pammukale. Kebab")
+	mcd := seedTx(t, db, "expense", "Food", "McDonalds 44000017 LT-04352 Vilnius")
+	ilunch := seedTx(t, db, "expense", "Food", "iLunch food with colleagues")
+	nexos := seedTx(t, db, "income", "Salary", "Nexos.ai 2026.07 (partial payment)")
+	ibkrTop := seedTx(t, db, "investment", "Stocks & ETF", "ibkr top up")
+	swedTop := seedTx(t, db, "investment", "Stocks & ETF", "top up from Swedbank")
+	revTop := seedTx(t, db, "investment", "Stocks & ETF", "Revolut top up")
+
+	applyCategoryMigrations(db)
+
+	assert.Contains(t, labelsOf(t, db, argus), "security")
+	assert.Contains(t, labelsOf(t, db, argusManual), "security")
+	assert.Contains(t, labelsOf(t, db, kebab), "fast food")
+	assert.Contains(t, labelsOf(t, db, kebab), "restaurant")
+	assert.Contains(t, labelsOf(t, db, mcd), "fast food")
+	bbq := seedTx(t, db, "expense", "Food", "Lidl. Groceries mostly for bbq burgers date at home")
+	applyCategoryMigrations(db)
+	assert.NotContains(t, labelsOf(t, db, bbq), "fast food", "grocery bbq run is not fast food")
+	assert.Contains(t, labelsOf(t, db, ilunch), "work lunch")
+	assert.Contains(t, labelsOf(t, db, ilunch), "lunch")
+	assert.Contains(t, labelsOf(t, db, nexos), "nexos")
+	assert.Contains(t, labelsOf(t, db, ibkrTop), "ibkr")
+	assert.Contains(t, labelsOf(t, db, swedTop), "ibkr", "Swedbank->IBKR top-up backfilled")
+	assert.NotContains(t, labelsOf(t, db, revTop), "ibkr", "Revolut top-up is not IBKR")
+}
+
 func TestCinemaRuleDoesNotMatchPekinas(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)

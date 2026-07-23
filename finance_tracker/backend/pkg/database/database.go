@@ -218,6 +218,13 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"norfa":     {"norfa"},
 		"moki-vezi": {"moki-vezi", "moki vezi", "moki vež"},
 		"barbora":   {"barbora"},
+		// Rules behind labels the user created by hand, so future rows
+		// self-apply and history backfills.
+		"security":   {"argus", "saugos tarnyba"},
+		"fast food":  {"kebab", "mcdonald", "hesburger", "burgermeister", "burger king", "kfc"},
+		"work lunch": {"work lunch", "team lunch", "su kolega", "colleag", "ilunch", "darbo piet"},
+		"nexos":      {"nexos"},
+		"ibkr":       {"ibkr"},
 	}
 	for label, patterns := range contextLabels {
 		for _, p := range patterns {
@@ -226,6 +233,12 @@ func applyCategoryMigrations(db *gorm.DB) {
 		}
 	}
 
+	// IBKR deposits phrased as "top up from Swedbank" don't mention ibkr;
+	// history only — "top up" alone is too ambiguous as a standing rule
+	// (Revolut top-ups share the phrase).
+	addLabel("ibkr", `type = 'investment' AND category = 'Stocks & ETF'
+		AND LOWER(comment) LIKE '%top up%' AND LOWER(comment) NOT LIKE '%revolut%'`)
+
 	// The bare "kinas" cinema pattern false-positived on restaurant names
 	// containing it as a suffix (Pekinas); replaced by " kinas" above.
 	// Retire the old rule and strip the mislabel from affected rows.
@@ -233,6 +246,13 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`UPDATE transactions
 		SET labels = TRIM(REPLACE(',' || labels || ',', ',cinema,', ','), ',')
 		WHERE LOWER(comment) LIKE '%pekinas%' AND (',' || labels || ',') LIKE '%,cinema,%'`)
+
+	// Likewise, a bare "burger" fast-food pattern hit grocery runs mentioning
+	// burgers; only named venues remain above.
+	db.Exec(`DELETE FROM label_rules WHERE label = 'fast food' AND comment_match = 'burger'`)
+	db.Exec(`UPDATE transactions
+		SET labels = TRIM(REPLACE(',' || labels || ',', ',fast food,', ','), ',')
+		WHERE LOWER(comment) LIKE '%bbq burger%' AND (',' || labels || ',') LIKE '%,fast food,%'`)
 	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
 	// as a standing rule, new ones are caught by the category suggestion.
 	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
