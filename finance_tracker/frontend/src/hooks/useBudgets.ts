@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { budgetsApi } from '../api/budgets'
 import { TRANSACTIONS_KEY } from './useTransactions'
-import type { BudgetInput } from '../types'
+import type { BudgetInput, BudgetSettingsInput } from '../types'
 
 export const BUDGETS_KEY = 'budgets'
 
@@ -33,6 +33,23 @@ export function useDeleteBudget() {
   return useMutation({
     mutationFn: (id: number) => budgetsApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGETS_KEY] }),
+  })
+}
+
+export const BUDGET_SETTINGS_KEY = 'budget-settings'
+
+export function useBudgetSettings() {
+  return useQuery({
+    queryKey: [BUDGET_SETTINGS_KEY],
+    queryFn: () => budgetsApi.getSettings(),
+  })
+}
+
+export function useSaveBudgetSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: BudgetSettingsInput) => budgetsApi.saveSettings(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGET_SETTINGS_KEY] }),
   })
 }
 

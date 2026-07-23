@@ -24,6 +24,8 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		b.POST("", h.Create)
 		b.PUT("/:id", h.Update)
 		b.DELETE("/:id", h.Delete)
+		b.GET("/settings", h.GetSettings)
+		b.PUT("/settings", h.SaveSettings)
 	}
 	l := rg.Group("/labels")
 	{
@@ -123,6 +125,56 @@ func (h *BudgetHandler) Delete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (h *BudgetHandler) GetSettings(c *gin.Context) {
+	s, err := h.repo.GetSettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+type budgetSettingsInput struct {
+	IncomeMode        string  `json:"income_mode" binding:"required"`
+	ManualIncome      float64 `json:"manual_income"`
+	GrossSalary       float64 `json:"gross_salary"`
+	MonthlyDeductions float64 `json:"monthly_deductions"`
+}
+
+func (h *BudgetHandler) SaveSettings(c *gin.Context) {
+	var input budgetSettingsInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if !domain.IsValidIncomeMode(input.IncomeMode) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "income_mode must be median, manual or gross"})
+		return
+	}
+	if input.IncomeMode == "manual" && input.ManualIncome <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "manual_income must be positive"})
+		return
+	}
+	if input.IncomeMode == "gross" && input.GrossSalary <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "gross_salary must be positive"})
+		return
+	}
+	s, err := h.repo.GetSettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	s.IncomeMode = input.IncomeMode
+	s.ManualIncome = input.ManualIncome
+	s.GrossSalary = input.GrossSalary
+	s.MonthlyDeductions = input.MonthlyDeductions
+	if err := h.repo.SaveSettings(s); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, s)
 }
 
 func (h *BudgetHandler) Labels(c *gin.Context) {

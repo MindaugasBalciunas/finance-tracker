@@ -84,6 +84,24 @@ export interface Budget {
   updated_at: string
 }
 
+export type IncomeMode = 'median' | 'manual' | 'gross'
+
+export interface BudgetSettings {
+  id: number
+  income_mode: IncomeMode
+  manual_income: number
+  gross_salary: number
+  monthly_deductions: number
+  updated_at: string
+}
+
+export interface BudgetSettingsInput {
+  income_mode: IncomeMode
+  manual_income?: number
+  gross_salary?: number
+  monthly_deductions?: number
+}
+
 export interface BudgetInput {
   name: string
   kind: BudgetKind

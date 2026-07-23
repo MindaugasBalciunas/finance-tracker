@@ -326,6 +326,16 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Imported.LabelRules++
 		}
 
+		if payload.BudgetSettings != nil && domain.IsValidIncomeMode(payload.BudgetSettings.IncomeMode) {
+			if cur, err := h.budgetRepo.GetSettings(); err == nil {
+				cur.IncomeMode = payload.BudgetSettings.IncomeMode
+				cur.ManualIncome = payload.BudgetSettings.ManualIncome
+				cur.GrossSalary = payload.BudgetSettings.GrossSalary
+				cur.MonthlyDeductions = payload.BudgetSettings.MonthlyDeductions
+				_ = h.budgetRepo.SaveSettings(cur)
+			}
+		}
+
 		// Deterministic migration: re-apply every rule across the whole table so
 		// imported historical records (and pre-label rows) get their labels.
 		allRules, _ := h.budgetRepo.ListRules()

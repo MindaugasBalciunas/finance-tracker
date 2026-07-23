@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useAllTransactions, useTransactionSummary } from '../hooks/useTransactions'
-import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules } from '../hooks/useBudgets'
+import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings } from '../hooks/useBudgets'
 import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
+import { ltNetSalary } from '../utils/ltSalary'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
 import { CATEGORIES } from '../constants/categories'
-import type { Budget, BudgetInput, BudgetKind } from '../types'
+import type { Budget, BudgetInput, BudgetKind, BudgetSettings, IncomeMode } from '../types'
 
 function ym(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -49,6 +50,7 @@ export default function Budget() {
   const { data: budgets, isLoading: budgetsLoading } = useBudgets()
   const { data: monthTxs } = useAllTransactions(range)
   const { data: allTimeSummary } = useTransactionSummary({})
+  const { data: settings } = useBudgetSettings()
   const createMutation = useCreateBudget()
   const updateMutation = useUpdateBudget()
   const deleteMutation = useDeleteBudget()
@@ -73,10 +75,24 @@ export default function Budget() {
     }
   }
 
-  const incomeBase = useMemo(
+  const medianBase = useMemo(
     () => medianMonthlyIncome(allTimeSummary?.by_month ?? [], new Date()),
     [allTimeSummary]
   )
+
+  // Income base: configured projected salary wins over the historical median.
+  const { incomeBase, incomeSource } = useMemo(() => {
+    if (settings?.income_mode === 'manual' && settings.manual_income > 0) {
+      return { incomeBase: settings.manual_income, incomeSource: 'projected (manual)' }
+    }
+    if (settings?.income_mode === 'gross' && settings.gross_salary > 0) {
+      const net = ltNetSalary(settings.gross_salary, settings.monthly_deductions).netAfterDeductions
+      return { incomeBase: net, incomeSource: `from ${formatEuro(settings.gross_salary)} gross − LT tax` }
+    }
+    return { incomeBase: medianBase, incomeSource: 'median month' }
+  }, [settings, medianBase])
+
+  const [showIncomeSettings, setShowIncomeSettings] = useState(false)
 
   const plan = useMemo(
     () => computeMonthPlan(budgets ?? [], monthTxs?.data ?? [], incomeBase),
@@ -197,7 +213,16 @@ export default function Budget() {
               {plan.safeToSpend != null ? formatEuro(plan.safeToSpend) : '—'}
             </p>
             <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-gray-500">
-              <span>Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span> <span className="text-gray-400">(median month)</span></span>
+              <span>
+                Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span>{' '}
+                <span className="text-gray-400">({incomeSource})</span>
+                <button
+                  onClick={() => setShowIncomeSettings(true)}
+                  className="ml-1.5 text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  ✎ edit
+                </button>
+              </span>
               <span>− Fixed <span className="font-semibold text-gray-700">{formatEuro(plan.fixedPlanned)}</span></span>
               <span>− Investments <span className="font-semibold text-gray-700">{formatEuro(plan.investmentPlanned)}</span></span>
               <span>− Spent so far <span className="font-semibold text-gray-700">{formatEuro(plan.discretionarySpent)}</span></span>
@@ -346,6 +371,133 @@ export default function Budget() {
           onClose={() => { setShowForm(false); setEditing(null); setFormError(null); setPrefill(null) }}
         />
       )}
+
+      {showIncomeSettings && (
+        <IncomeSettingsModal
+          settings={settings ?? null}
+          medianBase={medianBase}
+          onClose={() => setShowIncomeSettings(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function IncomeSettingsModal({ settings, medianBase, onClose }: {
+  settings: BudgetSettings | null
+  medianBase: number | null
+  onClose: () => void
+}) {
+  const save = useSaveBudgetSettings()
+  const [mode, setMode] = useState<IncomeMode>(settings?.income_mode ?? 'median')
+  const [manual, setManual] = useState(settings?.manual_income || 0)
+  const [gross, setGross] = useState(settings?.gross_salary || 0)
+  const [deductions, setDeductions] = useState(settings?.monthly_deductions || 0)
+  const [error, setError] = useState<string | null>(null)
+
+  const breakdown = gross > 0 ? ltNetSalary(gross, deductions) : null
+
+  const valid = mode === 'median' || (mode === 'manual' ? manual > 0 : gross > 0)
+
+  async function handleSave() {
+    setError(null)
+    try {
+      await save.mutateAsync({
+        income_mode: mode,
+        manual_income: manual,
+        gross_salary: gross,
+        monthly_deductions: deductions,
+      })
+      onClose()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">Income Base</h3>
+        <p className="text-xs text-gray-400 mb-4">The monthly income "Safe to spend" is calculated from</p>
+        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</p>}
+
+        <div className="space-y-3">
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer ${mode === 'median' ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}>
+            <input type="radio" checked={mode === 'median'} onChange={() => setMode('median')} className="mt-0.5" />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">Automatic — median month</span>
+              <span className="block text-xs text-gray-400 mt-0.5">
+                From your history{medianBase != null ? `: currently ${formatEuro(medianBase)}` : ''}. Includes all income types.
+              </span>
+            </span>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer ${mode === 'gross' ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}>
+            <input type="radio" checked={mode === 'gross'} onChange={() => setMode('gross')} className="mt-0.5" />
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-gray-800">Projected salary — from gross (LT tax)</span>
+              <span className="block text-xs text-gray-400 mt-0.5 mb-2">Bruto salary, net computed with 2026 LT employee taxes</span>
+              {mode === 'gross' && (
+                <span className="block space-y-2">
+                  <input
+                    type="number" inputMode="decimal"
+                    value={gross || ''}
+                    onChange={(e) => setGross(parseFloat(e.target.value) || 0)}
+                    placeholder="Gross salary € (e.g. 8400)"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="number" inputMode="decimal"
+                    value={deductions || ''}
+                    onChange={(e) => setDeductions(parseFloat(e.target.value) || 0)}
+                    placeholder="Fixed monthly deductions € (e.g. 30 parking)"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  {breakdown && (
+                    <span className="block text-xs text-gray-500 bg-gray-50 rounded-lg p-2.5 space-y-0.5">
+                      <span className="flex justify-between"><span>Sodra (19.5%)</span><span>−{formatEuro(breakdown.sodra)}</span></span>
+                      <span className="flex justify-between"><span>GPM (20%{breakdown.npd > 0 ? `, NPD ${formatEuro(breakdown.npd)}` : ''})</span><span>−{formatEuro(breakdown.gpm)}</span></span>
+                      {deductions > 0 && <span className="flex justify-between"><span>Deductions</span><span>−{formatEuro(deductions)}</span></span>}
+                      <span className="flex justify-between font-semibold text-gray-800 border-t border-gray-200 pt-1 mt-1">
+                        <span>Net income base</span><span>{formatEuro(breakdown.netAfterDeductions)}</span>
+                      </span>
+                    </span>
+                  )}
+                </span>
+              )}
+            </span>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer ${mode === 'manual' ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}>
+            <input type="radio" checked={mode === 'manual'} onChange={() => setMode('manual')} className="mt-0.5" />
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-gray-800">Manual — fixed net amount</span>
+              {mode === 'manual' && (
+                <input
+                  type="number" inputMode="decimal"
+                  value={manual || ''}
+                  onChange={(e) => setManual(parseFloat(e.target.value) || 0)}
+                  placeholder="Net income € / month"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-2"
+                />
+              )}
+            </span>
+          </label>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              disabled={!valid || save.isPending}
+              onClick={handleSave}
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40"
+            >
+              {save.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

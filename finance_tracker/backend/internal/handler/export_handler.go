@@ -60,6 +60,17 @@ func (h *ExportHandler) budgetRows() ([]budgetExportRow, []labelRuleExportRow) {
 	return bRows, rRows
 }
 
+func (h *ExportHandler) settingsRow() *budgetSettingsRow {
+	if h.budgetRepo == nil {
+		return nil
+	}
+	s, err := h.budgetRepo.GetSettings()
+	if err != nil || s.IncomeMode == "median" && s.ManualIncome == 0 && s.GrossSalary == 0 {
+		return nil
+	}
+	return &budgetSettingsRow{IncomeMode: s.IncomeMode, ManualIncome: s.ManualIncome, GrossSalary: s.GrossSalary, MonthlyDeductions: s.MonthlyDeductions}
+}
+
 func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceService, stockSvc service.StockService, assetSvc service.AssetService, exportLogRepo repository.ExportLogRepository) *ExportHandler {
 	return &ExportHandler{txSvc: txSvc, balSvc: balSvc, stockSvc: stockSvc, assetSvc: assetSvc, exportLogRepo: exportLogRepo}
 }
@@ -166,6 +177,14 @@ type financeExport struct {
 	Assets          []assetExportRow `json:"assets"`
 	Budgets         []budgetExportRow    `json:"budgets,omitempty"`
 	LabelRules      []labelRuleExportRow `json:"label_rules,omitempty"`
+	BudgetSettings  *budgetSettingsRow   `json:"budget_settings,omitempty"`
+}
+
+type budgetSettingsRow struct {
+	IncomeMode        string  `json:"income_mode"`
+	ManualIncome      float64 `json:"manual_income,omitempty"`
+	GrossSalary       float64 `json:"gross_salary,omitempty"`
+	MonthlyDeductions float64 `json:"monthly_deductions,omitempty"`
 }
 
 type budgetExportRow struct {
@@ -378,6 +397,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		Assets:          toAssetExportRows(assets),
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,
+		BudgetSettings:  h.settingsRow(),
 	})
 }
 
@@ -490,6 +510,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		Assets:          toAssetExportRows(assets),
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,
+		BudgetSettings:  h.settingsRow(),
 	})
 }
 

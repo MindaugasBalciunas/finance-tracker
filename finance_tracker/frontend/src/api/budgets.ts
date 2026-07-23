@@ -1,5 +1,5 @@
 import client from './client'
-import type { Budget, BudgetInput } from '../types'
+import type { Budget, BudgetInput, BudgetSettings, BudgetSettingsInput } from '../types'
 
 export const budgetsApi = {
   list: async (): Promise<Budget[]> => {
@@ -19,6 +19,16 @@ export const budgetsApi = {
 
   delete: async (id: number): Promise<void> => {
     await client.delete(`/budgets/${id}`)
+  },
+
+  getSettings: async (): Promise<BudgetSettings> => {
+    const { data } = await client.get<BudgetSettings>('/budgets/settings')
+    return data
+  },
+
+  saveSettings: async (input: BudgetSettingsInput): Promise<BudgetSettings> => {
+    const { data } = await client.put<BudgetSettings>('/budgets/settings', input)
+    return data
   },
 
   labels: async (): Promise<string[]> => {

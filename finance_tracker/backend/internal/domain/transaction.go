@@ -207,6 +207,30 @@ type Budget struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// BudgetSettings is a single-row table configuring the Budget page's income
+// base. IncomeMode: "median" (auto from history), "manual" (ManualIncome), or
+// "gross" (net computed client-side from GrossSalary − MonthlyDeductions
+// under LT employee tax rules).
+type BudgetSettings struct {
+	ID                uint      `gorm:"primarykey" json:"id"`
+	IncomeMode        string    `json:"income_mode" gorm:"not null;default:'median'"`
+	ManualIncome      float64   `json:"manual_income" gorm:"not null;default:0"`
+	GrossSalary       float64   `json:"gross_salary" gorm:"not null;default:0"`
+	MonthlyDeductions float64   `json:"monthly_deductions" gorm:"not null;default:0"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+var ValidIncomeModes = []string{"median", "manual", "gross"}
+
+func IsValidIncomeMode(m string) bool {
+	for _, v := range ValidIncomeModes {
+		if v == m {
+			return true
+		}
+	}
+	return false
+}
+
 var ValidBudgetKinds = []string{"fixed", "investment", "spending"}
 
 func IsValidBudgetKind(k string) bool {

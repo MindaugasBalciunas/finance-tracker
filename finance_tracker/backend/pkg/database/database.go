@@ -59,7 +59,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		db.Exec("ALTER TABLE balances DROP COLUMN is_auto")
 	}
 
-	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}); err != nil {
+	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}); err != nil {
 		return nil, err
 	}
 

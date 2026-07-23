@@ -24,7 +24,7 @@ func budgetTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.LabelRule{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
 
 	budgetRepo := repository.NewBudgetRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
@@ -186,6 +186,10 @@ func TestBudgetsAndRules_ExportImportMigration(t *testing.T) {
 		"name": "Loan payments", "kind": "fixed", "label": "loan", "amount": 1285.0,
 	})
 	require.Equal(t, 201, w.Code)
+	w = budgetDoJSON(srcRouter, "PUT", "/api/v1/budgets/settings", map[string]any{
+		"income_mode": "gross", "gross_salary": 8400.0, "monthly_deductions": 30.0,
+	})
+	require.Equal(t, 200, w.Code, w.Body.String())
 
 	// Export from source.
 	srcExport := exportRouterFor(t, srcDB)
@@ -196,6 +200,8 @@ func TestBudgetsAndRules_ExportImportMigration(t *testing.T) {
 	exported := rec.Body.Bytes()
 	assert.Contains(t, string(exported), `"budgets"`)
 	assert.Contains(t, string(exported), `"label_rules"`)
+	assert.Contains(t, string(exported), `"budget_settings"`)
+	assert.Contains(t, string(exported), `"gross_salary":8400`)
 
 	// Fresh destination instance; strip labels from the payload to simulate an
 	// old export — the import must relabel from the rules.
@@ -226,6 +232,13 @@ func TestBudgetsAndRules_ExportImportMigration(t *testing.T) {
 	var tx domain.Transaction
 	require.NoError(t, dstDB.First(&tx).Error)
 	assert.Equal(t, "loan", tx.Labels)
+
+	// Income settings migrated too.
+	var settings domain.BudgetSettings
+	require.NoError(t, dstDB.First(&settings).Error)
+	assert.Equal(t, "gross", settings.IncomeMode)
+	assert.Equal(t, 8400.0, settings.GrossSalary)
+	assert.Equal(t, 30.0, settings.MonthlyDeductions)
 
 	// Re-import is a no-op (idempotent).
 	var buf2 bytes.Buffer
@@ -271,7 +284,7 @@ func importRouterFor(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.LabelRule{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
 	r := gin.New()
 	NewImportHandler(
 		repository.NewTransactionRepository(db),

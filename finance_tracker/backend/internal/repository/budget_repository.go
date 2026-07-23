@@ -21,6 +21,9 @@ type BudgetRepository interface {
 	// Returns the number of transactions updated.
 	ApplyLabel(rule domain.LabelRule) (int, error)
 	DistinctLabels() ([]string, error)
+
+	GetSettings() (*domain.BudgetSettings, error)
+	SaveSettings(s *domain.BudgetSettings) error
 }
 
 type budgetRepository struct {
@@ -96,6 +99,22 @@ func (r *budgetRepository) ApplyLabel(rule domain.LabelRule) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+func (r *budgetRepository) GetSettings() (*domain.BudgetSettings, error) {
+	var s domain.BudgetSettings
+	if err := r.db.FirstOrCreate(&s, domain.BudgetSettings{ID: 1}).Error; err != nil {
+		return nil, err
+	}
+	if s.IncomeMode == "" {
+		s.IncomeMode = "median"
+	}
+	return &s, nil
+}
+
+func (r *budgetRepository) SaveSettings(s *domain.BudgetSettings) error {
+	s.ID = 1
+	return r.db.Save(s).Error
 }
 
 func (r *budgetRepository) DistinctLabels() ([]string, error) {
