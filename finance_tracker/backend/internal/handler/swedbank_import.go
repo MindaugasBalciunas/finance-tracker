@@ -49,15 +49,22 @@ type swedBalance struct {
 	Amount float64
 }
 
-// parseSwedbankCSV turns a statement into classified transactions, the
-// bank-stated opening/closing balances, and a count of skipped internal
+// parseSwedbankCSV turns a statement into classified transactions, a
+// month-end balance series reconstructed from the bank-stated opening
+// balance plus every row's flow, and a count of skipped internal
 // own-account movements.
 func parseSwedbankCSV(r io.Reader) (txs []swedTx, balances []swedBalance, internal int, err error) {
 	reader := csv.NewReader(r)
 	reader.FieldsPerRecord = -1
 	reader.LazyQuotes = true
 
-	balByDate := map[time.Time]float64{}
+	type flow struct {
+		date  time.Time
+		delta float64
+	}
+	var flows []flow
+	var openDate, closeDate time.Time
+	var openBal float64
 	first := true
 	for {
 		rec, rerr := reader.Read()
@@ -86,7 +93,14 @@ func parseSwedbankCSV(r io.Reader) (txs []swedTx, balances []swedBalance, intern
 		// appear twice (separate EUR and LTL sub-balances) — sum them.
 		if kind == "10" || kind == "86" {
 			if derr == nil && aerr == nil {
-				balByDate[date] += amount
+				if kind == "10" {
+					openBal += amount
+					if openDate.IsZero() || date.Before(openDate) {
+						openDate = date
+					}
+				} else if date.After(closeDate) {
+					closeDate = date
+				}
 			}
 			continue
 		}
@@ -100,9 +114,18 @@ func parseSwedbankCSV(r io.Reader) (txs []swedTx, balances []swedBalance, intern
 		payee := strings.TrimSpace(rec[3])
 		details := strings.TrimSpace(rec[4])
 
+		// Every row moves the account balance — including internal transfers
+		// that are skipped as transactions. Flows use the POSTING date; the
+		// account changed when the bank posted, not when the card was swiped.
+		delta := amount
+		if strings.TrimSpace(rec[7]) == "D" {
+			delta = -amount
+		}
+		flows = append(flows, flow{date: date, delta: delta})
+
 		// The LTL→EUR changeover pair (one debit in LTL, one credit in EUR,
 		// both marked with the conversion rate) is a technical event, not a
-		// transaction.
+		// transaction. Its converted flows cancel out above.
 		if payee == "" && strings.Contains(details, "kursas") && strings.Contains(details, "LTL") {
 			internal++
 			continue
@@ -127,10 +150,22 @@ func parseSwedbankCSV(r io.Reader) (txs []swedTx, balances []swedBalance, intern
 		}
 		txs = append(txs, tx)
 	}
-	for d, amt := range balByDate {
-		balances = append(balances, swedBalance{Date: d, Amount: math.Round(amt*100) / 100})
+	// Month-end balance series: start from the bank-stated opening balance
+	// and replay every flow. The last month must land on the bank-stated
+	// closing balance, so the series is self-checking.
+	if !openDate.IsZero() && !closeDate.IsZero() {
+		sort.SliceStable(flows, func(i, j int) bool { return flows[i].date.Before(flows[j].date) })
+		running := openBal
+		i := 0
+		for cur := time.Date(openDate.Year(), openDate.Month(), 1, 0, 0, 0, 0, time.UTC); cur.Before(closeDate); cur = cur.AddDate(0, 1, 0) {
+			monthEnd := cur.AddDate(0, 1, -1)
+			for i < len(flows) && !flows[i].date.After(monthEnd) {
+				running += flows[i].delta
+				i++
+			}
+			balances = append(balances, swedBalance{Date: monthEnd, Amount: math.Round(running*100) / 100})
+		}
 	}
-	sort.Slice(balances, func(i, j int) bool { return balances[i].Date.Before(balances[j].Date) })
 	return txs, balances, internal, nil
 }
 

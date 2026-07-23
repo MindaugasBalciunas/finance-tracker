@@ -80,7 +80,7 @@ func TestSwedbankImport(t *testing.T) {
 	assert.EqualValues(t, 19, res["imported"], "all real rows imported")
 	assert.EqualValues(t, 4, res["internal"], "own transfers + LTL conversion pair + taupyklė skipped")
 	assert.EqualValues(t, 0, res["duplicate"])
-	assert.EqualValues(t, 2, res["balances"], "statement opening/closing restored")
+	assert.EqualValues(t, 24, res["balances"], "one snapshot per statement month")
 	assert.Equal(t, "2012-01-10", res["date_from"])
 
 	get := func(comment string) domain.Transaction {
@@ -171,12 +171,17 @@ func TestSwedbankImport(t *testing.T) {
 	assert.Equal(t, domain.TransactionTypeInvestment, rav4.Type)
 	assert.Equal(t, "Vehicle", string(rav4.Category))
 
-	// Balance snapshots restored from the statement's own rows.
+	// Month-end balances replayed from the opening balance: 2022-01 through
+	// 2023-12. First month = opening + all flows posted through 2022-01-31
+	// (incl. the synthetic pre-2022 fixture rows); the last month carries
+	// every flow except the 2024 Taupyklė sweep.
 	var bals []domain.Balance
 	require.NoError(t, db.Order("date").Find(&bals).Error)
-	require.Len(t, bals, 2)
-	assert.InDelta(t, 34639.41, bals[0].Swed, 0.001)
-	assert.InDelta(t, 19104.63, bals[1].Swed, 0.001)
+	require.Len(t, bals, 24)
+	assert.Equal(t, "2022-01-31", bals[0].Date.Format("2006-01-02"))
+	assert.InDelta(t, 32221.91, bals[0].Swed, 0.005)
+	assert.Equal(t, "2023-12-31", bals[23].Date.Format("2006-01-02"))
+	assert.InDelta(t, 4472.27, bals[23].Swed, 0.005)
 
 	// Idempotent: importing again skips everything, incl. balances.
 	rec2 := swedImport(t, r, swedFixture)
@@ -185,7 +190,7 @@ func TestSwedbankImport(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &res2))
 	assert.EqualValues(t, 0, res2["imported"])
 	assert.EqualValues(t, 19, res2["duplicate"])
-	assert.EqualValues(t, 0, res2["balances"])
+	assert.EqualValues(t, 0, res2["balances"], "monthly snapshots dedup on re-import")
 }
 
 // swedTestRouter is budgetTestRouter plus the import routes: transactions,
