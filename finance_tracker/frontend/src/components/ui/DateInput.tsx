@@ -28,6 +28,9 @@ export default function DateInput({ value, onChange, className, required }: Prop
       showMonthDropdown
       showYearDropdown
       dropdownMode="select"
+      // Fixed positioning lets the calendar escape overflow-clipping ancestors
+      // (e.g. the horizontally-scrolling date-range filter bar).
+      popperProps={{ strategy: 'fixed' }}
     />
   )
 }

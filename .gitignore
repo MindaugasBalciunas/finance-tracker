@@ -25,3 +25,7 @@ finance_tracker/backend/*.db-shm
 finance_tracker/backend/*.db-wal
 finance_tracker/backend/main
 exports/
+
+# Stray root DB (guard against cwd-drift artifacts)
+/finance.db
+/*.db
