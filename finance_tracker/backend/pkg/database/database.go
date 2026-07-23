@@ -128,8 +128,11 @@ func applyDataCleanups(db *gorm.DB) {
 		WHERE UPPER(comment) LIKE '%KESKO SENUKAI%'`)
 	db.Exec(`UPDATE transactions SET comment = 'Depo'
 		WHERE comment IN ('DEPO VILNIUS', 'DEPO PANEVEZYS')`)
-	db.Exec(`UPDATE transactions SET comment = 'Pigu.lt' WHERE comment = 'UAB PIGU'`)
+	db.Exec(`UPDATE transactions SET comment = 'Pigu.lt' WHERE comment = 'UAB PIGU' OR comment = 'UAB "PIGU"'`)
 	db.Exec(`UPDATE transactions SET comment = 'Varlė.lt' WHERE comment = 'Varle UAB'`)
+	// Fee refunds with no payee used to render as a dangling "Card refund:".
+	db.Exec(`UPDATE transactions SET comment = 'Card refund (Swedbank)'
+		WHERE TRIM(comment) = 'Card refund:'`)
 }
 
 // applyCategoryMigrations recategorizes known-misfiled transactions by vendor.
@@ -230,9 +233,17 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"norfa":   {"norfa"},
 		"barbora": {"barbora"},
 		// Moki Veži/Senukai/Depo are DIY & building-materials chains, and
-		// Pigu/Varlė are electronics e-shops — not groceries.
-		"diy":         {"moki vež", "moki vezi", "moki-vezi", "senukai", "kesko", "depo", "ermita", "ikea"},
+		// Pigu/Varlė are electronics e-shops — not groceries. "depo " keeps a
+		// trailing space so "deposit" comments stay unlabeled.
+		"diy":         {"moki vež", "moki vezi", "moki-vezi", "senukai", "kesko", "depo ", "ermita", "ikea"},
 		"electronics": {"pigu", "varle", "varlė", "electronic trade", "mk trade", "samsung", "technikos centr"},
+		// Per-shop labels on DIY/home chains, mirroring the grocery store
+		// labels, so per-store spend can be compared.
+		"senukai":   {"senukai", "kesko"},
+		"depo":      {"depo "},
+		"ikea":      {"ikea"},
+		"jysk":      {"jysk"},
+		"moki-vezi": {"moki vež", "moki vezi", "moki-vezi"},
 		// Rules behind labels the user created by hand, so future rows
 		// self-apply and history backfills.
 		"security":   {"argus", "saugos tarnyba"},
@@ -253,6 +264,16 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// (Revolut top-ups share the phrase).
 	addLabel("ibkr", `type = 'investment' AND category = 'Stocks & ETF'
 		AND LOWER(comment) LIKE '%top up%' AND LOWER(comment) NOT LIKE '%revolut%'`)
+
+	// The bare "depo" pattern used to hit "deposit" comments; the rule is now
+	// "depo " and the canonical "Depo" rows get their labels via exact match.
+	db.Exec(`DELETE FROM label_rules WHERE label IN ('diy', 'depo') AND comment_match = 'depo'`)
+	for _, l := range []string{"diy", "depo"} {
+		db.Exec(`UPDATE transactions
+			SET labels = TRIM(REPLACE(',' || labels || ',', ',`+l+`,', ','), ',')
+			WHERE LOWER(comment) LIKE '%deposit%' AND (',' || labels || ',') LIKE '%,`+l+`,%'`)
+		addLabel(l, `LOWER(comment) = 'depo'`)
+	}
 
 	// The bare "kinas" cinema pattern false-positived on restaurant names
 	// containing it as a suffix (Pekinas); replaced by " kinas" above.

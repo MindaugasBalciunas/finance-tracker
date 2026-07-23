@@ -36,6 +36,14 @@ const swedFixture = `"Sąskaitos Nr.","","Data","Gavėjas","Paaiškinimai","Suma
 "LT16","20","2022-08-04","ARŪNAS KUGINYS","NT sandoris (Vienbutį gyvenamąjį namą)","26625.00","EUR","D","1013","MK","","12","",
 "LT16","20","2023-02-07","","GRĄŽINIMAS 516793******2950 2023.02.06 8.96 EUR () WWW.NARYSTE.SVAROSBROLIAI","8.96","EUR","K","1014","K","","",
 "LT16","20","2022-08-23","MOKI VEZI 06229 VILNIUS","PIRKINYS 516793******2950 2022.08.20 259.99 EUR (990886) MOKI VEZI 06229 VILNIUS","259.99","EUR","D","1015","K","","",
+"LT16","20","2014-06-10","MAXIMA LT, X-096 VILNIUS","Pirkinys parduotuveje","34.53","LTL","D","1016","K","","",
+"LT16","20","2015-01-01","","LTL -> EUR 4523.09 kursas 3.45280","15617.34","LTL","D","1017","K","","",
+"LT16","20","2015-01-01","","LTL 15617.34 -> EUR kursas 3.45280","4523.09","EUR","K","1018","K","","",
+"LT16","20","2012-01-11","","INESIMAS 6763769029222241 10.01.12 18:28 200.00 LTL (601019) H743/HB","200.00","LTL","K","1019","K","","",
+"LT16","20","2018-01-31","DANSKE BANK A/S LIETUVOS FILIALAS","Danske Bank A/S. Saskaitos papildymas 2018/01 men.","830.00","EUR","K","1020","MK","","",
+"LT16","20","2024-05-02","MINDAUGAS BALČIŪNAS","Pervedimas į Taupyklės sąskaitą po 5.9 EUR mokėjimo","5.90","EUR","D","1021","MK","","",
+"LT16","20","2020-04-30","MINDAUGAS BALČIŪNAS","Kredito padengimas","325.45","EUR","D","1022","MK","","",
+"LT16","20","2020-09-23","UAB TOKVILA","Pradine imoka uz automobili.  VIN JTMW53FV00D502936","3336.00","EUR","D","1023","MK","","",
 "LT16","82","2024-01-01","","Apyvarta","163294.81","EUR","D","","K2","","",
 "LT16","86","2024-01-01","","Likutis pabaigai","19104.63","EUR","K","","LS","","",
 `
@@ -69,10 +77,11 @@ func TestSwedbankImport(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	var res map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
-	assert.EqualValues(t, 14, res["imported"], "all real rows imported")
-	assert.EqualValues(t, 1, res["internal"], "own-account transfer skipped")
+	assert.EqualValues(t, 19, res["imported"], "all real rows imported")
+	assert.EqualValues(t, 4, res["internal"], "own transfers + LTL conversion pair + taupyklė skipped")
 	assert.EqualValues(t, 0, res["duplicate"])
-	assert.Equal(t, "2022-01-04", res["date_from"])
+	assert.EqualValues(t, 2, res["balances"], "statement opening/closing restored")
+	assert.Equal(t, "2012-01-10", res["date_from"])
 
 	get := func(comment string) domain.Transaction {
 		var tx domain.Transaction
@@ -127,20 +136,56 @@ func TestSwedbankImport(t *testing.T) {
 	assert.Equal(t, "Real Estate", string(house.Category))
 
 	// Refund → income
-	refund := get("Card refund: ")
+	refund := get("Card refund (Swedbank)")
 	assert.Equal(t, domain.TransactionTypeIncome, refund.Type)
 
 	// DIY chain
-	moki := get("MOKI VEZI 06229 VILNIUS")
+	moki := get("Moki Veži")
 	assert.Equal(t, "Housing", string(moki.Category))
 
-	// Idempotent: importing again skips everything.
+	// LTL rows convert at the official 3.4528 rate.
+	maxima := get("MAXIMA LT, X-096 VILNIUS")
+	assert.InDelta(t, 10.00, maxima.Amount, 0.001, "34.53 LTL → 10.00 EUR")
+	assert.Equal(t, "Food", string(maxima.Category))
+
+	// ATM cash deposit → own transfer from the cash pocket, LTL converted.
+	dep := get("Cash deposit (ATM)")
+	assert.Equal(t, domain.TransactionTypeInvestment, dep.Type)
+	assert.Equal(t, "cash", dep.DebitAccount)
+	assert.InDelta(t, 57.92, dep.Amount, 0.01)
+	assert.Equal(t, "2012-01-10", dep.Date.Format("2006-01-02"), "re-dated to deposit date")
+
+	// Employers → Salary with an employer label.
+	danske := get("DANSKE BANK A/S LIETUVOS FILIALAS")
+	assert.Equal(t, "Salary", string(danske.Category))
+	assert.Contains(t, danske.Labels, "danske")
+
+	// Lithuanian credit repayments join the loan bucket.
+	var creditRows []domain.Transaction
+	require.NoError(t, db.Where("comment = 'Credit repayment'").Find(&creditRows).Error)
+	assert.Len(t, creditRows, 1)
+	assert.Contains(t, creditRows[0].Labels, "loan")
+
+	// RAV4 down payment is car capital, not servicing.
+	rav4 := get("RAV4 pradinė įmoka (Tokvila)")
+	assert.Equal(t, domain.TransactionTypeInvestment, rav4.Type)
+	assert.Equal(t, "Vehicle", string(rav4.Category))
+
+	// Balance snapshots restored from the statement's own rows.
+	var bals []domain.Balance
+	require.NoError(t, db.Order("date").Find(&bals).Error)
+	require.Len(t, bals, 2)
+	assert.InDelta(t, 34639.41, bals[0].Swed, 0.001)
+	assert.InDelta(t, 19104.63, bals[1].Swed, 0.001)
+
+	// Idempotent: importing again skips everything, incl. balances.
 	rec2 := swedImport(t, r, swedFixture)
 	require.Equal(t, 200, rec2.Code)
 	var res2 map[string]any
 	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &res2))
 	assert.EqualValues(t, 0, res2["imported"])
-	assert.EqualValues(t, 14, res2["duplicate"])
+	assert.EqualValues(t, 19, res2["duplicate"])
+	assert.EqualValues(t, 0, res2["balances"])
 }
 
 // swedTestRouter is budgetTestRouter plus the import routes: transactions,

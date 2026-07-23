@@ -75,6 +75,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     .filter((l, i, arr) => arr.indexOf(l) === i)
 
   const [labelDraft, setLabelDraft] = useState('')
+  const [showAllChips, setShowAllChips] = useState(false)
 
   // All known labels: ones used on transactions plus ones defined by rules
   // (a fresh rule's label may not exist on any transaction yet).
@@ -247,9 +248,9 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         <label className="block text-sm font-medium text-gray-700 mb-1">Labels</label>
         <div className="flex flex-wrap items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
           {currentLabels.map((l) => (
-            <span key={l} className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
+            <span key={l} className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-md px-2 py-1">
               {l}
-              <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 leading-none">×</button>
+              <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 text-sm leading-none px-0.5 -mr-0.5" aria-label={`remove ${l}`}>×</button>
             </span>
           ))}
           <input
@@ -277,7 +278,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               }
             }}
             onBlur={commitLabelDraft}
-            placeholder={currentLabels.length === 0 ? 'Add labels (Enter or comma to confirm)…' : ''}
+            placeholder={currentLabels.length === 0 ? 'Add label — tap a chip or type…' : ''}
             autoComplete="off"
             className="flex-1 min-w-28 text-sm focus:outline-none py-0.5"
           />
@@ -293,7 +294,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         )}
         {labelChips.length > 0 && (
           <p className="mt-1.5">
-            {labelChips.map((l) => (
+            {(labelDraft.trim() ? labelChips.slice(0, 20) : labelChips.slice(0, showAllChips ? labelChips.length : 12)).map((l) => (
               <button
                 key={l}
                 type="button"
@@ -301,11 +302,21 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
                 // onBlur can't commit a half-typed draft before this click.
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => { addLabelChip(l); setLabelDraft('') }}
-                className="inline-block text-[11px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded px-1.5 py-0.5 mr-1 mb-1 hover:bg-indigo-100"
+                className="inline-block text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md px-2 py-1 mr-1.5 mb-1.5 hover:bg-indigo-100 active:bg-indigo-200"
               >
                 + {l}
               </button>
             ))}
+            {!labelDraft.trim() && labelChips.length > 12 && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowAllChips((s) => !s)}
+                className="inline-block text-xs text-gray-500 underline px-1 py-1 mb-1.5"
+              >
+                {showAllChips ? 'show less' : `+${labelChips.length - 12} more`}
+              </button>
+            )}
           </p>
         )}
         {suggestionLabel && (

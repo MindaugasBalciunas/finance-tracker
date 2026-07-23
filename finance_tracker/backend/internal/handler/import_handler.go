@@ -47,6 +47,7 @@ type swedbankImportResult struct {
 	Duplicate int    `json:"duplicate"`
 	Internal  int    `json:"internal"`
 	Relabeled int    `json:"relabeled"`
+	Balances  int    `json:"balances"`
 	DateFrom  string `json:"date_from,omitempty"`
 	DateTo    string `json:"date_to,omitempty"`
 }
@@ -67,7 +68,7 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 	}
 	defer file.Close()
 
-	rows, internal, err := parseSwedbankCSV(file)
+	rows, stmtBalances, internal, err := parseSwedbankCSV(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "failed to parse statement: " + err.Error()})
 		return
@@ -126,6 +127,37 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 				if n, err := h.budgetRepo.ApplyLabel(rule); err == nil {
 					result.Relabeled += n
 				}
+			}
+		}
+	}
+
+	// Restore the Swedbank balance history from the statement's own opening/
+	// closing rows — but only BEFORE the fully-tracked era. Once real
+	// multi-account snapshots exist, injecting a swed-only row would show a
+	// misleading dip in total net worth.
+	if len(stmtBalances) > 0 {
+		existingBals, _ := h.balRepo.List(domain.BalanceFilter{})
+		taken := make(map[string]bool, len(existingBals))
+		// A statement-restored snapshot carries only swed (Total == Swed);
+		// the boundary of the fully-tracked era is the first snapshot that
+		// holds more than that.
+		earliestFull := time.Time{}
+		for _, b := range existingBals {
+			taken[b.Date.Format("2006-01-02")] = true
+			if b.Total-b.Swed > 0.005 || b.Swed-b.Total > 0.005 {
+				if earliestFull.IsZero() || b.Date.Before(earliestFull) {
+					earliestFull = b.Date
+				}
+			}
+		}
+		for _, sb := range stmtBalances {
+			day := sb.Date.Format("2006-01-02")
+			if taken[day] || (!earliestFull.IsZero() && !sb.Date.Before(earliestFull)) {
+				continue
+			}
+			if err := h.balRepo.Create(&domain.Balance{Date: sb.Date, Swed: sb.Amount, Total: sb.Amount}); err == nil {
+				taken[day] = true
+				result.Balances++
 			}
 		}
 	}
