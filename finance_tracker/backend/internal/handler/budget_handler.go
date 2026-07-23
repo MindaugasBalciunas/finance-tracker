@@ -29,6 +29,7 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	{
 		l.GET("", h.Labels)
 		l.POST("/apply", h.ApplyLabel)
+		l.POST("/reapply", h.ReapplyRules)
 		l.GET("/rules", h.Rules)
 		l.DELETE("/rules/:id", h.DeleteRule)
 	}
@@ -172,6 +173,26 @@ func (h *BudgetHandler) ApplyLabel(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"labeled": count, "rule_created": input.CreateRule})
+}
+
+// ReapplyRules runs every saved label rule over the whole transaction table —
+// a deterministic migration for historical records.
+func (h *BudgetHandler) ReapplyRules(c *gin.Context) {
+	rules, err := h.repo.ListRules()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	total := 0
+	for _, rule := range rules {
+		n, err := h.repo.ApplyLabel(rule)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		total += n
+	}
+	c.JSON(http.StatusOK, gin.H{"relabeled": total, "rules": len(rules)})
 }
 
 func (h *BudgetHandler) Rules(c *gin.Context) {

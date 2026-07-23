@@ -37,10 +37,37 @@ type ExportHandler struct {
 	stockSvc      service.StockService
 	assetSvc      service.AssetService
 	exportLogRepo repository.ExportLogRepository
+	budgetRepo    repository.BudgetRepository
+}
+
+// budgetRows exports the budget plan and label rules (nil-safe).
+func (h *ExportHandler) budgetRows() ([]budgetExportRow, []labelRuleExportRow) {
+	if h.budgetRepo == nil {
+		return nil, nil
+	}
+	var bRows []budgetExportRow
+	if budgets, err := h.budgetRepo.ListBudgets(); err == nil {
+		for _, b := range budgets {
+			bRows = append(bRows, budgetExportRow{Name: b.Name, Kind: b.Kind, Label: b.Label, Category: b.Category, Amount: b.Amount})
+		}
+	}
+	var rRows []labelRuleExportRow
+	if rules, err := h.budgetRepo.ListRules(); err == nil {
+		for _, r := range rules {
+			rRows = append(rRows, labelRuleExportRow{Label: r.Label, Category: r.Category, CommentMatch: r.CommentMatch})
+		}
+	}
+	return bRows, rRows
 }
 
 func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceService, stockSvc service.StockService, assetSvc service.AssetService, exportLogRepo repository.ExportLogRepository) *ExportHandler {
 	return &ExportHandler{txSvc: txSvc, balSvc: balSvc, stockSvc: stockSvc, assetSvc: assetSvc, exportLogRepo: exportLogRepo}
+}
+
+// WithBudgets includes budgets and label rules in JSON exports.
+func (h *ExportHandler) WithBudgets(repo repository.BudgetRepository) *ExportHandler {
+	h.budgetRepo = repo
+	return h
 }
 
 func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -137,6 +164,22 @@ type financeExport struct {
 	Balances        []balExportRow   `json:"balances"`
 	StockTrades     []stockExportRow `json:"stock_trades"`
 	Assets          []assetExportRow `json:"assets"`
+	Budgets         []budgetExportRow    `json:"budgets,omitempty"`
+	LabelRules      []labelRuleExportRow `json:"label_rules,omitempty"`
+}
+
+type budgetExportRow struct {
+	Name     string  `json:"name"`
+	Kind     string  `json:"kind"`
+	Label    string  `json:"label,omitempty"`
+	Category string  `json:"category,omitempty"`
+	Amount   float64 `json:"amount"`
+}
+
+type labelRuleExportRow struct {
+	Label        string `json:"label"`
+	Category     string `json:"category,omitempty"`
+	CommentMatch string `json:"comment_match,omitempty"`
 }
 
 type txExportRow struct {
@@ -324,6 +367,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 
 	ts := time.Now().Format("2006-01-02")
 	_ = h.exportLogRepo.Save("full")
+	budgetRows, ruleRows := h.budgetRows()
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"finances_%s.json\"", ts))
 	c.JSON(http.StatusOK, financeExport{
 		ExportDate:      ts,
@@ -332,6 +376,8 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		Balances:        balRows,
 		StockTrades:     stockRows,
 		Assets:          toAssetExportRows(assets),
+		Budgets:         budgetRows,
+		LabelRules:      ruleRows,
 	})
 }
 
@@ -433,6 +479,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 	ts := time.Now().Format("2006-01-02")
 	fromStr := since.Format("2006-01-02")
 	_ = h.exportLogRepo.Save("partial")
+	budgetRows, ruleRows := h.budgetRows()
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"finances_partial_%s_from_%s.json\"", ts, fromStr))
 	c.JSON(http.StatusOK, financeExport{
 		ExportDate:      ts,
@@ -441,6 +488,8 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		Balances:        balRows,
 		StockTrades:     stockRows,
 		Assets:          toAssetExportRows(assets),
+		Budgets:         budgetRows,
+		LabelRules:      ruleRows,
 	})
 }
 

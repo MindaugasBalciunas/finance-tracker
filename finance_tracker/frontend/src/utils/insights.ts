@@ -54,14 +54,15 @@ export function spendPaceInsight(byMonth: MonthlySummary[], now: Date): Insight 
   }
 }
 
-// Compares the current month's per-category spend against the average of the
-// other months in the loaded period and reports the biggest movers.
+// Compares the latest month IN THE SELECTED PERIOD against the average of the
+// earlier months in that period and reports the biggest movers. Anchoring on
+// the data (not the calendar) keeps "Last month" style filters honest —
+// otherwise every category reads as "down 100%" against an empty current month.
 export function categoryMoverInsights(
   expenses: Transaction[],
   now: Date,
   limit = 2
 ): Insight[] {
-  const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const byCatMonth: Record<string, Record<string, number>> = {}
   const monthSet = new Set<string>()
 
@@ -73,8 +74,16 @@ export function categoryMoverInsights(
     byCatMonth[cat][mk] = (byCatMonth[cat][mk] ?? 0) + tx.amount.value
   }
 
-  const priorMonths = [...monthSet].filter((m) => m < curKey)
-  if (priorMonths.length === 0) return []
+  const months = [...monthSet].sort()
+  if (months.length < 2) return []
+  const curKey = months[months.length - 1]
+  const priorMonths = months.slice(0, -1)
+
+  const calKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [ay, am] = curKey.split('-').map(Number)
+  const monthPhrase = curKey === calKey
+    ? 'this month'
+    : `in ${new Date(ay, am - 1).toLocaleDateString('en', { month: 'long' })}`
 
   const movers: { cat: string; cur: number; avg: number; delta: number; pct: number }[] = []
   for (const [cat, months] of Object.entries(byCatMonth)) {
@@ -96,7 +105,7 @@ export function categoryMoverInsights(
       return {
         icon: up ? '▲' : '▼',
         tone: up ? ('warn' as const) : ('good' as const),
-        text: `${cat} is ${up ? 'up' : 'down'} ${Math.abs(pct) >= 995 ? '>10x' : `${Math.abs(pct).toFixed(0)}%`} this month — ${formatEuro(cur)} vs ${formatEuro(avg)} average.`,
+        text: `${cat} is ${up ? 'up' : 'down'} ${Math.abs(pct) >= 995 ? '>10x' : `${Math.abs(pct).toFixed(0)}%`} ${monthPhrase} — ${formatEuro(cur)} vs ${formatEuro(avg)} average.`,
       }
     })
 }

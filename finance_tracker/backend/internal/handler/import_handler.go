@@ -13,10 +13,11 @@ import (
 )
 
 type ImportHandler struct {
-	txRepo    repository.TransactionRepository
-	balRepo   repository.BalanceRepository
-	stockRepo repository.StockRepository
-	assetRepo repository.AssetRepository
+	txRepo     repository.TransactionRepository
+	balRepo    repository.BalanceRepository
+	stockRepo  repository.StockRepository
+	assetRepo  repository.AssetRepository
+	budgetRepo repository.BudgetRepository
 }
 
 func NewImportHandler(
@@ -28,6 +29,13 @@ func NewImportHandler(
 	return &ImportHandler{txRepo: txRepo, balRepo: balRepo, stockRepo: stockRepo, assetRepo: assetRepo}
 }
 
+// WithBudgets enables budget/label-rule import and deterministic re-labeling
+// of imported historical records.
+func (h *ImportHandler) WithBudgets(repo repository.BudgetRepository) *ImportHandler {
+	h.budgetRepo = repo
+	return h
+}
+
 func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/import/json", h.ImportJSON)
 }
@@ -36,6 +44,7 @@ type importResult struct {
 	Imported      importCounts `json:"imported"`
 	Skipped       importCounts `json:"skipped"`
 	ImportedTxIDs []uint       `json:"imported_tx_ids,omitempty"`
+	Relabeled     int          `json:"relabeled"`
 }
 
 type importCounts struct {
@@ -43,6 +52,8 @@ type importCounts struct {
 	Balances     int `json:"balances"`
 	StockTrades  int `json:"stock_trades"`
 	Assets       int `json:"assets"`
+	Budgets      int `json:"budgets"`
+	LabelRules   int `json:"label_rules"`
 }
 
 // ImportJSON godoc
@@ -272,6 +283,57 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		}
 		assetSeen[key] = true
 		result.Imported.Assets++
+	}
+
+	// --- Budgets & label rules (when present in the export) ---
+	if h.budgetRepo != nil {
+		existingBudgets, _ := h.budgetRepo.ListBudgets()
+		budgetSeen := make(map[string]bool, len(existingBudgets))
+		for _, b := range existingBudgets {
+			budgetSeen[b.Name+"|"+b.Kind] = true
+		}
+		for _, row := range payload.Budgets {
+			if budgetSeen[row.Name+"|"+row.Kind] || !domain.IsValidBudgetKind(row.Kind) {
+				result.Skipped.Budgets++
+				continue
+			}
+			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: row.Category, Amount: row.Amount}
+			if err := h.budgetRepo.SaveBudget(&b); err != nil {
+				result.Skipped.Budgets++
+				continue
+			}
+			budgetSeen[b.Name+"|"+b.Kind] = true
+			result.Imported.Budgets++
+		}
+
+		existingRules, _ := h.budgetRepo.ListRules()
+		ruleSeen := make(map[string]bool, len(existingRules))
+		for _, r := range existingRules {
+			ruleSeen[r.Label+"|"+r.Category+"|"+r.CommentMatch] = true
+		}
+		for _, row := range payload.LabelRules {
+			key := row.Label + "|" + row.Category + "|" + row.CommentMatch
+			if row.Label == "" || ruleSeen[key] {
+				result.Skipped.LabelRules++
+				continue
+			}
+			rule := domain.LabelRule{Label: row.Label, Category: row.Category, CommentMatch: row.CommentMatch}
+			if err := h.budgetRepo.SaveRule(&rule); err != nil {
+				result.Skipped.LabelRules++
+				continue
+			}
+			ruleSeen[key] = true
+			result.Imported.LabelRules++
+		}
+
+		// Deterministic migration: re-apply every rule across the whole table so
+		// imported historical records (and pre-label rows) get their labels.
+		allRules, _ := h.budgetRepo.ListRules()
+		for _, rule := range allRules {
+			if n, err := h.budgetRepo.ApplyLabel(rule); err == nil {
+				result.Relabeled += n
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, result)

@@ -36,6 +36,14 @@ export function useDeleteBudget() {
   })
 }
 
+export function useReapplyRules() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => budgetsApi.reapplyRules(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] }),
+  })
+}
+
 export function useApplyLabel() {
   const qc = useQueryClient()
   return useMutation({

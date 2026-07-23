@@ -156,6 +156,19 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	tx.DebitAccount = input.DebitAccount
 	tx.CreditAccount = input.CreditAccount
 
+	// Deterministic labeling: re-evaluate rules after edits so a changed
+	// comment/category still ends up correctly tagged (labels only added,
+	// never removed — manual tags stay).
+	if s.ruleSrc != nil {
+		if rules, err := s.ruleSrc.ListRules(); err == nil {
+			for _, rule := range rules {
+				if rule.Matches(tx) {
+					tx.AddLabel(rule.Label)
+				}
+			}
+		}
+	}
+
 	if err := s.repo.Update(tx); err != nil {
 		return nil, err
 	}

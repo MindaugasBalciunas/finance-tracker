@@ -78,6 +78,24 @@ describe('categoryMoverInsights', () => {
     expect(movers[0].tone).toBe('good')
   })
 
+  it('anchors on the latest month in the period, not the calendar month', () => {
+    // "Last month" filter: data ends in June, but today is July 20.
+    const expenses = [
+      tx('2026-04-10', 1800, 'Finance'),
+      tx('2026-05-10', 1900, 'Finance'),
+      tx('2026-06-10', 950, 'Finance'),
+    ]
+    const movers = categoryMoverInsights(expenses, NOW)
+    expect(movers).toHaveLength(1)
+    // June vs avg(Apr, May) = 950 vs 1850 → down ~49%, NOT "down 100%"
+    expect(movers[0].text).toContain('Finance is down 49% in June')
+    expect(movers[0].text).not.toContain('100%')
+  })
+
+  it('says nothing when the period has fewer than two months', () => {
+    expect(categoryMoverInsights([tx('2026-06-10', 950, 'Finance')], NOW)).toHaveLength(0)
+  })
+
   it('ignores small absolute or relative changes', () => {
     const expenses = [
       tx('2026-06-10', 100, 'Food'),

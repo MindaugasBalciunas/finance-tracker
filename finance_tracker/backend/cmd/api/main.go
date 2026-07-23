@@ -55,8 +55,8 @@ func main() {
 	txHandler := handler.NewTransactionHandler(txSvc)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
-	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, exportLogRepo)
-	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo)
+	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, exportLogRepo).WithBudgets(budgetRepo)
+	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).WithBudgets(budgetRepo)
 	stockHandler := handler.NewStockHandler(stockSvc)
 	assetHandler := handler.NewAssetHandler(assetSvc)
 

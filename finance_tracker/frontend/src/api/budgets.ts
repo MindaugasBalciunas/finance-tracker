@@ -26,6 +26,13 @@ export const budgetsApi = {
     return data
   },
 
+  // Runs every saved rule over all transactions — deterministic re-labeling
+  // for historical records.
+  reapplyRules: async (): Promise<{ relabeled: number; rules: number }> => {
+    const { data } = await client.post('/labels/reapply')
+    return data
+  },
+
   // Bulk-tags matching historic transactions; optionally saves the rule so
   // future transactions are labeled automatically.
   applyLabel: async (input: {

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAllTransactions, useTransactionSummary } from '../hooks/useTransactions'
-import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel } from '../hooks/useBudgets'
+import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules } from '../hooks/useBudgets'
 import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
@@ -53,12 +53,25 @@ export default function Budget() {
   const updateMutation = useUpdateBudget()
   const deleteMutation = useDeleteBudget()
   const applyLabel = useApplyLabel()
+  const reapplyRules = useReapplyRules()
 
   const [editing, setEditing] = useState<Budget | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [settingUp, setSettingUp] = useState(false)
   const [prefill, setPrefill] = useState<BudgetInput | null>(null)
+
+  async function handleReapply() {
+    setNotice(null)
+    setFormError(null)
+    try {
+      const res = await reapplyRules.mutateAsync()
+      setNotice(`Rules re-applied: ${res.relabeled} transaction${res.relabeled === 1 ? '' : 's'} newly labeled (${res.rules} rule${res.rules === 1 ? '' : 's'}).`)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
+  }
 
   const incomeBase = useMemo(
     () => medianMonthlyIncome(allTimeSummary?.by_month ?? [], new Date()),
@@ -120,21 +133,36 @@ export default function Budget() {
           <h2 className="text-2xl font-bold text-gray-900">Budget</h2>
           <p className="text-sm text-gray-500 mt-1">Fixed costs, investment targets and spending limits</p>
         </div>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-          <button onClick={() => setMonth(shiftMonth(month, -1))} className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md">‹</button>
-          <span className="px-2 text-sm font-medium text-gray-800 whitespace-nowrap">{monthLabel(month)}</span>
-          <button
-            onClick={() => setMonth(shiftMonth(month, 1))}
-            disabled={isCurrentMonth}
-            className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md disabled:opacity-30"
-          >
-            ›
-          </button>
+        <div className="flex items-center gap-2">
+          {hasBudgets && (
+            <button
+              onClick={handleReapply}
+              disabled={reapplyRules.isPending}
+              title="Run all label rules over every transaction"
+              className="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 whitespace-nowrap"
+            >
+              {reapplyRules.isPending ? 'Re-labeling…' : '↻ Re-apply rules'}
+            </button>
+          )}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <button onClick={() => setMonth(shiftMonth(month, -1))} className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md">‹</button>
+            <span className="px-2 text-sm font-medium text-gray-800 whitespace-nowrap">{monthLabel(month)}</span>
+            <button
+              onClick={() => setMonth(shiftMonth(month, 1))}
+              disabled={isCurrentMonth}
+              className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md disabled:opacity-30"
+            >
+              ›
+            </button>
+          </div>
         </div>
       </div>
 
       {formError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>
+      )}
+      {notice && (
+        <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{notice}</p>
       )}
 
       {!hasBudgets ? (
