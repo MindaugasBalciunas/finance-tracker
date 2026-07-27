@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -89,6 +90,15 @@ func (s *insightService) buildPrompt() (string, error) {
 		}
 	}
 
+	// Label aggregates — labels cut across categories (fixed obligations,
+	// merchants, employers), so without them the model can't separate
+	// pre-committed money from spending decisions.
+	allTxs, err := s.txSvc.ListAll()
+	if err != nil {
+		return "", err
+	}
+	labelSections := buildLabelSections(allTxs, summary.TotalIncome, time.Now())
+
 	// Build monthly spending summary (last 6 months)
 	var monthlyLines []string
 	months := recentSummary.ByMonth
@@ -96,8 +106,12 @@ func (s *insightService) buildPrompt() (string, error) {
 		months = months[len(months)-6:]
 	}
 	for _, m := range months {
-		monthlyLines = append(monthlyLines, fmt.Sprintf("  - %s %d: expenses €%.0f, income €%.0f, invested €%.0f",
-			time.Month(m.Month).String()[:3], m.Year, m.Expenses, m.Income, m.Investments))
+		line := fmt.Sprintf("  - %s %d: expenses €%.0f, income €%.0f, invested €%.0f",
+			time.Month(m.Month).String()[:3], m.Year, m.Expenses, m.Income, m.Investments)
+		if top := labelSections.topMonthLabels[fmt.Sprintf("%04d-%02d", m.Year, m.Month)]; top != "" {
+			line += " | top labels: " + top
+		}
+		monthlyLines = append(monthlyLines, line)
 	}
 
 	savingsRate := 0.0
@@ -137,12 +151,22 @@ Savings Rate:     %.1f%%
 === TOP EXPENSE CATEGORIES (all time) ===
 %s
 
+=== FIXED MONTHLY OBLIGATIONS (by label: loan, alimony, leasing, counterparty transfers) ===
+%s
+These are pre-committed, not spending decisions — when judging spending habits, also consider the discretionary picture with these excluded.
+
+=== TOP SPENDING LABELS, DISCRETIONARY (last 12 months) ===
+%s
+
+=== INCOME SOURCES (by label, all time) ===
+%s
+
 === RECENT MONTHLY CASH FLOW (last 6 months) ===
 %s
 
 Please write a concise personal finance overview covering:
 1. Overall financial health (2-3 sentences assessing net worth, savings rate, and balance composition)
-2. Expense trends (2-3 sentences on spending patterns and any concerns from recent months)
+2. Expense trends (2-3 sentences on spending patterns and any concerns from recent months — use the label data to name specific spending drivers, and separate fixed obligations from choices)
 3. Opportunities (3 specific, actionable bullet points for improvement or optimisation)
 4. One positive highlight to acknowledge good financial behaviour
 
@@ -152,10 +176,196 @@ Keep it direct, personal, and under 350 words. Write in plain paragraphs and bul
 		summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
 		summary.TotalIncome-summary.TotalExpenses, savingsRate,
 		strings.Join(topExpenses, "\n"),
+		labelSections.fixedObligations,
+		labelSections.topSpendingLabels,
+		labelSections.incomeSources,
 		strings.Join(monthlyLines, "\n"),
 	)
 
 	return prompt, nil
+}
+
+// fixedObligationLabels marks money that isn't a spending decision (loan,
+// alimony, leasing payments and counterparty transfers). Mirrors
+// FIXED_LABELS in the frontend (utils/labels.ts).
+var fixedObligationLabels = []string{"loan", "alimony", "leasing", "evelina"}
+
+type labelSections struct {
+	fixedObligations  string
+	topSpendingLabels string
+	incomeSources     string
+	// topMonthLabels maps "YYYY-MM" to a "label €X, label €Y" line for the
+	// month's biggest discretionary labels.
+	topMonthLabels map[string]string
+}
+
+type labelAgg struct {
+	label string
+	total float64
+	count int
+}
+
+func topLabelAggs(sums map[string]*labelAgg, n int) []*labelAgg {
+	out := make([]*labelAgg, 0, len(sums))
+	for _, a := range sums {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].total != out[j].total {
+			return out[i].total > out[j].total
+		}
+		return out[i].label < out[j].label
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
+// buildLabelSections aggregates the label field into the prompt sections:
+// fixed obligations (all time + monthly average), top discretionary spending
+// labels (last 12 months), income by label (employers), and per-month top
+// labels for the recent-cash-flow lines.
+func buildLabelSections(txs []domain.Transaction, totalIncome float64, now time.Time) labelSections {
+	isFixed := func(t *domain.Transaction) bool {
+		for _, l := range fixedObligationLabels {
+			if t.HasLabel(l) {
+				return true
+			}
+		}
+		return false
+	}
+
+	yearAgo := now.AddDate(-1, 0, 0)
+	sixMonthsAgo := now.AddDate(0, -6, 0)
+
+	fixedSums := map[string]*labelAgg{}
+	spendSums := map[string]*labelAgg{}
+	incomeSums := map[string]*labelAgg{}
+	monthLabelSums := map[string]map[string]*labelAgg{}
+	firstFixed := now
+
+	for i := range txs {
+		tx := &txs[i]
+		labels := strings.Split(tx.Labels, ",")
+		switch tx.Type {
+		case domain.TransactionTypeIncome:
+			for _, l := range labels {
+				if l == "" {
+					continue
+				}
+				if incomeSums[l] == nil {
+					incomeSums[l] = &labelAgg{label: l}
+				}
+				incomeSums[l].total += tx.Amount
+				incomeSums[l].count++
+			}
+		case domain.TransactionTypeExpense:
+			if isFixed(tx) {
+				if tx.Date.Before(firstFixed) {
+					firstFixed = tx.Date
+				}
+				for _, l := range labels {
+					if l == "" {
+						continue
+					}
+					if fixedSums[l] == nil {
+						fixedSums[l] = &labelAgg{label: l}
+					}
+					fixedSums[l].total += tx.Amount
+					fixedSums[l].count++
+				}
+				continue
+			}
+			for _, l := range labels {
+				if l == "" {
+					continue
+				}
+				if tx.Date.After(yearAgo) {
+					if spendSums[l] == nil {
+						spendSums[l] = &labelAgg{label: l}
+					}
+					spendSums[l].total += tx.Amount
+					spendSums[l].count++
+				}
+				if tx.Date.After(sixMonthsAgo) {
+					mk := tx.Date.Format("2006-01")
+					if monthLabelSums[mk] == nil {
+						monthLabelSums[mk] = map[string]*labelAgg{}
+					}
+					if monthLabelSums[mk][l] == nil {
+						monthLabelSums[mk][l] = &labelAgg{label: l}
+					}
+					monthLabelSums[mk][l].total += tx.Amount
+					monthLabelSums[mk][l].count++
+				}
+			}
+		}
+	}
+
+	none := "  - none"
+
+	var fixedLines []string
+	fixedMonths := monthsBetween(firstFixed, now)
+	for _, a := range topLabelAggs(fixedSums, 6) {
+		line := fmt.Sprintf("  - %s: €%.0f total (%d payments", a.label, a.total, a.count)
+		if fixedMonths >= 2 {
+			line += fmt.Sprintf(", ≈€%.0f/month since %s", a.total/float64(fixedMonths), firstFixed.Format("2006-01"))
+		}
+		line += ")"
+		if totalIncome > 0 {
+			line += fmt.Sprintf(" — %.1f%% of all-time income", a.total/totalIncome*100)
+		}
+		fixedLines = append(fixedLines, line)
+	}
+	if len(fixedLines) == 0 {
+		fixedLines = []string{none}
+	}
+
+	var spendLines []string
+	for _, a := range topLabelAggs(spendSums, 10) {
+		spendLines = append(spendLines, fmt.Sprintf("  - %s: €%.0f (%d transactions, avg €%.0f)", a.label, a.total, a.count, a.total/float64(a.count)))
+	}
+	if len(spendLines) == 0 {
+		spendLines = []string{none}
+	}
+
+	var incomeLines []string
+	for _, a := range topLabelAggs(incomeSums, 8) {
+		line := fmt.Sprintf("  - %s: €%.0f (%d payments)", a.label, a.total, a.count)
+		if totalIncome > 0 {
+			line += fmt.Sprintf(" — %.0f%% of all income", a.total/totalIncome*100)
+		}
+		incomeLines = append(incomeLines, line)
+	}
+	if len(incomeLines) == 0 {
+		incomeLines = []string{none}
+	}
+
+	topMonthLabels := map[string]string{}
+	for mk, sums := range monthLabelSums {
+		var parts []string
+		for _, a := range topLabelAggs(sums, 3) {
+			parts = append(parts, fmt.Sprintf("%s €%.0f", a.label, a.total))
+		}
+		topMonthLabels[mk] = strings.Join(parts, ", ")
+	}
+
+	return labelSections{
+		fixedObligations:  strings.Join(fixedLines, "\n"),
+		topSpendingLabels: strings.Join(spendLines, "\n"),
+		incomeSources:     strings.Join(incomeLines, "\n"),
+		topMonthLabels:    topMonthLabels,
+	}
+}
+
+// monthsBetween counts calendar months from a to b, at least 1.
+func monthsBetween(a, b time.Time) int {
+	m := (b.Year()-a.Year())*12 + int(b.Month()) - int(a.Month()) + 1
+	if m < 1 {
+		return 1
+	}
+	return m
 }
 
 // Claude API types

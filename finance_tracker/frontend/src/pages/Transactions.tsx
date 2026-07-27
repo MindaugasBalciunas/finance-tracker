@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   useTransactions,
+  useAllTransactions,
   useCreateTransaction,
   useUpdateTransaction,
   useDeleteTransaction,
@@ -9,6 +11,7 @@ import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro, formatDate } from '../utils/format'
+import { txLabels } from '../utils/labels'
 import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput, AccountKey } from '../types'
 import { ACCOUNT_LABELS } from '../types'
 import { CATEGORIES } from '../constants/categories'
@@ -33,16 +36,40 @@ function formatAccount(tx: Transaction): string {
 
 export default function Transactions() {
   const { dateRange } = useDateRange()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [showForm, setShowForm] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<TransactionFilter>({ page: 1, page_size: 20, ...dateRange })
+  const [filter, setFilter] = useState<TransactionFilter>(() => ({
+    page: 1,
+    page_size: 20,
+    ...dateRange,
+    // ?label=… deep-links straight to a filtered list — every label chip in
+    // the app links here.
+    label: searchParams.get('label') ?? undefined,
+  }))
   const [searchDraft, setSearchDraft] = useState('')
 
   // Sync global date range into local filter
   useEffect(() => {
     setFilter((f) => ({ ...f, date_from: dateRange.date_from, date_to: dateRange.date_to, page: 1 }))
   }, [dateRange])
+
+  // URL → filter (in-page navigation to ?label=…) and filter → URL. The
+  // equality guards make the two effects converge instead of looping.
+  useEffect(() => {
+    const urlLabel = searchParams.get('label') ?? undefined
+    setFilter((f) => (f.label === urlLabel ? f : { ...f, label: urlLabel, page: 1 }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+  useEffect(() => {
+    if ((searchParams.get('label') ?? undefined) === filter.label) return
+    const next = new URLSearchParams(searchParams)
+    if (filter.label) next.set('label', filter.label)
+    else next.delete('label')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter.label])
 
   // Debounced comment search
   useEffect(() => {
@@ -54,9 +81,38 @@ export default function Transactions() {
 
   const { data, isLoading } = useTransactions(filter)
   const { data: allLabels = [] } = useLabels()
+  // Full matching set for the header totals — only fetched while a label
+  // filter is active (the paginated list can't sum across pages).
+  const { data: labelMatches } = useAllTransactions(
+    {
+      label: filter.label,
+      type: filter.type,
+      category: filter.category,
+      search: filter.search,
+      date_from: filter.date_from,
+      date_to: filter.date_to,
+    },
+    !!filter.label
+  )
+  const labelTotals = (() => {
+    if (!filter.label || !labelMatches) return null
+    let expenses = 0
+    let income = 0
+    let investments = 0
+    for (const tx of labelMatches.data) {
+      if (tx.type === 'expense') expenses += tx.amount.value
+      else if (tx.type === 'income') income += tx.amount.value
+      else investments += tx.amount.value
+    }
+    return { expenses, income, investments, count: labelMatches.data.length }
+  })()
   const createMutation = useCreateTransaction()
   const updateMutation = useUpdateTransaction()
   const deleteMutation = useDeleteTransaction()
+
+  const toggleLabelFilter = (l: string) => {
+    setFilter((f) => ({ ...f, label: f.label === l ? undefined : l, page: 1 }))
+  }
 
   const handleCreate = async (input: CreateTransactionInput) => {
     try {
@@ -87,10 +143,21 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
-          {data ? `${data.total} records` : 'All expenses, income and investments'}
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        {filter.label && labelTotals ? (
+          <p className="text-sm text-gray-500 min-w-0">
+            <span className="inline-block text-xs font-medium bg-indigo-600 text-white rounded px-1.5 py-0.5 mr-1.5">{filter.label}</span>
+            {labelTotals.count} tx
+            {labelTotals.expenses > 0 && <> · <span className="text-red-600 font-semibold">-{formatEuro(labelTotals.expenses)}</span></>}
+            {labelTotals.income > 0 && <> · <span className="text-green-600 font-semibold">+{formatEuro(labelTotals.income)}</span></>}
+            {labelTotals.investments > 0 && <> · <span className="text-blue-600 font-semibold">{formatEuro(labelTotals.investments)} invested</span></>}
+            <button onClick={() => toggleLabelFilter(filter.label!)} className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline">clear</button>
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500">
+            {data ? `${data.total} records` : 'All expenses, income and investments'}
+          </p>
+        )}
         <button
           onClick={() => { setShowForm(true); setFormError(null) }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
@@ -208,8 +275,16 @@ export default function Transactions() {
                   {tx.comment && <p className="text-xs text-gray-400 truncate">{tx.comment}</p>}
                   {tx.labels && (
                     <p className="mt-0.5">
-                      {tx.labels.split(',').map((l) => (
-                        <span key={l} className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 mr-1">{l}</span>
+                      {txLabels(tx).map((l) => (
+                        <button
+                          key={l}
+                          onClick={() => toggleLabelFilter(l)}
+                          className={`inline-block text-[10px] font-medium rounded px-1.5 py-0.5 mr-1 transition-colors ${
+                            filter.label === l ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {l}
+                        </button>
                       ))}
                     </p>
                   )}
@@ -258,8 +333,16 @@ export default function Transactions() {
                       {tx.comment || '—'}
                       {tx.labels && (
                         <span className="block mt-0.5">
-                          {tx.labels.split(',').map((l) => (
-                            <span key={l} className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 mr-1">{l}</span>
+                          {txLabels(tx).map((l) => (
+                            <button
+                              key={l}
+                              onClick={() => toggleLabelFilter(l)}
+                              className={`inline-block text-[10px] font-medium rounded px-1.5 py-0.5 mr-1 transition-colors ${
+                                filter.label === l ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                              }`}
+                            >
+                              {l}
+                            </button>
                           ))}
                         </span>
                       )}

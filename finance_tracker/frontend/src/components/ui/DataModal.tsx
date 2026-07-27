@@ -86,6 +86,11 @@ export default function DataModal({ onClose }: Props) {
     return qs ? `?${qs}` : ''
   }, [preset, customFrom, customTo])
 
+  // The AI link always declares itself an export: without this, an all-time
+  // download would be treated as a full backup — named backup_finances_… and
+  // silently resetting the "new since last backup" marker.
+  const aiExportQuery = rangeQuery ? `${rangeQuery}&purpose=export` : '?purpose=export'
+
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -180,6 +185,7 @@ export default function DataModal({ onClose }: Props) {
                   <span className="block text-sm font-medium text-blue-900">Download full backup (JSON)</span>
                   <span className="block text-xs text-blue-700/70 mt-0.5">
                     Everything: transactions, balance snapshots, stock trades, assets, budgets, label rules &amp; settings.
+                    Saved as backup_finances_&lt;date&gt;.json.
                     {status?.last_full_export && <> Last backup: {status.last_full_export}.</>}
                   </span>
                 </span>
@@ -190,7 +196,7 @@ export default function DataModal({ onClose }: Props) {
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-gray-900">{importing ? 'Restoring…' : 'Restore from backup'}</span>
                   <span className="block text-xs text-gray-500 mt-0.5">
-                    Pick a finances*.json file. Safe to re-run: existing records are skipped, labels are re-applied.
+                    Pick a backup_finances_*.json file (partial_finances_*.json works too). Safe to re-run: existing records are skipped, labels are re-applied.
                   </span>
                 </span>
               </button>
@@ -297,7 +303,7 @@ export default function DataModal({ onClose }: Props) {
               <a href={`/api/v1/export/balances.csv${rangeQuery}`} download className={exportLinkCls}>
                 📄 Balances CSV
               </a>
-              <a href={`/api/v1/export/finances.json${rangeQuery}`} download className={exportLinkCls}>
+              <a href={`/api/v1/export/finances.json${aiExportQuery}`} download className={exportLinkCls}>
                 🤖 JSON for Claude.ai
               </a>
               <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>

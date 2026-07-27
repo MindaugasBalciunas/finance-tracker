@@ -1,4 +1,5 @@
 import type { Transaction, Budget, MonthlySummary } from '../types'
+import { txLabels } from './labels'
 
 export interface BudgetStatus {
   budget: Budget
@@ -19,7 +20,7 @@ export interface MonthPlan {
 
 export function txHasLabel(tx: Transaction, label: string): boolean {
   if (!label) return false
-  return (tx.labels ?? '').split(',').includes(label)
+  return txLabels(tx).includes(label)
 }
 
 export function budgetMatches(budget: Budget, tx: Transaction): boolean {

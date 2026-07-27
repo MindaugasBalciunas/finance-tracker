@@ -789,3 +789,62 @@ func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {
 	assert.Equal(t, 0, result.Imported.StockTrades)
 	assert.Equal(t, 0, result.Imported.Assets)
 }
+
+// ---- purpose=export: an AI/analysis download must never masquerade as a backup ----
+
+func TestExportAllJSON_PurposeExport_DoesNotBumpBackupMarker(t *testing.T) {
+	txSvc := &mockTransactionService{}
+	balSvc := &mockBalanceService{}
+	stockSvc := &mockStockService{}
+	assetSvc := &mockAssetService{}
+	// No Save expectation registered: the mock fails the test if the handler
+	// treats this download as a full backup.
+	logRepo := &mockExportLog{}
+
+	txSvc.On("ListAll").Return(rtTransactions, nil)
+	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return(rtBalances, nil)
+	stockSvc.On("ListAll").Return(rtStocks, nil)
+	assetSvc.On("ListAll").Return(rtAssets, nil)
+
+	r := gin.New()
+	handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json?purpose=export", nil)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	cd := w.Header().Get("Content-Disposition")
+	assert.Contains(t, cd, "export_finances_all_")
+	assert.NotContains(t, cd, "backup_")
+	logRepo.AssertNotCalled(t, "Save", "full")
+
+	var exp rtExport
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &exp))
+	assert.Len(t, exp.Transactions, len(rtTransactions), "purpose=export must still contain everything")
+}
+
+func TestExportAllJSON_NoPurpose_IsFullBackup(t *testing.T) {
+	txSvc := &mockTransactionService{}
+	balSvc := &mockBalanceService{}
+	stockSvc := &mockStockService{}
+	assetSvc := &mockAssetService{}
+	logRepo := &mockExportLog{}
+
+	txSvc.On("ListAll").Return(rtTransactions, nil)
+	balSvc.On("List", domain.BalanceFilter{}, float64(0)).Return(rtBalances, nil)
+	stockSvc.On("ListAll").Return(rtStocks, nil)
+	assetSvc.On("ListAll").Return(rtAssets, nil)
+	logRepo.On("Save", "full").Return(nil)
+
+	r := gin.New()
+	handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).RegisterRoutes(r.Group("/api/v1"))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Disposition"), "backup_finances_")
+	logRepo.AssertCalled(t, "Save", "full")
+}

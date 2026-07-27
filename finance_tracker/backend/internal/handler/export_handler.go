@@ -513,12 +513,18 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	ts := time.Now().Format("2006-01-02")
 	// Filename prefixes tell the files apart in a downloads folder:
 	// backup_… restores everything, export_… is a date-scoped extract.
+	// ?purpose=export marks an all-time download that is NOT meant as a
+	// backup (e.g. "JSON for Claude.ai") — it keeps the export_ name and
+	// leaves the "last full export" marker untouched.
 	filename := fmt.Sprintf("backup_finances_%s.json", ts)
-	if from != nil || to != nil {
+	switch {
+	case from != nil || to != nil:
 		// A date-limited export is not a restorable full backup: name it
 		// differently and leave the "last full export" marker untouched.
 		filename = fmt.Sprintf("export_finances_%s%s.json", ts, rangeSuffix(from, to))
-	} else {
+	case c.Query("purpose") == "export":
+		filename = fmt.Sprintf("export_finances_all_%s.json", ts)
+	default:
 		_ = h.exportLogRepo.Save("full")
 	}
 	budgetRows, ruleRows := h.budgetRows()

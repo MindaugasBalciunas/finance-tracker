@@ -6,6 +6,8 @@ import {
   largestExpenseInsight,
   fixedShareInsight,
   eatingOutInsight,
+  labelMoverInsights,
+  labelCoverageInsight,
 } from './insights'
 import type { Transaction, MonthlySummary } from '../types'
 
@@ -206,5 +208,56 @@ describe('categoryMoverInsights with fixed obligations', () => {
       tx('2026-07-17', 1000, 'Kids - General', 'Aliments 2026.06', 'alimony'),
     ]
     expect(categoryMoverInsights(expenses, NOW)).toHaveLength(0)
+  })
+})
+
+describe('labelMoverInsights', () => {
+  it('reports labels far above their average across categories', () => {
+    const expenses = [
+      tx('2026-05-10', 200, 'Food', 'Pizza place', 'restaurant'),
+      tx('2026-06-10', 200, 'Entertainment', 'Dinner & show', 'restaurant'),
+      tx('2026-07-05', 350, 'Food', 'Tasting menu', 'restaurant'),
+      tx('2026-07-06', 150, 'Food', 'Sushi', 'restaurant'),
+    ]
+    const out = labelMoverInsights(expenses, NOW)
+    expect(out).toHaveLength(1)
+    expect(out[0].text).toContain('restaurant')
+    expect(out[0].text).toContain('up')
+    expect(out[0].tone).toBe('warn')
+  })
+
+  it('ignores fixed-obligation labels entirely', () => {
+    const expenses = [
+      tx('2026-05-10', 100, 'Finance', 'Loan', 'loan'),
+      tx('2026-06-10', 100, 'Finance', 'Loan', 'loan'),
+      tx('2026-07-05', 900, 'Finance', 'Loan extra', 'loan'),
+    ]
+    expect(labelMoverInsights(expenses, NOW)).toHaveLength(0)
+  })
+
+  it('returns nothing for a single month of data', () => {
+    const expenses = [tx('2026-07-05', 350, 'Food', '', 'restaurant')]
+    expect(labelMoverInsights(expenses, NOW)).toHaveLength(0)
+  })
+})
+
+describe('labelCoverageInsight', () => {
+  it('reports the unlabeled share when meaningful', () => {
+    const expenses = [
+      tx('2026-07-01', 700, 'Food', '', 'groceries'),
+      tx('2026-07-02', 300, 'Other', 'mystery'),
+    ]
+    const ins = labelCoverageInsight(expenses)
+    expect(ins).not.toBeNull()
+    expect(ins!.text).toContain('70% of spending is labeled')
+    expect(ins!.tone).toBe('warn') // 30% unlabeled ≥ 25%
+  })
+
+  it('stays quiet when coverage is high or amounts are tiny', () => {
+    const covered = [
+      tx('2026-07-01', 990, 'Food', '', 'groceries'),
+      tx('2026-07-02', 10, 'Other', ''),
+    ]
+    expect(labelCoverageInsight(covered)).toBeNull()
   })
 })

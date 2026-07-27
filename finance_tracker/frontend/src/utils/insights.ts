@@ -1,5 +1,6 @@
 import type { Transaction, MonthlySummary } from '../types'
 import { formatEuro } from './format'
+import { FIXED_LABELS, txLabels, hasAnyLabel as txHasAnyOf, discretionary } from './labels'
 
 export type InsightTone = 'good' | 'warn' | 'bad' | 'info'
 
@@ -113,23 +114,83 @@ export function categoryMoverInsights(
     })
 }
 
-// Labels marking fixed obligations and counterparty transfers — money that
-// isn't a spending decision, so it shouldn't dominate spending stories
-// ("most money went to Evelina — 44k across 39 payments" is a loan, not news).
-const FIXED_LABELS = ['loan', 'alimony', 'leasing', 'evelina']
+// Shared label plumbing lives in utils/labels.ts; local aliases keep the
+// insight functions readable.
+const hasAnyLabel = txHasAnyOf
 
-function txLabels(tx: Transaction): string[] {
-  return (tx.labels ?? '').split(',').map((l) => l.trim()).filter(Boolean)
+// The biggest label-level movers, latest data month vs the average of the
+// earlier months in the period — the label twin of categoryMoverInsights.
+// Labels cut across categories (a "restaurant" euro can live in Food or
+// Entertainment), so this catches drifts the category view smears out.
+export function labelMoverInsights(
+  expenses: Transaction[],
+  now: Date,
+  limit = 2
+): Insight[] {
+  const byLabelMonth: Record<string, Record<string, number>> = {}
+  const monthSet = new Set<string>()
+
+  for (const tx of discretionary(expenses)) {
+    const mk = monthKey(tx.date)
+    monthSet.add(mk)
+    for (const l of txLabels(tx)) {
+      if (!byLabelMonth[l]) byLabelMonth[l] = {}
+      byLabelMonth[l][mk] = (byLabelMonth[l][mk] ?? 0) + tx.amount.value
+    }
+  }
+
+  const months = [...monthSet].sort()
+  if (months.length < 2) return []
+  const curKey = months[months.length - 1]
+  const priorMonths = months.slice(0, -1)
+
+  const calKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [ay, am] = curKey.split('-').map(Number)
+  const monthPhrase = curKey === calKey
+    ? 'this month'
+    : `in ${new Date(ay, am - 1).toLocaleDateString('en', { month: 'long' })}`
+
+  const movers: { label: string; cur: number; avg: number; delta: number; pct: number }[] = []
+  for (const [label, perMonth] of Object.entries(byLabelMonth)) {
+    const cur = perMonth[curKey] ?? 0
+    const avg = priorMonths.reduce((s, m) => s + (perMonth[m] ?? 0), 0) / priorMonths.length
+    if (avg < 20 && cur < 20) continue
+    const delta = cur - avg
+    const pct = avg > 0 ? (delta / avg) * 100 : 100
+    if (Math.abs(delta) >= 50 && Math.abs(pct) >= 25) {
+      movers.push({ label, cur, avg, delta, pct })
+    }
+  }
+
+  return movers
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, limit)
+    .map(({ label, cur, avg, pct }) => {
+      const up = pct >= 0
+      return {
+        icon: up ? '▲' : '▼',
+        tone: up ? ('warn' as const) : ('good' as const),
+        text: `“${label}” spending is ${up ? 'up' : 'down'} ${Math.abs(pct) >= 995 ? '>10x' : `${Math.abs(pct).toFixed(0)}%`} ${monthPhrase} — ${formatEuro(cur)} vs ${formatEuro(avg)} average.`,
+      }
+    })
 }
 
-function hasAnyLabel(tx: Transaction, labels: string[]): boolean {
-  const own = txLabels(tx)
-  return labels.some((l) => own.includes(l))
-}
-
-// Discretionary spending only — fixed obligations excluded via labels.
-function discretionary(expenses: Transaction[]): Transaction[] {
-  return expenses.filter((tx) => !hasAnyLabel(tx, FIXED_LABELS))
+// How much of the period's spending carries at least one label. Unlabeled
+// money is invisible to every label insight, so surfacing the gap makes the
+// label system self-improving.
+export function labelCoverageInsight(expenses: Transaction[]): Insight | null {
+  const total = expenses.reduce((s, tx) => s + tx.amount.value, 0)
+  if (total <= 0) return null
+  const unlabeled = expenses.filter((tx) => txLabels(tx).length === 0)
+  const unlabeledSum = unlabeled.reduce((s, tx) => s + tx.amount.value, 0)
+  if (unlabeledSum < 50) return null
+  const pct = (unlabeledSum / total) * 100
+  if (pct < 5) return null
+  return {
+    icon: '🏷',
+    tone: pct >= 25 ? 'warn' : 'info',
+    text: `${(100 - pct).toFixed(0)}% of spending is labeled — ${formatEuro(unlabeledSum)} (${pct.toFixed(0)}%) across ${unlabeled.length} transactions has no label yet.`,
+  }
 }
 
 // Fixed obligations as one line: how much of the period's spending is
@@ -212,6 +273,7 @@ export function buildInsights(
   const pace = spendPaceInsight(byMonth, now)
   if (pace) items.push(pace)
   items.push(...categoryMoverInsights(expenses, now))
+  items.push(...labelMoverInsights(expenses, now))
   const fixed = fixedShareInsight(expenses)
   if (fixed) items.push(fixed)
   const eating = eatingOutInsight(expenses)
@@ -220,5 +282,7 @@ export function buildInsights(
   if (payee) items.push(payee)
   const largest = largestExpenseInsight(expenses)
   if (largest) items.push(largest)
+  const coverage = labelCoverageInsight(expenses)
+  if (coverage) items.push(coverage)
   return items
 }
