@@ -103,11 +103,10 @@ const CALENDAR_THRESHOLD = 12
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// One small cumulative-spend curve per month, laid out as a calendar
-// (recent years first). Every curve shares one vertical scale, so height =
-// how much and steepness = how fast, exactly like the big line chart —
-// just one month per tile. Tile color compares the month's total to the
-// period's average month.
+// One ribbon per year (recent first): each month's spending ramps up from
+// zero inside its own slot, so the row reads as a skyline — peak height =
+// the month's total, slope = how fast it was spent. All years share one
+// vertical scale; month color compares its total to the period's average.
 function SpendingCalendar({ byMonth, monthKeys }: { byMonth: Record<string, Record<number, number>>; monthKeys: string[] }) {
   const now = new Date()
   const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -127,72 +126,109 @@ function SpendingCalendar({ byMonth, monthKeys }: { byMonth: Record<string, Reco
   const years: number[] = []
   for (let y = lastYear; y >= firstYear; y--) years.push(y)
 
-  const W = 100
-  const H = 36
-  const curvePoints = (mk: string): string[] => {
+  // Row geometry: 12 month slots of 100 units, drawn edge to edge.
+  const MW = 100
+  const W = MW * 12
+  const H = 52
+  const PAD_TOP = 4
+
+  const rampPath = (mk: string, slot: number): string | null => {
     const days = byMonth[mk]
+    if (!days) return null
+    const x0 = slot * MW
     let cum = 0
-    const pts = [`0,${H}`]
+    let path = `M${x0},${H}`
+    let lastX = x0
     for (let d = 1; d <= 31; d++) {
       if (mk === currentKey && d > now.getDate()) break
       cum += days[d] ?? 0
-      pts.push(`${((d / 31) * W).toFixed(1)},${(H - (cum / maxTotal) * (H - 2)).toFixed(1)}`)
+      lastX = x0 + (d / 31) * MW
+      const y = H - (cum / maxTotal) * (H - PAD_TOP)
+      path += ` L${lastX.toFixed(1)},${y.toFixed(1)}`
     }
-    return pts
+    // Close straight down to the baseline: the ramp becomes a filled shape.
+    path += ` L${lastX.toFixed(1)},${H} Z`
+    return path
   }
 
   const colorFor = (mk: string) => {
     // The running month is judged against nothing — it isn't finished yet.
-    if (mk === currentKey || avgTotal <= 0) return { line: '#6366f1', fill: 'rgba(99,102,241,0.10)' }
+    if (mk === currentKey || avgTotal <= 0) return { line: '#6366f1', from: 'rgba(99,102,241,0.45)', to: 'rgba(99,102,241,0.08)' }
     const r = totals[mk] / avgTotal
-    if (r < 0.85) return { line: '#10b981', fill: 'rgba(16,185,129,0.10)' }
-    if (r <= 1.15) return { line: '#6366f1', fill: 'rgba(99,102,241,0.10)' }
-    return { line: '#ef4444', fill: 'rgba(239,68,68,0.10)' }
+    if (r < 0.85) return { line: '#10b981', from: 'rgba(16,185,129,0.45)', to: 'rgba(16,185,129,0.08)' }
+    if (r <= 1.15) return { line: '#818cf8', from: 'rgba(129,140,248,0.40)', to: 'rgba(129,140,248,0.07)' }
+    return { line: '#ef4444', from: 'rgba(239,68,68,0.50)', to: 'rgba(239,68,68,0.10)' }
   }
 
-  const fmtShort = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0))
+  const fmtShort = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0))
+
+  const yearTotal = (year: number) =>
+    MONTH_ABBR.reduce((s, _, i) => s + (totals[`${year}-${String(i + 1).padStart(2, '0')}`] ?? 0), 0)
 
   return (
     <div>
-      <div className={years.length > 6 ? 'max-h-[26rem] overflow-y-auto pr-1' : ''}>
+      {/* Shared month axis */}
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="w-9 shrink-0" />
+        <div className="flex-1 grid grid-cols-12">
+          {MONTH_ABBR.map((m) => (
+            <span key={m} className="text-[9px] text-gray-400 text-center">
+              <span className="hidden sm:inline">{m}</span>
+              <span className="sm:hidden">{m[0]}</span>
+            </span>
+          ))}
+        </div>
+        <span className="w-11 shrink-0" />
+      </div>
+
+      <div className={years.length > 8 ? 'max-h-[30rem] overflow-y-auto pr-1' : ''}>
         {years.map((year) => (
-          <div key={year} className="mb-2">
-            <p className="text-[10px] font-semibold text-gray-400 mb-0.5">{year}</p>
-            <div className="grid grid-cols-6 sm:grid-cols-12 gap-1">
+          <div key={year} className="flex items-center gap-2 mb-1">
+            <span className="w-9 shrink-0 text-[10px] font-semibold text-gray-500 text-right">{year}</span>
+            <svg viewBox={`0 0 ${W} ${H}`} className="flex-1 h-12 block rounded bg-gray-50" preserveAspectRatio="none">
+              <defs>
+                {MONTH_ABBR.map((_, i) => {
+                  const mk = `${year}-${String(i + 1).padStart(2, '0')}`
+                  if (totals[mk] == null) return null
+                  const { from, to } = colorFor(mk)
+                  return (
+                    <linearGradient key={mk} id={`ramp-${mk}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={from} />
+                      <stop offset="100%" stopColor={to} />
+                    </linearGradient>
+                  )
+                })}
+              </defs>
+              {/* month slot separators */}
+              {Array.from({ length: 11 }, (_, i) => (
+                <line key={i} x1={(i + 1) * MW} y1={0} x2={(i + 1) * MW} y2={H} stroke="#e5e7eb" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+              ))}
+              {/* average-month height guide */}
+              {avgTotal > 0 && (
+                <line x1={0} y1={H - (avgTotal / maxTotal) * (H - PAD_TOP)} x2={W} y2={H - (avgTotal / maxTotal) * (H - PAD_TOP)} stroke="#9ca3af" strokeWidth={1} strokeDasharray="3 4" vectorEffect="non-scaling-stroke" opacity={0.6} />
+              )}
               {MONTH_ABBR.map((name, i) => {
                 const mk = `${year}-${String(i + 1).padStart(2, '0')}`
-                const total = totals[mk]
-                if (total == null) {
-                  return <div key={mk} className="rounded border border-dashed border-gray-100 min-h-10" />
-                }
-                const { line, fill } = colorFor(mk)
-                const pts = curvePoints(mk)
-                const lastX = pts[pts.length - 1].split(',')[0]
+                const d = rampPath(mk, i)
+                if (!d) return null
+                const { line } = colorFor(mk)
                 return (
-                  <div
-                    key={mk}
-                    className="rounded border border-gray-100 px-0.5 pt-0.5"
-                    title={`${name} ${year}: ${formatEuro(total)}${mk === currentKey ? ' (in progress)' : ''}`}
-                  >
-                    <div className="flex justify-between text-[9px] leading-tight px-0.5">
-                      <span className="text-gray-400">{name}</span>
-                      <span className="text-gray-500 font-medium">{fmtShort(total)}</span>
-                    </div>
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-7 block" preserveAspectRatio="none">
-                      <polygon points={`${pts.join(' ')} ${lastX},${H}`} fill={fill} />
-                      <polyline points={pts.join(' ')} fill="none" stroke={line} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-                    </svg>
-                  </div>
+                  <g key={mk}>
+                    <title>{`${name} ${year}: ${formatEuro(totals[mk])}${mk === currentKey ? ' (in progress)' : ''}`}</title>
+                    <path d={d} fill={`url(#ramp-${mk})`} stroke={line} strokeWidth={1.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+                  </g>
                 )
               })}
-            </div>
+            </svg>
+            <span className="w-11 shrink-0 text-[10px] text-gray-500 font-medium tabular-nums">{fmtShort(yearTotal(year))}</span>
           </div>
         ))}
       </div>
       <p className="mt-2 text-[10px] text-gray-400">
-        One tile per month: spending accumulating day by day, all tiles on the same scale — steeper = faster, taller = more.
-        Color vs your average month ({formatEuro(avgTotal)}): <span className="text-emerald-600 font-medium">green</span> ≥15% below,{' '}
-        <span className="text-red-500 font-medium">red</span> ≥15% above. Hover a tile for the exact total.
+        One row per year, one hill per month: spending climbs from zero — the peak is the month's total, the slope is how fast it went.
+        All years share one scale; the dashed line is your average month ({formatEuro(avgTotal)}).{' '}
+        <span className="text-emerald-600 font-medium">Green</span> ≥15% below it, <span className="text-red-500 font-medium">red</span> ≥15% above.
+        Hover a hill for the exact amount; year totals on the right.
       </p>
     </div>
   )
