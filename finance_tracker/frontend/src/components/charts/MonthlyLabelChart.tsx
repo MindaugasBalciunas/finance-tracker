@@ -12,6 +12,7 @@ import {
 import type { Transaction } from '../../types'
 import { formatEuro } from '../../utils/format'
 import { txLabels, isCommitted } from '../../utils/labels'
+import { pickGranularity, bucketKey, bucketLabel, GRANULARITY_NOTE } from '../../utils/timeBuckets'
 
 interface Props {
   transactions: Transaction[]
@@ -30,19 +31,25 @@ const UNLABELED_COLOR = '#d1d5db'
 // would inflate the totals. Fixed obligations are excluded: they repeat at
 // the same size every month and would compress the interesting variation.
 function buildChartData(transactions: Transaction[], topN: number) {
-  const monthMap: Record<string, Record<string, number>> = {}
+  // Long periods aggregate to quarters/years so the bars stay readable.
+  const monthSet = new Set<string>()
+  for (const tx of transactions) {
+    if (!isCommitted(tx)) monthSet.add(tx.date.slice(0, 7))
+  }
+  const granularity = pickGranularity(monthSet.size)
 
+  const bucketMap: Record<string, Record<string, number>> = {}
   for (const tx of transactions) {
     if (isCommitted(tx)) continue
-    const key = tx.date.slice(0, 7)
-    if (!monthMap[key]) monthMap[key] = {}
+    const key = bucketKey(tx.date, granularity)
+    if (!bucketMap[key]) bucketMap[key] = {}
     const labels = txLabels(tx)
     const bucket = labels.length > 0 ? labels[0] : 'unlabeled'
-    monthMap[key][bucket] = (monthMap[key][bucket] ?? 0) + tx.amount.value
+    bucketMap[key][bucket] = (bucketMap[key][bucket] ?? 0) + tx.amount.value
   }
 
   const labelTotals: Record<string, number> = {}
-  for (const labels of Object.values(monthMap)) {
+  for (const labels of Object.values(bucketMap)) {
     for (const [l, amt] of Object.entries(labels)) {
       if (l === 'unlabeled') continue
       labelTotals[l] = (labelTotals[l] ?? 0) + amt
@@ -53,14 +60,11 @@ function buildChartData(transactions: Transaction[], topN: number) {
     .slice(0, topN)
     .map(([l]) => l)
 
-  const months = Object.keys(monthMap).sort()
-  const rows = months.map((key) => {
-    const [year, month] = key.split('-')
-    const date = new Date(parseInt(year), parseInt(month) - 1)
-    const name = date.toLocaleDateString('en', { month: 'short', year: '2-digit' })
-    const row: Record<string, any> = { name }
+  const buckets = Object.keys(bucketMap).sort()
+  const rows = buckets.map((key) => {
+    const row: Record<string, any> = { name: bucketLabel(key, granularity) }
     let other = 0
-    for (const [l, amt] of Object.entries(monthMap[key])) {
+    for (const [l, amt] of Object.entries(bucketMap[key])) {
       if (topLabels.includes(l)) row[l] = amt
       else if (l === 'unlabeled') row['unlabeled'] = amt
       else other += amt
@@ -73,11 +77,11 @@ function buildChartData(transactions: Transaction[], topN: number) {
   if (rows.some((r) => r['other labels'])) series.push('other labels')
   if (rows.some((r) => r['unlabeled'])) series.push('unlabeled')
 
-  return { rows, series }
+  return { rows, series, granularity }
 }
 
 const MonthlyLabelChart = ({ transactions, topN = 8 }: Props) => {
-  const { rows, series } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
+  const { rows, series, granularity } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
@@ -108,25 +112,30 @@ const MonthlyLabelChart = ({ transactions, topN = 8 }: Props) => {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={rows} margin={{ top: 8, right: 20, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-        <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-        <Tooltip content={<CustomTooltip />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        {series.map((name, i) => (
-          <Bar
-            key={name}
-            dataKey={name}
-            stackId="a"
-            fill={colorFor(name, i)}
-            radius={i === series.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-            isAnimationActive={false}
-          />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      {GRANULARITY_NOTE[granularity] && (
+        <p className="text-[11px] text-gray-400 mb-1">{GRANULARITY_NOTE[granularity]}</p>
+      )}
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={rows} margin={{ top: 8, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {series.map((name, i) => (
+            <Bar
+              key={name}
+              dataKey={name}
+              stackId="a"
+              fill={colorFor(name, i)}
+              radius={i === series.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+              isAnimationActive={false}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 

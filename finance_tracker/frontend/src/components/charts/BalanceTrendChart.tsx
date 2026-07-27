@@ -184,14 +184,28 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
     return values
   }, [data, activeAccounts])
 
-  // Highest value at bottom of stack (first in array), lowest at top.
-  // Swedbank is always pinned to the visual top (last rendered) for prominence.
-  const orderedAccounts = useMemo(() => [
-    ...activeAccounts
-      .filter((a) => a !== 'swed')
-      .sort((a, b) => (latestValues[b] ?? 0) - (latestValues[a] ?? 0)),
-    ...(activeAccounts.includes('swed') ? ['swed'] : []),
-  ], [activeAccounts, latestValues])
+  // Stack order by stability: the calmest series (smallest average move
+  // between snapshots — pensions, ETF) sit at the bottom so their bands stay
+  // flat, and the jumpy day-to-day accounts (checking, cash) ride on top
+  // where their wiggle doesn't distort everything above them.
+  const orderedAccounts = useMemo(() => {
+    const volatility: Record<string, number> = {}
+    for (const acc of activeAccounts) {
+      let sum = 0
+      let n = 0
+      let prev: number | null = null
+      for (const row of data) {
+        const val = typeof row[acc] === 'number' ? (row[acc] as number) : 0
+        if (prev != null) {
+          sum += Math.abs(val - prev)
+          n++
+        }
+        prev = val
+      }
+      volatility[acc] = n > 0 ? sum / n : 0
+    }
+    return [...activeAccounts].sort((a, b) => (volatility[a] ?? 0) - (volatility[b] ?? 0))
+  }, [activeAccounts, data])
 
   const yTicks = useMemo(() => {
     const maxTotal = Math.max(...data.map((d) =>

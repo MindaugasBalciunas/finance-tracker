@@ -203,6 +203,7 @@ type labelAgg struct {
 	label string
 	total float64
 	count int
+	first time.Time
 }
 
 func topLabelAggs(sums map[string]*labelAgg, n int) []*labelAgg {
@@ -243,7 +244,7 @@ func buildLabelSections(txs []domain.Transaction, totalIncome float64, now time.
 	spendSums := map[string]*labelAgg{}
 	incomeSums := map[string]*labelAgg{}
 	monthLabelSums := map[string]map[string]*labelAgg{}
-	firstFixed := now
+	fixedTxTotal := 0.0
 
 	for i := range txs {
 		tx := &txs[i]
@@ -262,18 +263,24 @@ func buildLabelSections(txs []domain.Transaction, totalIncome float64, now time.
 			}
 		case domain.TransactionTypeExpense:
 			if isFixed(tx) {
-				if tx.Date.Before(firstFixed) {
-					firstFixed = tx.Date
-				}
-				for _, l := range labels {
-					if l == "" {
+				// A payment can carry several fixed labels (the importer tags
+				// loan transfers "loan,evelina") — attribute it ONCE, to its
+				// first fixed label, so the obligation lines don't double
+				// count the same money.
+				fixedTxTotal += tx.Amount
+				for _, fl := range fixedObligationLabels {
+					if !tx.HasLabel(fl) {
 						continue
 					}
-					if fixedSums[l] == nil {
-						fixedSums[l] = &labelAgg{label: l}
+					if fixedSums[fl] == nil {
+						fixedSums[fl] = &labelAgg{label: fl, first: tx.Date}
 					}
-					fixedSums[l].total += tx.Amount
-					fixedSums[l].count++
+					fixedSums[fl].total += tx.Amount
+					fixedSums[fl].count++
+					if tx.Date.Before(fixedSums[fl].first) {
+						fixedSums[fl].first = tx.Date
+					}
+					break
 				}
 				continue
 			}
@@ -306,11 +313,12 @@ func buildLabelSections(txs []domain.Transaction, totalIncome float64, now time.
 	none := "  - none"
 
 	var fixedLines []string
-	fixedMonths := monthsBetween(firstFixed, now)
 	for _, a := range topLabelAggs(fixedSums, 6) {
 		line := fmt.Sprintf("  - %s: €%.0f total (%d payments", a.label, a.total, a.count)
-		if fixedMonths >= 2 {
-			line += fmt.Sprintf(", ≈€%.0f/month since %s", a.total/float64(fixedMonths), firstFixed.Format("2006-01"))
+		// Monthly rate over the label's OWN lifetime — a leasing that started
+		// last year must not be averaged over the loan's decade.
+		if labelMonths := monthsBetween(a.first, now); labelMonths >= 2 {
+			line += fmt.Sprintf(", ≈€%.0f/month since %s", a.total/float64(labelMonths), a.first.Format("2006-01"))
 		}
 		line += ")"
 		if totalIncome > 0 {
@@ -320,6 +328,8 @@ func buildLabelSections(txs []domain.Transaction, totalIncome float64, now time.
 	}
 	if len(fixedLines) == 0 {
 		fixedLines = []string{none}
+	} else if totalIncome > 0 {
+		fixedLines = append(fixedLines, fmt.Sprintf("  - TOTAL fixed obligations: €%.0f — %.1f%% of all-time income", fixedTxTotal, fixedTxTotal/totalIncome*100))
 	}
 
 	var spendLines []string

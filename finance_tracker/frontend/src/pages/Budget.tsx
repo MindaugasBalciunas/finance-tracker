@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAllTransactions, useTransactionSummary } from '../hooks/useTransactions'
-import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings } from '../hooks/useBudgets'
+import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings, useLabels } from '../hooks/useBudgets'
 import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
 import type { MonthPlan } from '../utils/budget'
 import { ltNetSalary } from '../utils/ltSalary'
@@ -746,6 +746,9 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
 
   const [form, setForm] = useState<BudgetInput>(initial)
   const [matcher, setMatcher] = useState<'category' | 'label'>(initial.label ? 'label' : 'category')
+  // Existing labels for autocomplete — a typo here ("lease" vs "leasing")
+  // silently creates a budget that never matches anything.
+  const { data: allLabels = [] } = useLabels()
 
   const valid = form.name.trim() !== '' && form.amount > 0 &&
     (matcher === 'label' ? (form.label ?? '').trim() !== '' : (form.category ?? '') !== '')
@@ -800,13 +803,27 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
               ))}
             </select>
           ) : (
-            <input
-              type="text"
-              value={form.label ?? ''}
-              onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase(), category: '' })}
-              placeholder="Label (e.g. loan)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-            />
+            <>
+              <input
+                type="text"
+                value={form.label ?? ''}
+                onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase(), category: '' })}
+                placeholder="Label (e.g. loan)"
+                list="budget-label-options"
+                autoComplete="off"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
+              />
+              <datalist id="budget-label-options">
+                {allLabels.map((l) => (
+                  <option key={l} value={l} />
+                ))}
+              </datalist>
+              {(form.label ?? '').trim() !== '' && !allLabels.includes((form.label ?? '').trim()) && (
+                <p className="text-[11px] text-amber-600 -mt-1">
+                  “{(form.label ?? '').trim()}” doesn't match any existing label yet — this budget will stay at €0 until transactions carry it.
+                </p>
+              )}
+            </>
           )}
           <input
             type="number"

@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -233,6 +234,14 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 	for _, ms := range monthMap {
 		summary.ByMonth = append(summary.ByMonth, *ms)
 	}
+	// The SQL ORDER BY is lost when rebuilding through the map (Go map
+	// iteration is randomized) — restore chronological order.
+	sort.Slice(summary.ByMonth, func(i, j int) bool {
+		if summary.ByMonth[i].Year != summary.ByMonth[j].Year {
+			return summary.ByMonth[i].Year < summary.ByMonth[j].Year
+		}
+		return summary.ByMonth[i].Month < summary.ByMonth[j].Month
+	})
 
 	return summary, nil
 }

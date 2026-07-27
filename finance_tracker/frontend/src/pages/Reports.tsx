@@ -46,9 +46,10 @@ export default function Reports() {
   // each (labels are overlapping views, not splits), so label sums must never
   // be added together; transaction-level subtotals are tracked separately.
   const labelStats = useMemo(() => {
-    type Stat = { label: string; total: number; count: number; perMonth: Record<string, number>; committed: boolean; store: boolean }
+    type Stat = { label: string; total: number; count: number; discTotal: number; discCount: number; perMonth: Record<string, number>; committed: boolean; store: boolean }
     const sums: Record<string, Stat> = {}
     const monthSet = new Set<string>()
+    const discMonthSet = new Set<string>()
     let expenseTotal = 0
     let committedTotal = 0
     let unlabeledSum = 0
@@ -61,20 +62,32 @@ export default function Reports() {
       if (labels.length === 0) {
         unlabeledSum += tx.amount.value
         unlabeledCount += 1
+        discMonthSet.add(mk)
         continue
       }
-      if (labels.some((l) => FIXED_LABELS.includes(l))) committedTotal += tx.amount.value
+      const committedTx = labels.some((l) => FIXED_LABELS.includes(l))
+      if (committedTx) committedTotal += tx.amount.value
+      else discMonthSet.add(mk)
       for (const l of labels) {
-        if (!sums[l]) sums[l] = { label: l, total: 0, count: 0, perMonth: {}, committed: FIXED_LABELS.includes(l), store: !!STORE_NAMES[l] }
+        if (!sums[l]) sums[l] = { label: l, total: 0, count: 0, discTotal: 0, discCount: 0, perMonth: {}, committed: FIXED_LABELS.includes(l), store: !!STORE_NAMES[l] }
         sums[l].total += tx.amount.value
         sums[l].count += 1
         sums[l].perMonth[mk] = (sums[l].perMonth[mk] ?? 0) + tx.amount.value
+        // Money from committed transactions must not resurface in the
+        // Discretionary list via an innocent co-label (e.g. "loan,house").
+        if (!committedTx) {
+          sums[l].discTotal += tx.amount.value
+          sums[l].discCount += 1
+        }
       }
     }
     const all = Object.values(sums).sort((a, b) => b.total - a.total)
     return {
       all,
       months: [...monthSet].sort(),
+      // Months that contain non-committed spending — the label trend chart
+      // excludes fixed obligations, so its guard must count these, not all.
+      discMonthCount: discMonthSet.size,
       expenseTotal,
       committedTotal,
       discretionaryTotal: expenseTotal - committedTotal - unlabeledSum,
@@ -445,9 +458,11 @@ export default function Reports() {
               </div>
               <div className="space-y-2">
                 {(() => {
-                  const disc = labelStats.all.filter((s) => !s.committed && !s.store)
+                  const disc = labelStats.all
+                    .filter((s) => !s.committed && !s.store && s.discTotal > 0)
+                    .sort((a, b) => b.discTotal - a.discTotal)
                   const shown = showAllLabels ? disc : disc.slice(0, 10)
-                  const max = disc[0]?.total ?? 1
+                  const max = disc[0]?.discTotal ?? 1
                   return (
                     <>
                       {shown.map((s) => {
@@ -462,11 +477,11 @@ export default function Reports() {
                                     {trend > 0 ? '▲' : '▼'}{Math.abs(trend) >= 995 ? '>10x' : `${Math.abs(trend).toFixed(0)}%`}
                                   </span>
                                 )}
-                                {formatEuro(s.total)} <span className="text-xs text-gray-400 font-normal">({s.count})</span>
+                                {formatEuro(s.discTotal)} <span className="text-xs text-gray-400 font-normal">({s.discCount})</span>
                               </span>
                             </div>
                             <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-indigo-400 rounded-full group-hover:bg-indigo-600" style={{ width: `${(s.total / max) * 100}%` }} />
+                              <div className="h-full bg-indigo-400 rounded-full group-hover:bg-indigo-600" style={{ width: `${(s.discTotal / max) * 100}%` }} />
                             </div>
                           </button>
                         )
@@ -516,7 +531,7 @@ export default function Reports() {
       )}
 
       {/* Label trend over months */}
-      {(allExpenses?.data.length ?? 0) > 0 && labelStats.months.length > 1 && (
+      {(allExpenses?.data.length ?? 0) > 0 && labelStats.discMonthCount > 1 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-1">Labels by Month</h3>
           <p className="text-xs text-gray-400 mb-4">

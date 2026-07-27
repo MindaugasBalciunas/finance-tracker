@@ -22,9 +22,11 @@ func TestBuildLabelSections(t *testing.T) {
 
 	txs := []domain.Transaction{
 		// Fixed obligations: labeled loan/evelina — must land in the fixed
-		// section regardless of age, never in discretionary.
+		// section regardless of age, never in discretionary. The importer
+		// tags loan transfers with BOTH fixed labels ("loan,evelina"); such a
+		// payment must be attributed once (to loan), not double counted.
 		labTx(twoYearsAgo, domain.TransactionTypeExpense, 1200, "loan"),
-		labTx(lastMonth, domain.TransactionTypeExpense, 1200, "loan"),
+		labTx(lastMonth, domain.TransactionTypeExpense, 1200, "loan,evelina"),
 		labTx(lastMonth, domain.TransactionTypeExpense, 950, "evelina"),
 		// Discretionary spending within the last year.
 		labTx(lastMonth, domain.TransactionTypeExpense, 80, "restaurant"),
@@ -42,8 +44,14 @@ func TestBuildLabelSections(t *testing.T) {
 	s := buildLabelSections(txs, 8000, now)
 
 	// Fixed obligations include both labels with totals and income share.
+	// The dual-labeled "loan,evelina" payment counts toward loan only, and
+	// the TOTAL line reflects transaction-level money (no overlap).
 	assert.Contains(t, s.fixedObligations, "loan: €2400 total (2 payments")
 	assert.Contains(t, s.fixedObligations, "evelina: €950 total (1 payments")
+	assert.Contains(t, s.fixedObligations, "TOTAL fixed obligations: €3350")
+	// Per-label monthly rate spans the label's own lifetime, not the oldest
+	// fixed transaction's: evelina started last month, not two years ago.
+	assert.Contains(t, s.fixedObligations, "evelina: €950 total (1 payments, ≈€475/month since 2026-06)")
 	assert.Contains(t, s.fixedObligations, "% of all-time income")
 
 	// Discretionary top labels: last 12 months only, fixed labels excluded.

@@ -13,6 +13,7 @@ import {
 import type { Transaction, MonthlySummary } from '../../types'
 import { formatEuro } from '../../utils/format'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { pickGranularity, bucketKey, bucketLabel, GRANULARITY_NOTE } from '../../utils/timeBuckets'
 
 interface Props {
   transactions: Transaction[]
@@ -71,18 +72,21 @@ const COLORS = [
 ]
 
 function buildChartData(transactions: Transaction[], topN: number) {
-  const monthMap: Record<string, Record<string, number>> = {}
+  // Long periods aggregate to quarters/years so the bars stay readable.
+  const monthSet = new Set<string>()
+  for (const tx of transactions) monthSet.add(tx.date.slice(0, 7))
+  const granularity = pickGranularity(monthSet.size)
 
+  const bucketMap: Record<string, Record<string, number>> = {}
   for (const tx of transactions) {
-    const d = new Date(tx.date)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    if (!monthMap[key]) monthMap[key] = {}
+    const key = bucketKey(tx.date, granularity)
+    if (!bucketMap[key]) bucketMap[key] = {}
     const cat = tx.category as string
-    monthMap[key][cat] = (monthMap[key][cat] ?? 0) + tx.amount.value
+    bucketMap[key][cat] = (bucketMap[key][cat] ?? 0) + tx.amount.value
   }
 
   const catTotals: Record<string, number> = {}
-  for (const cats of Object.values(monthMap)) {
+  for (const cats of Object.values(bucketMap)) {
     for (const [cat, amt] of Object.entries(cats)) {
       catTotals[cat] = (catTotals[cat] ?? 0) + amt
     }
@@ -92,14 +96,11 @@ function buildChartData(transactions: Transaction[], topN: number) {
     .slice(0, topN)
     .map(([cat]) => cat)
 
-  const months = Object.keys(monthMap).sort()
-  const rows = months.map((key) => {
-    const [year, month] = key.split('-')
-    const date = new Date(parseInt(year), parseInt(month) - 1)
-    const label = date.toLocaleDateString('en', { month: 'short', year: '2-digit' })
-    const row: Record<string, any> = { name: label }
+  const buckets = Object.keys(bucketMap).sort()
+  const rows = buckets.map((key) => {
+    const row: Record<string, any> = { name: bucketLabel(key, granularity) }
     let other = 0
-    for (const [cat, amt] of Object.entries(monthMap[key])) {
+    for (const [cat, amt] of Object.entries(bucketMap[key])) {
       if (topCats.includes(cat)) {
         row[cat] = amt
       } else {
@@ -114,14 +115,15 @@ function buildChartData(transactions: Transaction[], topN: number) {
   const hasOther = rows.some((r) => r['Other'])
   if (hasOther) allCats.push('Other')
 
-  return { rows, categories: allCats }
+  return { rows, categories: allCats, granularity }
 }
 
 const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Props) => {
-  const { rows, categories } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
-  // The per-month Inc/Exp/Inv labels collide at phone widths — tooltip covers it there.
+  const { rows, categories, granularity } = useMemo(() => buildChartData(transactions, topN), [transactions, topN])
+  // The per-month Inc/Exp/Inv labels collide at phone widths — tooltip covers
+  // it there. They are month-keyed, so they only apply at month granularity.
   const isMobile = useIsMobile()
-  const showTotals = !!monthTotals && !isMobile
+  const showTotals = !!monthTotals && !isMobile && granularity === 'month'
 
   const { totalsMap, avg, hasInvestments } = useMemo(() => {
     const totalsMap: Record<string, MonthlySummary> = {}
@@ -162,8 +164,12 @@ const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Pr
   if (rows.length === 0) return null
 
   return (
-    <ResponsiveContainer width="100%" height={320 + topMargin - 8}>
-      <BarChart data={rows} margin={{ top: topMargin, right: 20, left: 0, bottom: 5 }}>
+    <div>
+      {GRANULARITY_NOTE[granularity] && (
+        <p className="text-[11px] text-gray-400 mb-1">{GRANULARITY_NOTE[granularity]}</p>
+      )}
+      <ResponsiveContainer width="100%" height={320 + topMargin - 8}>
+        <BarChart data={rows} margin={{ top: topMargin, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="name" tick={{ fontSize: 11 }} />
         <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
@@ -186,8 +192,9 @@ const MonthlyExpenseCategoryChart = ({ transactions, topN = 8, monthTotals }: Pr
             )}
           />
         )}
-      </BarChart>
-    </ResponsiveContainer>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 

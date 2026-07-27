@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { Transaction } from '../../types'
 import { formatEuro } from '../../utils/format'
 import { txLabels, isCommitted } from '../../utils/labels'
+import { useDateRange } from '../../context/DateRangeContext'
 
 interface Props {
   expenses: Transaction[]
@@ -14,6 +15,18 @@ interface Props {
 // transaction list pre-filtered on that label; the arrow compares the latest
 // data month against the average of the earlier months in the period.
 export default function TopLabelsCard({ expenses }: Props) {
+  const { dateRange } = useDateRange()
+
+  // The link carries the period explicitly so the destination shows exactly
+  // the transactions this card aggregated — even if the shared date-range
+  // state is unavailable there (fresh tab, copied URL, blocked storage).
+  const labelLink = (label: string) => {
+    const params = new URLSearchParams({ label })
+    if (dateRange.date_from) params.set('date_from', dateRange.date_from)
+    if (dateRange.date_to) params.set('date_to', dateRange.date_to)
+    return `/transactions?${params.toString()}`
+  }
+
   const { top, months } = useMemo(() => {
     const sums: Record<string, { total: number; count: number; perMonth: Record<string, number> }> = {}
     const monthSet = new Set<string>()
@@ -62,7 +75,7 @@ export default function TopLabelsCard({ expenses }: Props) {
         {top.map(([label, { total, count, perMonth }]) => {
           const trend = trendFor(perMonth)
           return (
-            <Link key={label} to={`/transactions?label=${encodeURIComponent(label)}`} className="block group">
+            <Link key={label} to={labelLink(label)} className="block group">
               <div className="flex items-center justify-between text-sm mb-0.5">
                 <span className="font-medium text-indigo-700 group-hover:text-indigo-900 group-hover:underline">{label}</span>
                 <span className="text-gray-700 font-semibold">

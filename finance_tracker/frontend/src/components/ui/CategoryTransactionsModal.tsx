@@ -125,7 +125,7 @@ export default function CategoryTransactionsModal({ category, label, title, type
           </button>
         </div>
 
-        {!unlabeled && (labelSums.length > 0 || noLabelSum > 0) && (
+        {!unlabeled && labelSums.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-4 sm:px-6 py-2.5 border-b border-gray-100">
             {labelSums.map(([l, sum]) => (
               <button

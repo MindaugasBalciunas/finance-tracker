@@ -35,7 +35,7 @@ function formatAccount(tx: Transaction): string {
 }
 
 export default function Transactions() {
-  const { dateRange } = useDateRange()
+  const { dateRange, setCustomRange } = useDateRange()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showForm, setShowForm] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
@@ -49,6 +49,23 @@ export default function Transactions() {
     label: searchParams.get('label') ?? undefined,
   }))
   const [searchDraft, setSearchDraft] = useState('')
+
+  // Adopt an explicit period from the URL (label links carry one) so a deep
+  // link always opens exactly the period the source page showed, even when
+  // the shared date-range state isn't available (fresh tab, copied URL).
+  useEffect(() => {
+    const from = searchParams.get('date_from') ?? undefined
+    const to = searchParams.get('date_to') ?? undefined
+    if (!from && !to) return
+    if (from !== dateRange.date_from || to !== dateRange.date_to) {
+      setCustomRange({ date_from: from, date_to: to })
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('date_from')
+    next.delete('date_to')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Sync global date range into local filter
   useEffect(() => {

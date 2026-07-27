@@ -97,13 +97,86 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
   )
 }
 
+// Past this many months, per-month cumulative lines are an unreadable
+// tangle — switch to a day × month heat map of daily spending instead.
+const HEATMAP_THRESHOLD = 12
+
+function SpendingHeatmap({ byMonth, monthKeys }: { byMonth: Record<string, Record<number, number>>; monthKeys: string[] }) {
+  // Color scale anchored at the 95th percentile so one huge day doesn't
+  // wash out everything else.
+  const daily: number[] = []
+  for (const mk of monthKeys) {
+    for (const v of Object.values(byMonth[mk])) daily.push(v)
+  }
+  const sorted = [...daily].sort((a, b) => a - b)
+  const p95 = sorted[Math.floor(sorted.length * 0.95)] || 1
+
+  const monthTotals: Record<string, number> = {}
+  for (const mk of monthKeys) {
+    monthTotals[mk] = Object.values(byMonth[mk]).reduce((s, v) => s + v, 0)
+  }
+
+  const cellColor = (v: number) => {
+    if (v <= 0) return '#f3f4f6'
+    const a = Math.min(1, 0.15 + (v / p95) * 0.85)
+    return `rgba(220, 38, 38, ${a.toFixed(2)})`
+  }
+
+  const DAY_LABELS = new Set([1, 8, 15, 22, 29])
+
+  return (
+    <div>
+      <div className="overflow-x-auto pb-1">
+        <div className="inline-block">
+          {/* Year markers above January columns; the first column is only
+              labelled when no January follows soon enough to collide. */}
+          <div className="flex ml-7">
+            {monthKeys.map((mk, i) => (
+              <div key={mk} className="w-3 text-[10px] text-gray-400 overflow-visible whitespace-nowrap">
+                {(mk.endsWith('-01') || (i === 0 && !monthKeys.slice(0, 4).some((k) => k.endsWith('-01')))) ? mk.slice(0, 4) : ''}
+              </div>
+            ))}
+          </div>
+          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+            <div key={day} className="flex items-center">
+              <div className="w-7 pr-1 text-right text-[9px] text-gray-400 leading-none">
+                {DAY_LABELS.has(day) ? day : ''}
+              </div>
+              {monthKeys.map((mk) => {
+                const v = byMonth[mk][day] ?? 0
+                return (
+                  <div
+                    key={mk}
+                    className="w-3 h-[7px] border border-white rounded-[1px]"
+                    style={{ backgroundColor: cellColor(v) }}
+                    title={`${mk}-${String(day).padStart(2, '0')}: ${formatEuro(v)}${monthTotals[mk] ? ` (month ${formatEuro(monthTotals[mk])})` : ''}`}
+                  />
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 mt-2 text-[10px] text-gray-400">
+        <span>Daily spend:</span>
+        <span>€0</span>
+        {[0.15, 0.35, 0.6, 0.85, 1].map((a) => (
+          <span key={a} className="w-3 h-2 rounded-[1px] inline-block" style={{ backgroundColor: `rgba(220,38,38,${a})` }} />
+        ))}
+        <span>{formatEuro(p95)}+</span>
+        <span className="ml-2">· one column per month, one row per day of month</span>
+      </div>
+    </div>
+  )
+}
+
 const CumulativeSpendingChart = ({ transactions }: Props) => {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
   // Side legend would halve the plot width on phones — stack it below instead.
   const isMobile = useIsMobile()
 
-  const { monthKeys, trimmed, latestValues } = useMemo(() => {
+  const { monthKeys, byMonth, trimmed, latestValues } = useMemo(() => {
     // Group expenses by "YYYY-MM" month key
     const byMonth: Record<string, Record<number, number>> = {}
 
@@ -161,10 +234,14 @@ const CumulativeSpendingChart = ({ transactions }: Props) => {
       latestValues[mk] = lastDefined?.[mk] ?? 0
     }
 
-    return { monthKeys, trimmed, latestValues }
+    return { monthKeys, byMonth, trimmed, latestValues }
   }, [transactions])
 
   if (monthKeys.length === 0) return null
+
+  if (monthKeys.length > HEATMAP_THRESHOLD) {
+    return <SpendingHeatmap byMonth={byMonth} monthKeys={monthKeys} />
+  }
 
   const monthLabel = (mk: string) => {
     const [year, month] = mk.split('-')

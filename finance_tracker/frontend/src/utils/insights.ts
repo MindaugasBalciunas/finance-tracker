@@ -166,6 +166,14 @@ export function labelMoverInsights(
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, limit)
     .map(({ label, cur, avg, pct }) => {
+      // A label with no history isn't "up 100%" — it's new spending.
+      if (avg <= 0) {
+        return {
+          icon: '✦',
+          tone: 'warn' as const,
+          text: `New spending on “${label}” ${monthPhrase} — ${formatEuro(cur)}, nothing in the earlier months of the period.`,
+        }
+      }
       const up = pct >= 0
       return {
         icon: up ? '▲' : '▼',
