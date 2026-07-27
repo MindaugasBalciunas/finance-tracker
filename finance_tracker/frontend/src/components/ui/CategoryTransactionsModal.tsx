@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAllTransactions } from '../../hooks/useTransactions'
+import { useAllTransactions, useUpdateTransaction } from '../../hooks/useTransactions'
+import TransactionForm from '../forms/TransactionForm'
 import LoadingSpinner from './LoadingSpinner'
 import { formatEuro } from '../../utils/format'
 import { txLabels } from '../../utils/labels'
-import type { Category, TransactionType } from '../../types'
+import type { Category, Transaction, TransactionType, CreateTransactionInput } from '../../types'
 import type { DateRange } from './DateRangeFilter'
 
 interface Props {
@@ -36,9 +37,31 @@ export default function CategoryTransactionsModal({ category, label, title, type
     ...dateRange,
   })
 
+  // Any transaction shown anywhere should be one tap from editable.
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const updateMutation = useUpdateTransaction()
+
+  const handleUpdate = async (input: CreateTransactionInput) => {
+    if (!editingTx) return
+    try {
+      await updateMutation.mutateAsync({ id: editingTx.id, input })
+      setEditingTx(null)
+      setFormError(null)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      // Escape peels one layer: the edit form first, then the modal.
+      if (e.key === 'Escape') {
+        setEditingTx((editing) => {
+          if (!editing) onClose()
+          return null
+        })
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -207,7 +230,7 @@ export default function CategoryTransactionsModal({ category, label, title, type
             </div>
             <ul className="overflow-y-auto divide-y divide-gray-100">
               {transactions.map((tx) => (
-                <li key={tx.id} className="px-4 sm:px-6 py-2.5">
+                <li key={tx.id} className="px-4 sm:px-6 py-2.5 group">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-gray-700 break-words">
@@ -221,8 +244,18 @@ export default function CategoryTransactionsModal({ category, label, title, type
                         ))}
                       </p>
                     </div>
-                    <span className={`text-sm font-medium whitespace-nowrap flex-shrink-0 ${styles.amount}`}>
-                      {styles.sign}{formatEuro(tx.amount.value)}
+                    <span className="flex items-center gap-1 flex-shrink-0">
+                      <span className={`text-sm font-medium whitespace-nowrap ${styles.amount}`}>
+                        {styles.sign}{formatEuro(tx.amount.value)}
+                      </span>
+                      <button
+                        onClick={() => { setEditingTx(tx); setFormError(null) }}
+                        aria-label={`Edit transaction ${tx.id}`}
+                        title="Edit this transaction"
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-blue-600 hover:bg-blue-50 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-all"
+                      >
+                        ✎
+                      </button>
                     </span>
                   </div>
                 </li>
@@ -231,6 +264,35 @@ export default function CategoryTransactionsModal({ category, label, title, type
           </>
         )}
       </div>
+
+      {/* Nested edit overlay — same form as the Transactions page */}
+      {editingTx && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] overflow-y-auto py-8"
+          onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setEditingTx(null) }}
+        >
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Transaction</h3>
+            {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
+            <TransactionForm
+              key={editingTx.id}
+              onSubmit={handleUpdate}
+              onCancel={() => { setEditingTx(null); setFormError(null) }}
+              isSubmitting={updateMutation.isPending}
+              defaultValues={{
+                date: editingTx.date.slice(0, 10),
+                type: editingTx.type,
+                amount: editingTx.amount.value,
+                category: editingTx.category,
+                comment: editingTx.comment,
+                labels: editingTx.labels || '',
+                debit_account: editingTx.debit_account || '',
+                credit_account: editingTx.credit_account || '',
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

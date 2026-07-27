@@ -98,74 +98,102 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
 }
 
 // Past this many months, per-month cumulative lines are an unreadable
-// tangle — switch to a day × month heat map of daily spending instead.
-const HEATMAP_THRESHOLD = 12
+// tangle — switch to a calendar of mini month charts instead.
+const CALENDAR_THRESHOLD = 12
 
-function SpendingHeatmap({ byMonth, monthKeys }: { byMonth: Record<string, Record<number, number>>; monthKeys: string[] }) {
-  // Color scale anchored at the 95th percentile so one huge day doesn't
-  // wash out everything else.
-  const daily: number[] = []
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// One small cumulative-spend curve per month, laid out as a calendar
+// (recent years first). Every curve shares one vertical scale, so height =
+// how much and steepness = how fast, exactly like the big line chart —
+// just one month per tile. Tile color compares the month's total to the
+// period's average month.
+function SpendingCalendar({ byMonth, monthKeys }: { byMonth: Record<string, Record<number, number>>; monthKeys: string[] }) {
+  const now = new Date()
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  const totals: Record<string, number> = {}
   for (const mk of monthKeys) {
-    for (const v of Object.values(byMonth[mk])) daily.push(v)
+    totals[mk] = Object.values(byMonth[mk]).reduce((s, v) => s + v, 0)
   }
-  const sorted = [...daily].sort((a, b) => a - b)
-  const p95 = sorted[Math.floor(sorted.length * 0.95)] || 1
+  const maxTotal = Math.max(...Object.values(totals), 1)
+  const complete = monthKeys.filter((mk) => mk !== currentKey)
+  const avgTotal = complete.length > 0
+    ? complete.reduce((s, mk) => s + totals[mk], 0) / complete.length
+    : 0
 
-  const monthTotals: Record<string, number> = {}
-  for (const mk of monthKeys) {
-    monthTotals[mk] = Object.values(byMonth[mk]).reduce((s, v) => s + v, 0)
+  const firstYear = parseInt(monthKeys[0].slice(0, 4), 10)
+  const lastYear = parseInt(monthKeys[monthKeys.length - 1].slice(0, 4), 10)
+  const years: number[] = []
+  for (let y = lastYear; y >= firstYear; y--) years.push(y)
+
+  const W = 100
+  const H = 36
+  const curvePoints = (mk: string): string[] => {
+    const days = byMonth[mk]
+    let cum = 0
+    const pts = [`0,${H}`]
+    for (let d = 1; d <= 31; d++) {
+      if (mk === currentKey && d > now.getDate()) break
+      cum += days[d] ?? 0
+      pts.push(`${((d / 31) * W).toFixed(1)},${(H - (cum / maxTotal) * (H - 2)).toFixed(1)}`)
+    }
+    return pts
   }
 
-  const cellColor = (v: number) => {
-    if (v <= 0) return '#f3f4f6'
-    const a = Math.min(1, 0.15 + (v / p95) * 0.85)
-    return `rgba(220, 38, 38, ${a.toFixed(2)})`
+  const colorFor = (mk: string) => {
+    // The running month is judged against nothing — it isn't finished yet.
+    if (mk === currentKey || avgTotal <= 0) return { line: '#6366f1', fill: 'rgba(99,102,241,0.10)' }
+    const r = totals[mk] / avgTotal
+    if (r < 0.85) return { line: '#10b981', fill: 'rgba(16,185,129,0.10)' }
+    if (r <= 1.15) return { line: '#6366f1', fill: 'rgba(99,102,241,0.10)' }
+    return { line: '#ef4444', fill: 'rgba(239,68,68,0.10)' }
   }
 
-  const DAY_LABELS = new Set([1, 8, 15, 22, 29])
+  const fmtShort = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0))
 
   return (
     <div>
-      <div className="overflow-x-auto pb-1">
-        <div className="inline-block">
-          {/* Year markers above January columns; the first column is only
-              labelled when no January follows soon enough to collide. */}
-          <div className="flex ml-7">
-            {monthKeys.map((mk, i) => (
-              <div key={mk} className="w-3 text-[10px] text-gray-400 overflow-visible whitespace-nowrap">
-                {(mk.endsWith('-01') || (i === 0 && !monthKeys.slice(0, 4).some((k) => k.endsWith('-01')))) ? mk.slice(0, 4) : ''}
-              </div>
-            ))}
-          </div>
-          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-            <div key={day} className="flex items-center">
-              <div className="w-7 pr-1 text-right text-[9px] text-gray-400 leading-none">
-                {DAY_LABELS.has(day) ? day : ''}
-              </div>
-              {monthKeys.map((mk) => {
-                const v = byMonth[mk][day] ?? 0
+      <div className={years.length > 6 ? 'max-h-[26rem] overflow-y-auto pr-1' : ''}>
+        {years.map((year) => (
+          <div key={year} className="mb-2">
+            <p className="text-[10px] font-semibold text-gray-400 mb-0.5">{year}</p>
+            <div className="grid grid-cols-6 sm:grid-cols-12 gap-1">
+              {MONTH_ABBR.map((name, i) => {
+                const mk = `${year}-${String(i + 1).padStart(2, '0')}`
+                const total = totals[mk]
+                if (total == null) {
+                  return <div key={mk} className="rounded border border-dashed border-gray-100 min-h-10" />
+                }
+                const { line, fill } = colorFor(mk)
+                const pts = curvePoints(mk)
+                const lastX = pts[pts.length - 1].split(',')[0]
                 return (
                   <div
                     key={mk}
-                    className="w-3 h-[7px] border border-white rounded-[1px]"
-                    style={{ backgroundColor: cellColor(v) }}
-                    title={`${mk}-${String(day).padStart(2, '0')}: ${formatEuro(v)}${monthTotals[mk] ? ` (month ${formatEuro(monthTotals[mk])})` : ''}`}
-                  />
+                    className="rounded border border-gray-100 px-0.5 pt-0.5"
+                    title={`${name} ${year}: ${formatEuro(total)}${mk === currentKey ? ' (in progress)' : ''}`}
+                  >
+                    <div className="flex justify-between text-[9px] leading-tight px-0.5">
+                      <span className="text-gray-400">{name}</span>
+                      <span className="text-gray-500 font-medium">{fmtShort(total)}</span>
+                    </div>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-7 block" preserveAspectRatio="none">
+                      <polygon points={`${pts.join(' ')} ${lastX},${H}`} fill={fill} />
+                      <polyline points={pts.join(' ')} fill="none" stroke={line} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                    </svg>
+                  </div>
                 )
               })}
             </div>
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 mt-2 text-[10px] text-gray-400">
-        <span>Daily spend:</span>
-        <span>€0</span>
-        {[0.15, 0.35, 0.6, 0.85, 1].map((a) => (
-          <span key={a} className="w-3 h-2 rounded-[1px] inline-block" style={{ backgroundColor: `rgba(220,38,38,${a})` }} />
+          </div>
         ))}
-        <span>{formatEuro(p95)}+</span>
-        <span className="ml-2">· one column per month, one row per day of month</span>
       </div>
+      <p className="mt-2 text-[10px] text-gray-400">
+        One tile per month: spending accumulating day by day, all tiles on the same scale — steeper = faster, taller = more.
+        Color vs your average month ({formatEuro(avgTotal)}): <span className="text-emerald-600 font-medium">green</span> ≥15% below,{' '}
+        <span className="text-red-500 font-medium">red</span> ≥15% above. Hover a tile for the exact total.
+      </p>
     </div>
   )
 }
@@ -239,8 +267,8 @@ const CumulativeSpendingChart = ({ transactions }: Props) => {
 
   if (monthKeys.length === 0) return null
 
-  if (monthKeys.length > HEATMAP_THRESHOLD) {
-    return <SpendingHeatmap byMonth={byMonth} monthKeys={monthKeys} />
+  if (monthKeys.length > CALENDAR_THRESHOLD) {
+    return <SpendingCalendar byMonth={byMonth} monthKeys={monthKeys} />
   }
 
   const monthLabel = (mk: string) => {
