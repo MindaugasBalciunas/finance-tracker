@@ -294,3 +294,63 @@ func TestSwedbankEnrich(t *testing.T) {
 	assert.EqualValues(t, 0, res2["enriched"])
 	assert.EqualValues(t, 2, res2["duplicate"])
 }
+
+// The Barclays→Danske switch (Oct 2016 – mid-June 2018) paid salary into a
+// Danske-held account; only self-transfers reached Swedbank. Inside that
+// window incoming own-name transfers are salary — outside it, and for
+// explicitly-worded account shuffles, they stay internal.
+const danskeWindowFixture = `"Sąskaitos Nr.","","Data","Gavėjas","Paaiškinimai","Suma","Valiuta","D/K","Įrašo Nr.","Kodas","Įmokos kodas","Dok. Nr.",
+"LT16","10","2016-09-01","","Likutis pradžiai","1000.00","EUR","K","","AS","","",
+"LT16","20","2016-09-26","MINDAUGAS BALČIŪNAS","Mokėjimas tarp savo sąskaitų","32.17","EUR","K","2001","MK","","",
+"LT16","20","2016-12-19","Balciunas Mindaugas","mokejimas sau","1000.00","EUR","K","2002","MK","","",
+"LT16","20","2017-09-01","Balciunas Mindaugas","Pervedimas i savo s kaitA","1519.60","EUR","K","2003","MK","","",
+"LT16","20","2017-03-27","Balciunas Mindaugas","'.","1000.00","EUR","K","2004","MK","","",
+"LT16","20","2018-05-23","Balčiūnas Mindaugas","Top up","2000.00","EUR","K","2005","MK","","",
+"LT16","20","2018-02-06","MINDAUGAS BALČIŪNAS","Transfer between my accounts","75.00","EUR","K","2006","MK","","",
+"LT16","20","2018-07-02","Balciunas Mindaugas","Pervedimas i savo saskaita","650.00","EUR","K","2007","MK","","",
+"LT16","20","2017-06-15","MINDAUGAS BALČIŪNAS","Transfer between my accounts","500.00","EUR","D","2008","MK","","",
+"LT16","20","2017-05-10","MINDAUGAS BALČIŪNAS","Pervedimas iš Taupyklės sąskaitos","150.00","EUR","K","2009","MK","","",
+"LT16","20","2017-04-03","MINDAUGAS PETRAUSKAS","Skola uz remonta","300.00","EUR","K","2010","MK","","",
+"LT16","20","2017-11-06","Balciunas Mindaugas","'-","641.50","EUR","K","2011","MK","","",
+"LT16","86","2018-08-01","","Likutis pabaigai","7868.27","EUR","K","","LS","","",
+`
+
+func TestSwedbankDanskeSalaryWindow(t *testing.T) {
+	r, db := swedTestRouter(t)
+
+	rec := swedImport(t, r, danskeWindowFixture)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var res map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+
+	// 5 salary rows in-window (incl. the punctuation-only "'-" details); the
+	// pre-window transfer, the post-window transfer, the in-window "Transfer
+	// between my accounts" round-trip, the outgoing shuffle, the Taupyklė
+	// withdrawal and the namesake payee all stay internal.
+	assert.EqualValues(t, 5, res["imported"], rec.Body.String())
+	assert.EqualValues(t, 6, res["internal"], rec.Body.String())
+	assert.EqualValues(t, 23, res["balances"], "monthly snapshots Sep 2016 – Jul 2018")
+
+	var salaries []domain.Transaction
+	require.NoError(t, db.Where("category = ?", "Salary").Order("date").Find(&salaries).Error)
+	require.Len(t, salaries, 5)
+	total := 0.0
+	for _, s := range salaries {
+		assert.Equal(t, domain.TransactionTypeIncome, s.Type)
+		assert.Equal(t, "Danske Bank salary (transfer from own Danske account)", s.Comment)
+		assert.Equal(t, "danske", s.Labels)
+		assert.Equal(t, "swed", s.CreditAccount)
+		total += s.Amount
+	}
+	assert.InDelta(t, 1000+1519.60+1000+2000+641.50, total, 0.001)
+	assert.Equal(t, "2016-12-19", salaries[0].Date.Format("2006-01-02"))
+	assert.Equal(t, "2018-05-23", salaries[len(salaries)-1].Date.Format("2006-01-02"))
+
+	// Re-import is a clean no-op.
+	rec2 := swedImport(t, r, danskeWindowFixture)
+	require.Equal(t, 200, rec2.Code)
+	var res2 map[string]any
+	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &res2))
+	assert.EqualValues(t, 0, res2["imported"], rec2.Body.String())
+	assert.EqualValues(t, 5, res2["duplicate"], rec2.Body.String())
+}

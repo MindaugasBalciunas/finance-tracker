@@ -41,6 +41,28 @@ var fxCurrencyRe = regexp.MustCompile(`\b(DKK|NOK|SEK|GBP|TRY|PLN|CZK|HUF|CHF)\b
 // Official fixed conversion rate: Lithuania joined the euro on 2015-01-01.
 const ltlPerEur = 3.4528
 
+// The Barclays→Danske employment switch had no gap, but the paper trail
+// does: Barclays' last payment landed 2016-09-16, and Danske's first direct
+// account top-up only appears 2018-06-15 (the salary went to a Danske-held
+// account — that branch has since closed). Between those dates the salary
+// reached Swedbank exclusively as self-transfers ("Pervedimas i savo
+// saskaita", "mokejimas sau", "Top up"), which the importer would otherwise
+// skip as internal — leaving a false income hole.
+var danskeSalaryFrom = time.Date(2016, 10, 1, 0, 0, 0, 0, time.UTC)
+var danskeSalaryTo = time.Date(2018, 6, 15, 0, 0, 0, 0, time.UTC)
+
+// danskeSalaryDetails matches the wordings the Danske-era self-transfers
+// actually used: "Pervedimas i savo saskaita" (including its mangled
+// variants like "s kaitA"/"scskaita"), "mokejimas sau", "Top up", or
+// blank/punctuation-only details ("'-", "'.").
+func danskeSalaryDetails(lowDetails string) bool {
+	if strings.Contains(lowDetails, "i savo s") || strings.Contains(lowDetails, "į savo s") ||
+		strings.Contains(lowDetails, "mokejimas sau") || strings.Contains(lowDetails, "top up") {
+		return true
+	}
+	return strings.Trim(lowDetails, "'-. ") == ""
+}
+
 // swedBalance is an account-level balance stated by the bank itself in the
 // statement's opening ("Likutis pradžiai") and closing ("Likutis pabaigai")
 // rows — used to restore the Swedbank balance history.
@@ -339,6 +361,16 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 				Category: "Finance", Comment: "Credit repayment", Labels: "loan", Debit: "swed"}, false
 		case strings.Contains(lowDetails, "revolut"):
 			// handled by the Revolut top-up rule below
+		case dk == "K" && !date.Before(danskeSalaryFrom) && date.Before(danskeSalaryTo) &&
+			danskeSalaryDetails(lowDetails):
+			// Danske era: incoming self-transfers ARE the salary (see the
+			// window comment above). Only the wordings the real transfers
+			// used qualify — everything else (taupyklė withdrawals, "tarp
+			// savo sąskaitų" shuffles, payments from namesakes) stays
+			// internal even inside the window.
+			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeIncome,
+				Category: "Salary", Comment: "Danske Bank salary (transfer from own Danske account)",
+				Labels: "danske", Credit: "swed"}, false
 		default:
 			return swedTx{}, true // own-account movement (tarp savo sąskaitų, taupyklė, …)
 		}
