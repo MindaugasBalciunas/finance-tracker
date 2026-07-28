@@ -2,6 +2,7 @@ package database
 
 import (
 	"os"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -208,7 +209,9 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine", "cafe"},
 		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin", "baltic petrol", "balticpetroleum"},
 		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia", "anteja", "rossmann"},
-		"groceries":  {"maxima", "lidl", "rimi", "norfa", "iki ", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
+		// "^iki" anchors to the comment start: as a substring, "iki" is the
+		// Lithuanian "until" ("nuoma iki 24d") and hid inside other words.
+		"groceries":  {"maxima", "lidl", "rimi", "norfa", "^iki", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
 		"delivery":   {"wolt", "bolt food", "maisto mylet"},
 		"taxi":       {"uber", "etransport", "bolt.eu", "citybee"},
 		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
@@ -237,7 +240,7 @@ func applyCategoryMigrations(db *gorm.DB) {
 		// totals and average basket size can be compared in Reports.
 		"maxima":  {"maxima"},
 		"lidl":    {"lidl"},
-		"iki":     {"iki "},
+		"iki":     {"^iki"},
 		"rimi":    {"rimi"},
 		"norfa":   {"norfa"},
 		"barbora": {"barbora"},
@@ -273,7 +276,12 @@ func applyCategoryMigrations(db *gorm.DB) {
 	for label, patterns := range contextLabels {
 		for _, p := range patterns {
 			ensureRule(domain.LabelRule{Label: label, CommentMatch: p})
-			addLabel(label, `LOWER(comment) LIKE ?`, "%"+p+"%")
+			// '^'-anchored patterns match the comment start (LabelRule syntax).
+			like := "%" + p + "%"
+			if anchored, ok := strings.CutPrefix(p, "^"); ok {
+				like = anchored + "%"
+			}
+			addLabel(label, `LOWER(comment) LIKE ?`, like)
 		}
 	}
 
@@ -387,4 +395,27 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// The category rename can leave byte-identical rules behind — dedupe.
 	db.Exec(`DELETE FROM label_rules WHERE id NOT IN
 		(SELECT MIN(id) FROM label_rules GROUP BY label, category, comment_match)`)
+
+	// --- iki label cleanup (v1.4.1): the old "iki " substring pattern (and an
+	// even older bare "iki" one) hit the Lithuanian word "until" ("nuoma iki
+	// 24d") and left stale labels across nine categories. The store always
+	// opens the comment ("IKI PILAITE…", "Iki. Quick shopping…", "IKIUKAS…"),
+	// so the rules above now use the '^iki' anchored pattern. Retire the old
+	// rules and strip the mislabels — groceries first, while the iki label
+	// still marks the false-positive rows (only rows matching no other
+	// grocery pattern lose it, so hand-labeled rows survive).
+	db.Exec(`DELETE FROM label_rules WHERE comment_match IN ('iki', 'iki ') AND label IN ('groceries', 'iki')`)
+	db.Exec(`UPDATE transactions
+		SET labels = TRIM(REPLACE(',' || labels || ',', ',groceries,', ','), ',')
+		WHERE (',' || labels || ',') LIKE '%,iki,%'
+		AND (',' || labels || ',') LIKE '%,groceries,%'
+		AND LOWER(comment) NOT LIKE 'iki%'
+		AND LOWER(comment) NOT LIKE '%maxima%' AND LOWER(comment) NOT LIKE '%lidl%'
+		AND LOWER(comment) NOT LIKE '%rimi%' AND LOWER(comment) NOT LIKE '%norfa%'
+		AND LOWER(comment) NOT LIKE '%barbora%' AND LOWER(comment) NOT LIKE '%supermaistas%'
+		AND LOWER(comment) NOT LIKE '%biedronka%' AND LOWER(comment) NOT LIKE '%aldi%'
+		AND LOWER(comment) NOT LIKE '%prekybos taskas%' AND LOWER(comment) NOT LIKE '%zabka%'`)
+	db.Exec(`UPDATE transactions
+		SET labels = TRIM(REPLACE(',' || labels || ',', ',iki,', ','), ',')
+		WHERE (',' || labels || ',') LIKE '%,iki,%' AND LOWER(comment) NOT LIKE 'iki%'`)
 }

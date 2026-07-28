@@ -89,6 +89,13 @@ func TestLabels_BulkApplyAndFilter(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
 	assert.EqualValues(t, 2, list.Total)
 
+	// A comma list matches any of the labels — multi-label budget drill-downs
+	// rely on this (the Kids row carries the kids label via the legacy map).
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions?label=loan,kids&page_size=100", nil)
+	require.Equal(t, 200, w.Code)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
+	assert.EqualValues(t, 3, list.Total)
+
 	// New matching transaction is auto-labeled by the saved rule.
 	w = budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
 		"date": "2026-08-17", "type": "expense", "amount": 760.0, "category": "Finance", "comment": "Loan interest August",

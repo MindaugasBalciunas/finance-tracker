@@ -45,6 +45,14 @@ describe('budgetMatches', () => {
     const foodTx = tx('expense', 'Food', 50)
     expect(budgetMatches(PLAN[4], foodTx)).toBe(true)
   })
+
+  it('a comma-list label matches any label in the group', () => {
+    const eatingOut = budget('spending', 'Eating out', 300, { label: 'restaurant,fast food,delivery' })
+    expect(budgetMatches(eatingOut, tx('expense', 'Food', 20, 'restaurant'))).toBe(true)
+    expect(budgetMatches(eatingOut, tx('expense', 'Food', 12, 'fast food,kids'))).toBe(true)
+    expect(budgetMatches(eatingOut, tx('expense', 'Food', 30, 'wolt,delivery'))).toBe(true)
+    expect(budgetMatches(eatingOut, tx('expense', 'Food', 80, 'groceries'))).toBe(false)
+  })
 })
 
 describe('medianMonthlyIncome', () => {
@@ -121,6 +129,21 @@ describe('computeMonthPlan', () => {
     expect(plan.fixed[0].actual).toBe(1000)
     expect(plan.spending[0].actual).toBe(60)
     expect(plan.unbudgeted).toEqual([])
+  })
+
+  it('label-group spending budgets aggregate their labels', () => {
+    const plan = computeMonthPlan(
+      [budget('spending', 'Eating out', 300, { label: 'restaurant,fast food,delivery' })],
+      [
+        tx('expense', 'Food', 45, 'restaurant', 'Sushi'),
+        tx('expense', 'Food', 12, 'fast food', 'McDonalds'),
+        tx('expense', 'Food', 28, 'delivery,wolt', 'Wolt'),
+        tx('expense', 'Food', 90, 'groceries', 'Maxima'),
+      ],
+      null
+    )
+    expect(plan.spending[0].actual).toBe(85)
+    expect(plan.unbudgeted).toEqual([{ category: 'Food', spent: 90 }])
   })
 
   it('label-scoped spending budgets hide only their slice from unbudgeted', () => {

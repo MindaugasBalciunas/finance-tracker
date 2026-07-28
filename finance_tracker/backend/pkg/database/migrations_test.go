@@ -383,6 +383,66 @@ func TestCategoryUnification(t *testing.T) {
 	assert.Equal(t, "education,kids", labelsOf(t, db, school), "labels not duplicated on rerun")
 }
 
+func TestIkiLabelCleanup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	store := seedTx(t, db, "expense", "Food", "IKI PILAITE 06222 VILNIUS")
+	storeSmall := seedTx(t, db, "expense", "Food", "IKIUKAS NR. 831")
+	flowers := seedTx(t, db, "expense", "Dating", "Iki flowers")
+	// False positives of the retired "iki " substring pattern: "iki" is the
+	// Lithuanian "until". Simulate the labels the old rule left behind.
+	rent := seedTx(t, db, "expense", "Vacation", "ShortStopPasilaiciai (Nuoma iki 12.01)")
+	stale := seedTx(t, db, "income", "Reimbursement", "Zita (Vacation to Tenerife)")
+	for _, id := range []uint{rent, stale} {
+		require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", id).
+			Update("labels", "groceries,iki").Error)
+	}
+	// A hand-labeled groceries row with no store pattern must survive.
+	manual := seedTx(t, db, "expense", "Food", "Farmers market veggies")
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", manual).
+		Update("labels", "groceries").Error)
+	// Retired substring rules present from a previous version.
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "groceries", CommentMatch: "iki "}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "iki", CommentMatch: "iki "}).Error)
+
+	applyCategoryMigrations(db)
+
+	// Real store rows (comment starts with iki) are labeled by the anchored rule.
+	for _, id := range []uint{store, storeSmall, flowers} {
+		assert.Contains(t, labelsOf(t, db, id), "iki")
+		assert.Contains(t, labelsOf(t, db, id), "groceries")
+	}
+	// False positives lose both labels; the hand-labeled row keeps groceries.
+	assert.Equal(t, "", labelsOf(t, db, rent))
+	assert.Equal(t, "", labelsOf(t, db, stale))
+	assert.Equal(t, "groceries", labelsOf(t, db, manual))
+
+	// Old substring rules retired, anchored replacements in place.
+	var old, anchored int64
+	db.Model(&domain.LabelRule{}).Where("comment_match = 'iki '").Count(&old)
+	db.Model(&domain.LabelRule{}).Where("comment_match = '^iki'").Count(&anchored)
+	assert.EqualValues(t, 0, old)
+	assert.EqualValues(t, 2, anchored, "groceries + iki anchored rules")
+
+	// Idempotent.
+	applyCategoryMigrations(db)
+	assert.Equal(t, "", labelsOf(t, db, rent))
+	assert.Contains(t, labelsOf(t, db, store), "iki")
+}
+
+func TestAnchoredCommentPatterns(t *testing.T) {
+	assert.True(t, domain.CommentPatternMatches("^iki", "IKI PILAITE VILNIUS"))
+	assert.True(t, domain.CommentPatternMatches("^iki", "Iki. Quick shopping"))
+	assert.False(t, domain.CommentPatternMatches("^iki", "Nuoma iki 24d"))
+	assert.True(t, domain.CommentPatternMatches("iki ", "Nuoma iki 24d"), "unanchored stays substring")
+
+	rule := domain.LabelRule{Label: "iki", CommentMatch: "^iki"}
+	assert.True(t, rule.Matches(&domain.Transaction{Comment: "IKI EXPRESS"}))
+	assert.False(t, rule.Matches(&domain.Transaction{Comment: "Nuoma iki 24d"}))
+}
+
 func TestCanonicalCategoryLegacyValues(t *testing.T) {
 	cat, labels := domain.CanonicalCategory("expense", "Kids - Food")
 	assert.EqualValues(t, "Kids", cat)

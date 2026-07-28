@@ -23,8 +23,18 @@ export function txHasLabel(tx: Transaction, label: string): boolean {
   return txLabels(tx).includes(label)
 }
 
+// A budget's label may be a comma list ("restaurant,fast food,delivery") —
+// the budget then covers the whole label group: any of them matches.
+export function budgetLabels(budget: Pick<Budget, 'label'>): string[] {
+  return (budget.label ?? '')
+    .split(',')
+    .map((l) => l.trim())
+    .filter(Boolean)
+}
+
 export function budgetMatches(budget: Budget, tx: Transaction): boolean {
-  if (budget.label) return txHasLabel(tx, budget.label)
+  const labels = budgetLabels(budget)
+  if (labels.length > 0) return labels.some((l) => txHasLabel(tx, l))
   return budget.category === (tx.category as string)
 }
 

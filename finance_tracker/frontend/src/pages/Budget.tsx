@@ -808,7 +808,7 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
                 type="text"
                 value={form.label ?? ''}
                 onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase(), category: '' })}
-                placeholder="Label (e.g. loan)"
+                placeholder="Label(s) — e.g. restaurant, fast food"
                 list="budget-label-options"
                 autoComplete="off"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
@@ -818,11 +818,20 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
                   <option key={l} value={l} />
                 ))}
               </datalist>
-              {(form.label ?? '').trim() !== '' && !allLabels.includes((form.label ?? '').trim()) && (
-                <p className="text-[11px] text-amber-600 -mt-1">
-                  “{(form.label ?? '').trim()}” doesn't match any existing label yet — this budget will stay at €0 until transactions carry it.
-                </p>
-              )}
+              <p className="text-[11px] text-gray-400 -mt-1">
+                Comma-separate to budget a label group — a transaction carrying any of them counts.
+              </p>
+              {(() => {
+                const unknown = (form.label ?? '')
+                  .split(',')
+                  .map((l) => l.trim())
+                  .filter((l) => l !== '' && !allLabels.includes(l))
+                return unknown.length > 0 ? (
+                  <p className="text-[11px] text-amber-600 -mt-1">
+                    “{unknown.join('”, “')}” do{unknown.length === 1 ? 'es' : ''}n't match any existing label yet — that part of the budget will stay at €0 until transactions carry it.
+                  </p>
+                ) : null
+              })()}
             </>
           )}
           <input

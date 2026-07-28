@@ -23,7 +23,8 @@ type BudgetRepository interface {
 	// PreviewLabel counts what ApplyLabel would touch without writing:
 	// total matching transactions and how many of them lack the label.
 	PreviewLabel(rule domain.LabelRule) (matches, unlabeled int, err error)
-	DistinctLabels() ([]string, error)
+	// DistinctLabels lists labels in use; category != "" scopes to that category.
+	DistinctLabels(category string) ([]string, error)
 
 	GetSettings() (*domain.BudgetSettings, error)
 	SaveSettings(s *domain.BudgetSettings) error
@@ -81,6 +82,16 @@ func (r *budgetRepository) DeleteRule(id uint) error {
 	return r.db.Delete(&domain.LabelRule{}, id).Error
 }
 
+// commentMatchLike converts a rule comment pattern to its LIKE form:
+// '^'-anchored patterns match the start of the comment, others anywhere.
+func commentMatchLike(pattern string) string {
+	p := strings.ToLower(pattern)
+	if anchored, ok := strings.CutPrefix(p, "^"); ok {
+		return anchored + "%"
+	}
+	return "%" + p + "%"
+}
+
 func (r *budgetRepository) ApplyLabel(rule domain.LabelRule) (int, error) {
 	var txs []domain.Transaction
 	query := r.db.Model(&domain.Transaction{})
@@ -88,7 +99,7 @@ func (r *budgetRepository) ApplyLabel(rule domain.LabelRule) (int, error) {
 		query = query.Where("category = ?", rule.Category)
 	}
 	if rule.CommentMatch != "" {
-		query = query.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(rule.CommentMatch)+"%")
+		query = query.Where("LOWER(comment) LIKE ?", commentMatchLike(rule.CommentMatch))
 	}
 	if err := query.Find(&txs).Error; err != nil {
 		return 0, err
@@ -115,7 +126,7 @@ func (r *budgetRepository) PreviewLabel(rule domain.LabelRule) (int, int, error)
 			q = q.Where("category = ?", rule.Category)
 		}
 		if rule.CommentMatch != "" {
-			q = q.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(rule.CommentMatch)+"%")
+			q = q.Where("LOWER(comment) LIKE ?", commentMatchLike(rule.CommentMatch))
 		}
 		return q
 	}
@@ -189,10 +200,14 @@ func (r *budgetRepository) SuggestCategory(txType, comment string, amount float6
 	return "", 0, "", nil
 }
 
-func (r *budgetRepository) DistinctLabels() ([]string, error) {
+func (r *budgetRepository) DistinctLabels(category string) ([]string, error) {
 	var rows []string
-	if err := r.db.Model(&domain.Transaction{}).
-		Where("labels != ''").Distinct().Pluck("labels", &rows).Error; err != nil {
+	q := r.db.Model(&domain.Transaction{}).Where("labels != ''")
+	if category != "" {
+		// Scoped to one category — powers category-aware label suggestions.
+		q = q.Where("category = ?", category)
+	}
+	if err := q.Distinct().Pluck("labels", &rows).Error; err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}

@@ -205,6 +205,8 @@ func (t *Transaction) AddLabel(label string) {
 
 // LabelRule auto-applies a label to transactions on create when the category
 // matches (empty = any) and the comment contains CommentMatch (empty = any).
+// A CommentMatch starting with '^' anchors to the start of the comment —
+// for short store names ("iki") that substring-match everyday words.
 type LabelRule struct {
 	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	Label        string    `json:"label" gorm:"not null"`
@@ -213,12 +215,23 @@ type LabelRule struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// CommentPatternMatches reports whether a rule comment pattern (possibly
+// '^'-anchored) matches the comment. Case-insensitive.
+func CommentPatternMatches(pattern, comment string) bool {
+	p := strings.ToLower(pattern)
+	c := strings.ToLower(comment)
+	if anchored, ok := strings.CutPrefix(p, "^"); ok {
+		return strings.HasPrefix(c, anchored)
+	}
+	return strings.Contains(c, p)
+}
+
 // Matches reports whether the rule applies to the transaction.
 func (r *LabelRule) Matches(t *Transaction) bool {
 	if r.Category != "" && !strings.EqualFold(r.Category, string(t.Category)) {
 		return false
 	}
-	if r.CommentMatch != "" && !strings.Contains(strings.ToLower(t.Comment), strings.ToLower(r.CommentMatch)) {
+	if r.CommentMatch != "" && !CommentPatternMatches(r.CommentMatch, t.Comment) {
 		return false
 	}
 	return r.Category != "" || r.CommentMatch != ""
@@ -230,6 +243,9 @@ func (r *LabelRule) Matches(t *Transaction) bool {
 //   - spending: a monthly limit for discretionary spending
 //
 // Matching: transactions with Label (when set), otherwise by Category.
+// Label may be a comma-separated list ("restaurant,fast food,delivery") —
+// a transaction carrying any of them matches, so label groups can share
+// one budget.
 type Budget struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name      string    `json:"name" gorm:"not null"`

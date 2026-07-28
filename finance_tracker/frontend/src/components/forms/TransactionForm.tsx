@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { transactionsApi } from '../../api/transactions'
 import { useTransactionComments } from '../../hooks/useTransactions'
 import { useLabels, useLabelRules } from '../../hooks/useBudgets'
-import { ruleCoversComment } from '../../utils/rulePattern'
+import { ruleCoversComment, commentPatternMatches } from '../../utils/rulePattern'
 import RuleSuggestion from './RuleSuggestion'
 
 interface Props {
@@ -63,12 +63,15 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   const { data: labelRules = [] } = useLabelRules()
   const labelsValue = watch('labels') ?? ''
   const selectedCategory = watch('category') ?? ''
+  // Labels that historically co-occur with the chosen category float to the
+  // front of the chip list (Kids → education/entertainment/food first).
+  const { data: categoryLabels = [] } = useLabels(selectedCategory ? String(selectedCategory) : undefined)
   const currentLabels = labelsValue.split(',').map((l) => l.trim().toLowerCase()).filter(Boolean)
 
   const autoLabels = labelRules
     .filter((r) => {
       const catOk = !r.category || r.category.toLowerCase() === String(selectedCategory).toLowerCase()
-      const commentOk = !r.comment_match || commentValue.toLowerCase().includes(r.comment_match.toLowerCase())
+      const commentOk = !r.comment_match || commentPatternMatches(r.comment_match, commentValue)
       return (r.category !== '' || r.comment_match !== '') && catOk && commentOk
     })
     .map((r) => r.label)
@@ -85,9 +88,12 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   )
 
   // Typing in the labels input filters the chips — that's the autocomplete.
+  // Stable sort: category co-occurring labels first, alphabetical within.
+  const categorySet = useMemo(() => new Set(categoryLabels), [categoryLabels])
   const labelChips = knownLabels
     .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
     .filter((l) => !labelDraft.trim() || l.includes(labelDraft.trim().toLowerCase()))
+    .sort((a, b) => Number(categorySet.has(b)) - Number(categorySet.has(a)))
 
   function addLabelChip(label: string) {
     const l = label.trim().toLowerCase()

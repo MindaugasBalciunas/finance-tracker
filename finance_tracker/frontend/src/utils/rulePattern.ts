@@ -26,6 +26,14 @@ export function deriveRulePattern(comment: string): string {
   return kept.join(' ')
 }
 
+// Mirrors the backend rule matcher: a '^'-prefixed pattern anchors to the
+// start of the comment, anything else matches as a substring.
+export function commentPatternMatches(pattern: string, comment: string): boolean {
+  const p = pattern.toLowerCase()
+  const c = comment.toLowerCase()
+  return p.startsWith('^') ? c.startsWith(p.slice(1)) : c.includes(p)
+}
+
 // True when an existing rule already labels this comment — no point
 // suggesting a duplicate rule.
 export function ruleCoversComment(
@@ -34,12 +42,11 @@ export function ruleCoversComment(
   comment: string,
   category: string,
 ): boolean {
-  const c = comment.toLowerCase()
   return rules.some(
     (r) =>
       r.label === label &&
       (r.comment_match !== '' || r.category !== '') &&
-      (r.comment_match === '' || c.includes(r.comment_match.toLowerCase())) &&
+      (r.comment_match === '' || commentPatternMatches(r.comment_match, comment)) &&
       (r.category === '' || r.category === category),
   )
 }

@@ -75,9 +75,11 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		return
 	}
 	b := &domain.Budget{
-		Name:     input.Name,
-		Kind:     input.Kind,
-		Label:    strings.ToLower(strings.TrimSpace(input.Label)),
+		Name: input.Name,
+		Kind: input.Kind,
+		// NormalizeLabels handles multi-label budgets ("restaurant,fast food"):
+		// lowercase, trimmed, deduplicated.
+		Label:    domain.NormalizeLabels(input.Label),
 		Category: input.Category,
 		Amount:   input.Amount,
 	}
@@ -110,7 +112,7 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 	}
 	b.Name = input.Name
 	b.Kind = input.Kind
-	b.Label = strings.ToLower(strings.TrimSpace(input.Label))
+	b.Label = domain.NormalizeLabels(input.Label)
 	b.Category = input.Category
 	b.Amount = input.Amount
 	if err := h.repo.SaveBudget(b); err != nil {
@@ -203,7 +205,7 @@ func (h *BudgetHandler) SaveSettings(c *gin.Context) {
 }
 
 func (h *BudgetHandler) Labels(c *gin.Context) {
-	labels, err := h.repo.DistinctLabels()
+	labels, err := h.repo.DistinctLabels(c.Query("category"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

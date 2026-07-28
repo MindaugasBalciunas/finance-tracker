@@ -97,7 +97,9 @@ export default function Transactions() {
   }, [searchDraft])
 
   const { data, isLoading } = useTransactions(filter)
-  const { data: allLabels = [] } = useLabels()
+  // Scoped to the selected category (when set), so the dropdown only offers
+  // labels that can actually match — 78 flat labels don't fit a phone screen.
+  const { data: allLabels = [] } = useLabels(filter.category as string | undefined)
   // Full matching set for the header totals — only fetched while a label
   // filter is active (the paginated list can't sum across pages).
   const { data: labelMatches } = useAllTransactions(
@@ -262,6 +264,11 @@ export default function Transactions() {
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
         >
           <option value="">All labels</option>
+          {/* Keep the active label selectable even when the category scope
+              (or a multi-label drill-down value) excludes it. */}
+          {filter.label && !allLabels.includes(filter.label) && (
+            <option value={filter.label}>{filter.label}</option>
+          )}
           {allLabels.map((l) => (
             <option key={l} value={l}>{l}</option>
           ))}

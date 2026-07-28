@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { deriveRulePattern, ruleCoversComment } from './rulePattern'
+import { deriveRulePattern, ruleCoversComment, commentPatternMatches } from './rulePattern'
+
+describe('commentPatternMatches', () => {
+  it('matches substrings case-insensitively by default', () => {
+    expect(commentPatternMatches('lidl', 'LIDL/60182 VILNIUS')).toBe(true)
+    expect(commentPatternMatches('lidl', 'Maxima')).toBe(false)
+  })
+
+  it('anchors ^-prefixed patterns to the comment start', () => {
+    expect(commentPatternMatches('^iki', 'IKI PILAITE 06222')).toBe(true)
+    expect(commentPatternMatches('^iki', 'Iki. Quick shopping')).toBe(true)
+    expect(commentPatternMatches('^iki', 'Nuoma iki 24d')).toBe(false)
+  })
+
+  it('is honored by ruleCoversComment', () => {
+    const rules = [{ label: 'iki', category: '', comment_match: '^iki' }]
+    expect(ruleCoversComment(rules, 'iki', 'IKI EXPRESS', 'Food')).toBe(true)
+    expect(ruleCoversComment(rules, 'iki', 'Nuoma iki 24d', 'Housing')).toBe(false)
+  })
+})
 
 describe('deriveRulePattern', () => {
   it('takes the merchant segment before punctuation', () => {

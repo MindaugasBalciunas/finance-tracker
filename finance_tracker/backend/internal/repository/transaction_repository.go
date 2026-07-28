@@ -260,8 +260,20 @@ func applyTransactionFilters(query *gorm.DB, filter domain.TransactionFilter) *g
 		query = query.Where("category = ?", filter.Category)
 	}
 	if filter.Label != "" {
-		// Labels are stored as "a,b,c" — wrap both sides with commas for exact-token match.
-		query = query.Where("(',' || labels || ',') LIKE ?", "%,"+filter.Label+",%")
+		// Labels are stored as "a,b,c" — wrap both sides with commas for
+		// exact-token match. The filter itself may be a comma list (multi-label
+		// budgets drill down with "restaurant,fast food"): match any of them.
+		var conds []string
+		var args []interface{}
+		for _, l := range strings.Split(filter.Label, ",") {
+			if l = strings.TrimSpace(l); l != "" {
+				conds = append(conds, "(',' || labels || ',') LIKE ?")
+				args = append(args, "%,"+l+",%")
+			}
+		}
+		if len(conds) > 0 {
+			query = query.Where("("+strings.Join(conds, " OR ")+")", args...)
+		}
 	}
 	if filter.Search != "" {
 		query = query.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(filter.Search)+"%")

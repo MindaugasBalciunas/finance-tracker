@@ -31,8 +31,12 @@ export const budgetsApi = {
     return data
   },
 
-  labels: async (): Promise<string[]> => {
-    const { data } = await client.get<string[]>('/labels')
+  // category scopes the list to labels actually used in that category —
+  // powers category-aware suggestions in filters and the transaction form.
+  labels: async (category?: string): Promise<string[]> => {
+    const { data } = await client.get<string[]>('/labels', {
+      params: category ? { category } : undefined,
+    })
     return data
   },
 

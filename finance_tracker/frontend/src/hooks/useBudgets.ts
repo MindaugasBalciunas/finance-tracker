@@ -36,10 +36,10 @@ export function useDeleteBudget() {
   })
 }
 
-export function useLabels() {
+export function useLabels(category?: string) {
   return useQuery({
-    queryKey: ['labels'],
-    queryFn: () => budgetsApi.labels(),
+    queryKey: ['labels', category ?? ''],
+    queryFn: () => budgetsApi.labels(category),
     staleTime: 60_000,
   })
 }
