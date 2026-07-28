@@ -66,7 +66,7 @@ describe('computeMonthPlan', () => {
   const monthTxs = [
     tx('expense', 'Finance', 755.1, 'loan', 'Loan interest'),
     tx('expense', 'Finance', 530.04, 'loan', 'Loan return'),
-    tx('expense', 'Kids - General', 1000, 'alimony', 'Aliments'),
+    tx('expense', 'Kids', 1000, 'alimony', 'Aliments'),
     tx('expense', 'Food', 320),
     tx('expense', 'Transport', 80),
     tx('investment', 'Stocks & ETF', 600),
@@ -102,5 +102,37 @@ describe('computeMonthPlan', () => {
       null
     )
     expect(plan.investments[0].actual).toBe(0)
+  })
+
+  it('spending limits ignore fixed obligations sharing the category', () => {
+    // Alimony lives inside the unified Kids category but has its own fixed
+    // budget — the Kids spending limit only measures discretionary spend.
+    const plan = computeMonthPlan(
+      [
+        budget('fixed', 'Alimony', 1000, { label: 'alimony' }),
+        budget('spending', 'Kids', 250, { category: 'Kids' }),
+      ],
+      [
+        tx('expense', 'Kids', 1000, 'alimony', 'Aliments'),
+        tx('expense', 'Kids', 60, 'kids,entertainment', '360 arena'),
+      ],
+      null
+    )
+    expect(plan.fixed[0].actual).toBe(1000)
+    expect(plan.spending[0].actual).toBe(60)
+    expect(plan.unbudgeted).toEqual([])
+  })
+
+  it('label-scoped spending budgets hide only their slice from unbudgeted', () => {
+    const plan = computeMonthPlan(
+      [budget('spending', 'Gifts', 100, { label: 'gift' })],
+      [
+        tx('expense', 'Gifts', 40, 'gift', 'Birthday present'),
+        tx('expense', 'Gifts', 25, '', 'Donation'),
+      ],
+      null
+    )
+    expect(plan.spending[0].actual).toBe(40)
+    expect(plan.unbudgeted).toEqual([{ category: 'Gifts', spent: 25 }])
   })
 })

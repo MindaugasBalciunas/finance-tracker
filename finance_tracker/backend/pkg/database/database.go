@@ -222,6 +222,15 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"lunch":      {"lunch", "darbo piet", "pietūs"},
 		"gym":        {"gym"},
 		"cinema":     {" kinas", "cinema", "apollo"},
+		// Kindergarten/school vendors and phrases — differentiates the unified
+		// Kids category (see the category unification block below).
+		"education": {"skaitlis", "vaikystės stebuklas", "daržel", "darzel"},
+		// Divorce is a label now, not a category; Nekartu is the mediation
+		// service used through the process.
+		"divorce": {"nekartu"},
+		// Own-money movements inside investment/Finance.
+		"cash":    {"cash withdrawal", "cash deposit"},
+		"revolut": {"revolut top up"},
 		"beauty":     {"haircut", "barber", "kirpykl", "grozio", "grožio"},
 		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
 		// Per-store labels (alongside the generic groceries label) so store
@@ -326,4 +335,56 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
 	// as a standing rule, new ones are caught by the category suggestion.
 	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
+
+	// --- Category unification (v1.4.0): categories say what domain the money
+	// went to, labels differentiate within it. The four Kids sub-categories
+	// collapse into one Kids category whose old distinction lives on as
+	// education/entertainment/food labels; every Kids row also carries the
+	// kids label so it groups with kid-related rows in other categories
+	// (Clothing, Transport…). Labels must be added while the old category
+	// still identifies the rows, so the category flip comes last.
+	for old, sub := range map[string]string{
+		"Kids - Education":     "education",
+		"Kids - Entertainment": "entertainment",
+		"Kids - Food":          "food",
+		"Kids - General":       "",
+	} {
+		if sub != "" {
+			addLabel(sub, `category = ?`, old)
+		}
+		addLabel("kids", `category = ?`, old)
+		db.Exec(`UPDATE transactions SET category = 'Kids' WHERE category = ?`, old)
+	}
+	ensureRule(domain.LabelRule{Label: "kids", Category: "Kids"})
+
+	// Divorce was a life event, not a spending domain: costs live on under
+	// Finance and recoveries under Reimbursement, both differentiated by the
+	// divorce label (plus the nekartu comment rule above for future rows).
+	addLabel("divorce", `category = 'Divorce'`)
+	db.Exec(`UPDATE transactions SET category = 'Reimbursement'
+		WHERE type = 'income' AND category = 'Divorce'`)
+	db.Exec(`UPDATE transactions SET category = 'Finance' WHERE category = 'Divorce'`)
+
+	// Bare "Cash" comments are ATM movements too; too short for a standing
+	// comment rule (would substring-match e.g. "cashback"), so history only.
+	addLabel("cash", `LOWER(comment) = 'cash'`)
+
+	// Budgets and label rules pointing at retired categories follow their
+	// rows. The old Kids - Entertainment spending limit becomes the whole-Kids
+	// limit: €250 matches the recent median of non-alimony kids spending
+	// (alimony no longer counts against spending limits — it is covered by the
+	// fixed Alimony budget).
+	db.Exec(`UPDATE budgets SET name = 'Kids', category = 'Kids',
+		amount = CASE WHEN kind = 'spending' AND amount < 250 THEN 250 ELSE amount END
+		WHERE category LIKE 'Kids - %'`)
+	db.Exec(`DELETE FROM budgets WHERE category = 'Kids' AND id NOT IN
+		(SELECT MIN(id) FROM budgets WHERE category = 'Kids' GROUP BY kind, label)`)
+	db.Exec(`UPDATE label_rules SET category = 'Kids' WHERE category LIKE 'Kids - %'`)
+	// A category-scoped rule on Divorce would over-apply if pointed at the
+	// much broader Finance — retire instead of remapping.
+	db.Exec(`DELETE FROM label_rules WHERE category = 'Divorce'`)
+	db.Exec(`UPDATE budgets SET category = 'Finance' WHERE category = 'Divorce'`)
+	// The category rename can leave byte-identical rules behind — dedupe.
+	db.Exec(`DELETE FROM label_rules WHERE id NOT IN
+		(SELECT MIN(id) FROM label_rules GROUP BY label, category, comment_match)`)
 }

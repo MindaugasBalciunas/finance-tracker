@@ -115,7 +115,8 @@ func TestSwedbankImport(t *testing.T) {
 	assert.Equal(t, "Finance", string(loan.Category))
 	assert.Contains(t, loan.Labels, "loan")
 	kids := get("EVELINA BALČIŪNIENĖ (Vaiku darželis)")
-	assert.Equal(t, "Kids - General", string(kids.Category))
+	assert.Equal(t, "Kids", string(kids.Category))
+	assert.Contains(t, kids.Labels, "kids")
 
 	// Groceries labeled by rules
 	lidl := get("'50146 LIDL SNIPISKES")
@@ -249,7 +250,7 @@ func TestSwedbankEnrich(t *testing.T) {
 	// Curated rows: two plain payees (should enrich), one hand-written
 	// comment (must stay). The LIDL statement row has no match at all.
 	plain1 := seed("2024-03-15", "EVELINA PLYTNIKAITĖ", "Finance", 1650)
-	plain2 := seed("2024-03-20", "EVELINA BALČIŪNIENĖ", "Kids - General", 400)
+	plain2 := seed("2024-03-20", "EVELINA BALČIŪNIENĖ", "Kids", 400)
 	custom := seed("2024-03-25", "Gift budget for E. (negotiated)", "Gifts", 500)
 
 	body, ctype := enrichBody(t)

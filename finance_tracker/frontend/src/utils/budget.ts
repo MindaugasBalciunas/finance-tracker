@@ -49,9 +49,17 @@ export function computeMonthPlan(
   const investments = budgets.filter((b) => b.kind === 'investment')
   const spending = budgets.filter((b) => b.kind === 'spending')
 
+  const isFixedTx = (tx: Transaction) => fixed.some((b) => budgetMatches(b, tx))
+  const discretionaryTxs = monthTxs.filter((tx) => tx.type === 'expense' && !isFixedTx(tx))
+  const discretionarySpent = discretionaryTxs.reduce((s, tx) => s + tx.amount.value, 0)
+
   const status = (b: Budget): BudgetStatus => {
     const wantType = b.kind === 'investment' ? 'investment' : 'expense'
-    const actual = monthTxs
+    // Spending limits measure choices, so fixed obligations don't count
+    // against them (alimony matches the Kids category but is not kids
+    // discretionary spending — it has its own fixed budget).
+    const pool = b.kind === 'spending' ? discretionaryTxs : monthTxs
+    const actual = pool
       .filter((tx) => tx.type === wantType && budgetMatches(b, tx))
       .reduce((s, tx) => s + tx.amount.value, 0)
     return { budget: b, actual }
@@ -61,18 +69,17 @@ export function computeMonthPlan(
   const investmentStatus = investments.map(status)
   const spendingStatus = spending.map(status)
 
-  const isFixedTx = (tx: Transaction) => fixed.some((b) => budgetMatches(b, tx))
-  const discretionaryTxs = monthTxs.filter((tx) => tx.type === 'expense' && !isFixedTx(tx))
-  const discretionarySpent = discretionaryTxs.reduce((s, tx) => s + tx.amount.value, 0)
-
-  const budgetedCategories = new Set(spending.filter((b) => !b.label).map((b) => b.category))
+  // Unbudgeted = discretionary spend no spending budget matches, grouped by
+  // category. Matching per transaction (not per category) lets label-scoped
+  // budgets (e.g. gift) cover their slice of a category without hiding the
+  // rest of it.
   const byCategory: Record<string, number> = {}
   for (const tx of discretionaryTxs) {
+    if (spending.some((b) => budgetMatches(b, tx))) continue
     const cat = tx.category as string
     byCategory[cat] = (byCategory[cat] ?? 0) + tx.amount.value
   }
   const unbudgeted = Object.entries(byCategory)
-    .filter(([cat]) => !budgetedCategories.has(cat))
     .map(([category, spent]) => ({ category, spent }))
     .sort((a, b) => b.spent - a.spent)
 

@@ -4,17 +4,13 @@ export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
   expense: [
     'Clothing',
     'Dating',
-    'Divorce',
     'Entertainment',
     'Finance',
     'Food',
     'Gifts',
     'Health',
     'Housing',
-    'Kids - Education',
-    'Kids - Entertainment',
-    'Kids - Food',
-    'Kids - General',
+    'Kids',
     'Subscriptions',
     'Transport',
     'Utilities',
@@ -31,31 +27,29 @@ export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
     'Crypto',
     'Real Estate',
     'Vehicle',
+    'Finance',
   ],
 }
 
-// Flat list for contexts that don't filter by type (e.g. filter dropdowns)
-export const CATEGORIES: Category[] = [
+// Flat list for contexts that don't filter by type (e.g. filter dropdowns).
+// Deduplicated: Finance appears under both expense and investment.
+export const CATEGORIES: Category[] = [...new Set([
   ...CATEGORIES_BY_TYPE.expense,
   ...CATEGORIES_BY_TYPE.income,
   ...CATEGORIES_BY_TYPE.investment,
-]
+])]
 
 // One-line helper shown under the category picker.
 export const CATEGORY_HINTS: Record<string, string> = {
   'Clothing': 'Clothes and shoes',
   'Dating': 'Dates — restaurants, flowers, outings together',
-  'Divorce': 'Legal, notary and settlement costs',
   'Entertainment': 'Bars, events, hobbies, one-off fun purchases',
-  'Finance': 'Loan payments, bank fees, taxes, insurance, transfers',
+  'Finance': 'Loans, fees, taxes, insurance; ATM cash & transfers (labels: loan, fees, divorce, cash…)',
   'Food': 'Groceries and eating out',
   'Gifts': 'Presents and donations',
   'Health': 'Medicine, doctors, dentist, sports',
   'Housing': 'Rent, furniture, home improvement and repairs',
-  'Kids - Education': 'School, kindergarten, courses',
-  'Kids - Entertainment': 'Activities, toys, outings with kids',
-  'Kids - Food': 'Food bought specifically for the kids',
-  'Kids - General': 'Alimony, clothes, everything else for the kids',
+  'Kids': 'Everything for the kids — labels differentiate: education, entertainment, food, alimony',
   'Subscriptions': 'Recurring digital services — YouTube, Patreon, Netflix…',
   'Transport': 'Fuel, parking, public transport, car upkeep',
   'Utilities': 'Electricity, heating, water, internet, security',

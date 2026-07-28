@@ -66,6 +66,7 @@ func TestLabels_BulkApplyAndFilter(t *testing.T) {
 		{"date": "2026-07-17", "type": "expense", "amount": 755.10, "category": "Finance", "comment": "Loan interest"},
 		{"date": "2026-07-17", "type": "expense", "amount": 530.04, "category": "Finance", "comment": "Loan return"},
 		{"date": "2026-07-17", "type": "expense", "amount": 25.00, "category": "Finance", "comment": "Bank fee"},
+		// Retired category value — the API maps it to Kids (legacy-client path).
 		{"date": "2026-07-17", "type": "expense", "amount": 1000.00, "category": "Kids - General", "comment": "Aliments 2026.06"},
 	} {
 		w := budgetDoJSON(r, "POST", "/api/v1/transactions", in)

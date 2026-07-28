@@ -67,7 +67,7 @@ export function categoryMoverInsights(
   const byCatMonth: Record<string, Record<string, number>> = {}
   const monthSet = new Set<string>()
 
-  // Fixed obligations (alimony inside Kids - General, loan inside Finance…)
+  // Fixed obligations (alimony inside Kids, loan inside Finance…)
   // are not spending decisions — with them in, a recurring transfer that
   // started mid-period reads as a fake "category up X%" trend.
   for (const tx of discretionary(expenses)) {

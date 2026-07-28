@@ -199,13 +199,13 @@ describe('label-aware insights', () => {
 describe('categoryMoverInsights with fixed obligations', () => {
   it('a recurring alimony starting mid-period is not a category trend', () => {
     const expenses = [
-      // Kids - General discretionary is flat…
-      tx('2026-05-10', 500, 'Kids - General', 'toys'),
-      tx('2026-06-10', 520, 'Kids - General', 'clothes'),
-      tx('2026-07-10', 510, 'Kids - General', 'books'),
+      // Kids discretionary is flat…
+      tx('2026-05-10', 500, 'Kids', 'toys'),
+      tx('2026-06-10', 520, 'Kids', 'clothes'),
+      tx('2026-07-10', 510, 'Kids', 'books'),
       // …but alimony transfers begin in June.
-      tx('2026-06-15', 1000, 'Kids - General', 'Aliments 2026.05', 'alimony'),
-      tx('2026-07-17', 1000, 'Kids - General', 'Aliments 2026.06', 'alimony'),
+      tx('2026-06-15', 1000, 'Kids', 'Aliments 2026.05', 'alimony'),
+      tx('2026-07-17', 1000, 'Kids', 'Aliments 2026.06', 'alimony'),
     ]
     expect(categoryMoverInsights(expenses, NOW)).toHaveLength(0)
   })

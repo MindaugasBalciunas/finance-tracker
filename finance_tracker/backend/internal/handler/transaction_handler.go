@@ -64,6 +64,12 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
+	// Old clients/backups may still send retired categories — map, don't reject.
+	var legacyLabels []string
+	input.Category, legacyLabels = domain.CanonicalCategory(input.Type, input.Category)
+	for _, l := range legacyLabels {
+		input.Labels = domain.NormalizeLabels(input.Labels + "," + l)
+	}
 	if !domain.IsValidCategory(input.Category) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid category"})
 		return
@@ -121,9 +127,12 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	if input.Category != "" && !domain.IsValidCategory(input.Category) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid category"})
-		return
+	if input.Category != "" {
+		input.Category, _ = domain.CanonicalCategory(input.Type, input.Category)
+		if !domain.IsValidCategory(input.Category) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid category"})
+			return
+		}
 	}
 	tx, err := h.svc.Update(id, input)
 	if err != nil {

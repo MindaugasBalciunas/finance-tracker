@@ -207,9 +207,9 @@ func evelinaTransfer(date time.Time, payee, details string, amount float64) swed
 		base.Comment = payee + " (Būsto paskola)"
 		base.Labels = "loan,evelina"
 	case strings.Contains(d, "vaik") || strings.Contains(d, "daržel") || strings.Contains(d, "kailiniams"):
-		base.Category = "Kids - General"
+		base.Category = "Kids"
 		base.Comment = payee + " (" + details + ")"
-		base.Labels = "evelina"
+		base.Labels = "kids,evelina"
 	case strings.Contains(d, "dovan"):
 		base.Category = "Gifts"
 		base.Comment = payee + " (" + details + ")"
@@ -236,8 +236,10 @@ type merchantRule struct {
 
 // Ordered: first match wins. Patterns are matched against UPPER(payee+details).
 var swedMerchantRules = []merchantRule{
-	{[]string{"SKAITLIS", "VAIKYSTĖS STEBUKLAS"}, "Kids - Education"},
-	{[]string{"BABY CITY", "BABYCIT", "TOY CITY", "KINDERLAND", "VAIKUTIS"}, "Kids - General"},
+	// Kids is one category since v1.4.0 — the education/kids labels come from
+	// the label rules re-applied after import.
+	{[]string{"SKAITLIS", "VAIKYSTĖS STEBUKLAS"}, "Kids"},
+	{[]string{"BABY CITY", "BABYCIT", "TOY CITY", "KINDERLAND", "VAIKUTIS"}, "Kids"},
 	{[]string{"GJENSIDIGE", "COMPENSA", "DRAUDIMO"}, "Finance"},
 	{[]string{"IGNITIS", "TELIA", "ŠILUMOS TINKLAI", "VILNIAUS VANDENYS", "MANO BŪSTAS", "SAUGOS TARNYBA ARGUS", "FOXPAY", "BITĖ LIETUVA", "SAVIVALDYBES ADMINISTRACIJA", "SAVIVALDYBĖS ADMINISTRACIJA", "TEO LT", "RADIJO IR TELEVIZIJOS", "VILNIAUS ENERGIJA", "DUJŲ TIEKIMAS", "DUJU TIEKIMAS", "ENERGIJOS TIEKIMAS", "ENERGIJOS SKIRSTYMO", "ŽIRMŪNŲ BŪSTAS", "ZIRMUNU BUSTAS", "RINKLIAVA"}, "Utilities"},
 	{[]string{"VAISTINE", "VAISTINĖ", "BENU ", "CAMELIA", "NORTHWAY", "POLIK", "KARDIOLITA", "SANIDENTAS", "AKUSERIJOS", "VEZIO INS", "AUREUS PORTUS", "HIPERFARMA", "ŠARĖJIENĖ", "TREATWELL", "SVEIKATINE", "MIGRACIJOS DEP", "SPA VILNIUS", "GRAND SPA", "GRANDSPA", "MASAZO", "MASAŽO", "DZENTELMENU", "BIOMED", "DORIS GROUP"}, "Health"},

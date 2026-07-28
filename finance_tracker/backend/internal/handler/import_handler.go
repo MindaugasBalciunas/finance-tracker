@@ -281,6 +281,13 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			result.Skipped.Transactions++
 			continue
 		}
+		// Old exports may carry retired categories (Kids - *, Divorce) — map
+		// them before fingerprinting so they dedup against migrated rows.
+		cat, legacyLabels := domain.CanonicalCategory(domain.TransactionType(row.Type), domain.Category(row.Category))
+		labels := row.Labels
+		for _, l := range legacyLabels {
+			labels += "," + l
+		}
 		if row.ID > 0 {
 			// ID-based dedup: skip if this exact record is already present.
 			if _, err := h.txRepo.GetByID(row.ID); err == nil {
@@ -289,21 +296,20 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			}
 		} else {
 			// No ID: fall back to content fingerprint to avoid true duplicates.
-			key := fmt.Sprintf("%s|%s|%.2f|%s|%s", date.Format("2006-01-02"), row.Type, row.Amount, row.Category, row.Comment)
+			key := fmt.Sprintf("%s|%s|%.2f|%s|%s", date.Format("2006-01-02"), row.Type, row.Amount, cat, row.Comment)
 			if contentSeen[key] {
 				result.Skipped.Transactions++
 				continue
 			}
 			contentSeen[key] = true
 		}
-		cat := domain.Category(row.Category)
 		tx := &domain.Transaction{
 			Date:          date,
 			Type:          domain.TransactionType(row.Type),
 			Amount:        row.Amount,
 			Category:      cat,
 			Comment:       row.Comment,
-			Labels:        domain.NormalizeLabels(row.Labels),
+			Labels:        domain.NormalizeLabels(labels),
 			DebitAccount:  row.DebitAccount,
 			CreditAccount: row.CreditAccount,
 			SourceAccount: row.SourceAccount,
@@ -493,7 +499,9 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 				result.Skipped.Budgets++
 				continue
 			}
-			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: row.Category, Amount: row.Amount}
+			// Budgets from old exports may target retired categories.
+			cat, _ := domain.CanonicalCategory("", domain.Category(row.Category))
+			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: string(cat), Amount: row.Amount}
 			if err := h.budgetRepo.SaveBudget(&b); err != nil {
 				result.Skipped.Budgets++
 				continue
@@ -508,12 +516,20 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			ruleSeen[r.Label+"|"+r.Category+"|"+r.CommentMatch] = true
 		}
 		for _, row := range payload.LabelRules {
-			key := row.Label + "|" + row.Category + "|" + row.CommentMatch
+			// Category-scoped rules from old exports: Kids - * folds into Kids;
+			// a Divorce-scoped rule would over-apply on Finance, so drop it.
+			if row.Category == "Divorce" {
+				result.Skipped.LabelRules++
+				continue
+			}
+			canonRuleCat, _ := domain.CanonicalCategory("", domain.Category(row.Category))
+			ruleCat := string(canonRuleCat)
+			key := row.Label + "|" + ruleCat + "|" + row.CommentMatch
 			if row.Label == "" || ruleSeen[key] {
 				result.Skipped.LabelRules++
 				continue
 			}
-			rule := domain.LabelRule{Label: row.Label, Category: row.Category, CommentMatch: row.CommentMatch}
+			rule := domain.LabelRule{Label: row.Label, Category: ruleCat, CommentMatch: row.CommentMatch}
 			if err := h.budgetRepo.SaveRule(&rule); err != nil {
 				result.Skipped.LabelRules++
 				continue

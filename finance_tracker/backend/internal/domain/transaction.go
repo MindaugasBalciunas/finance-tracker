@@ -10,24 +10,19 @@ type Category string
 
 const (
 	// Expense categories
-	CategoryClothing          Category = "Clothing"
-	CategoryDating            Category = "Dating"
-	CategoryDivorce           Category = "Divorce"
-	CategoryEntertainment     Category = "Entertainment"
-	CategoryFinance           Category = "Finance"
-	CategoryFood              Category = "Food"
-	CategoryGaming            Category = "Gaming"
-	CategoryGifts             Category = "Gifts"
-	CategoryHealth            Category = "Health"
-	CategoryHousing           Category = "Housing"
-	CategoryKidsEducation     Category = "Kids - Education"
-	CategoryKidsEntertainment Category = "Kids - Entertainment"
-	CategoryKidsFood          Category = "Kids - Food"
-	CategoryKidsGeneral       Category = "Kids - General"
-	CategorySubscriptions     Category = "Subscriptions"
-	CategoryTransport         Category = "Transport"
-	CategoryUtilities         Category = "Utilities"
-	CategoryVacation          Category = "Vacation"
+	CategoryClothing      Category = "Clothing"
+	CategoryDating        Category = "Dating"
+	CategoryEntertainment Category = "Entertainment"
+	CategoryFinance       Category = "Finance"
+	CategoryFood          Category = "Food"
+	CategoryGifts         Category = "Gifts"
+	CategoryHealth        Category = "Health"
+	CategoryHousing       Category = "Housing"
+	CategoryKids          Category = "Kids"
+	CategorySubscriptions Category = "Subscriptions"
+	CategoryTransport     Category = "Transport"
+	CategoryUtilities     Category = "Utilities"
+	CategoryVacation      Category = "Vacation"
 
 	// Income categories
 	CategorySalary        Category = "Salary"
@@ -47,18 +42,13 @@ var ValidCategories = []Category{
 	// Expense
 	CategoryClothing,
 	CategoryDating,
-	CategoryDivorce,
 	CategoryEntertainment,
 	CategoryFinance,
 	CategoryFood,
-	CategoryGaming,
 	CategoryGifts,
 	CategoryHealth,
 	CategoryHousing,
-	CategoryKidsEducation,
-	CategoryKidsEntertainment,
-	CategoryKidsFood,
-	CategoryKidsGeneral,
+	CategoryKids,
 	CategorySubscriptions,
 	CategoryTransport,
 	CategoryUtilities,
@@ -73,6 +63,44 @@ var ValidCategories = []Category{
 	CategoryCrypto,
 	CategoryRealEstate,
 	CategoryVehicle,
+	// Finance also doubles as an investment category for own-money movements
+	// (ATM cash, Revolut top-ups) — differentiated by the cash/revolut labels.
+}
+
+// legacyCategory describes a retired category value: the canonical category
+// that replaced it plus the labels that preserve the old distinction.
+type legacyCategory struct {
+	canonical Category
+	// income overrides canonical for income rows (Divorce recoveries are
+	// reimbursements, not finance costs). Empty = same as canonical.
+	income Category
+	labels []string
+}
+
+// legacyCategories keeps old exports and clients importable: retired values
+// are mapped, never rejected. The startup migration applies the same mapping
+// to rows already in the database.
+var legacyCategories = map[Category]legacyCategory{
+	"Kids - Education":     {canonical: CategoryKids, labels: []string{"kids", "education"}},
+	"Kids - Entertainment": {canonical: CategoryKids, labels: []string{"kids", "entertainment"}},
+	"Kids - Food":          {canonical: CategoryKids, labels: []string{"kids", "food"}},
+	"Kids - General":       {canonical: CategoryKids, labels: []string{"kids"}},
+	"Divorce":              {canonical: CategoryFinance, income: CategoryReimbursement, labels: []string{"divorce"}},
+	"Gaming":               {canonical: CategoryEntertainment, labels: []string{"gaming"}},
+}
+
+// CanonicalCategory resolves a possibly-retired category value to its current
+// form and returns the labels that carry the retired distinction. Non-legacy
+// values pass through unchanged (IsValidCategory decides acceptance).
+func CanonicalCategory(t TransactionType, c Category) (Category, []string) {
+	l, ok := legacyCategories[c]
+	if !ok {
+		return c, nil
+	}
+	if t == TransactionTypeIncome && l.income != "" {
+		return l.income, l.labels
+	}
+	return l.canonical, l.labels
 }
 
 // IsValidCategory returns true if the given category is in the allowed list.

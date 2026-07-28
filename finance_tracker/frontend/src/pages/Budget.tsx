@@ -134,7 +134,7 @@ const KIND_INFO: Record<BudgetKind, { title: string; hint: string }> = {
 // costs, VWCE and Artea as investment targets.
 const SUGGESTED = [
   { budget: { name: 'Loan payments', kind: 'fixed', label: 'loan', amount: 1285 }, rule: { label: 'loan', category: 'Finance', comment_match: 'loan' } },
-  { budget: { name: 'Alimony', kind: 'fixed', label: 'alimony', amount: 1000 }, rule: { label: 'alimony', category: 'Kids - General', comment_match: 'alim' } },
+  { budget: { name: 'Alimony', kind: 'fixed', label: 'alimony', amount: 1000 }, rule: { label: 'alimony', category: 'Kids', comment_match: 'alim' } },
   { budget: { name: 'VWCE / ETF', kind: 'investment', category: 'Stocks & ETF', amount: 1000 }, rule: null },
   { budget: { name: 'Artea 3rd pillar', kind: 'investment', category: 'Pension', amount: 200 }, rule: null },
 ] as const

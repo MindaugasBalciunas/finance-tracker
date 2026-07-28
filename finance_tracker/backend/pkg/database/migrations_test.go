@@ -306,6 +306,100 @@ func TestCinemaRuleDoesNotMatchPekinas(t *testing.T) {
 	assert.Equal(t, "work lunch", labelsOf(t, db, pekinas))
 }
 
+func TestCategoryUnification(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}, &domain.Budget{}))
+
+	school := seedTx(t, db, "expense", "Kids - Education", "SKAITLIS UAB")
+	arena := seedTx(t, db, "expense", "Kids - Entertainment", "360 arena")
+	dinner := seedTx(t, db, "expense", "Kids - Food", "Vakarienė 360arena (kids)")
+	alimony := seedTx(t, db, "expense", "Kids - General", "Aliments 2026.06")
+	lawyer := seedTx(t, db, "expense", "Divorce", "POVILAS LATVYS (Už teisines paslaugas)")
+	nekartu := seedTx(t, db, "expense", "Divorce", "Nekartu")
+	refund := seedTx(t, db, "income", "Divorce", "Nekartu - Evelina")
+	atm := seedTx(t, db, "investment", "Finance", "Cash withdrawal (ATM)")
+	revolut := seedTx(t, db, "investment", "Finance", "Revolut top up")
+	adult := seedTx(t, db, "expense", "Entertainment", "Cinema night")
+
+	// Pre-unification budget and category-scoped rule follow their rows.
+	require.NoError(t, db.Create(&domain.Budget{Name: "Kids - Entertainment", Kind: "spending", Category: "Kids - Entertainment", Amount: 50}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "alimony", Category: "Kids - General", CommentMatch: "alim"}).Error)
+
+	applyCategoryMigrations(db)
+
+	// One Kids category; the old sub-category lives on as a label.
+	for id, sub := range map[uint]string{school: "education", arena: "entertainment", dinner: "food"} {
+		assert.Equal(t, "Kids", categoryOf(t, db, id))
+		assert.Contains(t, labelsOf(t, db, id), sub)
+		assert.Contains(t, labelsOf(t, db, id), "kids")
+	}
+	assert.Equal(t, "Kids", categoryOf(t, db, alimony))
+	assert.Contains(t, labelsOf(t, db, alimony), "kids")
+	assert.NotContains(t, labelsOf(t, db, adult), "kids", "adult entertainment untouched")
+
+	// Divorce dissolves into Finance/Reimbursement + divorce label.
+	assert.Equal(t, "Finance", categoryOf(t, db, lawyer))
+	assert.Equal(t, "Finance", categoryOf(t, db, nekartu))
+	assert.Equal(t, "Reimbursement", categoryOf(t, db, refund))
+	for _, id := range []uint{lawyer, nekartu, refund} {
+		assert.Contains(t, labelsOf(t, db, id), "divorce")
+	}
+
+	// Own-money movements inside investment/Finance get differentiated.
+	assert.Contains(t, labelsOf(t, db, atm), "cash")
+	assert.Contains(t, labelsOf(t, db, revolut), "revolut")
+
+	// Budget follows: whole-Kids limit, floor raised to the €250 median.
+	var b domain.Budget
+	require.NoError(t, db.First(&b, "category = ?", "Kids").Error)
+	assert.Equal(t, "Kids", b.Name)
+	assert.EqualValues(t, 250, b.Amount)
+	var oldBudgets int64
+	db.Model(&domain.Budget{}).Where("category LIKE 'Kids - %'").Count(&oldBudgets)
+	assert.EqualValues(t, 0, oldBudgets)
+
+	// Rule follows the rename; category-Kids rule exists for future rows.
+	var rule domain.LabelRule
+	require.NoError(t, db.First(&rule, "label = 'alimony'").Error)
+	assert.Equal(t, "Kids", rule.Category)
+	var kidsRule int64
+	db.Model(&domain.LabelRule{}).Where("label = 'kids' AND category = 'Kids'").Count(&kidsRule)
+	assert.EqualValues(t, 1, kidsRule)
+
+	// New rows created under Kids match the standing category rule.
+	newKid := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 12, Category: "Kids", Comment: "Zoo tickets"}
+	kidsCatRule := domain.LabelRule{Label: "kids", Category: "Kids"}
+	assert.True(t, kidsCatRule.Matches(&newKid))
+
+	// Idempotent: rerun changes nothing and creates no duplicates.
+	applyCategoryMigrations(db)
+	assert.Equal(t, "Kids", categoryOf(t, db, alimony))
+	db.Model(&domain.LabelRule{}).Where("label = 'kids' AND category = 'Kids'").Count(&kidsRule)
+	assert.EqualValues(t, 1, kidsRule)
+	var kidsBudgets int64
+	db.Model(&domain.Budget{}).Where("category = 'Kids'").Count(&kidsBudgets)
+	assert.EqualValues(t, 1, kidsBudgets)
+	assert.Equal(t, "education,kids", labelsOf(t, db, school), "labels not duplicated on rerun")
+}
+
+func TestCanonicalCategoryLegacyValues(t *testing.T) {
+	cat, labels := domain.CanonicalCategory("expense", "Kids - Food")
+	assert.EqualValues(t, "Kids", cat)
+	assert.Equal(t, []string{"kids", "food"}, labels)
+
+	cat, labels = domain.CanonicalCategory("expense", "Divorce")
+	assert.EqualValues(t, "Finance", cat)
+	assert.Equal(t, []string{"divorce"}, labels)
+
+	cat, _ = domain.CanonicalCategory("income", "Divorce")
+	assert.EqualValues(t, "Reimbursement", cat)
+
+	cat, labels = domain.CanonicalCategory("expense", "Food")
+	assert.EqualValues(t, "Food", cat)
+	assert.Nil(t, labels)
+}
+
 func commentOf(t *testing.T, db *gorm.DB, id uint) string {
 	t.Helper()
 	var tx domain.Transaction

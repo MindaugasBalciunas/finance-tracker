@@ -678,6 +678,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/import/swedbank": {
+            "post": {
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "import"
+                ],
+                "summary": "Import a Swedbank account statement CSV",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Swedbank statement .csv",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.swedbankImportResult"
+                        }
+                    }
+                }
+            }
+        },
         "/insights": {
             "get": {
                 "produces": [
@@ -1595,19 +1626,16 @@ const docTemplate = `{
             "enum": [
                 "Clothing",
                 "Dating",
-                "Divorce",
                 "Entertainment",
                 "Finance",
                 "Food",
-                "Gaming",
                 "Gifts",
                 "Health",
                 "Housing",
-                "Kids - Education",
-                "Kids - Entertainment",
-                "Kids - Food",
-                "Kids - General",
+                "Kids",
+                "Subscriptions",
                 "Transport",
+                "Utilities",
                 "Vacation",
                 "Salary",
                 "Freelance",
@@ -1615,24 +1643,22 @@ const docTemplate = `{
                 "Stocks \u0026 ETF",
                 "Pension",
                 "Crypto",
-                "Real Estate"
+                "Real Estate",
+                "Vehicle"
             ],
             "x-enum-varnames": [
                 "CategoryClothing",
                 "CategoryDating",
-                "CategoryDivorce",
                 "CategoryEntertainment",
                 "CategoryFinance",
                 "CategoryFood",
-                "CategoryGaming",
                 "CategoryGifts",
                 "CategoryHealth",
                 "CategoryHousing",
-                "CategoryKidsEducation",
-                "CategoryKidsEntertainment",
-                "CategoryKidsFood",
-                "CategoryKidsGeneral",
+                "CategoryKids",
+                "CategorySubscriptions",
                 "CategoryTransport",
+                "CategoryUtilities",
                 "CategoryVacation",
                 "CategorySalary",
                 "CategoryFreelance",
@@ -1640,7 +1666,8 @@ const docTemplate = `{
                 "CategoryStocksETF",
                 "CategoryPension",
                 "CategoryCrypto",
-                "CategoryRealEstate"
+                "CategoryRealEstate",
+                "CategoryVehicle"
             ]
         },
         "domain.CategorySummary": {
@@ -1894,6 +1921,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "labels": {
+                    "description": "Labels are free-form lowercase tags stored as a comma-separated list\n(e.g. \"loan,fixed\"). Applied manually or by LabelRule on create.",
+                    "type": "string"
+                },
                 "source_account": {
                     "description": "Legacy field — kept for backward compat with existing rows. New rows use DebitAccount/CreditAccount.",
                     "type": "string"
@@ -2047,6 +2078,9 @@ const docTemplate = `{
                 "ibkr_stocks": {
                     "type": "number"
                 },
+                "id": {
+                    "type": "integer"
+                },
                 "luminor": {
                     "type": "number"
                 },
@@ -2071,7 +2105,47 @@ const docTemplate = `{
                 "swed_etf": {
                     "type": "number"
                 },
+                "time": {
+                    "type": "string"
+                },
                 "total_eur": {
+                    "type": "number"
+                }
+            }
+        },
+        "handler.budgetExportRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.budgetSettingsRow": {
+            "type": "object",
+            "properties": {
+                "gross_salary": {
+                    "type": "number"
+                },
+                "income_mode": {
+                    "type": "string"
+                },
+                "manual_income": {
+                    "type": "number"
+                },
+                "monthly_deductions": {
                     "type": "number"
                 }
             }
@@ -2102,8 +2176,26 @@ const docTemplate = `{
                         "$ref": "#/definitions/handler.balExportRow"
                     }
                 },
+                "budget_settings": {
+                    "$ref": "#/definitions/handler.budgetSettingsRow"
+                },
+                "budgets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.budgetExportRow"
+                    }
+                },
                 "export_date": {
                     "type": "string"
+                },
+                "label_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.labelRuleExportRow"
+                    }
+                },
+                "schema_version": {
+                    "type": "integer"
                 },
                 "stock_trades": {
                     "type": "array",
@@ -2131,6 +2223,12 @@ const docTemplate = `{
                 "balances": {
                     "type": "integer"
                 },
+                "budgets": {
+                    "type": "integer"
+                },
+                "label_rules": {
+                    "type": "integer"
+                },
                 "stock_trades": {
                     "type": "integer"
                 },
@@ -2151,8 +2249,25 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
+                "relabeled": {
+                    "type": "integer"
+                },
                 "skipped": {
                     "$ref": "#/definitions/handler.importCounts"
+                }
+            }
+        },
+        "handler.labelRuleExportRow": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "comment_match": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
                 }
             }
         },
@@ -2185,6 +2300,38 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.swedbankImportResult": {
+            "type": "object",
+            "properties": {
+                "balances": {
+                    "type": "integer"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "duplicate": {
+                    "type": "integer"
+                },
+                "enriched": {
+                    "type": "integer"
+                },
+                "imported": {
+                    "type": "integer"
+                },
+                "internal": {
+                    "type": "integer"
+                },
+                "relabeled": {
+                    "type": "integer"
+                },
+                "unmatched": {
+                    "type": "integer"
+                }
+            }
+        },
         "handler.txExportRow": {
             "type": "object",
             "properties": {
@@ -2208,6 +2355,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "labels": {
+                    "type": "string"
                 },
                 "source_account": {
                     "type": "string"
@@ -2415,6 +2565,9 @@ const docTemplate = `{
                 "debit_account": {
                     "type": "string"
                 },
+                "labels": {
+                    "type": "string"
+                },
                 "type": {
                     "enum": [
                         "expense",
@@ -2549,6 +2702,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "debit_account": {
+                    "type": "string"
+                },
+                "labels": {
                     "type": "string"
                 },
                 "type": {
