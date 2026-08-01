@@ -12,20 +12,25 @@ interface Props {
   btcPrice?: number | null
 }
 
+// Brand hues per institution — Swedbank orange, SEB green (pension a deep
+// forest step of it), Revolut indigo, IBKR red, Bitcoin gold, Artea violet,
+// Luminor blue, cash a neutral slate — with in-family lightness steps.
+// Adjacent-pair separation validated for protanopia/deuteranopia and normal
+// vision in the default stack order — don't nudge shades by eye.
 const ACCOUNT_COLORS: Record<string, string> = {
-  seb:         '#2563eb',
-  swed:        '#1d4ed8',
-  luminor:     '#93c5fd',
-  cash:        '#bfdbfe',
-  rev_m:       '#ea580c',
-  rev_r:       '#fb923c',
-  swed_etf:    '#7c3aed',
-  ibkr_stocks: '#059669',
-  rev_stocks:  '#10b981',
-  seb_pen:     '#a78bfa',
-  art:         '#c4b5fd',
-  m_btc:       '#d97706',
+  swed:        '#f97316',
+  swed_etf:    '#c2410c',
+  seb:         '#047857',
+  seb_pen:     '#14532d',
+  cash:        '#cbd5e1',
+  rev_m:       '#312e81',
+  rev_r:       '#a5b4fc',
+  rev_stocks:  '#6366f1',
+  ibkr_stocks: '#dc2626',
+  art:         '#7c3aed',
+  m_btc:       '#b45309',
   r_btc:       '#fbbf24',
+  luminor:     '#0284c7',
 }
 
 const ACCOUNT_LABELS: Record<string, string> = {
