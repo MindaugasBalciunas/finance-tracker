@@ -1,6 +1,6 @@
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts'
 import type { Balance, BalanceTrend } from '../../types'
-import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../../utils/balanceGroups'
+import { GROUPS as BALANCE_GROUPS, OTHER_COLOR, cryptoEur, cryptoSubtitle } from '../../utils/balanceGroups'
 import { formatEuro } from '../../utils/format'
 
 interface Props {
@@ -11,12 +11,7 @@ interface Props {
   changePct: number | null
 }
 
-const GROUPS = [
-  { key: 'Free cash', fn: freeCash, color: '#22c55e' },
-  { key: 'Investments', fn: investments, color: '#3b82f6' },
-  { key: 'Pensions', fn: pensions, color: '#a855f7' },
-  { key: 'Crypto', fn: cryptoEur, color: '#f59e0b' },
-]
+const GROUPS = BALANCE_GROUPS.map((g) => ({ key: g.key, fn: g.total, color: g.color }))
 
 // One hero card replacing five stat tiles: total, period change, trend
 // sparkline, and a composition bar showing where the money sits.
@@ -27,7 +22,7 @@ export default function NetWorthHero({ balance, btcPrice, trend, change, changeP
     .filter((p) => p.value > 0.5)
   const grouped = parts.reduce((s, p) => s + p.value, 0)
   if (total - grouped > 0.5) {
-    parts.push({ key: 'Other', fn: () => 0, color: '#9ca3af', value: total - grouped })
+    parts.push({ key: 'Other', fn: () => 0, color: OTHER_COLOR, value: total - grouped })
   }
 
   const spark = (trend?.dates ?? []).map((d, i) => ({ d, v: trend!.totals[i] ?? 0 }))

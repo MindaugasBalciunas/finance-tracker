@@ -146,8 +146,12 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 		Type   domain.TransactionType
 		Total  float64
 	}
+	// Transfers move money between own accounts — neither spending nor
+	// investing, so they contribute nothing to the totals. The rows stay in
+	// the ByCategory breakdown below for drill-downs.
+	const amountExpr = "SUM(CASE WHEN category = 'Transfers' THEN 0 ELSE amount END) as total"
 	var results []aggregateResult
-	if err := query.Select("type, SUM(amount) as total").Group("type").Scan(&results).Error; err != nil {
+	if err := query.Select("type, " + amountExpr).Group("type").Scan(&results).Error; err != nil {
 		return nil, err
 	}
 
@@ -200,7 +204,7 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 	mQuery := r.db.Model(&domain.Transaction{})
 	mQuery = applyTransactionFilters(mQuery, filter)
 	if err := mQuery.Select(
-		"strftime('%Y', date) as year, strftime('%m', date) as month, type, SUM(amount) as total",
+		"strftime('%Y', date) as year, strftime('%m', date) as month, type, " + amountExpr,
 	).Group("year, month, type").Order("year, month").Scan(&monthResults).Error; err != nil {
 		return nil, err
 	}

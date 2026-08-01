@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useProjectedBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
+import { useDateRange } from '../context/DateRangeContext'
 import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import StatCard from '../components/ui/StatCard'
+import WhereMoneySits from '../components/ui/WhereMoneySits'
+import AccountMovement from '../components/ui/AccountMovement'
 import { formatEuro, formatDate, formatTime } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
 import type { Balance, CreateBalanceInput } from '../types'
@@ -31,13 +34,21 @@ export default function Balances() {
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
+  const { dateRange } = useDateRange()
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
   const { data: projected } = useProjectedBalance(liveBtcPrice)
   const { data: allBalances, isLoading } = useBalances({}, liveBtcPrice)
   // Auto-generated snapshots are internal projection caches — hide from history table
   const balances = allBalances?.filter(b => !b.is_auto)
-  const { data: trend } = useBalanceTrend()
+  // The trend chart and the movement card follow the global date range;
+  // the snapshot history below stays complete.
+  const { data: trend } = useBalanceTrend(dateRange)
+  const rangeBalances = balances?.filter(
+    (b) =>
+      (!dateRange.date_from || b.date.slice(0, 10) >= dateRange.date_from) &&
+      (!dateRange.date_to || b.date.slice(0, 10) <= dateRange.date_to)
+  )
   const { data: allocations } = useAccountAllocation()
   const createMutation = useCreateBalance()
   const updateMutation = useUpdateBalance()
@@ -174,6 +185,20 @@ export default function Balances() {
             subtitle={cryptoSubtitle(latest, liveBtcPrice)}
             color="yellow"
           />
+        </div>
+      )}
+
+      {/* Where the money sits + movement over the selected range */}
+      {latest && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <WhereMoneySits balance={latest} />
+          {rangeBalances && rangeBalances.length >= 2 ? (
+            <AccountMovement balances={rangeBalances} />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 flex items-center justify-center">
+              <p className="text-sm text-gray-400">Not enough snapshots in the selected period to show movement.</p>
+            </div>
+          )}
         </div>
       )}
 

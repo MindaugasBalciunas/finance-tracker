@@ -126,6 +126,7 @@ func TestSwedbankImport(t *testing.T) {
 	// Cash withdrawal → own transfer to cash
 	cash := get("Cash withdrawal (ATM)")
 	assert.Equal(t, domain.TransactionTypeInvestment, cash.Type)
+	assert.Equal(t, "Transfers", string(cash.Category))
 	assert.Equal(t, "cash", cash.CreditAccount)
 	assert.Equal(t, "2022-08-26", cash.Date.Format("2006-01-02"))
 
@@ -153,6 +154,7 @@ func TestSwedbankImport(t *testing.T) {
 	// ATM cash deposit → own transfer from the cash pocket, LTL converted.
 	dep := get("Cash deposit (ATM)")
 	assert.Equal(t, domain.TransactionTypeInvestment, dep.Type)
+	assert.Equal(t, "Transfers", string(dep.Category))
 	assert.Equal(t, "cash", dep.DebitAccount)
 	assert.InDelta(t, 57.92, dep.Amount, 0.01)
 	assert.Equal(t, "2012-01-10", dep.Date.Format("2006-01-02"), "re-dated to deposit date")

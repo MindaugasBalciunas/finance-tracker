@@ -27,7 +27,7 @@ export const CATEGORIES_BY_TYPE: Record<TransactionType, Category[]> = {
     'Crypto',
     'Real Estate',
     'Vehicle',
-    'Finance',
+    'Transfers',
   ],
 }
 
@@ -44,7 +44,7 @@ export const CATEGORY_HINTS: Record<string, string> = {
   'Clothing': 'Clothes and shoes',
   'Dating': 'Dates — restaurants, flowers, outings together',
   'Entertainment': 'Bars, events, hobbies, one-off fun purchases',
-  'Finance': 'Loans, fees, taxes, insurance; ATM cash & transfers (labels: loan, fees, divorce, cash…)',
+  'Finance': 'Loans, fees, taxes, insurance (labels: loan, fees, divorce…)',
   'Food': 'Groceries and eating out',
   'Gifts': 'Presents and donations',
   'Health': 'Medicine, doctors, dentist, sports',
@@ -58,6 +58,7 @@ export const CATEGORY_HINTS: Record<string, string> = {
   'Freelance': 'Side income and other inflows',
   'Reimbursement': 'Money returned to you',
   'Stocks & ETF': 'Brokerage top-ups and ETF purchases (VWCE…)',
+  'Transfers': 'Money moved between your own accounts — ATM cash, Revolut top-ups',
   'Pension': '2nd/3rd pillar contributions (Artea…)',
   'Crypto': 'Bitcoin and other crypto purchases',
   'Real Estate': 'Property purchases and capital improvements',

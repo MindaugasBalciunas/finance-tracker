@@ -1644,7 +1644,8 @@ const docTemplate = `{
                 "Pension",
                 "Crypto",
                 "Real Estate",
-                "Vehicle"
+                "Vehicle",
+                "Transfers"
             ],
             "x-enum-varnames": [
                 "CategoryClothing",
@@ -1667,7 +1668,8 @@ const docTemplate = `{
                 "CategoryPension",
                 "CategoryCrypto",
                 "CategoryRealEstate",
-                "CategoryVehicle"
+                "CategoryVehicle",
+                "CategoryTransfers"
             ]
         },
         "domain.CategorySummary": {

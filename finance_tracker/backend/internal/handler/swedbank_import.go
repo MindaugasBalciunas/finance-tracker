@@ -387,7 +387,7 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 		case payee == "" && (strings.Contains(up, "INESIMAS") || strings.Contains(up, "ĮNEŠIMAS")):
 			// Cash deposited at an ATM — money moving from the cash pocket.
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
-				Category: "Finance", Comment: "Cash deposit (ATM)", Debit: "cash", Credit: "swed"}, false
+				Category: "Transfers", Comment: "Cash deposit (ATM)", Debit: "cash", Credit: "swed"}, false
 		case strings.HasPrefix(strings.ToUpper(details), "GRĄŽIN"): // GRĄŽINIMAS / GRĄŽINAMAS
 			base.Category = "Reimbursement"
 			base.Comment = strings.TrimSpace("Card refund: " + payee)
@@ -457,7 +457,7 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 		switch {
 		case strings.Contains(lowDetails, "gryniej"):
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
-				Category: "Finance", Comment: "Cash withdrawal (ATM)", Debit: "swed", Credit: "cash"}, false
+				Category: "Transfers", Comment: "Cash withdrawal (ATM)", Debit: "swed", Credit: "cash"}, false
 		case strings.Contains(lowDetails, "paslaugų plano") || strings.Contains(lowDetails, "paslaugu plano"):
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
 				Category: "Finance", Comment: "Swedbank plan fee", Labels: "fees", Debit: "swed"}, false
@@ -483,7 +483,7 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 	// Revolut card top-ups are money moved to another own account.
 	if strings.Contains(up, "REVOLUT") {
 		return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
-			Category: "Finance", Comment: "Revolut top up", Debit: "swed", Credit: "rev_m"}, false
+			Category: "Transfers", Comment: "Revolut top up", Debit: "swed", Credit: "rev_m"}, false
 	}
 
 	// Trips: foreign-currency card purchases (except online USD shops).

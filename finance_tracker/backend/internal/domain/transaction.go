@@ -35,6 +35,10 @@ const (
 	CategoryCrypto     Category = "Crypto"
 	CategoryRealEstate Category = "Real Estate"
 	CategoryVehicle    Category = "Vehicle"
+	// Transfers is money moved between own accounts (ATM cash, Revolut
+	// top-ups) — investment-typed because it is not income or spending, but
+	// excluded from invested totals.
+	CategoryTransfers Category = "Transfers"
 )
 
 // ValidCategories is the authoritative list of allowed category values.
@@ -63,8 +67,7 @@ var ValidCategories = []Category{
 	CategoryCrypto,
 	CategoryRealEstate,
 	CategoryVehicle,
-	// Finance also doubles as an investment category for own-money movements
-	// (ATM cash, Revolut top-ups) — differentiated by the cash/revolut labels.
+	CategoryTransfers,
 }
 
 // legacyCategory describes a retired category value: the canonical category
@@ -93,6 +96,12 @@ var legacyCategories = map[Category]legacyCategory{
 // form and returns the labels that carry the retired distinction. Non-legacy
 // values pass through unchanged (IsValidCategory decides acceptance).
 func CanonicalCategory(t TransactionType, c Category) (Category, []string) {
+	// Finance stays a valid expense category; only its investment-side use
+	// (own-money movements) was renamed to Transfers in v1.5.0. The
+	// cash/revolut labels these rows carry come from standing rules.
+	if t == TransactionTypeInvestment && c == CategoryFinance {
+		return CategoryTransfers, nil
+	}
 	l, ok := legacyCategories[c]
 	if !ok {
 		return c, nil

@@ -346,7 +346,9 @@ func TestCategoryUnification(t *testing.T) {
 		assert.Contains(t, labelsOf(t, db, id), "divorce")
 	}
 
-	// Own-money movements inside investment/Finance get differentiated.
+	// Own-money movements move to Transfers and get differentiated by labels.
+	assert.Equal(t, "Transfers", categoryOf(t, db, atm))
+	assert.Equal(t, "Transfers", categoryOf(t, db, revolut))
 	assert.Contains(t, labelsOf(t, db, atm), "cash")
 	assert.Contains(t, labelsOf(t, db, revolut), "revolut")
 

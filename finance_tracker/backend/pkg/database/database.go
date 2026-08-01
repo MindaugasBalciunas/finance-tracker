@@ -418,4 +418,12 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`UPDATE transactions
 		SET labels = TRIM(REPLACE(',' || labels || ',', ',iki,', ','), ',')
 		WHERE (',' || labels || ',') LIKE '%,iki,%' AND LOWER(comment) NOT LIKE 'iki%'`)
+
+	// --- Transfers category (v1.5.0): own-money movements between accounts
+	// (ATM cash withdrawals/deposits, Revolut top-ups) were parked under
+	// investment/Finance; they are transfers, not investments, and now have
+	// their own category. Expense-side Finance (loans, fees, taxes) is
+	// untouched, and the rows keep their cash/revolut labels.
+	db.Exec(`UPDATE transactions SET category = 'Transfers'
+		WHERE type = 'investment' AND category = 'Finance'`)
 }
