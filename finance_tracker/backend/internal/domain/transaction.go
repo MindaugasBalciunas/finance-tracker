@@ -170,7 +170,10 @@ type TransactionFilter struct {
 	DateTo   *time.Time
 	Type     *TransactionType
 	Category *Category
-	Label    string
+	// Label may be a comma list; LabelMode "all" requires every label on the
+	// row (intersection), anything else matches any of them (union).
+	Label     string
+	LabelMode string
 	// Search is a case-insensitive substring match on the comment.
 	Search   string
 	Page     int

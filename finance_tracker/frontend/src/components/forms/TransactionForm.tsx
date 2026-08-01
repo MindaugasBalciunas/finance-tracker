@@ -259,6 +259,18 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 text-sm leading-none px-0.5 -mr-0.5" aria-label={`remove ${l}`}>×</button>
             </span>
           ))}
+          {/* Labels the saved rules will apply on save, prefilled in place.
+              Not removable — the rule fires server-side regardless; delete
+              the rule (⚡ Rules) to stop it. */}
+          {autoLabels.filter((l) => !currentLabels.includes(l)).map((l) => (
+            <span
+              key={`auto-${l}`}
+              title="Applied automatically by your label rules on save"
+              className="inline-flex items-center gap-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-md px-2 py-1"
+            >
+              ⚡{l}
+            </span>
+          ))}
           <input
             type="text"
             value={labelDraft}
@@ -289,15 +301,6 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
             className="flex-1 min-w-28 text-sm focus:outline-none py-0.5"
           />
         </div>
-        {autoLabels.length > 0 && (
-          <p className="text-xs text-gray-500 mt-1.5">
-            <span className="text-green-600">⚡ auto:</span>{' '}
-            {autoLabels.map((l) => (
-              <span key={l} className="inline-block text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 mr-1">{l}</span>
-            ))}
-            <span className="text-gray-400">will be applied by your rules</span>
-          </p>
-        )}
         {labelChips.length > 0 && (
           <p className="mt-1.5">
             {(labelDraft.trim() ? labelChips.slice(0, 20) : labelChips.slice(0, showAllChips ? labelChips.length : 12)).map((l) => (

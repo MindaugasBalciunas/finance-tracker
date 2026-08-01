@@ -305,7 +305,9 @@ export interface TransactionFilter {
   date_to?: string
   type?: TransactionType
   category?: Category
+  // Comma list; label_mode 'all' = row must carry every label, default any.
   label?: string
+  label_mode?: 'all'
   search?: string
   page?: number
   page_size?: number

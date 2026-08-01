@@ -96,6 +96,17 @@ func TestLabels_BulkApplyAndFilter(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
 	assert.EqualValues(t, 3, list.Total)
 
+	// label_mode=all intersects instead: no row carries both loan AND kids…
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions?label=loan,kids&label_mode=all&page_size=100", nil)
+	require.Equal(t, 200, w.Code)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
+	assert.EqualValues(t, 0, list.Total)
+	// …while a single label under "all" behaves exactly like before.
+	w = budgetDoJSON(r, "GET", "/api/v1/transactions?label=loan&label_mode=all&page_size=100", nil)
+	require.Equal(t, 200, w.Code)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
+	assert.EqualValues(t, 2, list.Total)
+
 	// New matching transaction is auto-labeled by the saved rule.
 	w = budgetDoJSON(r, "POST", "/api/v1/transactions", map[string]any{
 		"date": "2026-08-17", "type": "expense", "amount": 760.0, "category": "Finance", "comment": "Loan interest August",

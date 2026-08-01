@@ -76,17 +76,21 @@ export default function Transactions() {
   // equality guards make the two effects converge instead of looping.
   useEffect(() => {
     const urlLabel = searchParams.get('label') ?? undefined
-    setFilter((f) => (f.label === urlLabel ? f : { ...f, label: urlLabel, page: 1 }))
+    const urlMode = searchParams.get('label_mode') === 'all' ? ('all' as const) : undefined
+    setFilter((f) => (f.label === urlLabel && f.label_mode === urlMode ? f : { ...f, label: urlLabel, label_mode: urlMode, page: 1 }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
   useEffect(() => {
-    if ((searchParams.get('label') ?? undefined) === filter.label) return
+    const urlMode = searchParams.get('label_mode') === 'all' ? 'all' : undefined
+    if ((searchParams.get('label') ?? undefined) === filter.label && urlMode === filter.label_mode) return
     const next = new URLSearchParams(searchParams)
     if (filter.label) next.set('label', filter.label)
     else next.delete('label')
+    if (filter.label && filter.label_mode === 'all') next.set('label_mode', 'all')
+    else next.delete('label_mode')
     setSearchParams(next, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter.label])
+  }, [filter.label, filter.label_mode])
 
   // Debounced comment search
   useEffect(() => {
@@ -105,6 +109,7 @@ export default function Transactions() {
   const { data: labelMatches } = useAllTransactions(
     {
       label: filter.label,
+      label_mode: filter.label_mode,
       type: filter.type,
       category: filter.category,
       search: filter.search,
@@ -129,9 +134,22 @@ export default function Transactions() {
   const updateMutation = useUpdateTransaction()
   const deleteMutation = useDeleteTransaction()
 
+  // The active label filter is a set (comma list in the URL/API); chips and
+  // dropdown picks toggle membership.
+  const labelList = (filter.label ?? '').split(',').map((s) => s.trim()).filter(Boolean)
   const toggleLabelFilter = (l: string) => {
-    setFilter((f) => ({ ...f, label: f.label === l ? undefined : l, page: 1 }))
+    setFilter((f) => {
+      const set = (f.label ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+      const next = set.includes(l) ? set.filter((x) => x !== l) : [...set, l]
+      return {
+        ...f,
+        label: next.length ? next.join(',') : undefined,
+        label_mode: next.length > 1 ? f.label_mode : undefined,
+        page: 1,
+      }
+    })
   }
+  const clearLabelFilter = () => setFilter((f) => ({ ...f, label: undefined, label_mode: undefined, page: 1 }))
 
   const handleCreate = async (input: CreateTransactionInput) => {
     try {
@@ -165,12 +183,17 @@ export default function Transactions() {
       <div className="flex items-center justify-between gap-3">
         {filter.label && labelTotals ? (
           <p className="text-sm text-gray-500 min-w-0">
-            <span className="inline-block text-xs font-medium bg-indigo-600 text-white rounded px-1.5 py-0.5 mr-1.5">{filter.label}</span>
+            {labelList.map((l, i) => (
+              <span key={l}>
+                {i > 0 && <span className="text-gray-400 text-xs mx-0.5">{filter.label_mode === 'all' ? '&' : 'or'}</span>}
+                <span className="inline-block text-xs font-medium bg-indigo-600 text-white rounded px-1.5 py-0.5 mr-1">{l}</span>
+              </span>
+            ))}
             {labelTotals.count} tx
             {labelTotals.expenses > 0 && <> · <span className="text-red-600 font-semibold">-{formatEuro(labelTotals.expenses)}</span></>}
             {labelTotals.income > 0 && <> · <span className="text-green-600 font-semibold">+{formatEuro(labelTotals.income)}</span></>}
             {labelTotals.investments > 0 && <> · <span className="text-blue-600 font-semibold">{formatEuro(labelTotals.investments)} invested</span></>}
-            <button onClick={() => toggleLabelFilter(filter.label!)} className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline">clear</button>
+            <button onClick={clearLabelFilter} className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline">clear</button>
           </p>
         ) : (
           <p className="text-sm text-gray-500">
@@ -258,21 +281,46 @@ export default function Transactions() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+        {/* Multi-label filter: picking adds a chip, chips toggle off; with
+            two or more labels the any/all switch picks union vs intersection. */}
         <select
-          value={filter.label ?? ''}
-          onChange={(e) => setFilter((f) => ({ ...f, label: e.target.value || undefined, page: 1 }))}
+          value=""
+          onChange={(e) => { if (e.target.value) toggleLabelFilter(e.target.value) }}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
         >
-          <option value="">All labels</option>
-          {/* Keep the active label selectable even when the category scope
-              (or a multi-label drill-down value) excludes it. */}
-          {filter.label && !allLabels.includes(filter.label) && (
-            <option value={filter.label}>{filter.label}</option>
-          )}
-          {allLabels.map((l) => (
+          <option value="">{labelList.length ? '+ Add label' : 'All labels'}</option>
+          {allLabels.filter((l) => !labelList.includes(l)).map((l) => (
             <option key={l} value={l}>{l}</option>
           ))}
         </select>
+        {labelList.map((l) => (
+          <button
+            key={l}
+            onClick={() => toggleLabelFilter(l)}
+            title="Remove from filter"
+            className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-600 text-white rounded-lg px-2 py-1.5 hover:bg-indigo-700"
+          >
+            {l} <span className="text-indigo-200">×</span>
+          </button>
+        ))}
+        {labelList.length > 1 && (
+          <div className="grid grid-cols-2 gap-0.5 bg-gray-100 rounded-lg p-0.5 text-xs">
+            <button
+              onClick={() => setFilter((f) => ({ ...f, label_mode: undefined, page: 1 }))}
+              title="Rows carrying any of the labels"
+              className={`px-2 py-1 rounded-md font-medium ${filter.label_mode !== 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+            >
+              any
+            </button>
+            <button
+              onClick={() => setFilter((f) => ({ ...f, label_mode: 'all', page: 1 }))}
+              title="Only rows carrying every label"
+              className={`px-2 py-1 rounded-md font-medium ${filter.label_mode === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+            >
+              all
+            </button>
+          </div>
+        )}
         <button
           onClick={() => { setSearchDraft(''); setFilter({ page: 1, page_size: 20, ...dateRange }) }}
           className="text-sm text-gray-500 hover:text-gray-800 underline"

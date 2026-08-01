@@ -256,6 +256,11 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 	if v := c.Query("label"); v != "" {
 		filter.Label = strings.ToLower(strings.TrimSpace(v))
 	}
+	// label_mode=all intersects a comma list of labels (must carry every
+	// one); the default matches any of them.
+	if c.Query("label_mode") == "all" {
+		filter.LabelMode = "all"
+	}
 	if v := c.Query("search"); v != "" {
 		filter.Search = strings.TrimSpace(v)
 	}

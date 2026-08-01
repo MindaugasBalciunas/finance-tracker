@@ -265,8 +265,10 @@ func applyTransactionFilters(query *gorm.DB, filter domain.TransactionFilter) *g
 	}
 	if filter.Label != "" {
 		// Labels are stored as "a,b,c" — wrap both sides with commas for
-		// exact-token match. The filter itself may be a comma list (multi-label
-		// budgets drill down with "restaurant,fast food"): match any of them.
+		// exact-token match. The filter itself may be a comma list: the
+		// default matches any of them (multi-label budgets drill down with
+		// "restaurant,fast food"), LabelMode "all" requires every one
+		// (intersecting cross-cutting labels, e.g. kids ∩ entertainment).
 		var conds []string
 		var args []interface{}
 		for _, l := range strings.Split(filter.Label, ",") {
@@ -276,7 +278,11 @@ func applyTransactionFilters(query *gorm.DB, filter domain.TransactionFilter) *g
 			}
 		}
 		if len(conds) > 0 {
-			query = query.Where("("+strings.Join(conds, " OR ")+")", args...)
+			joiner := " OR "
+			if filter.LabelMode == "all" {
+				joiner = " AND "
+			}
+			query = query.Where("("+strings.Join(conds, joiner)+")", args...)
 		}
 	}
 	if filter.Search != "" {
