@@ -188,6 +188,14 @@ export default function Balances() {
         </div>
       )}
 
+      {/* Net worth trend — the headline chart, full width */}
+      {trend && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
+          <BalanceTrendChart trend={trend} btcPrice={liveBtcPrice} />
+        </div>
+      )}
+
       {/* Where the money sits + movement over the selected range */}
       {latest && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -202,17 +210,11 @@ export default function Balances() {
         </div>
       )}
 
-      {/* Charts row */}
-      {trend && allocations && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
-            <BalanceTrendChart trend={trend} btcPrice={liveBtcPrice} />
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Current Allocation</h3>
-            <AllocationPieChart allocations={allocations} />
-          </div>
+      {/* Current allocation by account */}
+      {allocations && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Current Allocation</h3>
+          <AllocationPieChart allocations={allocations} />
         </div>
       )}
 
