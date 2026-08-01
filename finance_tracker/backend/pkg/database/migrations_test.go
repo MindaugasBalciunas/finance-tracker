@@ -1,6 +1,7 @@
 package database
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -538,28 +539,28 @@ func TestSebPensionBackfill(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}))
 
+	// The embedded Sodra series must sum to the report's stated total.
+	cum := 0.0
+	for _, c := range sebPenContributions {
+		cum += c.total
+	}
+	assert.InDelta(t, 5126.93, cum, 0.001, "series matches the Sodra report total")
+
 	day := func(s string) time.Time {
 		d, err := time.Parse("2006-01-02", s)
 		require.NoError(t, err)
 		return d
 	}
-	// Salary history for the contribution era: €4,000 total, half earned by
-	// mid-2015 is a quarter... cumulative 1000 → 25% of contributions made.
-	for _, s := range []struct {
-		date   string
-		amount float64
-	}{{"2014-01-15", 1000}, {"2016-01-15", 1000}, {"2018-01-15", 2000}} {
-		require.NoError(t, db.Create(&domain.Transaction{
-			Date: day(s.date), Type: "income", Amount: s.amount, Category: "Salary", Comment: "pay",
-		}).Error)
-	}
-	preSalary := domain.Balance{Date: day("2013-06-30"), Swed: 100, Total: 100}
-	early := domain.Balance{Date: day("2015-06-30"), Swed: 500, Total: 500}
-	coast := domain.Balance{Date: day("2020-06-09"), Swed: 700, Total: 700} // ~1y after suspension
-	// Tracked era: 5 years after suspension €10,000, two years later ~5%/yr.
-	anchor := domain.Balance{Date: day("2024-06-10"), Swed: 0, SebPen: 10000, Total: 10000}
-	lastB := domain.Balance{Date: day("2026-06-10"), SebPen: 11025, Total: 11025}
-	for _, b := range []*domain.Balance{&preSalary, &early, &coast, &anchor, &lastB} {
+	prejoin := domain.Balance{Date: day("2014-06-30"), Swed: 100, Total: 100}
+	// A wrong synthetic value left by the previous estimate-based model —
+	// the pass is self-correcting and must overwrite it (and fix the total).
+	stale := domain.Balance{Date: day("2015-06-30"), Swed: 500, SebPen: 4000, Total: 4500}
+	mid := domain.Balance{Date: day("2017-01-15"), Swed: 700, Total: 700}
+	coast := domain.Balance{Date: day("2021-12-05"), Swed: 900, Total: 900} // 2y after last transfer
+	// Hand-tracked anchor inside the tracked era: exactly double the
+	// contributed total → implied rate = 2^(1/years since last transfer).
+	anchor := domain.Balance{Date: day("2024-01-31"), SebPen: 10253.86, Total: 10253.86}
+	for _, b := range []*domain.Balance{&prejoin, &stale, &mid, &coast, &anchor} {
 		require.NoError(t, db.Create(b).Error)
 	}
 
@@ -570,23 +571,31 @@ func TestSebPensionBackfill(t *testing.T) {
 		require.NoError(t, db.First(&b, id).Error)
 		return b.SebPen, b.Total
 	}
-	// rate ≈ 1.05/yr → value at suspension ≈ 10000 / 1.05^5 ≈ €7,835.
-	pen, total := penOf(coast.ID)
-	assert.InDelta(t, 7835*1.05, pen, 30, "one year of self-growth after suspension")
-	assert.InDelta(t, 700+pen, total, 0.01)
-
-	pen, _ = penOf(early.ID)
-	assert.InDelta(t, 7835*0.25, pen, 15, "25%% of salary earned → 25%% of the suspension value")
-
-	pen, total = penOf(preSalary.ID)
-	assert.Zero(t, pen, "no salary history yet → nothing accumulated")
+	pen, total := penOf(prejoin.ID)
+	assert.Zero(t, pen, "before joining the 2nd pillar")
 	assert.EqualValues(t, 100, total)
 
-	pen, total = penOf(anchor.ID)
-	assert.EqualValues(t, 10000, pen, "anchor untouched")
-	assert.EqualValues(t, 10000, total)
+	// Cumulative transfers by 2015-06-30: 46.15 + 46.66 = 92.81.
+	pen, total = penOf(stale.ID)
+	assert.InDelta(t, 92.81, pen, 0.01, "stale synthetic value overwritten with the real cumulative")
+	assert.InDelta(t, 500+92.81, total, 0.01, "total corrected by the delta")
 
-	// Idempotent.
+	// Cumulative by 2017-01-15: all 2015 + 2016 transfers + 2017-01-10.
+	pen, _ = penOf(mid.ID)
+	assert.InDelta(t, 1503.30, pen, 0.01)
+
+	// Coast era: 5126.93 × rate² with rate = 2^(1/years(2019-12-05 → anchor)).
+	years := day("2024-01-31").Sub(day("2019-12-05")).Hours() / 24 / 365.25
+	rate := math.Pow(2, 1/years)
+	pen, total = penOf(coast.ID)
+	assert.InDelta(t, 5126.93*rate*rate, pen, 5)
+	assert.InDelta(t, 900+pen, total, 0.01)
+
+	penA, totalA := penOf(anchor.ID)
+	assert.EqualValues(t, 10253.86, penA, "anchor untouched")
+	assert.EqualValues(t, 10253.86, totalA)
+
+	// Idempotent: identical values on rerun.
 	coastPen, coastTotal := penOf(coast.ID)
 	applyBalanceBackfills(db)
 	p2, t2 := penOf(coast.ID)

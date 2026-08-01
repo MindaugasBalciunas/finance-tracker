@@ -481,72 +481,101 @@ func backfillCashBuffer(db *gorm.DB) {
 	}
 }
 
+// sebPenContributions is every Sodra transfer into the SEB 2nd-pillar fund
+// (contract HB00558811, PENSIJA 5 → SWEDBANK PENSIJA 1989-1995), per the
+// Sodra report generated 2026-08-01: main + participant + state parts
+// summed per transfer date. Participation ran 2015-05 … 2019-06
+// (contribution suspension approved from 2019-06-01; two corrections
+// landed 2019-12-05). Sums to the report's stated totals to the cent:
+// 1,957.55 + 2,492.92 + 676.46 = €5,126.93.
+var sebPenContributions = []struct {
+	date  string
+	total float64
+}{
+	{"2015-05-12", 46.15}, {"2015-06-10", 46.66}, {"2015-07-08", 57.44}, {"2015-08-12", 65.72},
+	{"2015-09-08", 53.85}, {"2015-10-13", 53.72}, {"2015-11-10", 46.15}, {"2015-12-08", 41.26},
+	{"2016-01-12", 46.15}, {"2016-02-09", 46.15}, {"2016-03-08", 67.28}, {"2016-04-11", 66.54},
+	{"2016-05-10", 138.12}, {"2016-06-10", 71.24}, {"2016-07-11", 70.86}, {"2016-08-09", 72.72},
+	{"2016-09-09", 71.24}, {"2016-10-11", 70.48}, {"2016-11-09", 144.43}, {"2016-12-12", 105.90},
+	{"2017-01-10", 121.24}, {"2017-02-10", 105.90}, {"2017-03-13", 107.55}, {"2017-04-11", 106.61},
+	{"2017-05-09", 106.61}, {"2017-06-09", 106.61}, {"2017-07-11", 107.13}, {"2017-08-09", 107.83},
+	{"2017-09-11", 105.43}, {"2017-10-10", 106.61}, {"2017-11-13", 106.61}, {"2017-12-11", 107.91},
+	{"2018-01-10", 106.61}, {"2018-02-09", 106.61}, {"2018-03-09", 108.82}, {"2018-04-09", 107.76},
+	{"2018-05-08", 196.98}, {"2018-06-07", 115.12}, {"2018-07-05", 115.12}, {"2018-08-07", 115.12},
+	{"2018-09-06", 115.12}, {"2018-10-04", 116.80}, {"2018-11-08", 114.50}, {"2018-12-06", 115.12},
+	{"2019-01-11", 126.00}, {"2019-02-08", 126.04}, {"2019-03-08", 126.36}, {"2019-04-05", 127.85},
+	{"2019-05-09", 181.02}, {"2019-06-06", 161.69}, {"2019-07-05", 149.79}, {"2019-12-05", 16.40},
+}
+
+// sebPenTrackedFrom is the first hand-tracked seb_pen snapshot. Everything
+// earlier is reconstruction and gets overwritten by this pass, so a better
+// data source (like the Sodra report above, which replaced an
+// estimate-based model) corrects previous runs on the next boot.
+var sebPenTrackedFrom = time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+
 // backfillSebPension reconstructs the SEB 2nd-pillar history before its
-// first tracked value. Enrollment was mandatory (≈3% of pay + 1.5% state
-// contribution), and contributions were suspended indefinitely on
-// 2019-06-10 (approved request) — from then on the pot only compounds.
-// So: after the suspension, extrapolate the growth rate observed across
-// the tracked snapshots backwards; before it, contributions were a
-// percentage of pay, so the value tracks cumulative salary income.
-// Only snapshots with seb_pen = 0 are filled — idempotent, never touches
-// tracked values.
+// first hand-tracked value from the fund's actual money flows: during the
+// contribution era the pot equals what Sodra had transferred so far (the
+// PENSIJA 5 fund was conservative — returns were noise next to inflows);
+// after the last transfer it only compounds, at the rate implied by the
+// hand-tracked anchor.
 func backfillSebPension(db *gorm.DB) {
-	var first, last domain.Balance
-	if err := db.Where("seb_pen > 0").Order("date").First(&first).Error; err != nil {
-		return // nothing to anchor to
+	var anchor domain.Balance
+	if err := db.Where("seb_pen > 0 AND date >= ?", sebPenTrackedFrom).
+		Order("date").First(&anchor).Error; err != nil {
+		return // nothing to anchor the coast era to
 	}
-	db.Where("seb_pen > 0").Order("date DESC").First(&last)
-	suspend := time.Date(2019, 6, 10, 0, 0, 0, 0, time.UTC)
-	if !first.Date.After(suspend) {
-		return
+
+	type step struct {
+		date time.Time
+		cum  float64
 	}
+	series := make([]step, 0, len(sebPenContributions))
+	cum := 0.0
+	for _, c := range sebPenContributions {
+		d, err := time.Parse("2006-01-02", c.date)
+		if err != nil {
+			continue
+		}
+		cum = math.Round((cum+c.total)*100) / 100
+		series = append(series, step{d, cum})
+	}
+	last := series[len(series)-1]
 
 	yearsBetween := func(a, b time.Time) float64 { return b.Sub(a).Hours() / (24 * 365.25) }
 	rate := 1.0
-	if y := yearsBetween(first.Date, last.Date); y > 0.5 && last.SebPen > 0 {
-		rate = math.Pow(last.SebPen/first.SebPen, 1/y)
+	if y := yearsBetween(last.date, anchor.Date); y > 0.25 && anchor.SebPen > last.cum {
+		rate = math.Pow(anchor.SebPen/last.cum, 1/y)
 	}
-	atSuspend := first.SebPen / math.Pow(rate, yearsBetween(suspend, first.Date))
-
-	var sals []domain.Transaction
-	db.Select("date, amount").
-		Where("type = 'income' AND category = 'Salary' AND date < ?", suspend).
-		Order("date").Find(&sals)
-	totalSal := 0.0
-	for _, s := range sals {
-		totalSal += s.Amount
-	}
-	cumAt := func(t time.Time) float64 {
-		c := 0.0
-		for _, s := range sals {
-			if s.Date.After(t) {
-				break
+	value := func(t time.Time) float64 {
+		if t.Before(last.date) {
+			v := 0.0
+			for _, s := range series {
+				if s.date.After(t) {
+					break
+				}
+				v = s.cum
 			}
-			c += s.Amount
+			return v
 		}
-		return c
+		return last.cum * math.Pow(rate, yearsBetween(last.date, t))
 	}
 
 	var rows []domain.Balance
-	if err := db.Where("seb_pen = 0 AND date < ?", first.Date).Find(&rows).Error; err != nil {
+	if err := db.Where("date < ?", anchor.Date).Find(&rows).Error; err != nil {
 		return
 	}
 	for i := range rows {
-		var v float64
-		if rows[i].Date.Before(suspend) {
-			if totalSal > 0 {
-				v = atSuspend * cumAt(rows[i].Date) / totalSal
-			}
-		} else {
-			v = atSuspend * math.Pow(rate, yearsBetween(suspend, rows[i].Date))
-		}
-		v = math.Round(v*100) / 100
+		v := math.Round(value(rows[i].Date)*100) / 100
 		if v < 1 {
+			v = 0
+		}
+		if math.Abs(v-rows[i].SebPen) < 0.005 {
 			continue
 		}
 		db.Model(&domain.Balance{}).Where("id = ?", rows[i].ID).Updates(map[string]interface{}{
 			"seb_pen": v,
-			"total":   math.Round((rows[i].Total+v)*100) / 100,
+			"total":   math.Round((rows[i].Total-rows[i].SebPen+v)*100) / 100,
 		})
 	}
 }
