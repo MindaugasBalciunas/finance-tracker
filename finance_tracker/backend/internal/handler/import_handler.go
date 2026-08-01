@@ -192,12 +192,13 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 		existingBals, _ := h.balRepo.List(domain.BalanceFilter{})
 		taken := make(map[string]bool, len(existingBals))
 		// Statement-restored snapshots carry only swed — possibly enriched
-		// with art by the INVL import — so the boundary of the fully-tracked
-		// era is the first snapshot holding accounts beyond those two.
+		// with art (INVL import) and cash/seb_pen (startup backfills) — so
+		// the boundary of the fully-tracked era is the first snapshot
+		// holding accounts beyond the restorable/backfillable ones.
 		earliestFull := time.Time{}
 		for _, b := range existingBals {
 			taken[b.Date.Format("2006-01-02")] = true
-			if b.Total-b.Swed-b.Art > 0.005 {
+			if b.Total-b.Swed-b.Art-b.Cash-b.SebPen > 0.005 {
 				if earliestFull.IsZero() || b.Date.Before(earliestFull) {
 					earliestFull = b.Date
 				}

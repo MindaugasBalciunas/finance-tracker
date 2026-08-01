@@ -446,11 +446,17 @@ func applyCategoryMigrations(db *gorm.DB) {
 }
 
 // applyBalanceBackfills reconstructs balance history statements can't see.
-// The physical cash pocket was ~€750 around Sept 2020 and grew steadily to
-// the first tracked cash amount (€6,000 on the 2024-01-31 snapshot). Fill
-// linearly in time — only into snapshots with cash = 0 inside that window,
-// so tracked values are never touched and reruns are no-ops.
+// Each pass anchors on its own column's first tracked value and only fills
+// zeroes, so tracked values are never touched and reruns are no-ops.
 func applyBalanceBackfills(db *gorm.DB) {
+	backfillCashBuffer(db)
+	backfillSebPension(db)
+}
+
+// backfillCashBuffer: the physical cash pocket was ~€750 around Sept 2020
+// and grew steadily to the first tracked cash amount (€6,000 on the
+// 2024-01-31 snapshot) — fill linearly in time.
+func backfillCashBuffer(db *gorm.DB) {
 	var first domain.Balance
 	if err := db.Where("cash > 0").Order("date").First(&first).Error; err != nil {
 		return // nothing to anchor the buffer to
@@ -471,6 +477,76 @@ func applyBalanceBackfills(db *gorm.DB) {
 		db.Model(&domain.Balance{}).Where("id = ?", rows[i].ID).Updates(map[string]interface{}{
 			"cash":  cash,
 			"total": math.Round((rows[i].Total+cash)*100) / 100,
+		})
+	}
+}
+
+// backfillSebPension reconstructs the SEB 2nd-pillar history before its
+// first tracked value. Enrollment was mandatory (≈3% of pay + 1.5% state
+// contribution), and contributions were suspended indefinitely on
+// 2019-06-10 (approved request) — from then on the pot only compounds.
+// So: after the suspension, extrapolate the growth rate observed across
+// the tracked snapshots backwards; before it, contributions were a
+// percentage of pay, so the value tracks cumulative salary income.
+// Only snapshots with seb_pen = 0 are filled — idempotent, never touches
+// tracked values.
+func backfillSebPension(db *gorm.DB) {
+	var first, last domain.Balance
+	if err := db.Where("seb_pen > 0").Order("date").First(&first).Error; err != nil {
+		return // nothing to anchor to
+	}
+	db.Where("seb_pen > 0").Order("date DESC").First(&last)
+	suspend := time.Date(2019, 6, 10, 0, 0, 0, 0, time.UTC)
+	if !first.Date.After(suspend) {
+		return
+	}
+
+	yearsBetween := func(a, b time.Time) float64 { return b.Sub(a).Hours() / (24 * 365.25) }
+	rate := 1.0
+	if y := yearsBetween(first.Date, last.Date); y > 0.5 && last.SebPen > 0 {
+		rate = math.Pow(last.SebPen/first.SebPen, 1/y)
+	}
+	atSuspend := first.SebPen / math.Pow(rate, yearsBetween(suspend, first.Date))
+
+	var sals []domain.Transaction
+	db.Select("date, amount").
+		Where("type = 'income' AND category = 'Salary' AND date < ?", suspend).
+		Order("date").Find(&sals)
+	totalSal := 0.0
+	for _, s := range sals {
+		totalSal += s.Amount
+	}
+	cumAt := func(t time.Time) float64 {
+		c := 0.0
+		for _, s := range sals {
+			if s.Date.After(t) {
+				break
+			}
+			c += s.Amount
+		}
+		return c
+	}
+
+	var rows []domain.Balance
+	if err := db.Where("seb_pen = 0 AND date < ?", first.Date).Find(&rows).Error; err != nil {
+		return
+	}
+	for i := range rows {
+		var v float64
+		if rows[i].Date.Before(suspend) {
+			if totalSal > 0 {
+				v = atSuspend * cumAt(rows[i].Date) / totalSal
+			}
+		} else {
+			v = atSuspend * math.Pow(rate, yearsBetween(suspend, rows[i].Date))
+		}
+		v = math.Round(v*100) / 100
+		if v < 1 {
+			continue
+		}
+		db.Model(&domain.Balance{}).Where("id = ?", rows[i].ID).Updates(map[string]interface{}{
+			"seb_pen": v,
+			"total":   math.Round((rows[i].Total+v)*100) / 100,
 		})
 	}
 }

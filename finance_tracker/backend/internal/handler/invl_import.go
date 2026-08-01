@@ -227,14 +227,15 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 
 	existing, _ := h.balRepo.List(domain.BalanceFilter{})
 	// The fully-tracked era starts at the first snapshot holding accounts
-	// beyond the statement-restorable ones (swed + art) — past that point a
-	// new single-account snapshot would show as a dip in total net worth.
+	// beyond the statement-restorable/backfillable ones (swed, art, cash,
+	// seb_pen) — past that point a new single-account snapshot would show
+	// as a dip in total net worth.
 	earliestFull := time.Time{}
 	byMonth := make(map[string][]*domain.Balance)
 	for i := range existing {
 		b := &existing[i]
 		byMonth[b.Date.Format("2006-01")] = append(byMonth[b.Date.Format("2006-01")], b)
-		if b.Total-b.Swed-b.Art > 0.005 {
+		if b.Total-b.Swed-b.Art-b.Cash-b.SebPen > 0.005 {
 			if earliestFull.IsZero() || b.Date.Before(earliestFull) {
 				earliestFull = b.Date
 			}

@@ -533,6 +533,67 @@ func TestCashBufferBackfill(t *testing.T) {
 	assert.InDelta(t, 2000+midCash, total2, 0.01)
 }
 
+func TestSebPensionBackfill(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}))
+
+	day := func(s string) time.Time {
+		d, err := time.Parse("2006-01-02", s)
+		require.NoError(t, err)
+		return d
+	}
+	// Salary history for the contribution era: €4,000 total, half earned by
+	// mid-2015 is a quarter... cumulative 1000 → 25% of contributions made.
+	for _, s := range []struct {
+		date   string
+		amount float64
+	}{{"2014-01-15", 1000}, {"2016-01-15", 1000}, {"2018-01-15", 2000}} {
+		require.NoError(t, db.Create(&domain.Transaction{
+			Date: day(s.date), Type: "income", Amount: s.amount, Category: "Salary", Comment: "pay",
+		}).Error)
+	}
+	preSalary := domain.Balance{Date: day("2013-06-30"), Swed: 100, Total: 100}
+	early := domain.Balance{Date: day("2015-06-30"), Swed: 500, Total: 500}
+	coast := domain.Balance{Date: day("2020-06-09"), Swed: 700, Total: 700} // ~1y after suspension
+	// Tracked era: 5 years after suspension €10,000, two years later ~5%/yr.
+	anchor := domain.Balance{Date: day("2024-06-10"), Swed: 0, SebPen: 10000, Total: 10000}
+	lastB := domain.Balance{Date: day("2026-06-10"), SebPen: 11025, Total: 11025}
+	for _, b := range []*domain.Balance{&preSalary, &early, &coast, &anchor, &lastB} {
+		require.NoError(t, db.Create(b).Error)
+	}
+
+	applyBalanceBackfills(db)
+
+	penOf := func(id uint) (float64, float64) {
+		var b domain.Balance
+		require.NoError(t, db.First(&b, id).Error)
+		return b.SebPen, b.Total
+	}
+	// rate ≈ 1.05/yr → value at suspension ≈ 10000 / 1.05^5 ≈ €7,835.
+	pen, total := penOf(coast.ID)
+	assert.InDelta(t, 7835*1.05, pen, 30, "one year of self-growth after suspension")
+	assert.InDelta(t, 700+pen, total, 0.01)
+
+	pen, _ = penOf(early.ID)
+	assert.InDelta(t, 7835*0.25, pen, 15, "25%% of salary earned → 25%% of the suspension value")
+
+	pen, total = penOf(preSalary.ID)
+	assert.Zero(t, pen, "no salary history yet → nothing accumulated")
+	assert.EqualValues(t, 100, total)
+
+	pen, total = penOf(anchor.ID)
+	assert.EqualValues(t, 10000, pen, "anchor untouched")
+	assert.EqualValues(t, 10000, total)
+
+	// Idempotent.
+	coastPen, coastTotal := penOf(coast.ID)
+	applyBalanceBackfills(db)
+	p2, t2 := penOf(coast.ID)
+	assert.Equal(t, coastPen, p2)
+	assert.Equal(t, coastTotal, t2)
+}
+
 func TestCanonicalCategoryLegacyValues(t *testing.T) {
 	cat, labels := domain.CanonicalCategory("expense", "Kids - Food")
 	assert.EqualValues(t, "Kids", cat)
