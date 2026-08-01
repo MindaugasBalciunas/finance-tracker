@@ -40,6 +40,7 @@ func (h *ImportHandler) WithBudgets(repo repository.BudgetRepository) *ImportHan
 func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/import/json", h.ImportJSON)
 	rg.POST("/import/swedbank", h.ImportSwedbankCSV)
+	rg.POST("/import/invl", h.ImportINVLCSV)
 }
 
 type swedbankImportResult struct {
@@ -190,13 +191,13 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 	if len(stmtBalances) > 0 {
 		existingBals, _ := h.balRepo.List(domain.BalanceFilter{})
 		taken := make(map[string]bool, len(existingBals))
-		// A statement-restored snapshot carries only swed (Total == Swed);
-		// the boundary of the fully-tracked era is the first snapshot that
-		// holds more than that.
+		// Statement-restored snapshots carry only swed — possibly enriched
+		// with art by the INVL import — so the boundary of the fully-tracked
+		// era is the first snapshot holding accounts beyond those two.
 		earliestFull := time.Time{}
 		for _, b := range existingBals {
 			taken[b.Date.Format("2006-01-02")] = true
-			if b.Total-b.Swed > 0.005 || b.Swed-b.Total > 0.005 {
+			if b.Total-b.Swed-b.Art > 0.005 {
 				if earliestFull.IsZero() || b.Date.Before(earliestFull) {
 					earliestFull = b.Date
 				}

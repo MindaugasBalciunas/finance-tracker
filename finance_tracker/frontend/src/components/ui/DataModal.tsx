@@ -53,6 +53,12 @@ export default function DataModal({ onClose }: Props) {
     balances?: number; enriched?: number; unmatched?: number
     date_from?: string; date_to?: string
   } | null>(null)
+  const invlRef = useRef<HTMLInputElement>(null)
+  const [invlImporting, setInvlImporting] = useState(false)
+  const [invlResult, setInvlResult] = useState<{
+    points: number; enriched: number; created: number; skipped: number
+    date_from: string; date_to: string
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/v1/export/status').then(r => r.json()).then(setStatus).catch(() => {})
@@ -144,6 +150,23 @@ export default function DataModal({ onClose }: Props) {
     } finally { setSwedImporting(false) }
   }
 
+  const handleInvlFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setInvlImporting(true); setInvlResult(null); setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/v1/import/invl', { method: 'POST', body: form })
+      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setInvlResult(await res.json())
+      qc.invalidateQueries()
+      e.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pension statement import failed')
+    } finally { setInvlImporting(false) }
+  }
+
   const handleDeleteAll = async () => {
     if (!confirm('Delete ALL transactions, balances, stock trades and assets? This cannot be undone.')) return
     if (!confirm('Are you sure? Download a full backup first if you have not.')) return
@@ -222,6 +245,17 @@ export default function DataModal({ onClose }: Props) {
                 </span>
               </button>
               <input ref={swedRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleSwedbankFile} />
+              <button onClick={() => { setInvlResult(null); setError(null); invlRef.current?.click() }} disabled={invlImporting}
+                className="w-full flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left disabled:opacity-50">
+                <span className="text-lg leading-none mt-0.5">🏛️</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">{invlImporting ? 'Importing statement…' : 'Import INVL pension statement (CSV)'}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    Restores the Artea balance history from the fund's unit ledger. Months already tracking Artea are left untouched — safe to re-run.
+                  </span>
+                </span>
+              </button>
+              <input ref={invlRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleInvlFile} />
               <p className="text-[11px] text-gray-400 px-1">
                 App lock (PIN/fingerprint) is device-specific and intentionally not part of backups.
               </p>
@@ -242,6 +276,18 @@ export default function DataModal({ onClose }: Props) {
                 )}
                 {swedResult.relabeled > 0 && <p className="text-green-700/80">{swedResult.relabeled} transactions labeled by rules.</p>}
                 <button onClick={() => setSwedResult(null)} className="text-gray-500 underline">Close</button>
+              </div>
+            )}
+
+            {invlResult && (
+              <div className="mt-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-800 space-y-1">
+                <p className="font-semibold">Artea history restored</p>
+                <p>
+                  {invlResult.points} valuation points ({invlResult.date_from} → {invlResult.date_to})
+                  {' '}· {invlResult.enriched} snapshots gained an Artea value · {invlResult.created} new snapshots
+                  {invlResult.skipped > 0 && <> · {invlResult.skipped} already tracked</>}
+                </p>
+                <button onClick={() => setInvlResult(null)} className="text-gray-500 underline">Close</button>
               </div>
             )}
 

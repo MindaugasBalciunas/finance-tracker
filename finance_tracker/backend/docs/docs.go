@@ -647,6 +647,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/import/invl": {
+            "post": {
+                "description": "Replays the fund's unit ledger and restores the Artea balance history: months whose snapshot has no Artea value get it filled in, months without any snapshot (before the fully-tracked era) get an art-only snapshot.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "import"
+                ],
+                "summary": "Import an INVL (Artea) pension statement CSV",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "INVL statement export (CSV)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.invlImportResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/import/json": {
             "post": {
                 "consumes": [
@@ -2256,6 +2294,31 @@ const docTemplate = `{
                 },
                 "skipped": {
                     "$ref": "#/definitions/handler.importCounts"
+                }
+            }
+        },
+        "handler.invlImportResult": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "new art-only snapshots (pre-tracked era)",
+                    "type": "integer"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "enriched": {
+                    "description": "existing snapshots that gained an Artea value",
+                    "type": "integer"
+                },
+                "points": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
                 }
             }
         },
