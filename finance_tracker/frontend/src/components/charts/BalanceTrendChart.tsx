@@ -191,11 +191,13 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
     return values
   }, [data, activeAccounts])
 
-  // Stack order by stability: the calmest series (smallest average move
-  // between snapshots — pensions, ETF) sit at the bottom so their bands stay
-  // flat, and the jumpy day-to-day accounts (checking, cash) ride on top
-  // where their wiggle doesn't distort everything above them.
+  // Stack order: SEB pension always sits at the very bottom and cash right
+  // above it — a fixed, familiar floor to read the chart against. The rest
+  // sorts by stability (smallest average move between snapshots) so jumpy
+  // day-to-day accounts ride on top where their wiggle doesn't distort
+  // everything above them.
   const orderedAccounts = useMemo(() => {
+    const pinned = ['seb_pen', 'cash']
     const volatility: Record<string, number> = {}
     for (const acc of activeAccounts) {
       let sum = 0
@@ -211,7 +213,12 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
       }
       volatility[acc] = n > 0 ? sum / n : 0
     }
-    return [...activeAccounts].sort((a, b) => (volatility[a] ?? 0) - (volatility[b] ?? 0))
+    return [
+      ...pinned.filter((a) => activeAccounts.includes(a)),
+      ...activeAccounts
+        .filter((a) => !pinned.includes(a))
+        .sort((a, b) => (volatility[a] ?? 0) - (volatility[b] ?? 0)),
+    ]
   }, [activeAccounts, data])
 
   const yTicks = useMemo(() => {
