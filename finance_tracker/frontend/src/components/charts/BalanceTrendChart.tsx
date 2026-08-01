@@ -191,13 +191,13 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
     return values
   }, [data, activeAccounts])
 
-  // Stack order: SEB pension always sits at the very bottom and cash right
-  // above it — a fixed, familiar floor to read the chart against. The rest
-  // sorts by stability (smallest average move between snapshots) so jumpy
-  // day-to-day accounts ride on top where their wiggle doesn't distort
-  // everything above them.
+  // Stack order: a fixed, familiar floor to read the chart against — SEB
+  // pension at the very bottom, then cash, IBKR stocks and Revolut stocks.
+  // The rest sorts by stability (smallest average move between snapshots)
+  // so jumpy day-to-day accounts ride on top where their wiggle doesn't
+  // distort everything above them.
   const orderedAccounts = useMemo(() => {
-    const pinned = ['seb_pen', 'cash']
+    const pinned = ['seb_pen', 'cash', 'ibkr_stocks', 'rev_stocks']
     const volatility: Record<string, number> = {}
     for (const acc of activeAccounts) {
       let sum = 0
