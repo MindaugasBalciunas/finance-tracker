@@ -1,8 +1,10 @@
 package database
 
 import (
+	"math"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -71,6 +73,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 
 	applyDataCleanups(db)
 	applyCategoryMigrations(db)
+	applyBalanceBackfills(db)
 
 	return db, nil
 }
@@ -336,10 +339,14 @@ func applyCategoryMigrations(db *gorm.DB) {
 
 	// Rows entered without an account almost certainly went through the
 	// Swedbank card (the everyday account) — default the money side.
+	// Payroll-labeled rows are the exception: pension contributions deducted
+	// from gross salary never touched any bank account.
 	db.Exec(`UPDATE transactions SET debit_account = 'swed'
-		WHERE type IN ('expense', 'investment') AND (debit_account IS NULL OR debit_account = '')`)
+		WHERE type IN ('expense', 'investment') AND (debit_account IS NULL OR debit_account = '')
+		AND (',' || labels || ',') NOT LIKE '%,payroll,%'`)
 	db.Exec(`UPDATE transactions SET credit_account = 'swed'
-		WHERE type = 'income' AND (credit_account IS NULL OR credit_account = '')`)
+		WHERE type = 'income' AND (credit_account IS NULL OR credit_account = '')
+		AND (',' || labels || ',') NOT LIKE '%,payroll,%'`)
 	// Bolt rides (but not Bolt Food) are taxi — history only; too ambiguous
 	// as a standing rule, new ones are caught by the category suggestion.
 	addLabel("taxi", `LOWER(comment) LIKE '%bolt%' AND LOWER(comment) NOT LIKE '%bolt food%'`)
@@ -426,4 +433,44 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// untouched, and the rows keep their cash/revolut labels.
 	db.Exec(`UPDATE transactions SET category = 'Transfers'
 		WHERE type = 'investment' AND category = 'Finance'`)
+
+	// --- INVL payout arrival (v1.7.0): the 2022 partial-withdrawal landing
+	// on Swedbank ("INVL EXTREMO III … Dalinė išmoka…", net of tax) was
+	// imported as income — it is the bank side of an own-money movement out
+	// of the pension fund. Statement-imported comments carry the raw bank
+	// string, so match on it; idempotent because the type flips.
+	addLabel("artea", `UPPER(comment) LIKE '%INVL%'`)
+	db.Exec(`UPDATE transactions SET type = 'investment', category = 'Transfers', debit_account = 'art'
+		WHERE type = 'income' AND UPPER(comment) LIKE '%INVL%'
+		AND (comment LIKE '%išmoka%' OR comment LIKE '%ismoka%')`)
+}
+
+// applyBalanceBackfills reconstructs balance history statements can't see.
+// The physical cash pocket was ~€750 around Sept 2020 and grew steadily to
+// the first tracked cash amount (€6,000 on the 2024-01-31 snapshot). Fill
+// linearly in time — only into snapshots with cash = 0 inside that window,
+// so tracked values are never touched and reruns are no-ops.
+func applyBalanceBackfills(db *gorm.DB) {
+	var first domain.Balance
+	if err := db.Where("cash > 0").Order("date").First(&first).Error; err != nil {
+		return // nothing to anchor the buffer to
+	}
+	start := time.Date(2020, 9, 1, 0, 0, 0, 0, time.UTC)
+	if !first.Date.After(start) {
+		return
+	}
+	const startCash = 750.0
+	var rows []domain.Balance
+	if err := db.Where("cash = 0 AND date >= ? AND date < ?", start, first.Date).Find(&rows).Error; err != nil {
+		return
+	}
+	span := first.Date.Sub(start).Hours()
+	for i := range rows {
+		frac := rows[i].Date.Sub(start).Hours() / span
+		cash := math.Round((startCash+(first.Cash-startCash)*frac)*100) / 100
+		db.Model(&domain.Balance{}).Where("id = ?", rows[i].ID).Updates(map[string]interface{}{
+			"cash":  cash,
+			"total": math.Round((rows[i].Total+cash)*100) / 100,
+		})
+	}
 }

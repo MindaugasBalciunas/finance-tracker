@@ -2319,6 +2319,13 @@ const docTemplate = `{
                 },
                 "skipped": {
                     "type": "integer"
+                },
+                "tx_created": {
+                    "description": "Transaction side: payroll contributions arrive as income + Pension\npairs, payouts as Transfers; rows the bank already delivered dedup.",
+                    "type": "integer"
+                },
+                "tx_skipped": {
+                    "type": "integer"
                 }
             }
         },

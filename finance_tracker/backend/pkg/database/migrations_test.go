@@ -445,6 +445,94 @@ func TestAnchoredCommentPatterns(t *testing.T) {
 	assert.False(t, rule.Matches(&domain.Transaction{Comment: "Nuoma iki 24d"}))
 }
 
+func TestInvlPayoutReclassAndPayrollAccounts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	payout := seedTx(t, db, "income", "Reimbursement", "INVL EXTREMO III 16+ (/Dalinė išmoka/900604/MINDAUGAS BALČIŪNAS/3/INVL33007679/)")
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", payout).Update("credit_account", "swed").Error)
+	salary := seedTx(t, db, "income", "Salary", "Nexos.ai 2026.07")
+	payroll := seedTx(t, db, "income", "Salary", "Artea (INVL) pension contribution via payroll — employer (Vipps)")
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", payroll).Update("labels", "artea,payroll,vipps mobilepay").Error)
+	payrollInv := seedTx(t, db, "investment", "Pension", "Artea (INVL) 3rd pillar pension (payroll — employer)")
+	require.NoError(t, db.Model(&domain.Transaction{}).Where("id = ?", payrollInv).Update("labels", "artea,payroll").Error)
+
+	applyCategoryMigrations(db)
+
+	// The payout arrival becomes the bank side of a pension→bank transfer.
+	var p domain.Transaction
+	require.NoError(t, db.First(&p, payout).Error)
+	assert.Equal(t, domain.TransactionTypeInvestment, p.Type)
+	assert.Equal(t, "Transfers", string(p.Category))
+	assert.Equal(t, "art", p.DebitAccount)
+	assert.Equal(t, "swed", p.CreditAccount)
+	assert.Contains(t, p.Labels, "artea")
+
+	// Payroll rows keep their empty accounts; normal rows get the default.
+	var s, pr, pi domain.Transaction
+	require.NoError(t, db.First(&s, salary).Error)
+	require.NoError(t, db.First(&pr, payroll).Error)
+	require.NoError(t, db.First(&pi, payrollInv).Error)
+	assert.Equal(t, "swed", s.CreditAccount)
+	assert.Equal(t, "", pr.CreditAccount)
+	assert.Equal(t, "", pi.DebitAccount)
+
+	// Idempotent.
+	applyCategoryMigrations(db)
+	require.NoError(t, db.First(&p, payout).Error)
+	assert.Equal(t, "Transfers", string(p.Category))
+}
+
+func TestCashBufferBackfill(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Balance{}))
+
+	day := func(s string) time.Time {
+		d, err := time.Parse("2006-01-02", s)
+		require.NoError(t, err)
+		return d
+	}
+	before := domain.Balance{Date: day("2020-06-30"), Swed: 900, Total: 900}
+	start := domain.Balance{Date: day("2020-09-30"), Swed: 1000, Total: 1000}
+	mid := domain.Balance{Date: day("2022-05-15"), Swed: 2000, Total: 2000}
+	anchor := domain.Balance{Date: day("2024-01-31"), Swed: 3000, Cash: 6000, Total: 9000}
+	for _, b := range []*domain.Balance{&before, &start, &mid, &anchor} {
+		require.NoError(t, db.Create(b).Error)
+	}
+
+	applyBalanceBackfills(db)
+
+	cashOf := func(id uint) (float64, float64) {
+		var b domain.Balance
+		require.NoError(t, db.First(&b, id).Error)
+		return b.Cash, b.Total
+	}
+	c, total := cashOf(before.ID)
+	assert.Zero(t, c, "pre-window snapshot untouched")
+	assert.EqualValues(t, 900, total)
+
+	c, total = cashOf(start.ID)
+	assert.InDelta(t, 872.09, c, 0.01, "≈€750 buffer grown one month into the window")
+	assert.InDelta(t, 1000+c, total, 0.01)
+
+	midCash, _ := cashOf(mid.ID)
+	// Linear halfway-ish between 750 and 6000 (2022-05-15 is ~50% of the span).
+	assert.Greater(t, midCash, 3000.0)
+	assert.Less(t, midCash, 4000.0)
+
+	c, total = cashOf(anchor.ID)
+	assert.EqualValues(t, 6000, c, "anchor untouched")
+	assert.EqualValues(t, 9000, total)
+
+	// Idempotent: cash != 0 everywhere in the window now.
+	applyBalanceBackfills(db)
+	c2, total2 := cashOf(mid.ID)
+	assert.Equal(t, midCash, c2)
+	assert.InDelta(t, 2000+midCash, total2, 0.01)
+}
+
 func TestCanonicalCategoryLegacyValues(t *testing.T) {
 	cat, labels := domain.CanonicalCategory("expense", "Kids - Food")
 	assert.EqualValues(t, "Kids", cat)

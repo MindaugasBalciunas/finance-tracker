@@ -31,9 +31,26 @@ const invlSample = `Data,Įmoka/išmoka,Mokestis,Suma,Vnt. kaina,Vnt.,Operacija,
 `
 
 func TestParseINVLCSV(t *testing.T) {
-	points, err := parseINVLCSV(strings.NewReader(invlSample))
+	points, entries, err := parseINVLCSV(strings.NewReader(invlSample))
 	require.NoError(t, err)
 	require.Len(t, points, 4, "one point per distinct date")
+	require.Len(t, entries, 6)
+
+	// Client rows matching an employer row within days are payroll-deducted;
+	// the lone 2026 client contribution is a direct bank payment.
+	byDate := map[string][]invlEntry{}
+	for _, e := range entries {
+		byDate[e.Date.Format("2006-01-02")] = append(byDate[e.Date.Format("2006-01-02")], e)
+	}
+	for _, e := range byDate["2020-02-28"] {
+		if e.Kind == invlClient {
+			assert.True(t, e.Payroll, "paired client row is payroll")
+		}
+	}
+	for _, e := range byDate["2026-07-10"] {
+		assert.False(t, e.Payroll, "unpaired client row is a direct payment")
+	}
+	assert.Equal(t, invlWithdrawal, byDate["2025-12-02"][0].Kind)
 
 	// Oldest first; client + employer both add units.
 	assert.Equal(t, "2020-02-28", points[0].Date.Format("2006-01-02"))
@@ -91,6 +108,9 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	}
 	// Swed-only snapshot in the same month as the 2020-02-28 point → enriched.
 	require.NoError(t, db.Create(&domain.Balance{Date: day("2020-02-29"), Swed: 1000, Total: 1000}).Error)
+	// Gap month: no statement activity in May 2020 — the ledger's step
+	// function still values the fund, so no false dip in the trend.
+	require.NoError(t, db.Create(&domain.Balance{Date: day("2020-05-31"), Swed: 800, Total: 800}).Error)
 	// Snapshot already tracking Artea in Dec 2025 → untouched.
 	require.NoError(t, db.Create(&domain.Balance{Date: day("2025-12-31"), Swed: 500, Art: 4000, Total: 4500}).Error)
 	// Fully-tracked era starts 2024-01-31 (holds more than swed+art).
@@ -100,7 +120,7 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
 	assert.Contains(t, body, `"points":4`)
-	assert.Contains(t, body, `"enriched":1`, body)
+	assert.Contains(t, body, `"enriched":2`, body)
 	// 2021-01 has no snapshot and predates the full era → created;
 	// 2026-07 has no snapshot but is inside the full era → skipped.
 	assert.Contains(t, body, `"created":1`, body)
@@ -111,6 +131,11 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	assert.InDelta(t, 245.40, enriched.Art, 0.01, "2020-02 valuation lands on the swed snapshot")
 	assert.InDelta(t, 1245.40, enriched.Total, 0.01, "total bumped by the delta")
 
+	// The gap-month snapshot carries the last known valuation forward.
+	var gap domain.Balance
+	require.NoError(t, db.First(&gap, "swed = 800").Error)
+	assert.InDelta(t, 245.40, gap.Art, 0.01, "May 2020 keeps February's step value")
+
 	var untouched domain.Balance
 	require.NoError(t, db.First(&untouched, "art = 4000").Error)
 	assert.InDelta(t, 4500, untouched.Total, 0.001)
@@ -120,12 +145,58 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	assert.Equal(t, "2021-01-29", created.Date.Format("2006-01-02"))
 	assert.InDelta(t, created.Art, created.Total, 0.001)
 
-	// Idempotent: every month now tracks Artea → nothing changes.
+	// Transactions: two payroll pairs (client+employer × income+Pension),
+	// one withdrawal transfer, one direct contribution with no bank row.
+	var txCount int64
+	db.Model(&domain.Transaction{}).Count(&txCount)
+	assert.EqualValues(t, 10, txCount, rec.Body.String())
+	assert.Contains(t, body, `"tx_created":10`, body)
+	var payrollIncome, payrollPension, withdrawals int64
+	db.Model(&domain.Transaction{}).Where("type = 'income' AND (','||labels||',') LIKE '%,payroll,%'").Count(&payrollIncome)
+	db.Model(&domain.Transaction{}).Where("type = 'investment' AND category = 'Pension' AND (','||labels||',') LIKE '%,payroll,%'").Count(&payrollPension)
+	db.Model(&domain.Transaction{}).Where("category = 'Transfers' AND debit_account = 'art'").Count(&withdrawals)
+	assert.EqualValues(t, 4, payrollIncome)
+	assert.EqualValues(t, 4, payrollPension)
+	assert.EqualValues(t, 1, withdrawals)
+	var employerRow domain.Transaction
+	require.NoError(t, db.First(&employerRow, "type = 'income' AND comment LIKE '%Vipps%'").Error)
+	assert.Contains(t, employerRow.Labels, "vipps mobilepay")
+	assert.Equal(t, "", employerRow.CreditAccount, "payroll income never hit a bank account")
+
+	// Idempotent: every month now tracks Artea, every row fingerprinted.
 	rec = invlUpload(t, r, invlSample)
 	require.Equal(t, 200, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"enriched":0`)
 	assert.Contains(t, rec.Body.String(), `"created":0`)
+	assert.Contains(t, rec.Body.String(), `"tx_created":0`)
 	var count int64
 	db.Model(&domain.Balance{}).Count(&count)
-	assert.EqualValues(t, 4, count)
+	assert.EqualValues(t, 5, count)
+	db.Model(&domain.Transaction{}).Count(&txCount)
+	assert.EqualValues(t, 10, txCount)
+}
+
+func TestImportINVL_TransactionDedup(t *testing.T) {
+	r, db := invlRouter(t)
+	// The 2026-07-10 direct contribution already exists from the bank side
+	// (dated two days earlier, hand-entered comment) → fuzzy dedup skips it.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC), Type: domain.TransactionTypeInvestment,
+		Amount: 200, Category: domain.CategoryPension, Comment: "Artea (INVL) 3rd pillar pension",
+	}).Error)
+	// The 2025-12-02 payout arrival exists as an art→swed transfer (net of
+	// tax, different amount) → the gross withdrawal row is not duplicated.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Date(2025, 12, 3, 0, 0, 0, 0, time.UTC), Type: domain.TransactionTypeInvestment,
+		Amount: 1000, Category: domain.CategoryTransfers, Comment: "INVL payout",
+		DebitAccount: "art", CreditAccount: "swed",
+	}).Error)
+
+	rec := invlUpload(t, r, invlSample)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var directCount, withdrawalCount int64
+	db.Model(&domain.Transaction{}).Where("category = 'Pension' AND (','||labels||',') NOT LIKE '%,payroll,%'").Count(&directCount)
+	db.Model(&domain.Transaction{}).Where("category = 'Transfers' AND debit_account = 'art'").Count(&withdrawalCount)
+	assert.EqualValues(t, 1, directCount, "only the pre-existing bank row")
+	assert.EqualValues(t, 1, withdrawalCount, "only the pre-existing arrival transfer")
 }

@@ -47,7 +47,14 @@ const ACCOUNT_LABELS: Record<string, string> = {
 
 function buildYTicks(maxVal: number): number[] {
   const candidates = [0, 1000, 5000, 10000, 25000, 50000, 75000, 100000, 125000, 150000, 175000, 200000, 250000, 300000, 400000, 500000]
-  return candidates.filter((v) => v <= maxVal * 1.05)
+  const ticks = candidates.filter((v) => v <= maxVal * 1.05)
+  // Top out at the series' actual peak (rounded up to €100) so the highest
+  // point reads off the axis instead of floating above the last round tick.
+  const peak = Math.ceil(maxVal / 100) * 100
+  if (peak > 0 && peak > (ticks[ticks.length - 1] ?? 0)) {
+    ticks.push(peak)
+  }
+  return ticks
 }
 
 // Month-boundary ticks for the time axis, thinned to at most ~12 labels so
@@ -251,7 +258,7 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
           tick={{ fontSize: 11 }}
         />
         <YAxis
-          domain={[0, 'auto']}
+          domain={[0, (dataMax: number) => Math.ceil(dataMax / 100) * 100]}
           ticks={yTicks}
           tickFormatter={(v) => v === 0 ? '€0' : `€${(v / 1000).toFixed(0)}k`}
           tick={{ fontSize: 11 }}

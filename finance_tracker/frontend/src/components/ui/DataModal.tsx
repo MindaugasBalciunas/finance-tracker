@@ -57,6 +57,7 @@ export default function DataModal({ onClose }: Props) {
   const [invlImporting, setInvlImporting] = useState(false)
   const [invlResult, setInvlResult] = useState<{
     points: number; enriched: number; created: number; skipped: number
+    tx_created: number; tx_skipped: number
     date_from: string; date_to: string
   } | null>(null)
 
@@ -286,6 +287,10 @@ export default function DataModal({ onClose }: Props) {
                   {invlResult.points} valuation points ({invlResult.date_from} → {invlResult.date_to})
                   {' '}· {invlResult.enriched} snapshots gained an Artea value · {invlResult.created} new snapshots
                   {invlResult.skipped > 0 && <> · {invlResult.skipped} already tracked</>}
+                </p>
+                <p>
+                  +{invlResult.tx_created} transactions (payroll contributions & payouts)
+                  {invlResult.tx_skipped > 0 && <> · {invlResult.tx_skipped} already existed</>}
                 </p>
                 <button onClick={() => setInvlResult(null)} className="text-gray-500 underline">Close</button>
               </div>

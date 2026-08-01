@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -33,6 +34,39 @@ type invlPoint struct {
 	Value float64
 }
 
+type invlKind int
+
+const (
+	invlClient invlKind = iota
+	invlEmployer
+	invlWithdrawal
+)
+
+// invlEntry is one statement row, used to generate the transactions the
+// bank statements never saw (payroll-deducted contributions, payouts).
+type invlEntry struct {
+	Date   time.Time
+	Amount float64
+	Payer  string
+	Kind   invlKind
+	// Payroll marks client contributions deducted from gross salary: they
+	// are paired with an employer row of the same amount a few days apart
+	// and never crossed the personal bank account.
+	Payroll bool
+}
+
+// invlEmployerLabel maps the statement's payer to the app's employer label.
+func invlEmployerLabel(payer string) string {
+	p := foldLT(payer)
+	switch {
+	case strings.Contains(p, "vipps"):
+		return "vipps mobilepay"
+	case strings.Contains(p, "danske"):
+		return "danske"
+	}
+	return ""
+}
+
 // invlNumber parses "1 234.56 €" (currency sign, spaces, NBSP) to a float.
 func invlNumber(s string) (float64, error) {
 	clean := strings.Map(func(r rune) rune {
@@ -44,19 +78,21 @@ func invlNumber(s string) (float64, error) {
 	return strconv.ParseFloat(clean, 64)
 }
 
-// parseINVLCSV replays the statement's unit ledger and returns one valuation
+// parseINVLCSV replays the statement's unit ledger. It returns one valuation
 // point per statement date (after all of that date's rows, at that date's
-// unit price), oldest first.
-func parseINVLCSV(r io.Reader) ([]invlPoint, error) {
+// unit price) plus the raw entries, both oldest first.
+func parseINVLCSV(r io.Reader) ([]invlPoint, []invlEntry, error) {
 	reader := csv.NewReader(r)
 	reader.FieldsPerRecord = -1
 	reader.LazyQuotes = true
 
 	type row struct {
-		date       time.Time
-		units      float64
-		price      float64
-		withdrawal bool
+		date   time.Time
+		amount float64
+		units  float64
+		price  float64
+		payer  string
+		kind   invlKind
 	}
 	var rows []row
 	first := true
@@ -66,46 +102,86 @@ func parseINVLCSV(r io.Reader) ([]invlPoint, error) {
 			break
 		}
 		if rerr != nil {
-			return nil, rerr
+			return nil, nil, rerr
 		}
 		if first { // header
 			first = false
 			continue
 		}
-		if len(rec) < 7 {
+		if len(rec) < 8 {
 			continue
 		}
 		date, derr := time.Parse("2006-01-02", strings.TrimSpace(rec[0]))
+		amount, aerr := invlNumber(rec[3])
 		price, perr := invlNumber(rec[4])
 		units, uerr := invlNumber(rec[5])
-		if derr != nil || perr != nil || uerr != nil || units <= 0 || price <= 0 {
+		if derr != nil || aerr != nil || perr != nil || uerr != nil || units <= 0 || price <= 0 {
 			continue
 		}
 		// "Dalies lėšų išmoka" folds to "dalies lesu ismoka"; contributions
 		// ("kliento/darbdavio įmoka") fold to "... imoka". foldLT also
 		// tolerates a double-encoded export losing its diacritics.
 		op := foldLT(strings.TrimSpace(rec[6]))
-		rows = append(rows, row{date: date, units: units, price: price, withdrawal: strings.Contains(op, "ismoka")})
+		kind := invlClient
+		switch {
+		case strings.Contains(op, "ismoka"):
+			kind = invlWithdrawal
+		case strings.Contains(op, "darbdavio"):
+			kind = invlEmployer
+		}
+		rows = append(rows, row{date: date, amount: amount, units: units, price: price, payer: strings.TrimSpace(rec[7]), kind: kind})
 	}
 
 	// Statements list newest first — replay oldest first.
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].date.Before(rows[j].date) })
 
 	var points []invlPoint
+	var entries []invlEntry
 	units := 0.0
 	for i, r := range rows {
-		if r.withdrawal {
+		if r.kind == invlWithdrawal {
 			units -= r.units
 		} else {
 			units += r.units
 		}
+		entries = append(entries, invlEntry{Date: r.date, Amount: r.amount, Payer: r.payer, Kind: r.kind})
 		// Emit one point per date, after the date's last row.
 		if i+1 < len(rows) && rows[i+1].date.Equal(r.date) {
 			continue
 		}
 		points = append(points, invlPoint{Date: r.date, Value: math.Round(units*r.price*100) / 100})
 	}
-	return points, nil
+
+	// A client contribution matching an employer one within a few days was
+	// deducted from gross salary (both parts arrive via payroll) — it never
+	// crossed the personal bank account. Match multiset-style so months with
+	// two contribution pairs (a late posting) pair up correctly.
+	employerFree := make([]bool, len(entries))
+	for i := range entries {
+		employerFree[i] = entries[i].Kind == invlEmployer
+	}
+	for i := range entries {
+		if entries[i].Kind != invlClient {
+			continue
+		}
+		for j := range entries {
+			if !employerFree[j] || math.Abs(entries[j].Amount-entries[i].Amount) > 0.005 ||
+				absDuration(entries[j].Date.Sub(entries[i].Date)) > 5*24*time.Hour {
+				continue
+			}
+			entries[i].Payroll = true
+			employerFree[j] = false
+			break
+		}
+	}
+	return points, entries, nil
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }
 
 type invlImportResult struct {
@@ -115,6 +191,10 @@ type invlImportResult struct {
 	Skipped  int    `json:"skipped"`
 	DateFrom string `json:"date_from"`
 	DateTo   string `json:"date_to"`
+	// Transaction side: payroll contributions arrive as income + Pension
+	// pairs, payouts as Transfers; rows the bank already delivered dedup.
+	TxCreated int `json:"tx_created"`
+	TxSkipped int `json:"tx_skipped"`
 }
 
 // ImportINVLCSV godoc
@@ -135,7 +215,7 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 	}
 	defer file.Close()
 
-	points, err := parseINVLCSV(file)
+	points, entries, err := parseINVLCSV(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "failed to parse statement: " + err.Error()})
 		return
@@ -166,43 +246,54 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 		DateFrom: points[0].Date.Format("2006-01-02"),
 		DateTo:   points[len(points)-1].Date.Format("2006-01-02"),
 	}
-	for _, p := range points {
-		month := p.Date.Format("2006-01")
-		snaps := byMonth[month]
 
-		// A month that already tracks Artea anywhere is left alone.
-		tracked := false
-		for _, b := range snaps {
-			if b.Art > 0.005 {
-				tracked = true
+	// The ledger is a step function: units only change on statement dates,
+	// so between points the account's value is the last point's value. Fill
+	// it into EVERY art-less snapshot inside the statement's range — months
+	// with no fund activity (no contribution row) would otherwise stay at 0
+	// and cut a false dip into the net-worth trend. Total is bumped by the
+	// delta, not recomputed from columns — recomputing would drop any BTC
+	// valuation embedded in it.
+	stepValue := func(t time.Time) float64 {
+		v := 0.0
+		for _, p := range points {
+			if p.Date.After(t) {
 				break
 			}
+			v = p.Value
 		}
-		if tracked {
-			result.Skipped++
+		return v
+	}
+	first, last := points[0].Date, points[len(points)-1].Date
+	monthEnriched := make(map[string]bool)
+	for i := range existing {
+		b := &existing[i]
+		if b.Art > 0.005 || b.Date.Before(first) || b.Date.After(last) {
 			continue
 		}
+		v := stepValue(b.Date)
+		if v <= 0.005 {
+			continue
+		}
+		b.Art = v
+		b.Total = math.Round((b.Total+v)*100) / 100
+		if err := h.balRepo.Update(b); err == nil {
+			monthEnriched[b.Date.Format("2006-01")] = true
+			result.Enriched++
+		}
+	}
 
-		if len(snaps) > 0 {
-			// Enrich the snapshot closest to the valuation date. Total is
-			// bumped by the delta, not recomputed from columns — recomputing
-			// would drop any BTC valuation embedded in it.
-			closest := snaps[0]
-			for _, b := range snaps[1:] {
-				if absDuration(b.Date.Sub(p.Date)) < absDuration(closest.Date.Sub(p.Date)) {
-					closest = b
-				}
-			}
-			closest.Art = p.Value
-			closest.Total = math.Round((closest.Total+p.Value)*100) / 100
-			if err := h.balRepo.Update(closest); err == nil {
-				result.Enriched++
-			} else {
+	// Months with no snapshot at all get an art-only one — but only before
+	// the fully-tracked era, where a single-account snapshot would show as
+	// a dip in total net worth.
+	for _, p := range points {
+		month := p.Date.Format("2006-01")
+		if len(byMonth[month]) > 0 {
+			if !monthEnriched[month] {
 				result.Skipped++
 			}
 			continue
 		}
-
 		if !earliestFull.IsZero() && !p.Date.Before(earliestFull) {
 			result.Skipped++
 			continue
@@ -216,12 +307,102 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 		}
 	}
 
+	h.createINVLTransactions(entries, &result)
+
 	c.JSON(http.StatusOK, result)
 }
 
-func absDuration(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
+// createINVLTransactions turns statement entries into the transactions the
+// bank statements never delivered. Payroll contributions (employer rows and
+// their paired client rows) become an income + Pension pair — compensation
+// that went straight into the fund, so income and invested stay consistent.
+// Direct client contributions and payouts usually exist already from the
+// bank side and dedup fuzzily (dates differ between bank and fund by days).
+func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invlImportResult) {
+	existing, _ := h.txRepo.ListAll()
+	fp := make(map[string]bool, len(existing))
+	type ref struct {
+		date   time.Time
+		amount float64
 	}
-	return d
+	var pensionRows, artOutflows []ref
+	for _, t := range existing {
+		fp[fmt.Sprintf("%s|%s|%.2f|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Comment)] = true
+		if t.Type == domain.TransactionTypeInvestment && t.Category == domain.CategoryPension {
+			pensionRows = append(pensionRows, ref{t.Date, t.Amount})
+		}
+		if t.Type == domain.TransactionTypeInvestment && t.Category == domain.CategoryTransfers && t.DebitAccount == "art" {
+			artOutflows = append(artOutflows, ref{t.Date, t.Amount})
+		}
+	}
+	near := func(rows []ref, date time.Time, amount float64, days int, anyAmount bool) bool {
+		for _, r := range rows {
+			if (anyAmount || math.Abs(r.amount-amount) < 0.005) &&
+				absDuration(r.date.Sub(date)) <= time.Duration(days)*24*time.Hour {
+				return true
+			}
+		}
+		return false
+	}
+	create := func(tx domain.Transaction) {
+		key := fmt.Sprintf("%s|%s|%.2f|%s", tx.Date.Format("2006-01-02"), tx.Type, tx.Amount, tx.Comment)
+		if fp[key] {
+			result.TxSkipped++
+			return
+		}
+		if err := h.txRepo.Create(&tx); err == nil {
+			fp[key] = true
+			result.TxCreated++
+		} else {
+			result.TxSkipped++
+		}
+	}
+
+	for _, e := range entries {
+		switch {
+		case e.Kind == invlWithdrawal:
+			// The bank-side arrival (net of tax) may already be recorded as
+			// an art→bank transfer — don't double the outflow.
+			if near(artOutflows, e.Date, 0, 14, true) {
+				result.TxSkipped++
+				continue
+			}
+			create(domain.Transaction{
+				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
+				Category: domain.CategoryTransfers, Labels: "artea",
+				Comment:      "Artea (INVL) partial withdrawal (gross, before tax)",
+				DebitAccount: "art", CreditAccount: "swed",
+			})
+		case e.Kind == invlEmployer || e.Payroll:
+			who, side := "employer", " ("+strings.TrimSpace(e.Payer)+")"
+			if e.Kind == invlClient {
+				who, side = "own share", ", deducted from gross salary"
+			}
+			labels := domain.NormalizeLabels("artea,payroll," + invlEmployerLabel(e.Payer))
+			create(domain.Transaction{
+				Date: e.Date, Type: domain.TransactionTypeIncome, Amount: e.Amount,
+				Category: domain.CategorySalary, Labels: labels,
+				Comment: "Artea (INVL) pension contribution via payroll — " + who + side,
+			})
+			create(domain.Transaction{
+				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
+				Category: domain.CategoryPension, Labels: labels,
+				Comment:       "Artea (INVL) 3rd pillar pension (payroll — " + who + ")",
+				CreditAccount: "art",
+			})
+		default:
+			// Direct client contribution — paid from the bank, so it is
+			// normally already here from the statement import or by hand.
+			if near(pensionRows, e.Date, e.Amount, 7, false) {
+				result.TxSkipped++
+				continue
+			}
+			create(domain.Transaction{
+				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
+				Category: domain.CategoryPension, Labels: "artea",
+				Comment:      "Artea (INVL) 3rd pillar pension",
+				DebitAccount: "swed", CreditAccount: "art",
+			})
+		}
+	}
 }
