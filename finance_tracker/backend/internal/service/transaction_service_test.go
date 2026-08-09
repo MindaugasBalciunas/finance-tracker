@@ -127,6 +127,37 @@ func TestTransactionService_Create(t *testing.T) {
 	})
 }
 
+type staticRuleSource struct{ rules []domain.LabelRule }
+
+func (s *staticRuleSource) ListRules() ([]domain.LabelRule, error) { return s.rules, nil }
+
+func TestTransactionService_Create_SuppressedLabels(t *testing.T) {
+	repo := &mock.TransactionRepository{}
+	rules := &staticRuleSource{rules: []domain.LabelRule{
+		{Label: "groceries", CommentMatch: "maxima"},
+		{Label: "maxima", CommentMatch: "maxima"},
+	}}
+	svc := service.NewTransactionServiceWithRules(repo, nil, rules)
+
+	// The dismissed rule label is skipped; the other rule still applies.
+	repo.On("Create", &domain.Transaction{
+		Date:     time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+		Type:     domain.TransactionTypeExpense,
+		Amount:   20,
+		Comment:  "MAXIMA VILNIUS",
+		Category: domain.CategoryFood,
+		Labels:   "groceries",
+	}).Return(nil)
+
+	_, err := svc.Create(service.CreateTransactionInput{
+		Date: "2026-08-01", Type: domain.TransactionTypeExpense, Amount: 20,
+		Comment: "MAXIMA VILNIUS", Category: domain.CategoryFood,
+		SuppressedLabels: "Maxima", // normalized case-insensitively
+	})
+	require.NoError(t, err)
+	repo.AssertExpectations(t)
+}
+
 func TestTransactionService_GetByID(t *testing.T) {
 	t.Run("found and Money populated", func(t *testing.T) {
 		repo := &mock.TransactionRepository{}

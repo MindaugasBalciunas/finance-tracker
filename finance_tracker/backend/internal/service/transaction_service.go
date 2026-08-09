@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -19,6 +20,9 @@ type CreateTransactionInput struct {
 	Labels        string                 `json:"labels"`
 	DebitAccount  string                 `json:"debit_account"`
 	CreditAccount string                 `json:"credit_account"`
+	// SuppressedLabels lists rule labels the user explicitly removed in the
+	// form — matching rules are skipped for this transaction only.
+	SuppressedLabels string `json:"suppressed_labels"`
 }
 
 // UpdateTransactionInput is the input DTO for updating a transaction
@@ -95,11 +99,18 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		CreditAccount: input.CreditAccount,
 	}
 
-	// Auto-apply label rules (e.g. Finance + "loan" → loan).
+	// Auto-apply label rules (e.g. Finance + "loan" → loan) — except those
+	// the user explicitly dismissed in the form for this transaction.
 	if s.ruleSrc != nil {
+		suppressed := map[string]bool{}
+		for _, l := range strings.Split(domain.NormalizeLabels(input.SuppressedLabels), ",") {
+			if l != "" {
+				suppressed[l] = true
+			}
+		}
 		if rules, err := s.ruleSrc.ListRules(); err == nil {
 			for _, rule := range rules {
-				if rule.Matches(tx) {
+				if rule.Matches(tx) && !suppressed[rule.Label] {
 					tx.AddLabel(rule.Label)
 				}
 			}

@@ -179,7 +179,7 @@ export default function SecurityModal({ onClose }: Props) {
           <div className="space-y-3">
             {(mode === 'change' || mode === 'disable') && (
               <input
-                type="password" inputMode="numeric" maxLength={8} autoComplete="off"
+                type="password" inputMode="numeric" maxLength={8} autoComplete="one-time-code" data-1p-ignore="true" data-lpignore="true" data-bwignore="true"
                 value={currentPin}
                 onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
                 placeholder="Current PIN"
@@ -189,14 +189,14 @@ export default function SecurityModal({ onClose }: Props) {
             {mode !== 'disable' && (
               <>
                 <input
-                  type="password" inputMode="numeric" maxLength={8} autoComplete="off"
+                  type="password" inputMode="numeric" maxLength={8} autoComplete="one-time-code" data-1p-ignore="true" data-lpignore="true" data-bwignore="true"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                   placeholder="New PIN (4–8 digits)"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
                 />
                 <input
-                  type="password" inputMode="numeric" maxLength={8} autoComplete="off"
+                  type="password" inputMode="numeric" maxLength={8} autoComplete="one-time-code" data-1p-ignore="true" data-lpignore="true" data-bwignore="true"
                   value={pinConfirm}
                   onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ''))}
                   placeholder="Repeat new PIN"

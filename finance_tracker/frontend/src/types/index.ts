@@ -56,6 +56,9 @@ export interface CreateTransactionInput {
   comment?: string
   category: Category
   labels?: string
+  // Rule labels the user removed in the form — the server skips these rules
+  // for this transaction only.
+  suppressed_labels?: string
   debit_account?: string
   credit_account?: string
 }

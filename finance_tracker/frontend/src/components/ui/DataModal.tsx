@@ -93,11 +93,6 @@ export default function DataModal({ onClose }: Props) {
     return qs ? `?${qs}` : ''
   }, [preset, customFrom, customTo])
 
-  // The AI link always declares itself an export: without this, an all-time
-  // download would be treated as a full backup — named backup_finances_… and
-  // silently resetting the "new since last backup" marker.
-  const aiExportQuery = rangeQuery ? `${rangeQuery}&purpose=export` : '?purpose=export'
-
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -354,8 +349,13 @@ export default function DataModal({ onClose }: Props) {
               <a href={`/api/v1/export/balances.csv${rangeQuery}`} download className={exportLinkCls}>
                 📄 Balances CSV
               </a>
-              <a href={`/api/v1/export/finances.json${aiExportQuery}`} download className={exportLinkCls}>
-                🤖 JSON for Claude.ai
+              <a href="/api/v1/export/ai.zip" download className={exportLinkCls}>
+                <span className="min-w-0">
+                  🤖 AI dataset (ZIP)
+                  <span className="block text-[11px] text-gray-400">
+                    Per-year CSVs + README — sized for AI chat uploads, full history
+                  </span>
+                </span>
               </a>
               <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>
                 <span className="min-w-0">

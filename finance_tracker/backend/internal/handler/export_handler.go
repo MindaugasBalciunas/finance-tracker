@@ -85,6 +85,7 @@ func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/export")
 	g.GET("/transactions.csv", h.ExportTransactions)
 	g.GET("/balances.csv", h.ExportBalances)
+	g.GET("/ai.zip", h.ExportAIZip)
 	g.GET("/finances.json", h.ExportAllJSON)
 	g.GET("/finances-partial.json", h.ExportPartialJSON)
 	g.GET("/status", h.ExportStatus)
@@ -514,7 +515,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	// Filename prefixes tell the files apart in a downloads folder:
 	// backup_… restores everything, export_… is a date-scoped extract.
 	// ?purpose=export marks an all-time download that is NOT meant as a
-	// backup (e.g. "JSON for Claude.ai") — it keeps the export_ name and
+	// backup (e.g. handing data to an AI) — it keeps the export_ name and
 	// leaves the "last full export" marker untouched.
 	filename := fmt.Sprintf("backup_finances_%s.json", ts)
 	switch {

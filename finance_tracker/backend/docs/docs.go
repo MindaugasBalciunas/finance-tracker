@@ -552,6 +552,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/export/ai.zip": {
+            "get": {
+                "description": "Small per-year CSV files (transactions, balances, stocks) plus precomputed summaries and a README describing the schema — sized for AI chat uploads.",
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "export"
+                ],
+                "summary": "Export an AI-analysis dataset as a ZIP of per-year CSVs",
+                "responses": {
+                    "200": {
+                        "description": "ZIP archive",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/export/balances.csv": {
             "get": {
                 "produces": [
@@ -2638,6 +2658,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "labels": {
+                    "type": "string"
+                },
+                "suppressed_labels": {
+                    "description": "SuppressedLabels lists rule labels the user explicitly removed in the\nform — matching rules are skipped for this transaction only.",
                     "type": "string"
                 },
                 "type": {

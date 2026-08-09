@@ -79,6 +79,9 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
   const [labelDraft, setLabelDraft] = useState('')
   const [showAllChips, setShowAllChips] = useState(false)
+  // Auto labels the user removed from the field — sent as suppressed_labels
+  // on save so the matching rules are skipped for this transaction only.
+  const [dismissedAuto, setDismissedAuto] = useState<string[]>([])
 
   // All known labels: ones used on transactions plus ones defined by rules
   // (a fresh rule's label may not exist on any transaction yet).
@@ -89,15 +92,17 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
   // Typing in the labels input filters the chips — that's the autocomplete.
   // Stable sort: category co-occurring labels first, alphabetical within.
+  // Dismissed auto labels reappear here so they can be re-added manually.
   const categorySet = useMemo(() => new Set(categoryLabels), [categoryLabels])
   const labelChips = knownLabels
-    .filter((l) => !currentLabels.includes(l) && !autoLabels.includes(l))
+    .filter((l) => !currentLabels.includes(l) && (!autoLabels.includes(l) || dismissedAuto.includes(l)))
     .filter((l) => !labelDraft.trim() || l.includes(labelDraft.trim().toLowerCase()))
     .sort((a, b) => Number(categorySet.has(b)) - Number(categorySet.has(a)))
 
   function addLabelChip(label: string) {
     const l = label.trim().toLowerCase()
     if (!l || currentLabels.includes(l)) return
+    setDismissedAuto((d) => d.filter((x) => x !== l))
     setValue('labels', [...currentLabels, l].join(','))
   }
 
@@ -152,7 +157,12 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   }, [selectedType, defaultValues?.category, setValue])
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form
+      onSubmit={handleSubmit((data) =>
+        onSubmit(dismissedAuto.length ? { ...data, suppressed_labels: dismissedAuto.join(',') } : data)
+      )}
+      className="space-y-4"
+    >
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -259,16 +269,23 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 text-sm leading-none px-0.5 -mr-0.5" aria-label={`remove ${l}`}>×</button>
             </span>
           ))}
-          {/* Labels the saved rules will apply on save, prefilled in place.
-              Not removable — the rule fires server-side regardless; delete
-              the rule (⚡ Rules) to stop it. */}
-          {autoLabels.filter((l) => !currentLabels.includes(l)).map((l) => (
+          {/* Labels the saved rules will apply, prefilled in place. Removing
+              one suppresses that rule for this transaction only. */}
+          {autoLabels.filter((l) => !currentLabels.includes(l) && !dismissedAuto.includes(l)).map((l) => (
             <span
               key={`auto-${l}`}
-              title="Applied automatically by your label rules on save"
+              title="Applied by your label rules on save — remove to skip it this time"
               className="inline-flex items-center gap-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-md px-2 py-1"
             >
               ⚡{l}
+              <button
+                type="button"
+                onClick={() => setDismissedAuto((d) => [...d, l])}
+                className="text-green-500 hover:text-green-800 text-sm leading-none px-0.5 -mr-0.5"
+                aria-label={`skip auto label ${l}`}
+              >
+                ×
+              </button>
             </span>
           ))}
           <input

@@ -59,12 +59,20 @@ export default function LockScreen({ status, onUnlocked }: Props) {
         <p className="text-sm text-gray-500 mt-1 mb-6">Enter your PIN to unlock</p>
 
         <form onSubmit={submitPin}>
+          {/* autoComplete="one-time-code" (plus the manager opt-outs) is the
+              reliable way to stop browsers and password managers from
+              offering to save the PIN — they ignore plain "off" on password
+              fields. */}
           <input
             ref={inputRef}
             type="password"
+            name="unlock-code"
             inputMode="numeric"
             pattern="[0-9]*"
-            autoComplete="off"
+            autoComplete="one-time-code"
+            data-1p-ignore="true"
+            data-lpignore="true"
+            data-bwignore="true"
             maxLength={8}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
