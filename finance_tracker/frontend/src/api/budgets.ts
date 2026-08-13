@@ -1,5 +1,8 @@
 import client from './client'
-import type { Budget, BudgetInput, BudgetSettings, BudgetSettingsInput } from '../types'
+import type {
+  Budget, BudgetInput, BudgetSettings, BudgetSettingsInput,
+  LabelStat, LabelSuggestion, RelabelResult,
+} from '../types'
 
 export const budgetsApi = {
   list: async (): Promise<Budget[]> => {
@@ -77,5 +80,31 @@ export const budgetsApi = {
 
   deleteRule: async (id: number): Promise<void> => {
     await client.delete(`/labels/rules/${id}`)
+  },
+
+  // Every label's footprint (transactions, volume, rules, budgets) — powers
+  // the Labels management page.
+  labelStats: async (): Promise<LabelStat[]> => {
+    const { data } = await client.get<LabelStat[]>('/labels/stats')
+    return data
+  },
+
+  // Likely typo/merge pairs, computed server-side. Suggestions only.
+  labelSuggestions: async (): Promise<LabelSuggestion[]> => {
+    const { data } = await client.get<LabelSuggestion[]>('/labels/suggestions')
+    return data
+  },
+
+  // Renames a label everywhere (transactions, rules, budget label lists);
+  // renaming onto an existing label merges the two.
+  renameLabel: async (input: { from: string; to: string }): Promise<RelabelResult> => {
+    const { data } = await client.post<RelabelResult>('/labels/rename', input)
+    return data
+  },
+
+  // Removes a label everywhere and deletes rules that assign it.
+  deleteLabel: async (label: string): Promise<RelabelResult> => {
+    const { data } = await client.post<RelabelResult>('/labels/delete', { label })
+    return data
   },
 }

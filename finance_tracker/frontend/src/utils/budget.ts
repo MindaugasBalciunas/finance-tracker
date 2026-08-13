@@ -32,10 +32,16 @@ export function budgetLabels(budget: Pick<Budget, 'label'>): string[] {
     .filter(Boolean)
 }
 
+// Rule-style matching: every matcher that is set must hold. Label-only and
+// category-only budgets behave as before; a budget with BOTH narrows to
+// transactions of that category carrying one of the labels (e.g. category
+// Pension + label artea tracks just the Artea contributions).
 export function budgetMatches(budget: Budget, tx: Transaction): boolean {
   const labels = budgetLabels(budget)
-  if (labels.length > 0) return labels.some((l) => txHasLabel(tx, l))
-  return budget.category === (tx.category as string)
+  if (labels.length === 0 && !budget.category) return false
+  const labelOk = labels.length === 0 || labels.some((l) => txHasLabel(tx, l))
+  const categoryOk = !budget.category || budget.category === (tx.category as string)
+  return labelOk && categoryOk
 }
 
 // Median income over complete months — a stable "what I earn monthly" base.
@@ -64,13 +70,17 @@ export function computeMonthPlan(
   const discretionarySpent = discretionaryTxs.reduce((s, tx) => s + tx.amount.value, 0)
 
   const status = (b: Budget): BudgetStatus => {
-    const wantType = b.kind === 'investment' ? 'investment' : 'expense'
+    // Fixed obligations accept investment-type payments too: pension
+    // contributions and leasing instalments are recorded as investments
+    // but are still fixed monthly commitments.
+    const wantTypes: string[] =
+      b.kind === 'investment' ? ['investment'] : b.kind === 'fixed' ? ['expense', 'investment'] : ['expense']
     // Spending limits measure choices, so fixed obligations don't count
     // against them (alimony matches the Kids category but is not kids
     // discretionary spending — it has its own fixed budget).
     const pool = b.kind === 'spending' ? discretionaryTxs : monthTxs
     const actual = pool
-      .filter((tx) => tx.type === wantType && budgetMatches(b, tx))
+      .filter((tx) => wantTypes.includes(tx.type) && budgetMatches(b, tx))
       .reduce((s, tx) => s + tx.amount.value, 0)
     return { budget: b, actual }
   }

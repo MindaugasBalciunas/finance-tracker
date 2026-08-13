@@ -24,6 +24,42 @@ const STORE_NAMES: Record<string, string> = {
   barbora: 'Barbora (delivery)',
 }
 
+// Clickable table header for client-side sorting: first click applies the
+// column's natural direction, second click flips it.
+type SortState = { key: string; dir: 1 | -1 }
+function SortTh({ label, k, sort, setSort, natural = -1, className = '' }: {
+  label: string
+  k: string
+  sort: SortState
+  setSort: (s: SortState) => void
+  natural?: 1 | -1
+  className?: string
+}) {
+  const active = sort.key === k
+  return (
+    <th className={`px-3 sm:px-4 py-2 font-semibold ${className}`}>
+      <button
+        onClick={() => setSort(active ? { key: k, dir: sort.dir === 1 ? -1 : 1 } : { key: k, dir: natural })}
+        className={`inline-flex items-center gap-0.5 ${active ? 'text-gray-900' : 'text-gray-600'} hover:text-gray-900`}
+        title={`Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <span className="w-3 text-center text-xs">{active ? (sort.dir === 1 ? '↑' : '↓') : ''}</span>
+      </button>
+    </th>
+  )
+}
+
+function sortRows<T>(rows: T[], sort: SortState, get: Record<string, (r: T) => string | number>): T[] {
+  const accessor = get[sort.key]
+  if (!accessor) return rows
+  return [...rows].sort((a, b) => {
+    const av = accessor(a), bv = accessor(b)
+    const cmp = typeof av === 'string' ? av.localeCompare(String(bv)) : Number(av) - Number(bv)
+    return cmp * sort.dir
+  })
+}
+
 export default function Reports() {
   const { dateRange } = useDateRange()
   const [selectedCategory, setSelectedCategory] = useState<{
@@ -37,6 +73,8 @@ export default function Reports() {
     unlabeled?: boolean
   } | null>(null)
   const [showAllLabels, setShowAllLabels] = useState(false)
+  const [catSort, setCatSort] = useState<SortState>({ key: 'total', dir: -1 })
+  const [labelSort, setLabelSort] = useState<SortState>({ key: 'total', dir: -1 })
 
   const { data: summary, isLoading } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
@@ -363,17 +401,21 @@ export default function Reports() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-3 sm:px-4 py-2 font-semibold text-gray-600">Category</th>
+                    <SortTh label="Category" k="category" sort={catSort} setSort={setCatSort} natural={1} className="text-left" />
                     <th className="text-left px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">Type</th>
-                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Total</th>
+                    <SortTh label="Total" k="total" sort={catSort} setSort={setCatSort} className="text-right" />
                     <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">% of type</th>
-                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Count</th>
-                    <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">Avg</th>
+                    <SortTh label="Count" k="count" sort={catSort} setSort={setCatSort} className="text-right" />
+                    <SortTh label="Avg" k="avg" sort={catSort} setSort={setCatSort} className="text-right hidden sm:table-cell" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {[...summary.by_category]
-                    .sort((a, b) => b.total - a.total)
+                  {sortRows([...summary.by_category], catSort, {
+                    category: (c) => c.category,
+                    total: (c) => c.total,
+                    count: (c) => c.count,
+                    avg: (c) => c.count > 0 ? c.total / c.count : 0,
+                  })
                     .map((cat, i) => {
                       const typeTotal = cat.type === 'expense'
                         ? summary.total_expenses
@@ -552,16 +594,21 @@ export default function Reports() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-3 sm:px-4 py-2 font-semibold text-gray-600">Label</th>
-                  <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Total</th>
+                  <SortTh label="Label" k="label" sort={labelSort} setSort={setLabelSort} natural={1} className="text-left" />
+                  <SortTh label="Total" k="total" sort={labelSort} setSort={setLabelSort} className="text-right" />
                   <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">% of expenses</th>
-                  <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Count</th>
-                  <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600 hidden sm:table-cell">Avg</th>
+                  <SortTh label="Count" k="count" sort={labelSort} setSort={setLabelSort} className="text-right" />
+                  <SortTh label="Avg" k="avg" sort={labelSort} setSort={setLabelSort} className="text-right hidden sm:table-cell" />
                   <th className="text-right px-3 sm:px-4 py-2 font-semibold text-gray-600">Trend</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {labelStats.all.map((s) => {
+                {sortRows(labelStats.all, labelSort, {
+                  label: (s) => s.label,
+                  total: (s) => s.total,
+                  count: (s) => s.count,
+                  avg: (s) => s.count > 0 ? s.total / s.count : 0,
+                }).map((s) => {
                   const pct = labelStats.expenseTotal > 0 ? (s.total / labelStats.expenseTotal) * 100 : 0
                   const trend = labelTrend(s.perMonth)
                   return (

@@ -34,6 +34,29 @@ function formatAccount(tx: Transaction): string {
   return '—'
 }
 
+function SortableTh({ label, col, filter, onSort, align = 'left' }: {
+  label: string
+  col: 'date' | 'amount' | 'comment'
+  filter: TransactionFilter
+  onSort: (col: 'date' | 'amount' | 'comment') => void
+  align?: 'left' | 'right'
+}) {
+  const active = (filter.sort ?? 'date') === col
+  const dir = filter.dir ?? (col === 'comment' ? 'asc' : 'desc')
+  return (
+    <th className={`text-${align} px-4 py-3 font-semibold text-gray-600`}>
+      <button
+        onClick={() => onSort(col)}
+        className={`inline-flex items-center gap-0.5 hover:text-gray-900 ${active ? 'text-gray-900' : ''}`}
+        title={`Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <span className="w-3 text-center text-xs">{active ? (dir === 'asc' ? '↑' : '↓') : ''}</span>
+      </button>
+    </th>
+  )
+}
+
 export default function Transactions() {
   const { dateRange, setCustomRange } = useDateRange()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -71,6 +94,18 @@ export default function Transactions() {
   useEffect(() => {
     setFilter((f) => ({ ...f, date_from: dateRange.date_from, date_to: dateRange.date_to, page: 1 }))
   }, [dateRange])
+
+  // Column sorting: first click applies the column's natural direction
+  // (newest/biggest first, comments A→Z), second click flips it.
+  const sortBy = (col: 'date' | 'amount' | 'comment') => {
+    setFilter((f) => {
+      const natural = col === 'comment' ? 'asc' : 'desc'
+      const current = f.sort ?? 'date'
+      const currentDir = f.dir ?? (current === 'comment' ? 'asc' : 'desc')
+      const dir = current === col ? (currentDir === 'asc' ? 'desc' : 'asc') : natural
+      return { ...f, sort: col, dir, page: 1 }
+    })
+  }
 
   // URL → filter (in-page navigation to ?label=…) and filter → URL. The
   // equality guards make the two effects converge instead of looping.
@@ -385,12 +420,12 @@ export default function Transactions() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">ID</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Date</th>
+                  <SortableTh label="Date" col="date" filter={filter} onSort={sortBy} />
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Type</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Category</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Comment</th>
+                  <SortableTh label="Comment" col="comment" filter={filter} onSort={sortBy} />
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Account</th>
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">Amount</th>
+                  <SortableTh label="Amount" col="amount" align="right" filter={filter} onSort={sortBy} />
                   <th className="px-4 py-3" />
                 </tr>
               </thead>

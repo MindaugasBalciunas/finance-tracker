@@ -745,13 +745,12 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
     : prefill ?? { name: '', kind: 'spending', category: '', label: '', amount: 0 }
 
   const [form, setForm] = useState<BudgetInput>(initial)
-  const [matcher, setMatcher] = useState<'category' | 'label'>(initial.label ? 'label' : 'category')
   // Existing labels for autocomplete — a typo here ("lease" vs "leasing")
   // silently creates a budget that never matches anything.
   const { data: allLabels = [] } = useLabels()
 
   const valid = form.name.trim() !== '' && form.amount > 0 &&
-    (matcher === 'label' ? (form.label ?? '').trim() !== '' : (form.category ?? '') !== '')
+    ((form.label ?? '').trim() !== '' || (form.category ?? '') !== '')
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
@@ -777,63 +776,47 @@ function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setMatcher('category')}
-              className={`px-2 py-1.5 text-xs font-medium rounded-md ${matcher === 'category' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-            >
-              Match by category
-            </button>
-            <button
-              onClick={() => setMatcher('label')}
-              className={`px-2 py-1.5 text-xs font-medium rounded-md ${matcher === 'label' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-            >
-              Match by label
-            </button>
-          </div>
-          {matcher === 'category' ? (
-            <select
-              value={form.category ?? ''}
-              onChange={(e) => setForm({ ...form, category: e.target.value, label: '' })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white"
-            >
-              <option value="">Select category…</option>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          ) : (
-            <>
-              <input
-                type="text"
-                value={form.label ?? ''}
-                onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase(), category: '' })}
-                placeholder="Label(s) — e.g. restaurant, fast food"
-                list="budget-label-options"
-                autoComplete="off"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-              />
-              <datalist id="budget-label-options">
-                {allLabels.map((l) => (
-                  <option key={l} value={l} />
-                ))}
-              </datalist>
-              <p className="text-[11px] text-gray-400 -mt-1">
-                Comma-separate to budget a label group — a transaction carrying any of them counts.
+          {/* Rule-style matching: category, labels, or both (both = the
+              transaction must be in the category AND carry a label). */}
+          <select
+            value={form.category ?? ''}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white"
+          >
+            <option value="">Any category</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={form.label ?? ''}
+            onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase() })}
+            placeholder="Label(s) — e.g. restaurant, fast food (optional)"
+            list="budget-label-options"
+            autoComplete="off"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
+          />
+          <datalist id="budget-label-options">
+            {allLabels.map((l) => (
+              <option key={l} value={l} />
+            ))}
+          </datalist>
+          <p className="text-[11px] text-gray-400 -mt-1">
+            Comma-separate for a label group (any of them counts). Set a category too and only
+            transactions in that category carrying one of the labels count.
+          </p>
+          {(() => {
+            const unknown = (form.label ?? '')
+              .split(',')
+              .map((l) => l.trim())
+              .filter((l) => l !== '' && !allLabels.includes(l))
+            return unknown.length > 0 ? (
+              <p className="text-[11px] text-amber-600 -mt-1">
+                “{unknown.join('”, “')}” do{unknown.length === 1 ? 'es' : ''}n't match any existing label yet — that part of the budget will stay at €0 until transactions carry it.
               </p>
-              {(() => {
-                const unknown = (form.label ?? '')
-                  .split(',')
-                  .map((l) => l.trim())
-                  .filter((l) => l !== '' && !allLabels.includes(l))
-                return unknown.length > 0 ? (
-                  <p className="text-[11px] text-amber-600 -mt-1">
-                    “{unknown.join('”, “')}” do{unknown.length === 1 ? 'es' : ''}n't match any existing label yet — that part of the budget will stay at €0 until transactions carry it.
-                  </p>
-                ) : null
-              })()}
-            </>
-          )}
+            ) : null
+          })()}
           <input
             type="number"
             inputMode="decimal"

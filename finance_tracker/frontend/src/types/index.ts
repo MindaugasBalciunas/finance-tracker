@@ -312,8 +312,39 @@ export interface TransactionFilter {
   label?: string
   label_mode?: 'all'
   search?: string
+  // Server-side sorting: date (default, newest first), amount or comment.
+  sort?: 'date' | 'amount' | 'comment'
+  dir?: 'asc' | 'desc'
   page?: number
   page_size?: number
+}
+
+// One label's footprint across the database (Labels management page).
+export interface LabelStat {
+  label: string
+  transactions: number
+  amount: number
+  rules: number
+  budgets: number
+  fixed: boolean
+  first_used: string
+  last_used: string
+}
+
+// A likely typo/merge pair proposed by the backend.
+export interface LabelSuggestion {
+  from: string
+  to: string
+  from_count: number
+  to_count: number
+  reason: string
+}
+
+// What a label rename/delete touched.
+export interface RelabelResult {
+  transactions: number
+  rules: number
+  budgets: number
 }
 
 export interface BalanceFilter {

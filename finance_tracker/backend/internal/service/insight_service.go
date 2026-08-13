@@ -188,7 +188,7 @@ Keep it direct, personal, and under 350 words. Write in plain paragraphs and bul
 // fixedObligationLabels marks money that isn't a spending decision (loan,
 // alimony, leasing payments and counterparty transfers). Mirrors
 // FIXED_LABELS in the frontend (utils/labels.ts).
-var fixedObligationLabels = []string{"loan", "alimony", "leasing", "evelina"}
+var fixedObligationLabels = domain.FixedObligationLabels
 
 type labelSections struct {
 	fixedObligations  string

@@ -401,7 +401,8 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 		case strings.Contains(up, "MOBILEPAY"):
 			base.Category = "Salary"
 			base.Comment = payee
-			base.Labels = "mobilepay"
+			// Same employer before and after the Vipps rebrand — one label.
+			base.Labels = "vipps mobilepay"
 		case strings.Contains(up, "DANSKE"):
 			base.Category = "Salary"
 			base.Comment = payee
@@ -452,18 +453,23 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 	}
 
 	// ---- debits ----
-	// Bank fees carry an empty payee.
+	// Bank fees carry an empty payee — but so do Robur fund purchases
+	// ("Mini investicijos … SWEDBANK ROBUR …"), which are investments, not
+	// fees, so they must be picked off before the fee fallback.
 	if payee == "" {
 		switch {
 		case strings.Contains(lowDetails, "gryniej"):
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
 				Category: "Transfers", Comment: "Cash withdrawal (ATM)", Debit: "swed", Credit: "cash"}, false
+		case strings.Contains(lowDetails, "robur") || strings.Contains(lowDetails, "mini investicij"):
+			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
+				Category: "Stocks & ETF", Comment: "Swedbank Robur (fund purchase)", Labels: "etf", Debit: "swed"}, false
 		case strings.Contains(lowDetails, "paslaugų plano") || strings.Contains(lowDetails, "paslaugu plano"):
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-				Category: "Finance", Comment: "Swedbank plan fee", Labels: "fees", Debit: "swed"}, false
+				Category: "Finance", Comment: "Swedbank plan fee", Labels: "bank fee", Debit: "swed"}, false
 		default:
 			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-				Category: "Finance", Comment: "Swedbank card fee", Labels: "fees", Debit: "swed"}, false
+				Category: "Finance", Comment: "Swedbank card fee", Labels: "bank fee", Debit: "swed"}, false
 		}
 	}
 

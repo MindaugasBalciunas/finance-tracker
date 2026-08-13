@@ -178,7 +178,7 @@ func TestNewContextLabelRules(t *testing.T) {
 	assert.Contains(t, labelsOf(t, db, mokiVezi), "diy", "Moki Veži is a DIY chain")
 	assert.NotContains(t, labelsOf(t, db, mokiVezi), "groceries", "Moki Veži is not groceries")
 	assert.Contains(t, labelsOf(t, db, insurance), "insurance")
-	assert.Contains(t, labelsOf(t, db, fee), "fees")
+	assert.Contains(t, labelsOf(t, db, fee), "bank fee")
 	assert.Contains(t, labelsOf(t, db, hotel), "hotel")
 	assert.Contains(t, labelsOf(t, db, flight), "flights")
 	assert.Contains(t, labelsOf(t, db, pizza), "restaurant")
@@ -639,4 +639,124 @@ func labelsOf(t *testing.T, db *gorm.DB, id uint) string {
 	var tx domain.Transaction
 	require.NoError(t, db.First(&tx, id).Error)
 	return tx.Labels
+}
+
+func TestApplyLabelCleanups(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.LabelRule{}))
+
+	mk := func(comment, labels string) uint {
+		tx := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 5,
+			Category: "Housing", Comment: comment, Labels: labels}
+		require.NoError(t, db.Create(&tx).Error)
+		return tx.ID
+	}
+	labelsOf := func(id uint) string {
+		var tx domain.Transaction
+		require.NoError(t, db.First(&tx, id).Error)
+		return tx.Labels
+	}
+
+	typo := mk("paint", "aparment")
+	both := mk("dedupes", "kids,hea,health,bar")
+	plural := mk("beer", "bars")
+	drift := mk("drifted", "Groceries, groceries ,maxima")
+	fine := mk("untouched", "groceries,maxima")
+	feeRow := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 1,
+		Category: "Finance", Comment: "banko mokestis", Labels: "fees"}
+	require.NoError(t, db.Create(&feeRow).Error)
+	feeTx := feeRow.ID
+	workLunch := mk("team lunch su kolega", "work lunch,coffee")
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "bars", CommentMatch: "baras"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "bar", CommentMatch: "baras"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "work lunch", CommentMatch: "team lunch"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "lunch", CommentMatch: "team lunch"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "bank fee", CommentMatch: "swedbank"}).Error)
+	require.NoError(t, db.Create(&domain.Budget{Name: "Home", Kind: "spending", Label: "aparment,house", Amount: 100}).Error)
+
+	// Bank-fee scrub fixtures: a Robur purchase booked as a Finance expense,
+	// a card refund and a utilities e-payment that caught the label via the
+	// over-broad "swedbank" rule, and a genuine fee that must keep it.
+	robur := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 5.5, Category: "Finance",
+		Comment: "Mini investicijos 123 SWRTECC SWEDBANK ROBUR TECHNOLOGY C", Labels: "bank fee"}
+	require.NoError(t, db.Create(&robur).Error)
+	refund := domain.Transaction{Date: time.Now(), Type: "income", Amount: 15, Category: "Reimbursement",
+		Comment: "Card refund (Swedbank)", Labels: "bank fee"}
+	require.NoError(t, db.Create(&refund).Error)
+	utility := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 6, Category: "Utilities",
+		Comment: "UAB BITĖ LIETUVA (Swedbank; e.sąskaitos apmokėjimas)", Labels: "bank fee,phone"}
+	require.NoError(t, db.Create(&utility).Error)
+
+	for run := 1; run <= 2; run++ { // second run proves idempotency
+		applyLabelCleanups(db)
+
+		assert.Equal(t, "apartment", labelsOf(typo), "run %d", run)
+		assert.Equal(t, "kids,health,bar", labelsOf(both), "hea merges into existing health (run %d)", run)
+		assert.Equal(t, "bar", labelsOf(plural), "run %d", run)
+		assert.Equal(t, "groceries,maxima", labelsOf(drift), "normalization pass (run %d)", run)
+		assert.Equal(t, "groceries,maxima", labelsOf(fine), "run %d", run)
+		assert.Equal(t, "bank fee", labelsOf(feeTx), "fees merged into bank fee (run %d)", run)
+		assert.Equal(t, "work,lunch,coffee", labelsOf(workLunch), "compound split (run %d)", run)
+
+		var rules []domain.LabelRule
+		require.NoError(t, db.Where("comment_match = ?", "baras").Find(&rules).Error)
+		require.Len(t, rules, 1, "bars rule collapsed into bar (run %d)", run)
+		assert.Equal(t, "bar", rules[0].Label)
+
+		require.NoError(t, db.Where("comment_match = ?", "team lunch").Order("label").Find(&rules).Error)
+		require.Len(t, rules, 2, "work-lunch rule split into work + lunch (run %d)", run)
+		assert.Equal(t, "lunch", rules[0].Label)
+		assert.Equal(t, "work", rules[1].Label)
+
+		var broad int64
+		require.NoError(t, db.Model(&domain.LabelRule{}).
+			Where("comment_match IN ('seb','swedbank')").Count(&broad).Error)
+		assert.Zero(t, broad, "over-broad bank rules deleted (run %d)", run)
+
+		var roburAfter domain.Transaction
+		require.NoError(t, db.First(&roburAfter, robur.ID).Error)
+		assert.Equal(t, domain.TransactionTypeInvestment, roburAfter.Type, "run %d", run)
+		assert.Equal(t, "Stocks & ETF", string(roburAfter.Category), "run %d", run)
+		assert.Equal(t, "etf", roburAfter.Labels, "robur: bank fee out, etf in (run %d)", run)
+		assert.Equal(t, "", labelsOf(refund.ID), "refund is not a bank fee (run %d)", run)
+		assert.Equal(t, "phone", labelsOf(utility.ID), "e-payment is not a bank fee (run %d)", run)
+
+		var budget domain.Budget
+		require.NoError(t, db.Where("name = ?", "Home").First(&budget).Error)
+		assert.Equal(t, "apartment,house", budget.Label, "run %d", run)
+	}
+}
+
+// The context-label pass in applyCategoryMigrations must not resurrect
+// vocabulary that applyLabelCleanups renames ("bars"→"bar", "fees"→"bank
+// fee") — otherwise every boot recreates the old rules and re-tags rows.
+func TestLabelCleanupsConvergeWithCategoryMigrations(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.LabelRule{}))
+
+	beer := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 4,
+		Category: "Entertainment", Comment: "Vilniaus alaus baras"}
+	require.NoError(t, db.Create(&beer).Error)
+	fee := domain.Transaction{Date: time.Now(), Type: "expense", Amount: 1,
+		Category: "Finance", Comment: "banko mokestis"}
+	require.NoError(t, db.Create(&fee).Error)
+
+	for run := 1; run <= 2; run++ { // full boot sequence, twice
+		applyCategoryMigrations(db)
+		applyLabelCleanups(db)
+
+		var old int64
+		require.NoError(t, db.Model(&domain.LabelRule{}).Where("label IN ('bars','fees')").Count(&old).Error)
+		assert.Zero(t, old, "retired label names must not be re-seeded (run %d)", run)
+
+		var b domain.Transaction
+		require.NoError(t, db.First(&b, beer.ID).Error)
+		assert.Contains(t, b.Labels, "bar", "run %d", run)
+		assert.NotContains(t, b.Labels, "bars", "run %d", run)
+		var f domain.Transaction
+		require.NoError(t, db.First(&f, fee.ID).Error)
+		assert.Contains(t, f.Labels, "bank fee", "run %d", run)
+	}
 }

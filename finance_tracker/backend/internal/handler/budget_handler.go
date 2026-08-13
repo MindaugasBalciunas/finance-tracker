@@ -40,6 +40,10 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		l.GET("/rules", h.Rules)
 		l.DELETE("/rules/:id", h.DeleteRule)
 		l.GET("/preview", h.PreviewLabel)
+		l.GET("/stats", h.LabelStats)
+		l.GET("/suggestions", h.LabelSuggestions)
+		l.POST("/rename", h.RenameLabel)
+		l.POST("/delete", h.DeleteLabel)
 	}
 }
 

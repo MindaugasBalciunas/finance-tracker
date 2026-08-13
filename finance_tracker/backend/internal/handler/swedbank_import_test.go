@@ -93,7 +93,7 @@ func TestSwedbankImport(t *testing.T) {
 	// Fees
 	fee := get("Swedbank plan fee")
 	assert.Equal(t, "Finance", string(fee.Category))
-	assert.Contains(t, fee.Labels, "fees")
+	assert.Contains(t, fee.Labels, "bank fee")
 
 	// Card purchase re-dated to purchase date
 	wolt := get("Wolt 00180 Helsinki")

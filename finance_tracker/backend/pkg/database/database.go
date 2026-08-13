@@ -8,6 +8,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/repository"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -73,6 +74,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 
 	applyDataCleanups(db)
 	applyCategoryMigrations(db)
+	applyLabelCleanups(db)
 	applyBalanceBackfills(db)
 
 	return db, nil
@@ -218,10 +220,13 @@ func applyCategoryMigrations(db *gorm.DB) {
 		"delivery":   {"wolt", "bolt food", "maisto mylet"},
 		"taxi":       {"uber", "etransport", "bolt.eu", "citybee"},
 		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
-		"bars":       {"alaus", "baras", "vyno"},
+		// Canonical singular — "bars" was merged into "bar" in v1.10.0, and
+		// re-seeding the old name would resurrect it on every boot.
+		"bar":        {"alaus", "baras", "vyno"},
 		"aliexpress": {"aliexpress", "alipay"},
 		"insurance":  {"insurance", "draudim", "gjensidige", "compensa"},
-		"fees":       {"banko mokestis", "plan fee", "account fee", "bank fee"},
+		// Canonical name — the user merged "fees" into "bank fee" (v1.10.0).
+		"bank fee":   {"banko mokestis", "plan fee", "account fee", "bank fee"},
 		"hotel":      {"hotel", "booking.com", "viesbut"},
 		"flights":    {"ryanair", "wizz", "wizair", "airbaltic"},
 		"restaurant": {"restoran", "restaurant", "pizza", "picer", "kebab", "mcdonald", "hesburger", "grill", "bistro", "drakonai", "sushi"},
@@ -443,6 +448,117 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`UPDATE transactions SET type = 'investment', category = 'Transfers', debit_account = 'art'
 		WHERE type = 'income' AND UPPER(comment) LIKE '%INVL%'
 		AND (comment LIKE '%išmoka%' OR comment LIKE '%ismoka%')`)
+}
+
+// applyLabelCleanups (v1.10.0) repairs the label vocabulary: normalizes
+// drifted lists, fixes typos observed in real data, applies the merges the
+// user made through the Labels UI (so every instance converges to the same
+// vocabulary), splits "work lunch"-style compounds, and untangles the
+// over-broad bank-fee labeling. Renames go through the same repository code
+// the /labels/rename endpoint uses, so transactions, label rules and budget
+// label lists all stay consistent. Idempotent: every pass only matches rows
+// still in the old state.
+func applyLabelCleanups(db *gorm.DB) {
+	repo := repository.NewBudgetRepository(db)
+
+	// Normalize first — the renames below match exact tokens, so a drifted
+	// list like "kids, aparment" (stray space) would otherwise escape them.
+	var txs []domain.Transaction
+	db.Where("labels != ''").Find(&txs)
+	for i := range txs {
+		if n := domain.NormalizeLabels(txs[i].Labels); n != txs[i].Labels {
+			db.Model(&domain.Transaction{}).Where("id = ?", txs[i].ID).Update("labels", n)
+		}
+	}
+
+	fixes := [][2]string{
+		// typo → canonical, as found in the wild
+		{"aparment", "apartment"},
+		{"dyi", "diy"},
+		{"lotery", "lottery"},
+		{"shoose", "shoes"},
+		{"ente", "entertainment"},
+		{"ent", "entertainment"},
+		{"hea", "health"},
+		{"bars", "bar"},
+		{"air condicionier", "air conditioner"},
+		// merges the user confirmed in the Labels UI
+		{"fees", "bank fee"},
+		{"mobilepay", "vipps mobilepay"},
+	}
+	for _, f := range fixes {
+		repo.RenameLabel(f[0], f[1]) //nolint:errcheck // best-effort, like the other passes
+	}
+
+	// Compound labels split into their parts: "lunch" then covers every
+	// lunch and "work" marks the work context on its own.
+	splitLabel(db, "work lunch", []string{"work", "lunch"})
+	splitLabel(db, "work dinner", []string{"work", "dinner"})
+
+	scrubBankFee(db)
+}
+
+// splitLabel replaces one label token with several: transactions and budget
+// label lists get all the parts, and each rule assigning the label becomes
+// one rule per part (collapsing into already-existing identical rules).
+func splitLabel(db *gorm.DB, from string, parts []string) {
+	to := strings.Join(parts, ",")
+	var txs []domain.Transaction
+	db.Where("(',' || labels || ',') LIKE ?", "%,"+from+",%").Find(&txs)
+	for i := range txs {
+		if next, changed := domain.RenameLabelToken(txs[i].Labels, from, to); changed {
+			db.Model(&domain.Transaction{}).Where("id = ?", txs[i].ID).Update("labels", next)
+		}
+	}
+	var budgets []domain.Budget
+	db.Where("label != ''").Find(&budgets)
+	for i := range budgets {
+		if next, changed := domain.RenameLabelToken(budgets[i].Label, from, to); changed {
+			db.Model(&domain.Budget{}).Where("id = ?", budgets[i].ID).Update("label", next)
+		}
+	}
+	var rules []domain.LabelRule
+	db.Where("LOWER(label) = ?", from).Find(&rules)
+	for _, rule := range rules {
+		for _, p := range parts {
+			var dup int64
+			db.Model(&domain.LabelRule{}).
+				Where("LOWER(label) = ? AND category = ? AND comment_match = ?", p, rule.Category, rule.CommentMatch).
+				Count(&dup)
+			if dup == 0 {
+				db.Create(&domain.LabelRule{Label: p, Category: rule.Category, CommentMatch: rule.CommentMatch})
+			}
+		}
+		db.Delete(&domain.LabelRule{}, rule.ID)
+	}
+}
+
+// scrubBankFee (v1.10.0) untangles the over-broad "seb"/"swedbank" comment
+// rules: any comment mentioning the bank got labeled 'bank fee' — card
+// refunds, e-invoice utility payments, even Robur fund purchases. Kill the
+// two rules, move Robur/mini-investment rows where they belong (investment,
+// Stocks & ETF, 'etf' label) and keep 'bank fee' only on Finance expenses.
+func scrubBankFee(db *gorm.DB) {
+	db.Exec(`DELETE FROM label_rules WHERE label = 'bank fee' AND comment_match IN ('seb', 'swedbank')`)
+
+	robur := "LOWER(comment) LIKE '%robur%' OR LOWER(comment) LIKE '%mini invest%'"
+	db.Exec(`UPDATE transactions SET type = 'investment', category = 'Stocks & ETF'
+		WHERE (` + robur + `) AND type = 'expense'`)
+	var roburTxs []domain.Transaction
+	db.Where(robur).Where("(',' || labels || ',') NOT LIKE '%,etf,%'").Find(&roburTxs)
+	for i := range roburTxs {
+		roburTxs[i].AddLabel("etf")
+		db.Model(&domain.Transaction{}).Where("id = ?", roburTxs[i].ID).Update("labels", roburTxs[i].Labels)
+	}
+
+	var mislabeled []domain.Transaction
+	db.Where("(',' || labels || ',') LIKE '%,bank fee,%'").
+		Where("NOT (type = 'expense' AND category = 'Finance')").Find(&mislabeled)
+	for i := range mislabeled {
+		if next, changed := domain.RemoveLabelToken(mislabeled[i].Labels, "bank fee"); changed {
+			db.Model(&domain.Transaction{}).Where("id = ?", mislabeled[i].ID).Update("labels", next)
+		}
+	}
 }
 
 // applyBalanceBackfills reconstructs balance history statements can't see.

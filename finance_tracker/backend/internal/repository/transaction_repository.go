@@ -67,6 +67,26 @@ func (r *transactionRepository) DeleteAll() error {
 	return r.db.Where("1 = 1").Delete(&domain.Transaction{}).Error
 }
 
+// orderClause maps the whitelisted sort columns to SQL; anything else falls
+// back to newest-first. Ties break on date so pagination stays stable.
+func orderClause(filter domain.TransactionFilter) string {
+	col, def := "date", "desc"
+	switch filter.Sort {
+	case "amount":
+		col = "amount"
+	case "comment":
+		col, def = "comment COLLATE NOCASE", "asc"
+	}
+	dir := filter.Dir
+	if dir != "asc" && dir != "desc" {
+		dir = def
+	}
+	if col == "date" {
+		return "date " + dir + ", id " + dir
+	}
+	return col + " " + dir + ", date DESC"
+}
+
 func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {
 	query := r.db.Model(&domain.Transaction{})
 	query = applyTransactionFilters(query, filter)
@@ -87,7 +107,7 @@ func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.P
 	offset := (page - 1) * pageSize
 
 	var transactions []domain.Transaction
-	if err := query.Order("date DESC").Offset(offset).Limit(pageSize).Find(&transactions).Error; err != nil {
+	if err := query.Order(orderClause(filter)).Offset(offset).Limit(pageSize).Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 

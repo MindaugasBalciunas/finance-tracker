@@ -11,7 +11,9 @@ interface Props {
   category?: Category
   label?: string
   title?: string
-  type: TransactionType
+  // Omit to show every transaction type (the Labels page reviews a label
+  // across incomes, expenses and investments at once).
+  type?: TransactionType
   dateRange: DateRange
   // Show only transactions WITHOUT any label (the API can't express this, so
   // the type+range fetch is filtered client-side).
@@ -33,7 +35,7 @@ export default function CategoryTransactionsModal({ category, label, title, type
   const { data, isLoading } = useAllTransactions({
     ...(category ? { category } : {}),
     ...(label ? { label } : {}),
-    type,
+    ...(type ? { type } : {}),
     ...dateRange,
   })
 
@@ -96,7 +98,8 @@ export default function CategoryTransactionsModal({ category, label, title, type
       : allTransactions.filter((tx) => txLabels(tx).includes(activeLabel))
     : allTransactions
   const total = transactions.reduce((s, tx) => s + tx.amount.value, 0)
-  const styles = TYPE_STYLES[type]
+  // Type-less (mixed) views color each row by its own type and net the total.
+  const styles = type ? TYPE_STYLES[type] : { badge: 'bg-gray-100 text-gray-600', amount: 'text-gray-900', sign: '' }
 
   // Month → sum profile of the visible set: a compact trend strip that makes
   // every label/category click yield a shape, not just a list.
@@ -134,7 +137,7 @@ export default function CategoryTransactionsModal({ category, label, title, type
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold text-gray-900">{title ?? category ?? label ?? 'Unlabeled'}</h3>
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${styles.badge}`}>
-                {type}
+                {type ?? 'all types'}
               </span>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">{period}</p>
@@ -245,8 +248,8 @@ export default function CategoryTransactionsModal({ category, label, title, type
                       </p>
                     </div>
                     <span className="flex items-center gap-1 flex-shrink-0">
-                      <span className={`text-sm font-medium whitespace-nowrap ${styles.amount}`}>
-                        {styles.sign}{formatEuro(tx.amount.value)}
+                      <span className={`text-sm font-medium whitespace-nowrap ${(type ? styles : TYPE_STYLES[tx.type]).amount}`}>
+                        {(type ? styles : TYPE_STYLES[tx.type]).sign}{formatEuro(tx.amount.value)}
                       </span>
                       <button
                         onClick={() => { setEditingTx(tx); setFormError(null) }}

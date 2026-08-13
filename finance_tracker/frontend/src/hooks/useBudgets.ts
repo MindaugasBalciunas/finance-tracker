@@ -73,7 +73,8 @@ export function useReapplyRules() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => budgetsApi.reapplyRules(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] }),
+    // Rewrites transaction labels, so every label-derived cache is stale.
+    onSuccess: () => invalidateLabelWorld(qc),
   })
 }
 
@@ -95,5 +96,46 @@ export function useDeleteRule() {
   return useMutation({
     mutationFn: (id: number) => budgetsApi.deleteRule(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['label-rules'] }),
+  })
+}
+
+export function useLabelStats() {
+  return useQuery({
+    queryKey: ['label-stats'],
+    queryFn: () => budgetsApi.labelStats(),
+  })
+}
+
+export function useLabelSuggestions() {
+  return useQuery({
+    queryKey: ['label-suggestions'],
+    queryFn: () => budgetsApi.labelSuggestions(),
+  })
+}
+
+// A rename/delete rewrites transactions, rules AND budgets — invalidate all
+// label-derived caches so every page reflects the new vocabulary.
+function invalidateLabelWorld(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
+  qc.invalidateQueries({ queryKey: [BUDGETS_KEY] })
+  qc.invalidateQueries({ queryKey: ['labels'] })
+  qc.invalidateQueries({ queryKey: ['label-rules'] })
+  qc.invalidateQueries({ queryKey: ['label-stats'] })
+  qc.invalidateQueries({ queryKey: ['label-suggestions'] })
+}
+
+export function useRenameLabel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { from: string; to: string }) => budgetsApi.renameLabel(input),
+    onSuccess: () => invalidateLabelWorld(qc),
+  })
+}
+
+export function useDeleteLabel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (label: string) => budgetsApi.deleteLabel(label),
+    onSuccess: () => invalidateLabelWorld(qc),
   })
 }

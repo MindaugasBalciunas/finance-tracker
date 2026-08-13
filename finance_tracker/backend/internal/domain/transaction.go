@@ -175,7 +175,11 @@ type TransactionFilter struct {
 	Label     string
 	LabelMode string
 	// Search is a case-insensitive substring match on the comment.
-	Search   string
+	Search string
+	// Sort: "date" (default), "amount" or "comment"; Desc defaults to true
+	// for date/amount (newest/biggest first) and is overridable via Dir.
+	Sort     string
+	Dir      string // "asc" | "desc" | "" (per-column default)
 	Page     int
 	PageSize int
 }
@@ -213,6 +217,82 @@ func (t *Transaction) AddLabel(label string) {
 		return
 	}
 	t.Labels = NormalizeLabels(t.Labels + "," + label)
+}
+
+// FixedObligationLabels mark money that isn't a spending decision (loan
+// instalments, alimony, …). Insights and the frontend (FIXED_LABELS in
+// utils/labels.ts) treat them specially, so label management refuses to
+// rename or delete them.
+var FixedObligationLabels = []string{"loan", "alimony", "leasing", "evelina"}
+
+// IsFixedObligationLabel reports whether the label is one of the protected
+// fixed-obligation labels.
+func IsFixedObligationLabel(label string) bool {
+	label = strings.ToLower(strings.TrimSpace(label))
+	for _, f := range FixedObligationLabels {
+		if label == f {
+			return true
+		}
+	}
+	return false
+}
+
+// RenameLabelToken rewrites one token of a comma-separated label list,
+// deduplicating when the target token is already present. The boolean
+// reports whether the list changed.
+func RenameLabelToken(labels, from, to string) (string, bool) {
+	from = strings.ToLower(strings.TrimSpace(from))
+	to = strings.ToLower(strings.TrimSpace(to))
+	changed := false
+	parts := strings.Split(labels, ",")
+	for i, p := range parts {
+		if strings.ToLower(strings.TrimSpace(p)) == from {
+			parts[i] = to
+			changed = true
+		}
+	}
+	if !changed {
+		return labels, false
+	}
+	return NormalizeLabels(strings.Join(parts, ",")), true
+}
+
+// RemoveLabelToken drops one token from a comma-separated label list. The
+// boolean reports whether the list changed.
+func RemoveLabelToken(labels, label string) (string, bool) {
+	label = strings.ToLower(strings.TrimSpace(label))
+	changed := false
+	var out []string
+	for _, p := range strings.Split(labels, ",") {
+		if strings.ToLower(strings.TrimSpace(p)) == label {
+			changed = true
+			continue
+		}
+		out = append(out, p)
+	}
+	if !changed {
+		return labels, false
+	}
+	return NormalizeLabels(strings.Join(out, ",")), true
+}
+
+// LabelStat summarizes one label's footprint across the database.
+type LabelStat struct {
+	Label        string  `json:"label"`
+	Transactions int     `json:"transactions"`
+	Amount       float64 `json:"amount"`
+	Rules        int     `json:"rules"`
+	Budgets      int     `json:"budgets"`
+	Fixed        bool    `json:"fixed"`
+	FirstUsed    string  `json:"first_used"`
+	LastUsed     string  `json:"last_used"`
+}
+
+// RelabelResult counts what a label rename/delete touched.
+type RelabelResult struct {
+	Transactions int `json:"transactions"`
+	Rules        int `json:"rules"`
+	Budgets      int `json:"budgets"`
 }
 
 // LabelRule auto-applies a label to transactions on create when the category

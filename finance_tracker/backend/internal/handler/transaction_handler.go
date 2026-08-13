@@ -264,6 +264,13 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 	if v := c.Query("search"); v != "" {
 		filter.Search = strings.TrimSpace(v)
 	}
+	// Sortable list: date (default), amount or comment, each direction.
+	if v := c.Query("sort"); v == "date" || v == "amount" || v == "comment" {
+		filter.Sort = v
+	}
+	if v := c.Query("dir"); v == "asc" || v == "desc" {
+		filter.Dir = v
+	}
 	if v := c.Query("page"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p > 0 {
 			filter.Page = p
