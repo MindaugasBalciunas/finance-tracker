@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mindaugas/finance-tracker/internal/marketdata"
 	"github.com/mindaugas/finance-tracker/internal/service"
 )
 
@@ -243,89 +243,15 @@ func yahooCacheSet(key string, val any, ttl time.Duration) {
 	yahooCache.m[key] = yahooCacheEntry{val: val, expires: time.Now().Add(ttl)}
 }
 
-// fetchYahooPrice calls Yahoo Finance to get the latest price for a ticker.
-// If the ticker has no exchange suffix and the direct lookup fails, it tries
-// common European exchange suffixes (.AS, .DE, .L, .MI, .PA).
-// Successful lookups are cached for 5 minutes.
+// fetchYahooPrice / fetchYahooMeta delegate to the shared marketdata package
+// (Yahoo chart API, European-suffix fallback, 5-min price cache) so the price
+// path has a single implementation shared with the AI insight service.
 func fetchYahooPrice(ticker string) (float64, error) {
-	cacheKey := "price:" + ticker
-	if v, ok := yahooCacheGet(cacheKey); ok {
-		return v.(float64), nil
-	}
-
-	candidates := []string{ticker}
-	if !strings.Contains(ticker, ".") {
-		for _, suffix := range []string{".AS", ".DE", ".L", ".MI", ".PA"} {
-			candidates = append(candidates, ticker+suffix)
-		}
-	}
-	var lastErr error
-	for _, candidate := range candidates {
-		price, err := fetchYahooPriceRaw(candidate)
-		if err == nil && price > 0 {
-			yahooCacheSet(cacheKey, price, 5*time.Minute)
-			return price, nil
-		}
-		lastErr = err
-	}
-	return 0, lastErr
+	return marketdata.Price(ticker)
 }
 
-type yahooMeta struct {
-	RegularMarketPrice float64 `json:"regularMarketPrice"`
-	FiftyTwoWeekHigh   float64 `json:"fiftyTwoWeekHigh"`
-	FiftyTwoWeekLow    float64 `json:"fiftyTwoWeekLow"`
-	Currency           string  `json:"currency"`
-}
-
-func fetchYahooMeta(ticker string) (*yahooMeta, error) {
-	apiURL := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1d", ticker)
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Chart struct {
-			Result []struct {
-				Meta yahooMeta `json:"meta"`
-			} `json:"result"`
-			Error *struct{ Description string `json:"description"` } `json:"error"`
-		} `json:"chart"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parsing response: %w", err)
-	}
-	if result.Chart.Error != nil {
-		return nil, fmt.Errorf("yahoo error: %s", result.Chart.Error.Description)
-	}
-	if len(result.Chart.Result) == 0 {
-		return nil, fmt.Errorf("no data for ticker %s", ticker)
-	}
-	m := result.Chart.Result[0].Meta
-	return &m, nil
-}
-
-func fetchYahooPriceRaw(ticker string) (float64, error) {
-	m, err := fetchYahooMeta(ticker)
-	if err != nil {
-		return 0, err
-	}
-	price := m.RegularMarketPrice
-	priceStr := strconv.FormatFloat(price, 'f', 4, 64)
-	return strconv.ParseFloat(priceStr, 64)
+func fetchYahooMeta(ticker string) (*marketdata.Meta, error) {
+	return marketdata.FetchMeta(ticker)
 }
 
 type HistoryPoint struct {

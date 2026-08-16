@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/marketdata"
 	"github.com/mindaugas/finance-tracker/internal/repository"
 )
 
@@ -33,13 +34,22 @@ type InsightService interface {
 }
 
 type insightService struct {
-	repo   repository.InsightRepository
-	txSvc  TransactionService
-	balSvc BalanceService
+	repo       repository.InsightRepository
+	txSvc      TransactionService
+	balSvc     BalanceService
+	budgetRepo repository.BudgetRepository // may be nil; budget section is skipped when so
+	stockSvc   StockService                // may be nil; stock section is skipped when so
+	// quote fetches a live market quote; injectable so tests avoid the network.
+	quote func(ticker string) (*marketdata.Quote, error)
 }
 
-func NewInsightService(repo repository.InsightRepository, txSvc TransactionService, balSvc BalanceService) InsightService {
-	return &insightService{repo: repo, txSvc: txSvc, balSvc: balSvc}
+func NewInsightService(repo repository.InsightRepository, txSvc TransactionService, balSvc BalanceService,
+	budgetRepo repository.BudgetRepository, stockSvc StockService) InsightService {
+	return &insightService{
+		repo: repo, txSvc: txSvc, balSvc: balSvc,
+		budgetRepo: budgetRepo, stockSvc: stockSvc,
+		quote: marketdata.Fetch,
+	}
 }
 
 func (s *insightService) GetLatest() (*domain.AIInsight, error) {
@@ -270,6 +280,20 @@ These are pre-committed, not spending decisions — when judging spending habits
 		labelSections.incomeSources,
 		strings.Join(monthlyLines, "\n"),
 	)
+
+	// Daily-status sections: this month so far, live budget status, and live
+	// stock positions. Each is best-effort and self-contained — a nil
+	// dependency or a market-data hiccup adds nothing rather than failing.
+	now := time.Now()
+	if sec := s.currentMonthSection(allTxs, now); sec != "" {
+		report += "\n\n" + sec
+	}
+	if sec := s.budgetStatusSection(allTxs, summary, now); sec != "" {
+		report += "\n\n" + sec
+	}
+	if sec := s.stockPositionsSection(latest); sec != "" {
+		report += "\n\n" + sec
+	}
 
 	return report, nil
 }

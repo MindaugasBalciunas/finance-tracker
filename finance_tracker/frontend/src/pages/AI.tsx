@@ -102,7 +102,7 @@ export default function AI() {
           <div>
             <h2 className="font-semibold text-gray-900">💬 Chat with your finances</h2>
             <p className="text-xs text-gray-400">
-              The AI sees your balances, cash flow, labels and budgets — ask anything.
+              The AI sees your balances, this month's spending &amp; budget status, labels and live stock positions — ask anything.
             </p>
           </div>
           {messages.length > 0 && (
@@ -121,7 +121,7 @@ export default function AI() {
               <p>{configured ? 'Ask a question about your money.' : 'Configure the nexos.ai gateway above to start chatting.'}</p>
               {configured && (
                 <div className="flex flex-wrap justify-center gap-1.5">
-                  {['How did my spending change this year?', 'Where can I save €200/month?', 'Am I on track with investments?'].map((q) => (
+                  {['Give me my daily status update', 'How am I tracking against my budgets this month?', "How are my stock positions doing?", 'Where can I save €200/month?'].map((q) => (
                     <button
                       key={q}
                       onClick={() => setDraft(q)}
