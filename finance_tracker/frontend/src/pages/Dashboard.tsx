@@ -11,7 +11,6 @@ import CategoryDonutChart from '../components/charts/CategoryDonutChart'
 import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChart'
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
-import AIInsightCard from '../components/ui/AIInsightCard'
 import InsightsPanel from '../components/ui/InsightsPanel'
 import BudgetPulseCard from '../components/ui/BudgetPulseCard'
 import TopLabelsCard from '../components/ui/TopLabelsCard'
@@ -175,9 +174,6 @@ export default function Dashboard() {
         <BudgetPulseCard />
         {allExpenses && <TopLabelsCard expenses={allExpenses.data} />}
       </div>
-
-      {/* AI financial overview */}
-      <AIInsightCard />
 
       {/* Net Worth Over Time */}
       {trend && (

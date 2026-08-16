@@ -38,7 +38,7 @@ export default function AIInsightCard() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
           </svg>
-          Analysing your finances with Claude…
+          Analysing your finances…
         </div>
       )}
 
@@ -61,7 +61,7 @@ export default function AIInsightCard() {
       )}
 
       <p className="mt-4 text-xs text-gray-400">
-        Powered by Claude · Analysis based on all data in your database
+        Runs through your configured AI gateway · Analysis based on all data in your database
       </p>
     </div>
   )

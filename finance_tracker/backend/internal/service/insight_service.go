@@ -20,6 +20,16 @@ type InsightService interface {
 	GetLatest() (*domain.AIInsight, error)
 	Generate() (*domain.AIInsight, error)
 	List(limit int) ([]domain.AIInsight, error)
+	// Chat answers one turn of the AI chat: history (user/assistant turns,
+	// oldest first) is grounded in a system message carrying the same data
+	// report the analysis uses.
+	Chat(history []domain.ChatMessage) (string, error)
+	AISettings() (*domain.AISettings, error)
+	// SaveAISettings updates the gateway config. An empty apiKey keeps the
+	// stored key unless clearKey is set.
+	SaveAISettings(gatewayURL, model, apiKey string, clearKey bool) (*domain.AISettings, error)
+	// TestGateway makes a minimal round-trip through the configured gateway.
+	TestGateway() error
 }
 
 type insightService struct {
@@ -41,19 +51,31 @@ func (s *insightService) List(limit int) ([]domain.AIInsight, error) {
 }
 
 func (s *insightService) Generate() (*domain.AIInsight, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return nil, errors.New("ANTHROPIC_API_KEY not set")
-	}
-
 	prompt, err := s.buildPrompt()
 	if err != nil {
 		return nil, fmt.Errorf("building prompt: %w", err)
 	}
 
-	content, err := callClaude(apiKey, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("calling Claude API: %w", err)
+	// Configured gateway (nexos.ai) first; the ANTHROPIC_API_KEY env var
+	// remains as a legacy fallback for pre-gateway deployments.
+	settings, serr := s.repo.GetAISettings()
+	if serr != nil {
+		return nil, fmt.Errorf("reading AI settings: %w", serr)
+	}
+	var content string
+	switch {
+	case settings.Configured():
+		content, err = callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 1024)
+		if err != nil {
+			return nil, fmt.Errorf("calling AI gateway: %w", err)
+		}
+	case os.Getenv("ANTHROPIC_API_KEY") != "":
+		content, err = callClaude(os.Getenv("ANTHROPIC_API_KEY"), prompt)
+		if err != nil {
+			return nil, fmt.Errorf("calling Claude API: %w", err)
+		}
+	default:
+		return nil, errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
 	}
 
 	insight := &domain.AIInsight{Content: content}
@@ -63,7 +85,84 @@ func (s *insightService) Generate() (*domain.AIInsight, error) {
 	return insight, nil
 }
 
-func (s *insightService) buildPrompt() (string, error) {
+// maxChatTurns bounds how much history is replayed to the gateway — the
+// system data report already dominates the context.
+const maxChatTurns = 24
+
+func (s *insightService) Chat(history []domain.ChatMessage) (string, error) {
+	settings, err := s.repo.GetAISettings()
+	if err != nil {
+		return "", err
+	}
+	if !settings.Configured() {
+		return "", errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
+	}
+	system, err := s.chatSystemMessage()
+	if err != nil {
+		return "", fmt.Errorf("building context: %w", err)
+	}
+	if len(history) > maxChatTurns {
+		history = history[len(history)-maxChatTurns:]
+	}
+	messages := make([]domain.ChatMessage, 0, len(history)+1)
+	messages = append(messages, domain.ChatMessage{Role: "system", Content: system})
+	messages = append(messages, history...)
+	reply, err := callGateway(settings, messages, 2048)
+	if err != nil {
+		return "", fmt.Errorf("calling AI gateway: %w", err)
+	}
+	return reply, nil
+}
+
+func (s *insightService) AISettings() (*domain.AISettings, error) {
+	return s.repo.GetAISettings()
+}
+
+func (s *insightService) SaveAISettings(gatewayURL, model, apiKey string, clearKey bool) (*domain.AISettings, error) {
+	settings, err := s.repo.GetAISettings()
+	if err != nil {
+		return nil, err
+	}
+	settings.GatewayURL = strings.TrimRight(strings.TrimSpace(gatewayURL), "/")
+	if settings.GatewayURL == "" {
+		settings.GatewayURL = domain.DefaultGatewayURL
+	}
+	settings.Model = strings.TrimSpace(model)
+	switch {
+	case clearKey:
+		settings.APIKey = ""
+	case strings.TrimSpace(apiKey) != "":
+		settings.APIKey = strings.TrimSpace(apiKey)
+	}
+	if err := s.repo.SaveAISettings(settings); err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
+func (s *insightService) TestGateway() error {
+	settings, err := s.repo.GetAISettings()
+	if err != nil {
+		return err
+	}
+	if !settings.Configured() {
+		return errors.New("AI gateway not configured — set an API key and model first")
+	}
+	reply, err := callGateway(settings, []domain.ChatMessage{
+		{Role: "user", Content: "Reply with the single word: ok"},
+	}, 20)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(reply) == "" {
+		return errors.New("gateway returned an empty reply")
+	}
+	return nil
+}
+
+// buildDataReport assembles the shared financial-context sections used by
+// both the one-shot analysis prompt and the chat system message.
+func (s *insightService) buildDataReport() (string, error) {
 	// All-time summary
 	summary, err := s.txSvc.GetSummary(domain.TransactionFilter{})
 	if err != nil {
@@ -132,9 +231,7 @@ func (s *insightService) buildPrompt() (string, error) {
 		cryptoEur = latest.RBTC + latest.MBTC
 	}
 
-	prompt := fmt.Sprintf(`You are a personal finance advisor reviewing real financial data for a private individual in Lithuania.
-
-=== CURRENT BALANCE SNAPSHOT (as of %s) ===
+	report := fmt.Sprintf(`=== CURRENT BALANCE SNAPSHOT (as of %s) ===
 Net Worth:    €%.0f
 Free Cash:    €%.0f  (SEB + Swedbank + Luminor + Cash + Revolut)
 Investments:  €%.0f  (Swed ETF + Revolut Stocks)
@@ -162,15 +259,7 @@ These are pre-committed, not spending decisions — when judging spending habits
 %s
 
 === RECENT MONTHLY CASH FLOW (last 6 months) ===
-%s
-
-Please write a concise personal finance overview covering:
-1. Overall financial health (2-3 sentences assessing net worth, savings rate, and balance composition)
-2. Expense trends (2-3 sentences on spending patterns and any concerns from recent months — use the label data to name specific spending drivers, and separate fixed obligations from choices)
-3. Opportunities (3 specific, actionable bullet points for improvement or optimisation)
-4. One positive highlight to acknowledge good financial behaviour
-
-Keep it direct, personal, and under 350 words. Write in plain paragraphs and bullet points — no section headers or markdown formatting. Address the person directly as "you".`,
+%s`,
 		latest.Date.Format("2006-01-02"),
 		latest.Total, freeCash, investments, pensions, cryptoEur,
 		summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
@@ -182,7 +271,39 @@ Keep it direct, personal, and under 350 words. Write in plain paragraphs and bul
 		strings.Join(monthlyLines, "\n"),
 	)
 
-	return prompt, nil
+	return report, nil
+}
+
+// buildPrompt wraps the data report in the one-shot advisor instruction —
+// the prompt behind "Generate analysis".
+func (s *insightService) buildPrompt() (string, error) {
+	report, err := s.buildDataReport()
+	if err != nil {
+		return "", err
+	}
+	return `You are a personal finance advisor reviewing real financial data for a private individual in Lithuania.
+
+` + report + `
+
+Please write a concise personal finance overview covering:
+1. Overall financial health (2-3 sentences assessing net worth, savings rate, and balance composition)
+2. Expense trends (2-3 sentences on spending patterns and any concerns from recent months — use the label data to name specific spending drivers, and separate fixed obligations from choices)
+3. Opportunities (3 specific, actionable bullet points for improvement or optimisation)
+4. One positive highlight to acknowledge good financial behaviour
+
+Keep it direct, personal, and under 350 words. Write in plain paragraphs and bullet points — no section headers or markdown formatting. Address the person directly as "you".`, nil
+}
+
+// chatSystemMessage grounds the AI chat in the same data report the
+// analysis uses, but leaves the conversation open-ended.
+func (s *insightService) chatSystemMessage() (string, error) {
+	report, err := s.buildDataReport()
+	if err != nil {
+		return "", err
+	}
+	return `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it, quote concrete numbers, and say so plainly when the data cannot answer a question. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
+
+` + report, nil
 }
 
 // fixedObligationLabels marks money that isn't a spending decision (loan,
@@ -376,6 +497,83 @@ func monthsBetween(a, b time.Time) int {
 		return 1
 	}
 	return m
+}
+
+// OpenAI-compatible gateway types (nexos.ai and friends).
+type gatewayRequest struct {
+	Model     string               `json:"model"`
+	MaxTokens int                  `json:"max_tokens,omitempty"`
+	Messages  []domain.ChatMessage `json:"messages"`
+}
+
+type gatewayResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+// callGateway posts a chat completion to the configured OpenAI-compatible
+// gateway (nexos.ai by default) and returns the assistant's reply text.
+func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, maxTokens int) (string, error) {
+	body, err := json.Marshal(gatewayRequest{
+		Model:     settings.Model,
+		MaxTokens: maxTokens,
+		Messages:  messages,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	url := strings.TrimRight(settings.GatewayURL, "/") + "/chat/completions"
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+settings.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var result gatewayResponse
+	jsonErr := json.Unmarshal(respBytes, &result)
+	// Surface a structured gateway error message when present (these are the
+	// gateway's own words — safe to relay), otherwise a status-only message.
+	// The raw upstream body is never reflected: with a user-controlled URL
+	// that would be a read primitive against internal endpoints.
+	if jsonErr == nil && result.Error != nil && result.Error.Message != "" {
+		return "", fmt.Errorf("gateway error: %s", result.Error.Message)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("gateway returned %s", resp.Status)
+	}
+	if jsonErr != nil {
+		return "", fmt.Errorf("gateway returned %s but the response was not valid JSON", resp.Status)
+	}
+	if len(result.Choices) == 0 {
+		return "", errors.New("gateway returned no choices")
+	}
+	// Reasoning models can exhaust max_tokens on hidden reasoning and return
+	// empty content — treat that as a failure rather than persisting a blank
+	// insight or wedging the chat with an unsendable empty turn.
+	if strings.TrimSpace(result.Choices[0].Message.Content) == "" {
+		return "", errors.New("gateway returned an empty reply — try again or raise the model's token limit")
+	}
+	return result.Choices[0].Message.Content, nil
 }
 
 // Claude API types

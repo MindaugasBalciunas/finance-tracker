@@ -5,6 +5,8 @@ import DateRangeFilter from '../ui/DateRangeFilter'
 import SecurityModal from '../ui/SecurityModal'
 import DataModal from '../ui/DataModal'
 
+// Desktop shows every page; the mobile bottom bar keeps only the daily
+// drivers plus "More" (which holds Stocks, Assets, Labels, Data, Security).
 const navItems = [
   { to: '/', label: 'Dashboard', short: 'Home', icon: '📊' },
   { to: '/transactions', label: 'Transactions', short: 'Txns', icon: '💸' },
@@ -14,6 +16,17 @@ const navItems = [
   { to: '/budget', label: 'Budget', short: 'Budget', icon: '🎯' },
   { to: '/reports', label: 'Reports', short: 'Reports', icon: '📈' },
   { to: '/labels', label: 'Labels', short: 'Labels', icon: '🏷️' },
+  { to: '/ai', label: 'AI', short: 'AI', icon: '✦' },
+]
+
+const bottomBarItems = [
+  { to: '/', short: 'Home', icon: '📊' },
+  { to: '/transactions', short: 'Txns', icon: '💸' },
+  { to: '/balances', short: 'Bal', icon: '🏦' },
+  { to: '/budget', short: 'Budget', icon: '🎯' },
+  { to: '/reports', short: 'Reports', icon: '📈' },
+  { to: '/ai', short: 'AI', icon: '✦' },
+  { to: '/more', short: 'More', icon: '☰' },
 ]
 
 export default function Layout() {
@@ -53,7 +66,7 @@ export default function Layout() {
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
               Security
             </button>
-            <a href="http://localhost:8080/swagger/index.html" target="_blank" rel="noopener noreferrer"
+            <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline">API Docs</a>
           </div>
         </div>
@@ -113,7 +126,7 @@ export default function Layout() {
               </div>
               <div className="border-t border-gray-100" />
               <div className="px-3">
-                <a href="/api/v1/swagger/index.html" target="_blank" rel="noopener noreferrer"
+                <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
                   className="text-sm text-blue-600">API Docs</a>
               </div>
             </div>
@@ -134,8 +147,8 @@ export default function Layout() {
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-8 h-16">
-          {navItems.map((item) => (
+        <div className="grid grid-cols-7 h-16">
+          {bottomBarItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               className={({ isActive }) => clsx(
                 'flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors px-0.5 min-w-0',
