@@ -4,9 +4,12 @@ import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
 import SecurityModal from '../ui/SecurityModal'
 import DataModal from '../ui/DataModal'
+// Note: the mobile menu lives solely in the bottom "More" tab (/more) — the
+// old top-bar hamburger drawer was removed so there is one menu, not two.
 
 // Desktop shows every page; the mobile bottom bar keeps only the daily
-// drivers plus "More" (which holds Stocks, Assets, Labels, Data, Security).
+// drivers plus "More" (which holds Stocks, Assets, Data, Security — Labels
+// is desktop-only to keep the mobile surface lean).
 const navItems = [
   { to: '/', label: 'Dashboard', short: 'Home', icon: '📊' },
   { to: '/transactions', label: 'Transactions', short: 'Txns', icon: '💸' },
@@ -30,7 +33,6 @@ const bottomBarItems = [
 ]
 
 export default function Layout() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
   const [dataOpen, setDataOpen] = useState(false)
 
@@ -72,67 +74,17 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* ── Mobile header ── */}
+      {/* ── Mobile header — title + the date range (the only global control
+             that needs to stay one tap away); everything else lives in the
+             "More" tab so there is a single menu. ── */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20 md:hidden">
-        <div className="flex items-center justify-between px-4 h-12">
-          <h1 className="text-base font-bold text-gray-900">Finance Tracker</h1>
-          <button onClick={() => setDrawerOpen(true)}
-            className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-        </div>
-      </header>
-
-      {/* ── Mobile drawer ── */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} />
-          {/* Panel */}
-          <div className="absolute right-0 top-0 bottom-0 w-72 bg-white shadow-xl flex flex-col">
-            <div className="flex items-center justify-between px-4 h-12 border-b border-gray-100">
-              <span className="font-semibold text-gray-900 text-sm">Menu</span>
-              <button onClick={() => setDrawerOpen(false)} className="p-1 text-gray-500 hover:text-gray-800">✕</button>
-            </div>
-            <div className="flex-1 overflow-y-auto py-3 space-y-4">
-              {/* Date filter */}
-              <div className="px-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Date Range</p>
-                <DateRangeFilter className="flex-wrap" />
-              </div>
-              <div className="border-t border-gray-100" />
-              {/* Data */}
-              <div>
-                <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Data</p>
-                <button
-                  onClick={() => { setDataOpen(true); setDrawerOpen(false) }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                >
-                  💾 Backup, export &amp; restore
-                </button>
-              </div>
-              <div className="border-t border-gray-100" />
-              {/* Security */}
-              <div>
-                <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Security</p>
-                <button
-                  onClick={() => { setSecurityOpen(true); setDrawerOpen(false) }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                >
-                  🔒 App lock & fingerprint
-                </button>
-              </div>
-              <div className="border-t border-gray-100" />
-              <div className="px-3">
-                <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600">API Docs</a>
-              </div>
-            </div>
+        <div className="flex items-center gap-3 px-3 h-12">
+          <h1 className="text-sm font-bold text-gray-900 shrink-0">Finance</h1>
+          <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
+            <DateRangeFilter />
           </div>
         </div>
-      )}
+      </header>
 
       {/* ── Data (backup / export / restore) ── */}
       {dataOpen && <DataModal onClose={() => setDataOpen(false)} />}

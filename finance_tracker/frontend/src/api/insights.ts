@@ -12,8 +12,9 @@ export const insightsApi = {
     return data
   },
 
-  generate: async (): Promise<AIInsight> => {
-    const { data } = await client.post<AIInsight>('/insights/generate')
+  // Optional date range scopes the period-sensitive sections of the overview.
+  generate: async (range?: { date_from?: string; date_to?: string }): Promise<AIInsight> => {
+    const { data } = await client.post<AIInsight>('/insights/generate', range ?? {})
     return data
   },
 

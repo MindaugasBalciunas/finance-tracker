@@ -9,10 +9,11 @@ export default function More() {
   const [dataOpen, setDataOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
 
+  // Labels is intentionally omitted on mobile to keep the surface lean — it
+  // stays available on desktop. Stocks and Assets live here.
   const pageLinks = [
     { to: '/stocks', icon: '📉', title: 'Stocks', hint: 'Trades, positions and performance' },
     { to: '/assets', icon: '🏠', title: 'Assets', hint: 'Property, vehicles and loans' },
-    { to: '/labels', icon: '🏷️', title: 'Labels', hint: 'Rename, merge, rules and cleanup' },
   ]
 
   return (

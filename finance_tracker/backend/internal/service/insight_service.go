@@ -19,7 +19,9 @@ import (
 
 type InsightService interface {
 	GetLatest() (*domain.AIInsight, error)
-	Generate() (*domain.AIInsight, error)
+	// Generate builds and stores a per-section overview; dateFrom/dateTo
+	// (nil = all time) scope the period-sensitive sections.
+	Generate(dateFrom, dateTo *time.Time) (*domain.AIInsight, error)
 	List(limit int) ([]domain.AIInsight, error)
 	// Chat answers one turn of the AI chat: history (user/assistant turns,
 	// oldest first) is grounded in a system message carrying the same data
@@ -60,8 +62,8 @@ func (s *insightService) List(limit int) ([]domain.AIInsight, error) {
 	return s.repo.List(limit)
 }
 
-func (s *insightService) Generate() (*domain.AIInsight, error) {
-	prompt, err := s.buildPrompt()
+func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsight, error) {
+	prompt, err := s.buildPrompt(dateFrom, dateTo)
 	if err != nil {
 		return nil, fmt.Errorf("building prompt: %w", err)
 	}
@@ -172,11 +174,26 @@ func (s *insightService) TestGateway() error {
 
 // buildDataReport assembles the shared financial-context sections used by
 // both the one-shot analysis prompt and the chat system message.
-func (s *insightService) buildDataReport() (string, error) {
-	// All-time summary
-	summary, err := s.txSvc.GetSummary(domain.TransactionFilter{})
+// buildDataReport assembles the shared financial-context report. When
+// dateFrom/dateTo are set, the headline transaction summary, top categories
+// and cash-flow reflect that period; point-in-time sections (balance
+// snapshot, this month, budget, stock positions) are always current, and the
+// budget income base still uses the full history.
+func (s *insightService) buildDataReport(dateFrom, dateTo *time.Time) (string, error) {
+	// All-time summary — feeds the budget income base and the label
+	// aggregates, which need full history regardless of the selected period.
+	allTime, err := s.txSvc.GetSummary(domain.TransactionFilter{})
 	if err != nil {
 		return "", err
+	}
+
+	// Period summary drives the headline numbers; falls back to all-time.
+	summary := allTime
+	if dateFrom != nil || dateTo != nil {
+		summary, err = s.txSvc.GetSummary(domain.TransactionFilter{DateFrom: dateFrom, DateTo: dateTo})
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Latest balance snapshot
@@ -185,11 +202,7 @@ func (s *insightService) buildDataReport() (string, error) {
 		return "", err
 	}
 
-	// Last 6 months trend
-	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
-	recentSummary, _ := s.txSvc.GetSummary(domain.TransactionFilter{DateFrom: &sixMonthsAgo})
-
-	// Build category breakdown (top 5 expenses)
+	// Build category breakdown (top 5 expenses in the selected period)
 	var topExpenses []string
 	count := 0
 	for _, c := range summary.ByCategory {
@@ -206,13 +219,14 @@ func (s *insightService) buildDataReport() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	labelSections := buildLabelSections(allTxs, summary.TotalIncome, time.Now())
+	labelSections := buildLabelSections(allTxs, allTime.TotalIncome, time.Now())
 
-	// Build monthly spending summary (last 6 months)
+	// Monthly cash flow across the selected period (capped to the most
+	// recent 12 months so an all-time selection stays readable).
 	var monthlyLines []string
-	months := recentSummary.ByMonth
-	if len(months) > 6 {
-		months = months[len(months)-6:]
+	months := summary.ByMonth
+	if len(months) > 12 {
+		months = months[len(months)-12:]
 	}
 	for _, m := range months {
 		line := fmt.Sprintf("  - %s %d: expenses €%.0f, income €%.0f, invested €%.0f",
@@ -241,21 +255,26 @@ func (s *insightService) buildDataReport() (string, error) {
 		cryptoEur = latest.RBTC + latest.MBTC
 	}
 
-	report := fmt.Sprintf(`=== CURRENT BALANCE SNAPSHOT (as of %s) ===
+	period := periodLabel(dateFrom, dateTo)
+	report := fmt.Sprintf(`=== REPORTING PERIOD ===
+%s
+(The balance snapshot, this-month figures, budget status and stock positions below are always current; the transaction summary, top categories and cash flow reflect the period above.)
+
+=== CURRENT BALANCE SNAPSHOT (as of %s) ===
 Net Worth:    €%.0f
 Free Cash:    €%.0f  (SEB + Swedbank + Luminor + Cash + Revolut)
 Investments:  €%.0f  (Swed ETF + Revolut Stocks)
 Pensions:     €%.0f  (Swed 2nd Pillar + Artea 3rd Pillar)
 Crypto (BTC): €%.0f  (Revolut R + M BTC)
 
-=== ALL-TIME TRANSACTION SUMMARY ===
+=== TRANSACTION SUMMARY (%s) ===
 Total Income:     €%.0f
 Total Expenses:   €%.0f
 Total Invested:   €%.0f
 Net Saved:        €%.0f
 Savings Rate:     %.1f%%
 
-=== TOP EXPENSE CATEGORIES (all time) ===
+=== TOP EXPENSE CATEGORIES (%s) ===
 %s
 
 === FIXED MONTHLY OBLIGATIONS (by label: loan, alimony, leasing, counterparty transfers) ===
@@ -268,17 +287,18 @@ These are pre-committed, not spending decisions — when judging spending habits
 === INCOME SOURCES (by label, all time) ===
 %s
 
-=== RECENT MONTHLY CASH FLOW (last 6 months) ===
+=== MONTHLY CASH FLOW (%s) ===
 %s`,
+		period,
 		latest.Date.Format("2006-01-02"),
 		latest.Total, freeCash, investments, pensions, cryptoEur,
-		summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
+		period, summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
 		summary.TotalIncome-summary.TotalExpenses, savingsRate,
-		strings.Join(topExpenses, "\n"),
+		period, strings.Join(topExpenses, "\n"),
 		labelSections.fixedObligations,
 		labelSections.topSpendingLabels,
 		labelSections.incomeSources,
-		strings.Join(monthlyLines, "\n"),
+		period, strings.Join(monthlyLines, "\n"),
 	)
 
 	// Daily-status sections: this month so far, live budget status, and live
@@ -288,7 +308,7 @@ These are pre-committed, not spending decisions — when judging spending habits
 	if sec := s.currentMonthSection(allTxs, now); sec != "" {
 		report += "\n\n" + sec
 	}
-	if sec := s.budgetStatusSection(allTxs, summary, now); sec != "" {
+	if sec := s.budgetStatusSection(allTxs, allTime, now); sec != "" {
 		report += "\n\n" + sec
 	}
 	if sec := s.stockPositionsSection(latest); sec != "" {
@@ -298,10 +318,26 @@ These are pre-committed, not spending decisions — when judging spending habits
 	return report, nil
 }
 
-// buildPrompt wraps the data report in the one-shot advisor instruction —
-// the prompt behind "Generate analysis".
-func (s *insightService) buildPrompt() (string, error) {
-	report, err := s.buildDataReport()
+// periodLabel renders a human date range for the report header.
+func periodLabel(from, to *time.Time) string {
+	const f = "2006-01-02"
+	switch {
+	case from != nil && to != nil:
+		return from.Format(f) + " to " + to.Format(f)
+	case from != nil:
+		return "since " + from.Format(f)
+	case to != nil:
+		return "through " + to.Format(f)
+	default:
+		return "all time"
+	}
+}
+
+// buildPrompt wraps the data report in the per-section advisor instruction —
+// the prompt behind "Generate analysis". The output is split into fixed
+// sections the UI renders as separate cards, scoped to the selected period.
+func (s *insightService) buildPrompt(dateFrom, dateTo *time.Time) (string, error) {
+	report, err := s.buildDataReport(dateFrom, dateTo)
 	if err != nil {
 		return "", err
 	}
@@ -309,19 +345,31 @@ func (s *insightService) buildPrompt() (string, error) {
 
 ` + report + `
 
-Please write a concise personal finance overview covering:
-1. Overall financial health (2-3 sentences assessing net worth, savings rate, and balance composition)
-2. Expense trends (2-3 sentences on spending patterns and any concerns from recent months — use the label data to name specific spending drivers, and separate fixed obligations from choices)
-3. Opportunities (3 specific, actionable bullet points for improvement or optimisation)
-4. One positive highlight to acknowledge good financial behaviour
+Write a personal finance overview as EXACTLY these five sections, each introduced by its heading on its own line, in this order and with these exact headings:
 
-Keep it direct, personal, and under 350 words. Write in plain paragraphs and bullet points — no section headers or markdown formatting. Address the person directly as "you".`, nil
+## Transactions
+2-4 sentences on spending in the reporting period: total spent, the biggest categories and labels, and any notable shift. Separate fixed obligations from discretionary choices.
+
+## Balances
+2-3 sentences on net worth and how it is composed (free cash vs investments vs pensions vs crypto), and what stands out.
+
+## Stocks
+2-3 sentences on the stock positions and their live market performance (winners/losers, unrealised gains). If there are no positions or no live prices, say so briefly.
+
+## Budget
+2-3 sentences on how this month is tracking against the budgets: what is over or at risk, and the safe-to-spend figure.
+
+## Reports
+The savings rate and trend, then 2-3 specific actionable opportunities as "- " bullet points, and end with one positive highlight.
+
+Rules: begin the whole response with a single line "Period: <the reporting period>". Use ONLY the five "## " headings above as markup — no other markdown, no bold. Address the person directly as "you". Keep the whole thing under 450 words. If a section genuinely has no data, still emit its heading with one short sentence saying so.`, nil
 }
 
 // chatSystemMessage grounds the AI chat in the same data report the
-// analysis uses, but leaves the conversation open-ended.
+// analysis uses, but leaves the conversation open-ended. Chat always sees
+// the full history (no period filter).
 func (s *insightService) chatSystemMessage() (string, error) {
-	report, err := s.buildDataReport()
+	report, err := s.buildDataReport(nil, nil)
 	if err != nil {
 		return "", err
 	}

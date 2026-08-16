@@ -144,12 +144,35 @@ func (h *InsightHandler) GetLatest(c *gin.Context) {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /insights/generate [post]
 func (h *InsightHandler) Generate(c *gin.Context) {
-	insight, err := h.svc.Generate()
+	// Optional reporting period — the app's selected date range. Absent or
+	// unparseable dates mean all-time. Body is optional (a bare POST works).
+	var input struct {
+		DateFrom string `json:"date_from"`
+		DateTo   string `json:"date_to"`
+	}
+	_ = c.ShouldBindJSON(&input)
+	dateFrom := parseInsightDate(input.DateFrom)
+	dateTo := parseInsightDate(input.DateTo)
+
+	insight, err := h.svc.Generate(dateFrom, dateTo)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, insight)
+}
+
+// parseInsightDate accepts a YYYY-MM-DD string, returning nil when empty or
+// malformed so a bad value degrades to all-time rather than erroring.
+func parseInsightDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 // List godoc

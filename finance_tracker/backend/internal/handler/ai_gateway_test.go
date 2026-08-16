@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -173,7 +172,30 @@ func TestGenerateViaGateway(t *testing.T) {
 	assert.EqualValues(t, 1, count)
 	require.Len(t, cap.Req.Messages, 1)
 	assert.Equal(t, "user", cap.Req.Messages[0].Role)
-	assert.True(t, strings.Contains(cap.Req.Messages[0].Content, "personal finance advisor"))
+	prompt := cap.Req.Messages[0].Content
+	assert.Contains(t, prompt, "personal finance advisor")
+	// The overview must be requested per section.
+	for _, h := range []string{"## Transactions", "## Balances", "## Stocks", "## Budget", "## Reports"} {
+		assert.Contains(t, prompt, h, "prompt asks for section %s", h)
+	}
+	// No period → all time.
+	assert.Contains(t, prompt, "all time")
+}
+
+// A generate call carrying a date range scopes the report to that period.
+func TestGenerateWithPeriod(t *testing.T) {
+	r, _ := aiTestRouter(t)
+	srv, cap := fakeGateway(t, "## Transactions\nok")
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", map[string]any{
+		"date_from": "2026-01-01", "date_to": "2026-06-30"})
+	require.Equal(t, 201, w.Code, w.Body.String())
+	prompt := cap.Req.Messages[0].Content
+	assert.Contains(t, prompt, "2026-01-01 to 2026-06-30", "period reflected in the report")
+	assert.Contains(t, prompt, "TRANSACTION SUMMARY (2026-01-01 to 2026-06-30)")
 }
 
 // An empty gateway reply must be rejected, not persisted as a blank insight

@@ -14,7 +14,7 @@ export function useLatestInsight() {
 export function useGenerateInsight() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: insightsApi.generate,
+    mutationFn: (range?: { date_from?: string; date_to?: string }) => insightsApi.generate(range),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [INSIGHTS_KEY] })
     },
