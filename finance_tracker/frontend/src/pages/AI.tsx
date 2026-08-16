@@ -1,30 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi, type ChatMessage } from '../api/insights'
 import { useAISettings, useSaveAISettings } from '../hooks/useInsights'
 import AIInsightCard from '../components/ui/AIInsightCard'
 
-const CHAT_STORE = 'ai-chat-history'
-
-// Only well-formed turns survive a reload — a null/legacy entry would crash
-// the render, and a blank or foreign-role entry would 400 every later send
-// (the backend replays the whole history each turn).
-function loadChat(): ChatMessage[] {
-  try {
-    const raw = localStorage.getItem(CHAT_STORE)
-    const parsed = raw ? JSON.parse(raw) : []
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (m): m is ChatMessage =>
-        m && (m.role === 'user' || m.role === 'assistant') &&
-        typeof m.content === 'string' && m.content.trim() !== '',
-    )
-  } catch {
-    return []
-  }
-}
-
 // AI page: chat grounded in the full financial dataset, the one-shot
-// analysis card, and the nexos.ai gateway configuration.
+// analysis card, and the nexos.ai gateway configuration. Chat history is
+// stored server-side, so it follows the user between phone and browser.
 export default function AI() {
   const { data: settings } = useAISettings()
   const configured = !!settings?.has_key && !!settings?.model
@@ -40,15 +22,22 @@ export default function AI() {
     }
   }, [settings, configured, autoOpened])
 
-  const [messages, setMessages] = useState<ChatMessage[]>(loadChat)
+  const qc = useQueryClient()
+  const { data: serverHistory } = useQuery({
+    queryKey: ['ai-chat-history'],
+    queryFn: aiApi.chatHistory,
+  })
+  // Local copy so an in-flight turn renders immediately; re-synced whenever
+  // the server history lands (initial load or another device's turns).
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  useEffect(() => {
+    if (serverHistory) setMessages(serverHistory)
+  }, [serverHistory])
+
   const [draft, setDraft] = useState('')
   const [thinking, setThinking] = useState(false)
   const [chatError, setChatError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    localStorage.setItem(CHAT_STORE, JSON.stringify(messages.slice(-60)))
-  }, [messages])
 
   useEffect(() => {
     // Don't yank the page down on mount — only follow along once the
@@ -60,19 +49,35 @@ export default function AI() {
   const send = async () => {
     const text = draft.trim()
     if (!text || thinking || !configured) return
-    const next: ChatMessage[] = [...messages, { role: 'user', content: text }]
-    setMessages(next)
+    setMessages((m) => [...m, { role: 'user', content: text }])
     setDraft('')
     setChatError('')
     setThinking(true)
     try {
-      const reply = await aiApi.chat(next)
-      setMessages([...next, { role: 'assistant', content: reply }])
+      const reply = await aiApi.chat(text)
+      setMessages((m) => [...m, { role: 'assistant', content: reply }])
+      qc.invalidateQueries({ queryKey: ['ai-chat-history'] })
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       setChatError(e.response?.data?.error ?? e.message ?? 'Chat failed')
+      // The failed turn was not persisted server-side — drop the local echo
+      // so the view matches the stored history.
+      setMessages((m) => (m.length > 0 && m[m.length - 1].role === 'user' ? m.slice(0, -1) : m))
+      setDraft(text)
     } finally {
       setThinking(false)
+    }
+  }
+
+  const clearChat = async () => {
+    try {
+      await aiApi.clearChat()
+      setMessages([])
+      setChatError('')
+      qc.invalidateQueries({ queryKey: ['ai-chat-history'] })
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      setChatError(e.response?.data?.error ?? e.message ?? 'Clear failed')
     }
   }
 
@@ -107,7 +112,7 @@ export default function AI() {
           </div>
           {messages.length > 0 && (
             <button
-              onClick={() => { setMessages([]); setChatError('') }}
+              onClick={clearChat}
               className="text-xs text-gray-400 hover:text-red-500"
             >
               Clear chat
@@ -189,8 +194,8 @@ export default function AI() {
       <AIInsightCard />
 
       <p className="text-[11px] text-gray-400">
-        Conversations are not stored on the server — history lives in this browser only. Each question
-        sends your aggregated financial summary to the configured gateway.
+        Conversations are stored in your own database, so the chat follows you between phone and
+        browser. Each question sends your aggregated financial summary to the configured gateway.
       </p>
     </div>
   )

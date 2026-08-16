@@ -294,7 +294,8 @@ func exportRouterFor(t *testing.T, db *gorm.DB) *gin.Engine {
 	stockSvc := service.NewStockService(stockRepo)
 	assetSvc := service.NewAssetService(assetRepo)
 	r := gin.New()
-	NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).WithBudgets(budgetRepo).RegisterRoutes(r.Group("/api/v1"))
+	NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, logRepo).WithBudgets(budgetRepo).
+		WithAI(repository.NewInsightRepository(db)).RegisterRoutes(r.Group("/api/v1"))
 	return r
 }
 
@@ -303,14 +304,15 @@ func importRouterFor(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}))
 	r := gin.New()
 	NewImportHandler(
 		repository.NewTransactionRepository(db),
 		repository.NewBalanceRepository(db),
 		repository.NewStockRepository(db),
 		repository.NewAssetRepository(db),
-	).WithBudgets(repository.NewBudgetRepository(db)).RegisterRoutes(r.Group("/api/v1"))
+	).WithBudgets(repository.NewBudgetRepository(db)).
+		WithAI(repository.NewInsightRepository(db)).RegisterRoutes(r.Group("/api/v1"))
 	return r, db
 }
 

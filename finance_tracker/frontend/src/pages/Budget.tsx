@@ -73,6 +73,67 @@ const PLAN_COLORS = ['#f97316', '#eab308', '#14b8a6', '#a855f7', '#ec4899', '#06
 
 // Donut of the month's plan: fixed as one prominent slice, investments,
 // each spending limit, and whatever income stays unallocated.
+// PlanCheckCard answers "do the amounts I set actually fit my income?":
+// income base − fixed − investment targets − the SUM of spending limits.
+// A positive result means even spending every limit in full keeps the month
+// cash-positive (income covers spending + investments); negative means the
+// plan itself overshoots income. It also compares what the limits still
+// allow right now against what income actually affords.
+function PlanCheckCard({ plan, daysLeft }: { plan: MonthPlan; daysLeft: number | null }) {
+  if (plan.incomeBase == null) return null
+  const planned = plan.fixedPlanned + plan.investmentPlanned + plan.spendingPlanned
+  const unallocated = plan.incomeBase - planned
+  const fits = unallocated >= 0
+  const limitLeft = plan.spending.reduce((s, { budget, actual }) => s + Math.max(budget.amount - actual, 0), 0)
+  const safe = plan.safeToSpend ?? 0
+  const looseLimits = limitLeft > Math.max(safe, 0) + 0.5
+
+  const row = (label: string, value: number, cls = 'text-gray-700') => (
+    <div className="flex items-baseline justify-between text-sm">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-medium tabular-nums ${cls}`}>{formatEuro(value)}</span>
+    </div>
+  )
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h3 className="text-base font-semibold text-gray-900">Does the plan fit your income?</h3>
+        <span className={`text-sm font-semibold ${fits ? 'text-green-600' : 'text-red-600'}`}>
+          {fits
+            ? `✓ Fits — ${formatEuro(unallocated)} unallocated`
+            : `⚠ Over income by ${formatEuro(-unallocated)}`}
+        </span>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+        <div className="space-y-1">
+          {row('Income base', plan.incomeBase)}
+          {row('− Fixed obligations', -plan.fixedPlanned, 'text-slate-600')}
+          {row('− Investment targets', -plan.investmentPlanned, 'text-blue-600')}
+          {row('− All spending limits', -plan.spendingPlanned, 'text-orange-600')}
+          <div className="border-t border-gray-100 pt-1">
+            {row('= Month end, if every limit is spent in full', unallocated, fits ? 'text-green-600' : 'text-red-600')}
+          </div>
+        </div>
+        <div className="space-y-1 sm:border-l sm:border-gray-100 sm:pl-8">
+          {row('Still allowed by your limits', limitLeft, 'text-orange-600')}
+          {row('Actually affordable (safe to spend)', Math.max(safe, 0), safe >= 0 ? 'text-green-600' : 'text-red-600')}
+          <p className={`text-xs pt-1 ${looseLimits ? 'text-yellow-700' : 'text-gray-400'}`}>
+            {looseLimits
+              ? `Your limits allow ${formatEuro(limitLeft - Math.max(safe, 0))} more than income covers — spending to every limit ends the month ${fits ? 'thinner than planned' : 'in the red'}.`
+              : 'Your limits are within what income covers — spend to the limit and the month still balances.'}
+            {daysLeft != null && limitLeft > 0 && <> {' '}(~{formatEuro(limitLeft / daysLeft)}/day within limits)</>}
+          </p>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400 mt-2">
+        Use the left column when sizing budget amounts: raising a limit lowers "unallocated" — keep it ≥ €0 to stay
+        cash-equal or better after investments.
+      </p>
+    </div>
+  )
+}
+
 function PlanPie({ plan }: { plan: MonthPlan }) {
   const slices: { name: string; value: number; color: string }[] = []
   if (plan.fixedPlanned > 0) slices.push({ name: 'Fixed obligations', value: plan.fixedPlanned, color: '#475569' })
@@ -84,6 +145,8 @@ function PlanPie({ plan }: { plan: MonthPlan }) {
     const allocated = slices.reduce((s, x) => s + x.value, 0)
     const free = plan.incomeBase - allocated
     if (free > 0.5) slices.push({ name: 'Unallocated', value: free, color: '#22c55e' })
+    // A plan that exceeds income must be visible, not silently normalized.
+    if (free < -0.5) slices.push({ name: 'Over income', value: -free, color: '#ef4444' })
   }
   if (slices.length === 0) return null
   const total = slices.reduce((s, x) => s + x.value, 0)
@@ -379,6 +442,8 @@ export default function Budget() {
             <PlanPie plan={plan} />
             </div>
           </div>
+
+          <PlanCheckCard plan={plan} daysLeft={daysLeft} />
 
           {/* Desktop: spending limits as the main 2/3 column, fixed +
               investments as a status sidebar. Mobile: status cards first. */}

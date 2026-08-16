@@ -14,6 +14,10 @@ type InsightRepository interface {
 	List(limit int) ([]domain.AIInsight, error)
 	GetAISettings() (*domain.AISettings, error)
 	SaveAISettings(s *domain.AISettings) error
+	// Chat history, oldest first, capped to the most recent `limit` turns.
+	ListChat(limit int) ([]domain.AIChatMessage, error)
+	AppendChat(msgs ...*domain.AIChatMessage) error
+	ClearChat() error
 }
 
 type insightRepository struct {
@@ -57,6 +61,31 @@ func (r *insightRepository) GetAISettings() (*domain.AISettings, error) {
 		s.GatewayURL = domain.DefaultGatewayURL
 	}
 	return &s, nil
+}
+
+func (r *insightRepository) ListChat(limit int) ([]domain.AIChatMessage, error) {
+	// Fetch the newest `limit` rows, then reverse to chronological order.
+	var msgs []domain.AIChatMessage
+	if err := r.db.Order("id DESC").Limit(limit).Find(&msgs).Error; err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, nil
+}
+
+func (r *insightRepository) AppendChat(msgs ...*domain.AIChatMessage) error {
+	for _, m := range msgs {
+		if err := r.db.Create(m).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *insightRepository) ClearChat() error {
+	return r.db.Exec("DELETE FROM ai_chat_messages").Error
 }
 
 func (r *insightRepository) SaveAISettings(s *domain.AISettings) error {

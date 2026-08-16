@@ -38,6 +38,7 @@ type ExportHandler struct {
 	assetSvc      service.AssetService
 	exportLogRepo repository.ExportLogRepository
 	budgetRepo    repository.BudgetRepository
+	insightRepo   repository.InsightRepository // optional: AI settings in backups
 }
 
 // budgetRows exports the budget plan and label rules (nil-safe).
@@ -79,6 +80,23 @@ func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceSe
 func (h *ExportHandler) WithBudgets(repo repository.BudgetRepository) *ExportHandler {
 	h.budgetRepo = repo
 	return h
+}
+
+// WithAI includes the AI gateway settings in JSON backups.
+func (h *ExportHandler) WithAI(repo repository.InsightRepository) *ExportHandler {
+	h.insightRepo = repo
+	return h
+}
+
+func (h *ExportHandler) aiSettingsRow() *aiSettingsExportRow {
+	if h.insightRepo == nil {
+		return nil
+	}
+	s, err := h.insightRepo.GetAISettings()
+	if err != nil || (s.APIKey == "" && s.Model == "") {
+		return nil
+	}
+	return &aiSettingsExportRow{GatewayURL: s.GatewayURL, Model: s.Model, APIKey: s.APIKey}
 }
 
 func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -194,19 +212,31 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //
 //	v1 — transactions/balances/stock_trades/assets (+budgets/label_rules/budget_settings)
 //	v2 — schema_version field, balance rows carry id + time (multi-snapshot days)
-const exportSchemaVersion = 2
+//	v3 — ai_settings (gateway URL, model and API key travel with the backup,
+//	     so a wipe-and-restore doesn't lose the AI configuration)
+const exportSchemaVersion = 3
 
 type financeExport struct {
-	SchemaVersion   int              `json:"schema_version,omitempty"`
-	ExportDate      string           `json:"export_date"`
-	SuggestedPrompt string           `json:"suggested_prompt"`
-	Transactions    []txExportRow    `json:"transactions"`
-	Balances        []balExportRow   `json:"balances"`
-	StockTrades     []stockExportRow `json:"stock_trades"`
-	Assets          []assetExportRow `json:"assets"`
+	SchemaVersion   int                  `json:"schema_version,omitempty"`
+	ExportDate      string               `json:"export_date"`
+	SuggestedPrompt string               `json:"suggested_prompt"`
+	Transactions    []txExportRow        `json:"transactions"`
+	Balances        []balExportRow       `json:"balances"`
+	StockTrades     []stockExportRow     `json:"stock_trades"`
+	Assets          []assetExportRow     `json:"assets"`
 	Budgets         []budgetExportRow    `json:"budgets,omitempty"`
 	LabelRules      []labelRuleExportRow `json:"label_rules,omitempty"`
 	BudgetSettings  *budgetSettingsRow   `json:"budget_settings,omitempty"`
+	AISettings      *aiSettingsExportRow `json:"ai_settings,omitempty"`
+}
+
+// aiSettingsExportRow carries the gateway configuration INCLUDING the API
+// key — the backup is the user's own file and restoring it must bring the
+// AI features back without re-entering the key.
+type aiSettingsExportRow struct {
+	GatewayURL string `json:"gateway_url,omitempty"`
+	Model      string `json:"model,omitempty"`
+	APIKey     string `json:"api_key,omitempty"`
 }
 
 type budgetSettingsRow struct {
@@ -288,6 +318,12 @@ type assetExportRow struct {
 	LoanRate          string  `json:"loan_rate,omitempty"`
 	LoanAccount       string  `json:"loan_account,omitempty"`
 	LoanPaidOffDate   string  `json:"loan_paid_off_date,omitempty"`
+
+	LoanMargin         float64 `json:"loan_margin,omitempty"`
+	LoanLabel          string  `json:"loan_label,omitempty"`
+	LoanBaseRate       float64 `json:"loan_base_rate,omitempty"`
+	LoanRateResetDate  string  `json:"loan_rate_reset_date,omitempty"`
+	LoanMonthlyPayment float64 `json:"loan_monthly_payment_eur,omitempty"`
 }
 
 // formatOptionalDate renders a nullable date as YYYY-MM-DD or "".
@@ -454,6 +490,12 @@ func toAssetExportRows(assets []domain.Asset) []assetExportRow {
 			LoanRate:          a.LoanRate,
 			LoanAccount:       a.LoanAccount,
 			LoanPaidOffDate:   formatOptionalDate(a.LoanPaidOffDate),
+
+			LoanMargin:         a.LoanMargin,
+			LoanLabel:          a.LoanLabel,
+			LoanBaseRate:       a.LoanBaseRate,
+			LoanRateResetDate:  formatOptionalDate(a.LoanRateResetDate),
+			LoanMonthlyPayment: a.LoanMonthlyPayment,
 		}
 	}
 	return rows
@@ -541,6 +583,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,
 		BudgetSettings:  h.settingsRow(),
+		AISettings:      h.aiSettingsRow(),
 	})
 }
 
@@ -603,6 +646,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		Budgets:         budgetRows,
 		LabelRules:      ruleRows,
 		BudgetSettings:  h.settingsRow(),
+		AISettings:      h.aiSettingsRow(),
 	})
 }
 

@@ -34,3 +34,12 @@ type ChatMessage struct {
 	Role    string `json:"role"` // "system" | "user" | "assistant"
 	Content string `json:"content"`
 }
+
+// AIChatMessage is a persisted chat turn — history lives server-side so the
+// conversation follows the user across phone and browser.
+type AIChatMessage struct {
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Role      string    `json:"role" gorm:"not null"` // "user" | "assistant"
+	Content   string    `json:"content" gorm:"type:text;not null"`
+	CreatedAt time.Time `json:"created_at"`
+}

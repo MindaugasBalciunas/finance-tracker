@@ -23,10 +23,13 @@ type InsightService interface {
 	// (nil = all time) scope the period-sensitive sections.
 	Generate(dateFrom, dateTo *time.Time) (*domain.AIInsight, error)
 	List(limit int) ([]domain.AIInsight, error)
-	// Chat answers one turn of the AI chat: history (user/assistant turns,
-	// oldest first) is grounded in a system message carrying the same data
-	// report the analysis uses.
-	Chat(history []domain.ChatMessage) (string, error)
+	// Chat answers one turn of the AI chat: server-stored history plus the
+	// new user message, grounded in a system message carrying the same data
+	// report the analysis uses. Both turns are persisted so the conversation
+	// follows the user across devices.
+	Chat(message string) (string, error)
+	ChatHistory() ([]domain.AIChatMessage, error)
+	ClearChat() error
 	AISettings() (*domain.AISettings, error)
 	// SaveAISettings updates the gateway config. An empty apiKey keeps the
 	// stored key unless clearKey is set.
@@ -101,7 +104,7 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 // system data report already dominates the context.
 const maxChatTurns = 24
 
-func (s *insightService) Chat(history []domain.ChatMessage) (string, error) {
+func (s *insightService) Chat(message string) (string, error) {
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
 		return "", err
@@ -113,17 +116,37 @@ func (s *insightService) Chat(history []domain.ChatMessage) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("building context: %w", err)
 	}
-	if len(history) > maxChatTurns {
-		history = history[len(history)-maxChatTurns:]
+	history, err := s.repo.ListChat(maxChatTurns)
+	if err != nil {
+		return "", err
 	}
-	messages := make([]domain.ChatMessage, 0, len(history)+1)
+	messages := make([]domain.ChatMessage, 0, len(history)+2)
 	messages = append(messages, domain.ChatMessage{Role: "system", Content: system})
-	messages = append(messages, history...)
+	for _, m := range history {
+		messages = append(messages, domain.ChatMessage{Role: m.Role, Content: m.Content})
+	}
+	messages = append(messages, domain.ChatMessage{Role: "user", Content: message})
 	reply, err := callGateway(settings, messages, 2048)
 	if err != nil {
 		return "", fmt.Errorf("calling AI gateway: %w", err)
 	}
+	// Persist both turns only after a successful reply — a failed call
+	// leaves history unchanged so a retry doesn't duplicate the question.
+	if err := s.repo.AppendChat(
+		&domain.AIChatMessage{Role: "user", Content: message},
+		&domain.AIChatMessage{Role: "assistant", Content: reply},
+	); err != nil {
+		return "", fmt.Errorf("saving chat: %w", err)
+	}
 	return reply, nil
+}
+
+func (s *insightService) ChatHistory() ([]domain.AIChatMessage, error) {
+	return s.repo.ListChat(200)
+}
+
+func (s *insightService) ClearChat() error {
+	return s.repo.ClearChat()
 }
 
 func (s *insightService) AISettings() (*domain.AISettings, error) {

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useAssets, useAssetSummary, useCreateAsset, useUpdateAsset, useDeleteAsset } from '../hooks/useAssets'
+import { useAllTransactions } from '../hooks/useTransactions'
+import { txLabels } from '../utils/labels'
 import AssetForm from '../components/forms/AssetForm'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatDate, formatEuro, formatPercent, gainColor } from '../utils/format'
-import type { Asset, AssetType, CreateAssetInput } from '../types'
+import type { Asset, AssetType, CreateAssetInput, Transaction } from '../types'
 import { ASSET_TYPE_LABELS, ACCOUNT_LABELS } from '../types'
 import type { AccountKey } from '../types'
 
@@ -26,11 +28,93 @@ function accountLabel(key?: string): string {
   return ACCOUNT_LABELS[key as AccountKey] ?? key
 }
 
-function AssetCard({ asset, onEdit, onDelete }: { asset: Asset; onEdit: () => void; onDelete: () => void }) {
+// loanEstimate replays the loan's ACTUAL payments (transactions carrying the
+// asset's loan label, after the recorded as-of date) against the recorded
+// balance: each payment first covers interest, the rest reduces principal.
+// The result is an estimated current balance that stays fresh between manual
+// updates, plus the latest real payment amount for projections.
+function loanEstimate(asset: Asset, loanTxs: Transaction[]) {
+  const monthlyRate = (asset.loan_margin + asset.loan_base_rate) / 100 / 12
+  const label = (asset.loan_label ?? '').trim()
+  const since = asset.loan_remaining_date?.slice(0, 10) ?? ''
+  const payments = label
+    ? loanTxs
+        .filter((tx) => tx.type !== 'income' && txLabels(tx).includes(label) && (!since || tx.date.slice(0, 10) > since))
+        .sort((a, b) => a.date.localeCompare(b.date))
+    : []
+
+  let remaining = asset.loan_remaining
+  let principalPaid = 0
+  for (const p of payments) {
+    const interest = remaining * monthlyRate
+    const principal = Math.max(p.amount.value - interest, 0)
+    principalPaid += principal
+    remaining = Math.max(remaining - principal, 0)
+  }
+  const lastPayment = payments.length > 0 ? payments[payments.length - 1].amount.value : 0
+  return {
+    remaining,
+    principalPaid,
+    count: payments.length,
+    // Real payments trump the manually-entered monthly amount.
+    payment: lastPayment > 0 ? lastPayment : asset.loan_monthly_payment,
+    fromTransactions: payments.length > 0,
+  }
+}
+
+// LoanProjection shows how the next payments reduce the balance: the
+// interest/principal split of the upcoming payment, the projected remaining
+// after it, and the payoff horizon at the current rate and payment.
+function LoanProjection({ asset, est }: { asset: Asset; est: ReturnType<typeof loanEstimate> }) {
+  const monthlyRate = (asset.loan_margin + asset.loan_base_rate) / 100 / 12
+  const payment = est.payment
+  if (!(payment > 0) || !(est.remaining > 0)) return null
+
+  const interest = est.remaining * monthlyRate
+  const principal = payment - interest
+  if (principal <= 0) {
+    return (
+      <p className="text-xs text-red-600 mt-1.5">
+        ⚠ The monthly payment ({formatEuro(payment)}) doesn't cover the interest ({formatEuro(interest)}/mo)
+        — the balance won't reduce at this rate.
+      </p>
+    )
+  }
+  const afterNext = est.remaining - principal
+  // Standard amortization horizon: n = −ln(1 − B·r/p) / ln(1+r).
+  const months = monthlyRate > 0
+    ? Math.ceil(-Math.log(1 - (est.remaining * monthlyRate) / payment) / Math.log(1 + monthlyRate))
+    : Math.ceil(est.remaining / payment)
+  const payoff = new Date()
+  payoff.setMonth(payoff.getMonth() + months)
+
+  return (
+    <div className="mt-1.5 pt-1.5 border-t border-orange-100 text-xs text-orange-700/90 space-y-0.5">
+      {est.fromTransactions && (
+        <p>
+          {est.count} payment{est.count === 1 ? '' : 's'} since{' '}
+          {asset.loan_remaining_date ? formatDate(asset.loan_remaining_date) : 'the recorded balance'} →{' '}
+          <span className="font-medium">−{formatEuro(est.principalPaid)} principal</span>
+        </p>
+      )}
+      <p>
+        Next payment {formatEuro(payment)}{est.fromTransactions ? ' (from transactions)' : ''} →{' '}
+        <span className="font-medium">{formatEuro(principal)} principal</span>
+        {' '}+ {formatEuro(interest)} interest · balance after ≈ {formatEuro(afterNext)}
+      </p>
+      <p className="text-orange-600/70">
+        At this pace: paid off in ~{months} payments ({payoff.toLocaleDateString('default', { month: 'short', year: 'numeric' })})
+      </p>
+    </div>
+  )
+}
+
+function AssetCard({ asset, loanTxs, onEdit, onDelete }: { asset: Asset; loanTxs: Transaction[]; onEdit: () => void; onDelete: () => void }) {
   const appreciation = asset.purchase_price > 0
     ? ((asset.current_value - asset.purchase_price) / asset.purchase_price) * 100
     : 0
   const hasLoan = asset.loan_remaining > 0
+  const est = loanEstimate(asset, loanTxs)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 flex flex-col gap-3" data-testid="asset-card">
@@ -74,13 +158,29 @@ function AssetCard({ asset, onEdit, onDelete }: { asset: Asset; onEdit: () => vo
         <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 text-sm">
           <div className="flex items-baseline justify-between">
             <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Loan outstanding</p>
-            <p className="font-bold text-orange-700">{formatEuro(asset.loan_remaining)}</p>
+            <p className="font-bold text-orange-700">
+              {formatEuro(est.fromTransactions ? est.remaining : asset.loan_remaining)}
+              {est.fromTransactions && <span className="ml-1 text-[10px] font-medium text-orange-500">est.</span>}
+            </p>
           </div>
           <p className="text-xs text-orange-600/80 mt-1">
             {asset.loan_remaining_date && <>as of {formatDate(asset.loan_remaining_date)} · </>}
-            {asset.loan_rate && <>{asset.loan_rate} · </>}
+            {(asset.loan_margin > 0 || asset.loan_base_rate > 0) ? (
+              <>
+                {(asset.loan_margin + asset.loan_base_rate).toFixed(2)}%
+                {' '}({asset.loan_margin.toFixed(2)}% margin + {asset.loan_base_rate.toFixed(2)}% EURIBOR) ·{' '}
+              </>
+            ) : (
+              asset.loan_rate && <>{asset.loan_rate} · </>
+            )}
             {asset.loan_account && <>from {accountLabel(asset.loan_account)}</>}
           </p>
+          {asset.loan_rate_reset_date && (
+            <p className="text-xs text-orange-600/80 mt-0.5">
+              ⟳ next rate reset {formatDate(asset.loan_rate_reset_date)}
+            </p>
+          )}
+          <LoanProjection asset={asset} est={est} />
         </div>
       ) : (
         <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-xs text-green-700 font-medium">
@@ -90,7 +190,9 @@ function AssetCard({ asset, onEdit, onDelete }: { asset: Asset; onEdit: () => vo
 
       <div className="flex items-baseline justify-between border-t border-gray-100 pt-2">
         <p className="text-xs text-gray-500">Net equity</p>
-        <p className="text-lg font-bold text-gray-900">{formatEuro(asset.equity)}</p>
+        <p className="text-lg font-bold text-gray-900">
+          {formatEuro(est.fromTransactions ? asset.current_value - est.remaining : asset.equity)}
+        </p>
       </div>
 
       {asset.notes && <p className="text-xs text-gray-400">{asset.notes}</p>}
@@ -105,6 +207,19 @@ export default function Assets() {
 
   const { data: assets, isLoading: assetsLoading } = useAssets()
   const { data: summary, isLoading: summaryLoading } = useAssetSummary()
+
+  // One fetch covers every asset's loan-payment label since the earliest
+  // recorded balance date; cards filter their own label client-side.
+  const loanLabels = [...new Set((assets ?? []).map((a) => (a.loan_label ?? '').trim()).filter(Boolean))]
+  const earliestSince = (assets ?? [])
+    .filter((a) => (a.loan_label ?? '').trim() !== '' && a.loan_remaining_date)
+    .map((a) => a.loan_remaining_date!.slice(0, 10))
+    .sort()[0]
+  const { data: loanTxData } = useAllTransactions(
+    { label: loanLabels.join(','), ...(earliestSince ? { date_from: earliestSince } : {}) },
+    loanLabels.length > 0,
+  )
+  const loanTxs = loanTxData?.data ?? []
   const createMutation = useCreateAsset()
   const updateMutation = useUpdateAsset()
   const deleteMutation = useDeleteAsset()
@@ -184,6 +299,11 @@ export default function Assets() {
                 loan_rate: editingAsset.loan_rate ?? '',
                 loan_account: editingAsset.loan_account ?? '',
                 loan_paid_off_date: editingAsset.loan_paid_off_date?.slice(0, 10) ?? '',
+                loan_margin: editingAsset.loan_margin,
+                loan_label: editingAsset.loan_label ?? '',
+                loan_base_rate: editingAsset.loan_base_rate,
+                loan_rate_reset_date: editingAsset.loan_rate_reset_date?.slice(0, 10) ?? '',
+                loan_monthly_payment: editingAsset.loan_monthly_payment,
               }}
             />
           </div>
@@ -224,7 +344,7 @@ export default function Assets() {
       {assets && assets.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
           {assets.map((a) => (
-            <AssetCard key={a.id} asset={a} onEdit={() => { setEditingAsset(a); setFormError(null) }} onDelete={() => handleDelete(a)} />
+            <AssetCard key={a.id} asset={a} loanTxs={loanTxs} onEdit={() => { setEditingAsset(a); setFormError(null) }} onDelete={() => handleDelete(a)} />
           ))}
         </div>
       ) : (

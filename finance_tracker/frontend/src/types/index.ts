@@ -275,6 +275,13 @@ export interface Asset {
   loan_rate?: string
   loan_account?: string
   loan_paid_off_date?: string
+  // Structured interest: total = margin (fixed) + base rate (EURIBOR, resets
+  // on loan_rate_reset_date); monthly payment drives amortization projection.
+  loan_margin: number // % p.a.
+  loan_base_rate: number // % p.a.
+  loan_label?: string // transaction label identifying this loan's payments
+  loan_rate_reset_date?: string
+  loan_monthly_payment: number // EUR
   created_at: string
   updated_at: string
   equity: number // current_value − loan_remaining (computed by backend)
@@ -293,6 +300,11 @@ export interface CreateAssetInput {
   loan_rate?: string
   loan_account?: string
   loan_paid_off_date?: string
+  loan_margin?: number
+  loan_base_rate?: number
+  loan_label?: string
+  loan_rate_reset_date?: string
+  loan_monthly_payment?: number
 }
 
 export interface AssetSummary {

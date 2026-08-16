@@ -14,11 +14,12 @@ import (
 )
 
 type ImportHandler struct {
-	txRepo     repository.TransactionRepository
-	balRepo    repository.BalanceRepository
-	stockRepo  repository.StockRepository
-	assetRepo  repository.AssetRepository
-	budgetRepo repository.BudgetRepository
+	txRepo      repository.TransactionRepository
+	balRepo     repository.BalanceRepository
+	stockRepo   repository.StockRepository
+	assetRepo   repository.AssetRepository
+	budgetRepo  repository.BudgetRepository
+	insightRepo repository.InsightRepository // optional: restores AI settings from backups
 }
 
 func NewImportHandler(
@@ -34,6 +35,12 @@ func NewImportHandler(
 // of imported historical records.
 func (h *ImportHandler) WithBudgets(repo repository.BudgetRepository) *ImportHandler {
 	h.budgetRepo = repo
+	return h
+}
+
+// WithAI restores AI gateway settings from backups.
+func (h *ImportHandler) WithAI(repo repository.InsightRepository) *ImportHandler {
+	h.insightRepo = repo
 	return h
 }
 
@@ -459,7 +466,8 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		valuationDate, ok2 := parseOptDate(row.ValuationDate)
 		loanRemainingDate, ok3 := parseOptDate(row.LoanRemainingDate)
 		loanPaidOffDate, ok4 := parseOptDate(row.LoanPaidOffDate)
-		if !ok1 || !ok2 || !ok3 || !ok4 {
+		loanRateResetDate, ok5 := parseOptDate(row.LoanRateResetDate)
+		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
 			result.Skipped.Assets++
 			continue
 		}
@@ -480,6 +488,12 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			LoanRate:          row.LoanRate,
 			LoanAccount:       row.LoanAccount,
 			LoanPaidOffDate:   loanPaidOffDate,
+
+			LoanMargin:         row.LoanMargin,
+			LoanLabel:          row.LoanLabel,
+			LoanBaseRate:       row.LoanBaseRate,
+			LoanRateResetDate:  loanRateResetDate,
+			LoanMonthlyPayment: row.LoanMonthlyPayment,
 		}
 		if err := h.assetRepo.Create(asset); err != nil {
 			result.Skipped.Assets++
@@ -547,6 +561,24 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 				cur.GrossSalary = payload.BudgetSettings.GrossSalary
 				cur.MonthlyDeductions = payload.BudgetSettings.MonthlyDeductions
 				_ = h.budgetRepo.SaveSettings(cur)
+			}
+		}
+
+		// AI gateway settings (v3 backups): restore URL/model, and the key
+		// when the backup carries one — an older backup without a key must
+		// not clobber a key that's already configured.
+		if payload.AISettings != nil && h.insightRepo != nil {
+			if cur, err := h.insightRepo.GetAISettings(); err == nil {
+				if payload.AISettings.GatewayURL != "" {
+					cur.GatewayURL = payload.AISettings.GatewayURL
+				}
+				if payload.AISettings.Model != "" {
+					cur.Model = payload.AISettings.Model
+				}
+				if payload.AISettings.APIKey != "" {
+					cur.APIKey = payload.AISettings.APIKey
+				}
+				_ = h.insightRepo.SaveAISettings(cur)
 			}
 		}
 

@@ -188,7 +188,7 @@ export default function DataModal({ onClose }: Props) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
-          <h2 className="font-semibold text-gray-900">💾 Data — backup, export &amp; restore</h2>
+          <h2 className="font-semibold text-gray-900">💾 Data — backup &amp; restore · export for AI</h2>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700">✕</button>
         </div>
 
@@ -321,9 +321,32 @@ export default function DataModal({ onClose }: Props) {
             )}
           </section>
 
-          {/* ── Period-scoped exports ── */}
-          <section>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Export a period</h3>
+          {/* ── Export for AI — everything meant to leave the app for
+                 analysis: the AI dataset, incremental JSON and period CSVs. ── */}
+          <section className="border-t border-gray-100 pt-4">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Export for AI</h3>
+            <p className="text-[11px] text-gray-400 mb-2">
+              Files sized for AI chat uploads and analysis. Pick a period for the CSVs; the dataset ZIP always
+              covers full history.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-2 mb-3">
+              <a href="/api/v1/export/ai.zip" download className={exportLinkCls}>
+                <span className="min-w-0">
+                  🤖 AI dataset (ZIP)
+                  <span className="block text-[11px] text-gray-400">
+                    Per-year CSVs + README — sized for AI chat uploads, full history
+                  </span>
+                </span>
+              </a>
+              <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>
+                <span className="min-w-0">
+                  ✨ New since last backup
+                  <span className="block text-[11px] text-gray-400">
+                    {status?.last_full_export ? `since ${status.last_full_export}` : 'make a full backup first'}
+                  </span>
+                </span>
+              </a>
+            </div>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {PRESETS.map(p => (
                 <button key={p.key} onClick={() => setPreset(p.key)}
@@ -348,22 +371,6 @@ export default function DataModal({ onClose }: Props) {
               </a>
               <a href={`/api/v1/export/balances.csv${rangeQuery}`} download className={exportLinkCls}>
                 📄 Balances CSV
-              </a>
-              <a href="/api/v1/export/ai.zip" download className={exportLinkCls}>
-                <span className="min-w-0">
-                  🤖 AI dataset (ZIP)
-                  <span className="block text-[11px] text-gray-400">
-                    Per-year CSVs + README — sized for AI chat uploads, full history
-                  </span>
-                </span>
-              </a>
-              <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>
-                <span className="min-w-0">
-                  ✨ New since last backup
-                  <span className="block text-[11px] text-gray-400">
-                    {status?.last_full_export ? `since ${status.last_full_export}` : 'make a full backup first'}
-                  </span>
-                </span>
               </a>
             </div>
           </section>

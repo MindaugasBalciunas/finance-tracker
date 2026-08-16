@@ -1,15 +1,14 @@
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
 import SecurityModal from '../ui/SecurityModal'
 import DataModal from '../ui/DataModal'
-// Note: the mobile menu lives solely in the bottom "More" tab (/more) — the
-// old top-bar hamburger drawer was removed so there is one menu, not two.
+// The single mobile menu is the top hamburger: date range + the tools that
+// don't earn a bottom tab (Assets, Data, Security, AI settings, API docs).
 
-// Desktop shows every page; the mobile bottom bar keeps only the daily
-// drivers plus "More" (which holds Stocks, Assets, Data, Security — Labels
-// is desktop-only to keep the mobile surface lean).
+// Desktop shows every page; the mobile bottom bar keeps the daily drivers
+// as icon-only tabs (Labels is desktop-only to keep mobile lean).
 const navItems = [
   { to: '/', label: 'Dashboard', short: 'Home', icon: '📊' },
   { to: '/transactions', label: 'Transactions', short: 'Txns', icon: '💸' },
@@ -22,19 +21,24 @@ const navItems = [
   { to: '/ai', label: 'AI', short: 'AI', icon: '✦' },
 ]
 
+// Icon-only tabs (labels hidden to save space) — aria-labels carry the names.
 const bottomBarItems = [
-  { to: '/', short: 'Home', icon: '📊' },
-  { to: '/transactions', short: 'Txns', icon: '💸' },
-  { to: '/balances', short: 'Bal', icon: '🏦' },
-  { to: '/budget', short: 'Budget', icon: '🎯' },
-  { to: '/reports', short: 'Reports', icon: '📈' },
-  { to: '/ai', short: 'AI', icon: '✦' },
-  { to: '/more', short: 'More', icon: '☰' },
+  { to: '/', name: 'Dashboard', icon: '📊' },
+  { to: '/transactions', name: 'Transactions', icon: '💸' },
+  { to: '/balances', name: 'Balances', icon: '🏦' },
+  { to: '/stocks', name: 'Stocks', icon: '📉' },
+  { to: '/budget', name: 'Budget', icon: '🎯' },
+  { to: '/reports', name: 'Reports', icon: '📈' },
+  { to: '/ai', name: 'AI', icon: '✦' },
 ]
 
 export default function Layout() {
   const [securityOpen, setSecurityOpen] = useState(false)
   const [dataOpen, setDataOpen] = useState(false)
+  const [dateMenuOpen, setDateMenuOpen] = useState(false)
+  // Navigating away closes the date menu so it never lingers over content.
+  const location = useLocation()
+  useEffect(() => { setDateMenuOpen(false) }, [location.pathname])
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -74,16 +78,39 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* ── Mobile header — title + the date range (the only global control
-             that needs to stay one tap away); everything else lives in the
-             "More" tab so there is a single menu. ── */}
+      {/* ── Mobile header — title + one hamburger that opens the date picker.
+             Page navigation lives in the bottom bar; tools live in "More". ── */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20 md:hidden">
-        <div className="flex items-center gap-3 px-3 h-12">
-          <h1 className="text-sm font-bold text-gray-900 shrink-0">Finance</h1>
-          <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
-            <DateRangeFilter />
-          </div>
+        <div className="flex items-center justify-between px-4 h-12">
+          <h1 className="text-base font-bold text-gray-900">Finance Tracker</h1>
+          <button
+            onClick={() => setDateMenuOpen((o) => !o)}
+            aria-label="Menu"
+            className={clsx('p-2 rounded-lg transition-colors', dateMenuOpen ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-100')}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
         </div>
+        {dateMenuOpen && (
+          <div className="px-3 pb-3 border-t border-gray-100 pt-2 space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Date range</p>
+              <DateRangeFilter className="flex-wrap" />
+            </div>
+            <div className="border-t border-gray-100 pt-2 grid grid-cols-2 gap-1.5">
+              <NavLink to="/assets" onClick={() => setDateMenuOpen(false)}
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏠 Assets</NavLink>
+              <button onClick={() => { setDataOpen(true); setDateMenuOpen(false) }}
+                className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">💾 Data</button>
+              <button onClick={() => { setSecurityOpen(true); setDateMenuOpen(false) }}
+                className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔒 Security</button>
+              <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
+                className="px-3 py-2 text-sm text-blue-600 hover:bg-gray-50 rounded-lg">📚 API docs</a>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ── Data (backup / export / restore) ── */}
@@ -99,15 +126,15 @@ export default function Layout() {
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-7 h-16">
+        <div className="grid grid-cols-7 h-14">
           {bottomBarItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
+              aria-label={item.name} title={item.name}
               className={({ isActive }) => clsx(
-                'flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors px-0.5 min-w-0',
-                isActive ? 'text-blue-600' : 'text-gray-500'
+                'flex items-center justify-center transition-colors min-w-0 rounded-lg m-1',
+                isActive ? 'text-blue-600 bg-blue-50' : 'text-gray-500'
               )}>
-              <span className="text-lg leading-none">{item.icon}</span>
-              <span className="leading-none truncate max-w-full">{item.short}</span>
+              <span className="text-xl leading-none">{item.icon}</span>
             </NavLink>
           ))}
         </div>

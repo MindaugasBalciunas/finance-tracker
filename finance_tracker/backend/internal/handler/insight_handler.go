@@ -29,6 +29,8 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.PUT("/settings", h.SaveAISettings)
 	ai.POST("/test", h.TestGateway)
 	ai.POST("/chat", h.Chat)
+	ai.GET("/chat/history", h.ChatHistory)
+	ai.DELETE("/chat/history", h.ClearChat)
 }
 
 // aiSettingsResponse never carries the key itself — only whether one is set.
@@ -85,7 +87,11 @@ func (h *InsightHandler) TestGateway(c *gin.Context) {
 }
 
 type chatInput struct {
-	Messages []domain.ChatMessage `json:"messages" binding:"required"`
+	// Message is the new user turn; history is stored server-side.
+	Message string `json:"message"`
+	// Messages is the pre-v1.14 wire format — a stale open tab may still
+	// send full history; only its last user message is used.
+	Messages []domain.ChatMessage `json:"messages"`
 }
 
 func (h *InsightHandler) Chat(c *gin.Context) {
@@ -94,30 +100,39 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(input.Messages) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "messages must not be empty"})
-		return
-	}
-	for _, m := range input.Messages {
-		if m.Role != "user" && m.Role != "assistant" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "roles must be user or assistant"})
-			return
-		}
-		if strings.TrimSpace(m.Content) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "messages must not be blank"})
-			return
+	message := strings.TrimSpace(input.Message)
+	if message == "" && len(input.Messages) > 0 {
+		if last := input.Messages[len(input.Messages)-1]; last.Role == "user" {
+			message = strings.TrimSpace(last.Content)
 		}
 	}
-	if input.Messages[len(input.Messages)-1].Role != "user" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "last message must be from the user"})
+	if message == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message must not be blank"})
 		return
 	}
-	reply, err := h.svc.Chat(input.Messages)
+	reply, err := h.svc.Chat(message)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"reply": reply})
+}
+
+func (h *InsightHandler) ChatHistory(c *gin.Context) {
+	msgs, err := h.svc.ChatHistory()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"messages": msgs})
+}
+
+func (h *InsightHandler) ClearChat(c *gin.Context) {
+	if err := h.svc.ClearChat(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // GetLatest godoc

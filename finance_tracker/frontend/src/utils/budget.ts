@@ -12,6 +12,9 @@ export interface MonthPlan {
   spending: BudgetStatus[]
   fixedPlanned: number
   investmentPlanned: number
+  // Sum of all spending limits — the "if I spend every limit in full" total,
+  // needed to judge whether the plan itself fits inside the income base.
+  spendingPlanned: number
   discretionarySpent: number // expenses not matched by fixed budgets
   unbudgeted: { category: string; spent: number }[] // discretionary categories without a spending budget
   safeToSpend: number | null // income base − fixed − investment targets − discretionary spent
@@ -105,6 +108,7 @@ export function computeMonthPlan(
 
   const fixedPlanned = fixed.reduce((s, b) => s + b.amount, 0)
   const investmentPlanned = investments.reduce((s, b) => s + b.amount, 0)
+  const spendingPlanned = spending.reduce((s, b) => s + b.amount, 0)
 
   const safeToSpend = incomeBase != null
     ? incomeBase - fixedPlanned - investmentPlanned - discretionarySpent
@@ -116,6 +120,7 @@ export function computeMonthPlan(
     spending: spendingStatus,
     fixedPlanned,
     investmentPlanned,
+    spendingPlanned,
     discretionarySpent,
     unbudgeted,
     safeToSpend,

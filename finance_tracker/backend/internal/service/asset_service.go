@@ -24,6 +24,13 @@ type CreateAssetInput struct {
 	LoanRate          string  `json:"loan_rate"`
 	LoanAccount       string  `json:"loan_account"`
 	LoanPaidOffDate   string  `json:"loan_paid_off_date"`
+	// Structured interest: margin (fixed) + base (EURIBOR, resets on the
+	// reset date), plus the monthly payment for amortization projections.
+	LoanMargin         float64 `json:"loan_margin" binding:"omitempty,gte=0"`
+	LoanLabel          string  `json:"loan_label"`
+	LoanBaseRate       float64 `json:"loan_base_rate" binding:"omitempty,gte=0"`
+	LoanRateResetDate  string  `json:"loan_rate_reset_date"`
+	LoanMonthlyPayment float64 `json:"loan_monthly_payment" binding:"omitempty,gte=0"`
 }
 
 type AssetService interface {
@@ -74,6 +81,10 @@ func assetFromInput(input CreateAssetInput) (*domain.Asset, error) {
 	if err != nil {
 		return nil, err
 	}
+	loanRateResetDate, err := parseOptionalDate(input.LoanRateResetDate)
+	if err != nil {
+		return nil, err
+	}
 
 	currentValue := input.CurrentValue
 	if currentValue == 0 {
@@ -93,6 +104,12 @@ func assetFromInput(input CreateAssetInput) (*domain.Asset, error) {
 		LoanRate:          input.LoanRate,
 		LoanAccount:       input.LoanAccount,
 		LoanPaidOffDate:   loanPaidOffDate,
+
+		LoanMargin:         input.LoanMargin,
+		LoanLabel:          input.LoanLabel,
+		LoanBaseRate:       input.LoanBaseRate,
+		LoanRateResetDate:  loanRateResetDate,
+		LoanMonthlyPayment: input.LoanMonthlyPayment,
 	}
 	return a, nil
 }

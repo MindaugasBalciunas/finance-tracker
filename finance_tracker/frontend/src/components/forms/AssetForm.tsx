@@ -1,6 +1,7 @@
 import { useForm, Controller } from 'react-hook-form'
 import type { AssetType, CreateAssetInput } from '../../types'
 import { ASSET_TYPE_LABELS, ACCOUNT_LABELS } from '../../types'
+import { useLabels } from '../../hooks/useBudgets'
 import DateInput from '../ui/DateInput'
 
 interface Props {
@@ -17,6 +18,9 @@ function clean(data: CreateAssetInput): CreateAssetInput {
     ...data,
     current_value: Number.isFinite(data.current_value) ? data.current_value : undefined,
     loan_remaining: Number.isFinite(data.loan_remaining) ? data.loan_remaining : undefined,
+    loan_margin: Number.isFinite(data.loan_margin) ? data.loan_margin : undefined,
+    loan_base_rate: Number.isFinite(data.loan_base_rate) ? data.loan_base_rate : undefined,
+    loan_monthly_payment: Number.isFinite(data.loan_monthly_payment) ? data.loan_monthly_payment : undefined,
   }
 }
 
@@ -24,6 +28,7 @@ export default function AssetForm({ onSubmit, onCancel, isSubmitting, defaultVal
   const { register, handleSubmit, control, formState: { errors } } = useForm<CreateAssetInput>({
     defaultValues: { type: 'other', ...defaultValues },
   })
+  const { data: allLabels = [] } = useLabels()
 
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -118,10 +123,42 @@ export default function AssetForm({ onSubmit, onCancel, isSubmitting, defaultVal
             />
           </div>
         </div>
+        {/* Interest split into the fixed bank margin and the variable base
+            (EURIBOR) that resets on a known date — total rate = margin + base. */}
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Interest rate</label>
-            <input type="text" placeholder="e.g. 6M EURIBOR + 1.3%" {...register('loan_rate')} className={inputCls} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bank margin (% p.a.)</label>
+            <input
+              type="number" step="0.01" min="0" placeholder="1.30"
+              {...register('loan_margin', { valueAsNumber: true, min: { value: 0, message: 'Must be ≥ 0' } })}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">EURIBOR / base (% p.a.)</label>
+            <input
+              type="number" step="0.01" min="0" placeholder="2.10"
+              {...register('loan_base_rate', { valueAsNumber: true, min: { value: 0, message: 'Must be ≥ 0' } })}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Next rate reset</label>
+            <Controller
+              name="loan_rate_reset_date"
+              control={control}
+              render={({ field }) => <DateInput value={field.value ?? ''} onChange={field.onChange} />}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Monthly payment (€)</label>
+            <input
+              type="number" step="0.01" min="0"
+              {...register('loan_monthly_payment', { valueAsNumber: true, min: { value: 0, message: 'Must be ≥ 0' } })}
+              className={inputCls}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Paid from account</label>
@@ -139,6 +176,27 @@ export default function AssetForm({ onSubmit, onCancel, isSubmitting, defaultVal
               control={control}
               render={({ field }) => <DateInput value={field.value ?? ''} onChange={field.onChange} />}
             />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payments label</label>
+            <input
+              type="text" placeholder="e.g. loan" list="asset-loan-labels" autoComplete="off"
+              {...register('loan_label', { setValueAs: (v) => String(v ?? '').toLowerCase().trim() })}
+              className={inputCls}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Transactions carrying this label count as this loan's payments — the actual amounts drive the
+              balance estimate and projection.
+            </p>
+            <datalist id="asset-loan-labels">
+              {allLabels.map((l) => <option key={l} value={l} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Rate note (free text)</label>
+            <input type="text" placeholder="e.g. 6M EURIBOR + 1.3%" {...register('loan_rate')} className={inputCls} />
           </div>
         </div>
       </fieldset>

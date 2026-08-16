@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +25,7 @@ func aiTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}))
 
 	// Chat context needs at least one transaction and one balance snapshot.
 	require.NoError(t, db.Create(&domain.Transaction{
@@ -117,10 +119,7 @@ func TestAIChatThroughGateway(t *testing.T) {
 		"gateway_url": srv.URL, "model": "test-model", "api_key": "sk-test"})
 	require.Equal(t, 200, w.Code)
 
-	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
-		"messages": []map[string]string{
-			{"role": "user", "content": "how much did I spend?"},
-		}})
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "how much did I spend?"})
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var res map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
@@ -134,6 +133,30 @@ func TestAIChatThroughGateway(t *testing.T) {
 	assert.Contains(t, cap.Req.Messages[0].Content, "CURRENT BALANCE SNAPSHOT",
 		"system message carries the financial data report")
 	assert.Equal(t, "user", cap.Req.Messages[1].Role)
+
+	// Both turns persisted server-side; a second question replays them.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/chat/history", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "how much did I spend?")
+	assert.Contains(t, w.Body.String(), "You spent €50 on groceries.")
+
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "and last year?"})
+	require.Equal(t, 200, w.Code)
+	require.GreaterOrEqual(t, len(cap.Req.Messages), 4, "prior turns replayed from server history")
+	assert.Equal(t, "how much did I spend?", cap.Req.Messages[1].Content)
+	assert.Equal(t, "assistant", cap.Req.Messages[2].Role)
+	assert.Equal(t, "and last year?", cap.Req.Messages[3].Content)
+
+	// Legacy wire format (messages[]) still lands the last user turn.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
+		"messages": []map[string]string{{"role": "user", "content": "legacy format"}}})
+	require.Equal(t, 200, w.Code, w.Body.String())
+
+	// Clearing wipes the server history.
+	w = budgetDoJSON(r, "DELETE", "/api/v1/ai/chat/history", nil)
+	require.Equal(t, 204, w.Code)
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/chat/history", nil)
+	assert.NotContains(t, w.Body.String(), "how much did I spend?")
 }
 
 func TestAIChatValidation(t *testing.T) {
@@ -256,4 +279,43 @@ func TestGatewayTestEndpoint(t *testing.T) {
 	require.Equal(t, 200, w.Code)
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/test", nil)
 	assert.Equal(t, 200, w.Code, w.Body.String())
+}
+
+// AI gateway settings must round-trip through the JSON backup so a
+// wipe-and-restore doesn't lose the key (the "disappearing key" bug).
+func TestAISettingsBackupRoundtrip(t *testing.T) {
+	// Source instance with configured gateway.
+	srcRouter, srcDB := aiTestRouter(t)
+	w := budgetDoJSON(srcRouter, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": "https://api.nexos.ai/v1", "model": "gpt-5", "api_key": "nxs-roundtrip"})
+	require.Equal(t, 200, w.Code)
+
+	// Export via an export handler over the same DB.
+	exportRouter := exportRouterFor(t, srcDB)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil)
+	rec := httptest.NewRecorder()
+	exportRouter.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code)
+	assert.Contains(t, rec.Body.String(), "nxs-roundtrip", "full backup carries the key")
+
+	// Import into a fresh instance.
+	importRouter, dstDB := importRouterFor(t)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "finances.json")
+	require.NoError(t, err)
+	_, err = fw.Write(rec.Body.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+	ireq := httptest.NewRequest(http.MethodPost, "/api/v1/import/json", &buf)
+	ireq.Header.Set("Content-Type", mw.FormDataContentType())
+	irec := httptest.NewRecorder()
+	importRouter.ServeHTTP(irec, ireq)
+	require.Equal(t, 200, irec.Code, irec.Body.String())
+
+	var s domain.AISettings
+	require.NoError(t, dstDB.First(&s, 1).Error)
+	assert.Equal(t, "nxs-roundtrip", s.APIKey)
+	assert.Equal(t, "gpt-5", s.Model)
+	assert.Equal(t, "https://api.nexos.ai/v1", s.GatewayURL)
 }

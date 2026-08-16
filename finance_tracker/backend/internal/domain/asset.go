@@ -27,9 +27,17 @@ type Asset struct {
 	// Financing
 	LoanRemaining     float64    `json:"loan_remaining"` // outstanding balance
 	LoanRemainingDate *time.Time `json:"loan_remaining_date,omitempty"`
-	LoanRate          string     `json:"loan_rate,omitempty"`    // e.g. "6M EURIBOR + 1.3%"
+	LoanRate          string     `json:"loan_rate,omitempty"`    // legacy free text, e.g. "6M EURIBOR + 1.3%"
 	LoanAccount       string     `json:"loan_account,omitempty"` // account payments are deducted from
 	LoanPaidOffDate   *time.Time `json:"loan_paid_off_date,omitempty"`
+	// Structured interest: total rate = bank margin + variable base
+	// (EURIBOR); the base resets on LoanRateResetDate. LoanMonthlyPayment
+	// drives the amortization projection of the remaining balance.
+	LoanMargin         float64    `json:"loan_margin"`    // % p.a., fixed part
+	LoanLabel          string     `json:"loan_label,omitempty"` // transaction label identifying this loan's payments
+	LoanBaseRate       float64    `json:"loan_base_rate"` // % p.a., variable part (EURIBOR)
+	LoanRateResetDate  *time.Time `json:"loan_rate_reset_date,omitempty"`
+	LoanMonthlyPayment float64    `json:"loan_monthly_payment"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

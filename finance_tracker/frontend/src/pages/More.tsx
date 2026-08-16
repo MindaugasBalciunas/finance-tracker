@@ -10,9 +10,8 @@ export default function More() {
   const [securityOpen, setSecurityOpen] = useState(false)
 
   // Labels is intentionally omitted on mobile to keep the surface lean — it
-  // stays available on desktop. Stocks and Assets live here.
+  // stays available on desktop. Stocks moved to the bottom tab bar.
   const pageLinks = [
-    { to: '/stocks', icon: '📉', title: 'Stocks', hint: 'Trades, positions and performance' },
     { to: '/assets', icon: '🏠', title: 'Assets', hint: 'Property, vehicles and loans' },
   ]
 

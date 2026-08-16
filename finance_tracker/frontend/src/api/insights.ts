@@ -58,8 +58,21 @@ export const aiApi = {
     await client.post('/ai/test')
   },
 
-  chat: async (messages: ChatMessage[]): Promise<string> => {
-    const { data } = await client.post<{ reply: string }>('/ai/chat', { messages })
+  // History lives server-side so the conversation follows the user across
+  // phone and browser — only the new message travels up.
+  chat: async (message: string): Promise<string> => {
+    const { data } = await client.post<{ reply: string }>('/ai/chat', { message })
     return data.reply
+  },
+
+  chatHistory: async (): Promise<ChatMessage[]> => {
+    const { data } = await client.get<{ messages: { role: 'user' | 'assistant'; content: string }[] }>(
+      '/ai/chat/history',
+    )
+    return (data.messages ?? []).map((m) => ({ role: m.role, content: m.content }))
+  },
+
+  clearChat: async (): Promise<void> => {
+    await client.delete('/ai/chat/history')
   },
 }

@@ -270,11 +270,13 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		assetRows = append(assetRows, []string{
 			a.Name, a.Type, a.PurchaseDate, fmt.Sprintf("%.2f", a.PurchasePrice),
 			fmt.Sprintf("%.2f", a.CurrentValue), a.ValuationDate,
-			fmt.Sprintf("%.2f", a.LoanRemaining), a.LoanRate, a.Notes,
+			fmt.Sprintf("%.2f", a.LoanRemaining), a.LoanRate,
+			fmt.Sprintf("%.2f", a.LoanMargin), fmt.Sprintf("%.2f", a.LoanBaseRate),
+			a.LoanRateResetDate, fmt.Sprintf("%.2f", a.LoanMonthlyPayment), a.Notes,
 		})
 	}
 	if err := writeCSV("assets.csv",
-		[]string{"name", "type", "purchase_date", "purchase_price_eur", "current_value_eur", "valuation_date", "loan_remaining_eur", "loan_rate", "notes"}, assetRows); err != nil {
+		[]string{"name", "type", "purchase_date", "purchase_price_eur", "current_value_eur", "valuation_date", "loan_remaining_eur", "loan_rate", "loan_margin_pct", "loan_base_rate_pct", "loan_rate_reset_date", "loan_monthly_payment_eur", "notes"}, assetRows); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
