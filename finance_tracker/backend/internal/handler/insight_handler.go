@@ -37,6 +37,58 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// Auto review of the currently open view. Session-only (not in the API
 	// token allowlist): every uncached call spends gateway tokens.
 	ai.GET("/view-summary", h.ViewSummary)
+	// AI labeling: single-transaction assist, bulk reindex suggestions and
+	// user-approved apply. All session-only POSTs.
+	ai.POST("/assist-transaction", h.AssistTransaction)
+	ai.POST("/label-reindex", h.LabelReindex)
+	ai.POST("/label-reindex/apply", h.ApplyLabelSuggestions)
+}
+
+func (h *InsightHandler) AssistTransaction(c *gin.Context) {
+	var input service.TransactionAssistInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	out, err := h.svc.AssistTransaction(input)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *InsightHandler) LabelReindex(c *gin.Context) {
+	var input struct {
+		Limit int `json:"limit"`
+	}
+	_ = c.ShouldBindJSON(&input)
+	out, err := h.svc.ReindexSuggest(input.Limit)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *InsightHandler) ApplyLabelSuggestions(c *gin.Context) {
+	var input struct {
+		Items []service.LabelApplyItem `json:"items" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(input.Items) == 0 || len(input.Items) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "items must contain 1-500 suggestions"})
+		return
+	}
+	applied, err := h.svc.ApplyLabelSuggestions(input.Items)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"applied": applied})
 }
 
 func (h *InsightHandler) ViewSummary(c *gin.Context) {

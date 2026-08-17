@@ -6,6 +6,9 @@ import {
   useReapplyRules, useLabelRules, useDeleteRule, useApplyLabel,
 } from '../hooks/useBudgets'
 import { budgetsApi } from '../api/budgets'
+import { aiApi } from '../api/insights'
+import { useAISettings } from '../hooks/useInsights'
+import { useQueryClient } from '@tanstack/react-query'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import { formatEuro } from '../utils/format'
@@ -272,6 +275,8 @@ export default function Labels() {
         )}
       </div>
 
+      <AIReindexCard onBanner={setBanner} />
+
       <RulesSection onBanner={setBanner} />
 
       {renaming && (
@@ -345,6 +350,137 @@ export default function Labels() {
           dateRange={{}}
           onClose={() => setReviewing(null)}
         />
+      )}
+    </div>
+  )
+}
+
+// AIReindexCard: bulk AI tagging. Scans unlabeled transactions, shows the
+// model's proposals for review (vocabulary-only, nothing invented), and
+// applies ONLY what the user keeps checked. Add-only — existing labels are
+// never touched.
+function AIReindexCard({ onBanner }: { onBanner: (b: Banner) => void }) {
+  const { data: settings } = useAISettings()
+  const configured = !!settings?.has_key && !!settings?.model
+  const qc = useQueryClient()
+  const [scanning, setScanning] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [result, setResult] = useState<Awaited<ReturnType<typeof aiApi.labelReindex>> | null>(null)
+  const [checked, setChecked] = useState<Set<number>>(new Set())
+
+  if (!configured) return null
+
+  const scan = async () => {
+    setScanning(true)
+    try {
+      const res = await aiApi.labelReindex()
+      setResult(res)
+      setChecked(new Set(res.suggestions.map((s) => s.id)))
+      if (res.suggestions.length === 0) {
+        onBanner({ kind: 'ok', text: res.scanned === 0
+          ? 'Nothing to tag — every transaction with a description already has labels.'
+          : `Scanned ${res.scanned} unlabeled transactions — the AI found no confident matches.` })
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      onBanner({ kind: 'error', text: `Scan failed: ${e.response?.data?.error ?? e.message ?? 'unknown error'}` })
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const apply = async () => {
+    if (!result) return
+    const items = result.suggestions
+      .filter((s) => checked.has(s.id))
+      .map((s) => ({ id: s.id, labels: s.labels }))
+    if (items.length === 0) return
+    setApplying(true)
+    try {
+      const applied = await aiApi.applyLabelSuggestions(items)
+      onBanner({ kind: 'ok', text: `Tagged ${applied} transaction${applied === 1 ? '' : 's'} with AI suggestions.` })
+      setResult(null)
+      for (const key of ['transactions', 'labels', 'label-stats', 'label-suggestions']) {
+        qc.invalidateQueries({ queryKey: [key] })
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      onBanner({ kind: 'error', text: `Apply failed: ${e.response?.data?.error ?? e.message ?? 'unknown error'}` })
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const toggle = (id: number) =>
+    setChecked((c) => {
+      const next = new Set(c)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <h2 className="font-semibold text-gray-900">✦ AI tagging</h2>
+        <button
+          onClick={scan}
+          disabled={scanning}
+          className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {scanning ? 'Scanning…' : result ? 'Scan again' : 'Scan unlabeled with AI'}
+        </button>
+      </div>
+      <p className="text-xs text-gray-400">
+        The AI reads your unlabeled transactions (newest first, 75 per scan) and proposes labels from your
+        existing vocabulary, matching how you've tagged similar rows. Nothing is written until you apply.
+      </p>
+
+      {result && result.suggestions.length > 0 && (
+        <>
+          <div className="mt-3 max-h-96 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-xl">
+            {result.suggestions.map((s) => (
+              <label key={s.id} className="flex items-start gap-2.5 px-3 py-2 text-sm hover:bg-gray-50/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked.has(s.id)}
+                  onChange={() => toggle(s.id)}
+                  className="mt-1"
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-gray-700 truncate">{s.comment}</span>
+                  <span className="block text-xs text-gray-400">
+                    {s.date} · {formatEuro(s.amount)} · {s.category}
+                  </span>
+                </span>
+                <span className="flex flex-wrap gap-1 justify-end max-w-40">
+                  {s.labels.map((l) => (
+                    <span key={l} className="text-[11px] font-medium bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">{l}</span>
+                  ))}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <button
+              onClick={apply}
+              disabled={applying || checked.size === 0}
+              className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {applying ? 'Applying…' : `Apply ${checked.size} selected`}
+            </button>
+            <button
+              onClick={() => setChecked(new Set())}
+              className="px-2 py-1 text-xs text-gray-400 hover:text-gray-700"
+            >
+              Uncheck all
+            </button>
+            <span className="text-xs text-gray-400 ml-auto">
+              {result.suggestions.length} suggestions from {result.scanned} scanned
+              {result.remaining_unlabeled > 0 && <> · {result.remaining_unlabeled} unlabeled left</>}
+            </span>
+          </div>
+        </>
       )}
     </div>
   )

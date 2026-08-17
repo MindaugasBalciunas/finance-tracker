@@ -9,6 +9,8 @@ import { transactionsApi } from '../../api/transactions'
 import { useTransactionComments } from '../../hooks/useTransactions'
 import { useLabels, useLabelRules } from '../../hooks/useBudgets'
 import { ruleCoversComment, commentPatternMatches } from '../../utils/rulePattern'
+import { aiApi } from '../../api/insights'
+import { useAISettings } from '../../hooks/useInsights'
 import RuleSuggestion from './RuleSuggestion'
 
 interface Props {
@@ -82,6 +84,39 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   // Auto labels the user removed from the field — sent as suppressed_labels
   // on save so the matching rules are skipped for this transaction only.
   const [dismissedAuto, setDismissedAuto] = useState<string[]>([])
+
+  // AI assist: labels merged into the field as normal removable chips, the
+  // cleaner description offered beside the form (never applied silently).
+  const { data: aiSettings } = useAISettings()
+  const aiConfigured = !!aiSettings?.has_key && !!aiSettings?.model
+  const [assistBusy, setAssistBusy] = useState(false)
+  const [assistNote, setAssistNote] = useState('')
+  const [assistComment, setAssistComment] = useState('')
+  const [assistError, setAssistError] = useState('')
+
+  const runAssist = async () => {
+    setAssistBusy(true)
+    setAssistError('')
+    setAssistNote('')
+    setAssistComment('')
+    try {
+      const res = await aiApi.assistTransaction({
+        date: watch('date'), type: watch('type'), category: String(watch('category') ?? ''),
+        amount: Number(watch('amount')) || 0, comment: watch('comment') ?? '', labels: watch('labels') ?? '',
+      })
+      const existing = (watch('labels') ?? '').split(',').map((l) => l.trim()).filter(Boolean)
+      const merged = [...existing, ...res.labels.filter((l) => !existing.includes(l))]
+      setValue('labels', merged.join(','))
+      const current = (watch('comment') ?? '').trim()
+      if (res.comment && res.comment !== current) setAssistComment(res.comment)
+      if (res.note) setAssistNote(res.note)
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      setAssistError(e.response?.data?.error ?? e.message ?? 'Suggestion failed')
+    } finally {
+      setAssistBusy(false)
+    }
+  }
 
   // All known labels: ones used on transactions plus ones defined by rules
   // (a fresh rule's label may not exist on any transaction yet).
@@ -261,7 +296,20 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Labels</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-gray-700">Labels</label>
+          {aiConfigured && (
+            <button
+              type="button"
+              onClick={runAssist}
+              disabled={assistBusy || commentValue.trim().length < 3}
+              title="Suggest labels and a cleaner description from your history"
+              className="text-xs font-medium text-indigo-500 hover:text-indigo-700 disabled:opacity-40"
+            >
+              {assistBusy ? '✦ thinking…' : '✦ AI suggest'}
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
           {currentLabels.map((l) => (
             <span key={l} className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-md px-2 py-1">
@@ -344,6 +392,24 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               </button>
             )}
           </p>
+        )}
+        {(assistComment || assistNote || assistError) && (
+          <div className="text-xs rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 space-y-1 mt-1.5">
+            {assistError && <p className="text-red-600">{assistError}</p>}
+            {assistComment && (
+              <p className="text-gray-700">
+                ✦ Clearer description: “{assistComment}”{' '}
+                <button
+                  type="button"
+                  onClick={() => { setValue('comment', assistComment); setAssistComment('') }}
+                  className="font-medium text-indigo-600 hover:underline"
+                >
+                  Use it
+                </button>
+              </p>
+            )}
+            {assistNote && <p className="text-gray-400">{assistNote}</p>}
+          </div>
         )}
         {suggestionLabel && (
           <RuleSuggestion

@@ -43,6 +43,13 @@ type InsightService interface {
 	// ViewSummary returns a short AI review of one app view for the period;
 	// cached server-side for 15 minutes per view+period.
 	ViewSummary(view string, from, to *time.Time, refresh bool) (string, error)
+	// AssistTransaction suggests labels + a cleaner description for one
+	// transaction, learned from the user's own history.
+	AssistTransaction(input TransactionAssistInput) (*TransactionAssist, error)
+	// ReindexSuggest proposes labels for unlabeled transactions (review-only);
+	// ApplyLabelSuggestions writes the approved ones (add-only).
+	ReindexSuggest(limit int) (*ReindexResult, error)
+	ApplyLabelSuggestions(items []LabelApplyItem) (int, error)
 }
 
 type insightService struct {

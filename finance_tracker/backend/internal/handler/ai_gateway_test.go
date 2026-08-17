@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -452,4 +453,86 @@ func TestViewSummary(t *testing.T) {
 	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=admin", nil)
 	assert.Equal(t, 400, w.Code)
 	assert.Equal(t, 3, hits)
+}
+
+// AI labeling: assist suggests from history, reindex proposes for unlabeled
+// rows (vocabulary-only), apply is add-only and user-approved.
+func TestAILabeling(t *testing.T) {
+	r, db := aiTestRouter(t)
+	// A labeled example (from the fixture) plus two unlabeled rows.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -3), Type: "expense", Amount: 12.5,
+		Category: "Food", Comment: "50146 LIDL SNIPISKES", Labels: ""}).Error)
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -2), Type: "expense", Amount: 30,
+		Category: "Transport", Comment: "CIRCLE K VILNIUS", Labels: ""}).Error)
+
+	// Scripted gateway: reindex chunk reply maps both rows; assist reply
+	// suggests labels + a cleaned comment.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+		w.Header().Set("Content-Type", "application/json")
+		var reply string
+		if strings.Contains(prompt, "TRANSACTIONS TO LABEL") {
+			// find the ids the prompt actually carries
+			assert.Contains(t, prompt, "LIDL")
+			assert.Contains(t, prompt, "groceries", "vocabulary offered to the model")
+			reply = `[{"id":2,"labels":["groceries","junk-label"]},{"id":3,"labels":["fuel"]},{"id":999,"labels":["groceries"]}]`
+		} else {
+			assert.Contains(t, prompt, "TRANSACTION TO TAG")
+			reply = `{"labels":["groceries"],"comment":"Lidl Šnipiškės groceries","note":"Matches your Lidl pattern."}`
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	// Single-transaction assist.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/assist-transaction", map[string]any{
+		"date": "2026-08-17", "type": "expense", "category": "Food",
+		"amount": 12.5, "comment": "50146 LIDL SNIPISKES"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "groceries")
+	assert.Contains(t, w.Body.String(), "Lidl Šnipiškės groceries")
+
+	// Reindex: only known transactions and vocabulary labels survive.
+	// 'fuel' is not in this tiny DB's vocabulary (only 'groceries' is), and
+	// id 999 does not exist — both must be dropped.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex", nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var res struct {
+		Suggestions []struct {
+			ID     uint     `json:"id"`
+			Labels []string `json:"labels"`
+		} `json:"suggestions"`
+		Scanned   int `json:"scanned"`
+		Remaining int `json:"remaining_unlabeled"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
+	require.Len(t, res.Suggestions, 1, w.Body.String())
+	assert.EqualValues(t, 2, res.Suggestions[0].ID)
+	assert.Equal(t, []string{"groceries"}, res.Suggestions[0].Labels, "junk-label filtered by vocabulary")
+	assert.Equal(t, 2, res.Scanned)
+
+	// Apply is add-only and preserves accounts.
+	var before domain.Transaction
+	require.NoError(t, db.First(&before, 2).Error)
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex/apply", map[string]any{
+		"items": []map[string]any{{"id": 2, "labels": []string{"groceries"}}}})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"applied":1`)
+	var after domain.Transaction
+	require.NoError(t, db.First(&after, 2).Error)
+	assert.Equal(t, "groceries", after.Labels)
+	assert.Equal(t, before.DebitAccount, after.DebitAccount, "accounts survive apply")
+
+	// Re-applying the same labels is a no-op, not a duplicate.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex/apply", map[string]any{
+		"items": []map[string]any{{"id": 2, "labels": []string{"groceries"}}}})
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"applied":0`)
 }

@@ -76,6 +76,36 @@ export const aiApi = {
     await client.delete('/ai/chat/history')
   },
 
+  // Single-transaction AI assist: labels + a cleaner description learned
+  // from the user's own history. Suggestion only — nothing is written.
+  assistTransaction: async (input: {
+    date?: string
+    type?: string
+    category?: string
+    amount?: number
+    comment?: string
+    labels?: string
+  }): Promise<{ labels: string[]; comment: string; note?: string }> => {
+    const { data } = await client.post('/ai/assist-transaction', input)
+    return data
+  },
+
+  // Bulk reindex: AI proposes labels for unlabeled transactions (review-only).
+  labelReindex: async (): Promise<{
+    suggestions: { id: number; date: string; type: string; amount: number; category: string; comment: string; labels: string[] }[]
+    scanned: number
+    remaining_unlabeled: number
+  }> => {
+    const { data } = await client.post('/ai/label-reindex', {})
+    return data
+  },
+
+  // Writes the user-approved suggestions (add-only).
+  applyLabelSuggestions: async (items: { id: number; labels: string[] }[]): Promise<number> => {
+    const { data } = await client.post<{ applied: number }>('/ai/label-reindex/apply', { items })
+    return data.applied
+  },
+
   // Short AI review of the view the user has open; server-cached 15 min per
   // view+period, so tab-hopping is free.
   viewSummary: async (
