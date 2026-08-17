@@ -353,6 +353,9 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 		}
 	}
 
+	if len(suggestions) > 0 {
+		s.logAIActivity("tagging", mode, fmt.Sprintf("proposed %d label changes from %d scanned rows (pending user approval)", len(suggestions), len(batch)))
+	}
 	return &ReindexResult{
 		Suggestions: suggestions,
 		Scanned:     len(batch),
@@ -398,6 +401,9 @@ func (s *insightService) ApplyLabelSuggestions(items []LabelApplyItem) (int, err
 		}); err == nil {
 			applied++
 		}
+	}
+	if applied > 0 {
+		s.logAIActivity("tagging", "applied", fmt.Sprintf("user approved AI label changes on %d transactions", applied))
 	}
 	return applied, nil
 }

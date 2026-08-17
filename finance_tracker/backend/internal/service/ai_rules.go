@@ -352,6 +352,20 @@ Reply as ONE JSON array, nothing else:
 	if suggestions == nil {
 		suggestions = []RuleSuggestion{}
 	}
+	if len(suggestions) > 0 {
+		adds, updates, deletes := 0, 0, 0
+		for _, sg := range suggestions {
+			switch sg.Action {
+			case "add":
+				adds++
+			case "update":
+				updates++
+			case "delete":
+				deletes++
+			}
+		}
+		s.logAIActivity("rule_review", "", fmt.Sprintf("proposed %d rule changes across %d rules (%d adds, %d updates, %d deletes; pending user approval)", len(suggestions), len(rules), adds, updates, deletes))
+	}
 	return &RuleReviewResult{Suggestions: suggestions, RulesScanned: len(rules)}, nil
 }
 
@@ -419,6 +433,9 @@ func (s *insightService) ApplyRuleSuggestions(items []RuleApplyItem) (*RuleApply
 			}
 			res.Deleted++
 		}
+	}
+	if res.Added+res.Updated+res.Deleted > 0 {
+		s.logAIActivity("rule_review", "applied", fmt.Sprintf("user approved rule changes: %d added, %d updated, %d deleted, %d transactions relabeled", res.Added, res.Updated, res.Deleted, res.Relabeled))
 	}
 	return res, nil
 }

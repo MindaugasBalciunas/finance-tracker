@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
@@ -18,6 +19,10 @@ type InsightRepository interface {
 	ListChat(limit int) ([]domain.AIChatMessage, error)
 	AppendChat(msgs ...*domain.AIChatMessage) error
 	ClearChat() error
+	// LogActivity records one AI-interaction digest and prunes entries older
+	// than 30 days. RecentActivity returns digests newest-first.
+	LogActivity(a *domain.AIActivity) error
+	RecentActivity(since time.Time, limit int) ([]domain.AIActivity, error)
 }
 
 type insightRepository struct {
@@ -86,6 +91,20 @@ func (r *insightRepository) AppendChat(msgs ...*domain.AIChatMessage) error {
 
 func (r *insightRepository) ClearChat() error {
 	return r.db.Exec("DELETE FROM ai_chat_messages").Error
+}
+
+func (r *insightRepository) LogActivity(a *domain.AIActivity) error {
+	if err := r.db.Create(a).Error; err != nil {
+		return err
+	}
+	// Rolling window — the digests are short-term memory, not an archive.
+	return r.db.Exec("DELETE FROM ai_activities WHERE created_at < ?", time.Now().AddDate(0, 0, -30)).Error
+}
+
+func (r *insightRepository) RecentActivity(since time.Time, limit int) ([]domain.AIActivity, error) {
+	var out []domain.AIActivity
+	err := r.db.Where("created_at >= ?", since).Order("id DESC").Limit(limit).Find(&out).Error
+	return out, err
 }
 
 func (r *insightRepository) SaveAISettings(s *domain.AISettings) error {

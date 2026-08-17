@@ -67,6 +67,9 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 	if view == "stocks" {
 		extra = " Relate the live market sentiment, news and social chatter to the user's actual positions."
 	}
+	if memo := s.recentAIContext(6); memo != "" {
+		context += "\n\n" + memo
+	}
 	prompt := fmt.Sprintf(`You are a personal finance assistant. Below is the data behind the "%s" view the user has open right now (period: %s). In 2-4 short sentences, point out the most interesting, unusual or actionable things in THIS view.%s Quote concrete EUR figures. Plain text only — no headers, no bullet points, no preamble, no restating what the view is.
 
 %s`, view, periodLabel(from, to), extra, context)
@@ -79,6 +82,7 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 	viewCache.Lock()
 	viewCache.m[key] = viewCacheEntry{text: text, expires: time.Now().Add(viewSummaryTTL)}
 	viewCache.Unlock()
+	s.logAIActivity("view_summary", view+" "+periodLabel(from, to), text)
 	return text, nil
 }
 

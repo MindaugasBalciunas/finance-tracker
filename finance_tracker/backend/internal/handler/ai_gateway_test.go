@@ -26,7 +26,7 @@ func aiTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}, &domain.AIActivity{}))
 
 	// Chat context needs at least one transaction and one balance snapshot.
 	require.NoError(t, db.Create(&domain.Transaction{

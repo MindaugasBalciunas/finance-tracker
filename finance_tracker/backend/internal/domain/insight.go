@@ -43,3 +43,17 @@ type AIChatMessage struct {
 	Content   string    `json:"content" gorm:"type:text;not null"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// AIActivity is a compact digest of one AI interaction — a chat exchange, a
+// view review, an analysis, a tagging or rule-review run. It is the shared
+// short-term memory of the AI integrations: each one logs a few hundred
+// characters here, and prompts include the recent digests instead of full
+// transcripts, so the model knows what was already said at minimal token
+// cost.
+type AIActivity struct {
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Kind      string    `json:"kind" gorm:"not null;index"` // chat | view_summary | analysis | tagging | rule_review
+	Scope     string    `json:"scope" gorm:"not null;default:''"`
+	Content   string    `json:"content" gorm:"type:text;not null"`
+	CreatedAt time.Time `json:"created_at" gorm:"index"`
+}

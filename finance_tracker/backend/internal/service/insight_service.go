@@ -122,12 +122,18 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 	if err := s.repo.Create(insight); err != nil {
 		return nil, fmt.Errorf("saving insight: %w", err)
 	}
+	s.logAIActivity("analysis", periodLabel(dateFrom, dateTo), content)
 	return insight, nil
 }
 
 // maxChatTurns bounds how much history is replayed to the gateway — the
-// system data report already dominates the context.
+// system data report already dominates the context. Replayed history is
+// further trimmed to the memory window (7 days) and each message to
+// maxReplayChars: old or oversized turns cost tokens on EVERY question, and
+// the recent-activity digests carry the gist instead. Stored history is
+// never trimmed — only what goes over the wire.
 const maxChatTurns = 24
+const maxReplayChars = 1600
 
 func (s *insightService) Chat(message string) (string, error) {
 	settings, err := s.repo.GetAISettings()
@@ -145,10 +151,18 @@ func (s *insightService) Chat(message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	cutoff := time.Now().Add(-aiMemoryWindow)
 	messages := make([]gatewayMessage, 0, len(history)+2)
 	messages = append(messages, gatewayMessage{Role: "system", Content: system})
 	for _, m := range history {
-		messages = append(messages, gatewayMessage{Role: m.Role, Content: m.Content})
+		if m.CreatedAt.Before(cutoff) {
+			continue // older turns live on as activity digests, not transcripts
+		}
+		content := m.Content
+		if len(content) > maxReplayChars {
+			content = content[:maxReplayChars] + "… [earlier answer trimmed]"
+		}
+		messages = append(messages, gatewayMessage{Role: m.Role, Content: content})
 	}
 	messages = append(messages, gatewayMessage{Role: "user", Content: message})
 
@@ -196,6 +210,7 @@ func (s *insightService) Chat(message string) (string, error) {
 	); err != nil {
 		return "", fmt.Errorf("saving chat: %w", err)
 	}
+	s.logAIActivity("chat", "", "Q: "+clipText(message, 160)+" — A: "+clipText(reply, 240))
 	return reply, nil
 }
 
@@ -458,9 +473,13 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
+	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
 
-` + report, nil
+` + report
+	if memo := s.recentAIContext(8, "chat"); memo != "" {
+		system += "\n\n" + memo
+	}
+	return system, nil
 }
 
 // fixedObligationLabels marks money that isn't a spending decision (loan,
