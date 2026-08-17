@@ -31,6 +31,18 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.POST("/chat", h.Chat)
 	ai.GET("/chat/history", h.ChatHistory)
 	ai.DELETE("/chat/history", h.ClearChat)
+	// Read-only data report for machine clients (MCP get_overview) — plain
+	// financial aggregates, no secrets, allowlisted for API-token access.
+	ai.GET("/report", h.DataReport)
+}
+
+func (h *InsightHandler) DataReport(c *gin.Context) {
+	report, err := h.svc.DataReport()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"report": report})
 }
 
 // aiSettingsResponse never carries the key itself — only whether one is set.

@@ -34,11 +34,49 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		auth.POST("/webauthn/login/finish", h.WebauthnLoginFinish)
 		auth.GET("/webauthn/credentials", h.ListCredentials)
 		auth.DELETE("/webauthn/credentials/:id", h.DeleteCredential)
+		auth.POST("/token", h.GenerateToken)
+		auth.DELETE("/token", h.RevokeToken)
 	}
 }
 
+// apiTokenPrefixes is everything a bearer API token may read. The token is
+// strictly read-only and scoped for insight tooling (the MCP server): no
+// exports (they carry the AI key), no settings, no auth, no chat history,
+// and — enforced separately — never anything but GET.
+var apiTokenPrefixes = []string{
+	"/api/v1/transactions",
+	"/api/v1/labels",
+	"/api/v1/budgets",
+	"/api/v1/balances",
+	"/api/v1/stocks",
+	"/api/v1/assets",
+	"/api/v1/insights",
+	"/api/v1/ai/report",
+	"/api/v1/health",
+}
+
+// apiTokenAllowed matches on path-segment boundaries so "/labelsX" or a
+// future "/balances-admin" can never ride an allowlisted prefix.
+func apiTokenAllowed(path string) bool {
+	for _, prefix := range apiTokenPrefixes {
+		if path == prefix || (strings.HasPrefix(path, prefix) && path[len(prefix)] == '/') {
+			return true
+		}
+	}
+	return false
+}
+
+func bearerToken(c *gin.Context) string {
+	header := c.GetHeader("Authorization")
+	if after, ok := strings.CutPrefix(header, "Bearer "); ok {
+		return strings.TrimSpace(after)
+	}
+	return ""
+}
+
 // Middleware blocks every /api/v1 route (except auth + health) with 401
-// unless the app lock is disabled or the request carries a valid session.
+// unless the app lock is disabled, the request carries a valid session, or
+// it presents the read-only API token on an allowlisted GET route.
 func (h *AuthHandler) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		p := c.Request.URL.Path
@@ -52,6 +90,18 @@ func (h *AuthHandler) Middleware() gin.HandlerFunc {
 		}
 		token, _ := c.Cookie(sessionCookie)
 		if h.svc.ValidSession(token) {
+			c.Next()
+			return
+		}
+		if bearer := bearerToken(c); bearer != "" {
+			if !h.svc.ValidAPIToken(bearer) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid API token"})
+				return
+			}
+			if c.Request.Method != http.MethodGet || !apiTokenAllowed(p) {
+				c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "API token is read-only and limited to data routes"})
+				return
+			}
 			c.Next()
 			return
 		}
@@ -235,4 +285,34 @@ func (h *AuthHandler) DeleteCredential(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+// GenerateToken mints the read-only API token (for the MCP server). The
+// plaintext is returned exactly once; only its hash is stored. Requires an
+// unlocked session — the token cannot be minted from outside.
+func (h *AuthHandler) GenerateToken(c *gin.Context) {
+	if !h.requireUnlocked(c) {
+		return
+	}
+	token, err := h.svc.GenerateAPIToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"note":  "Shown once — store it now. The token grants read-only access to financial data routes.",
+	})
+}
+
+// RevokeToken invalidates the API token immediately.
+func (h *AuthHandler) RevokeToken(c *gin.Context) {
+	if !h.requireUnlocked(c) {
+		return
+	}
+	if err := h.svc.RevokeAPIToken(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

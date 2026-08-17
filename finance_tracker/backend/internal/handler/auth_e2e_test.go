@@ -32,6 +32,11 @@ func authTestRouter(t *testing.T) *gin.Engine {
 	authHandler.RegisterRoutes(v1)
 	v1.Use(authHandler.Middleware())
 	v1.GET("/transactions", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+	v1.POST("/transactions", func(c *gin.Context) { c.JSON(201, gin.H{"ok": true}) })
+	v1.GET("/ai/report", func(c *gin.Context) { c.JSON(200, gin.H{"report": "x"}) })
+	v1.GET("/ai/settings", func(c *gin.Context) { c.JSON(200, gin.H{"secret-adjacent": true}) })
+	v1.GET("/export/finances.json", func(c *gin.Context) { c.JSON(200, gin.H{"backup": true}) })
+	v1.GET("/labelsx", func(c *gin.Context) { c.JSON(200, gin.H{"boundary": true}) })
 	return r
 }
 

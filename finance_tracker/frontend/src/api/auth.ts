@@ -11,6 +11,7 @@ export interface AuthStatus {
   unlocked: boolean
   webauthn_registered: boolean
   webauthn_credentials: number
+  has_api_token: boolean
 }
 
 export interface WebauthnCredentialInfo {
@@ -31,6 +32,16 @@ export const authApi = {
 
   pinSetup: async (pin: string, currentPin?: string): Promise<void> => {
     await client.post('/auth/pin/setup', { pin, current_pin: currentPin ?? '' })
+  },
+
+  // Read-only machine token for the MCP server — plaintext returned once.
+  generateApiToken: async (): Promise<string> => {
+    const { data } = await client.post<{ token: string }>('/auth/token')
+    return data.token
+  },
+
+  revokeApiToken: async (): Promise<void> => {
+    await client.delete('/auth/token')
   },
 
   pinDisable: async (pin: string): Promise<void> => {

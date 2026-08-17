@@ -28,13 +28,16 @@ function accountLabel(key?: string): string {
   return ACCOUNT_LABELS[key as AccountKey] ?? key
 }
 
+const MS_PER_DAY = 86_400_000
+
 // loanEstimate replays the loan's ACTUAL payments (transactions carrying the
 // asset's loan label, after the recorded as-of date) against the recorded
-// balance: each payment first covers interest, the rest reduces principal.
-// The result is an estimated current balance that stays fresh between manual
-// updates, plus the latest real payment amount for projections.
+// balance. Interest accrues day-by-day on the elapsed time between events —
+// never a flat month per payment — so an extra repayment mid-month is
+// credited almost entirely to principal and bi-weekly payments aren't
+// double-charged. Unpaid accrued interest capitalizes into the balance.
 function loanEstimate(asset: Asset, loanTxs: Transaction[]) {
-  const monthlyRate = (asset.loan_margin + asset.loan_base_rate) / 100 / 12
+  const dailyRate = (asset.loan_margin + asset.loan_base_rate) / 100 / 365
   const label = (asset.loan_label ?? '').trim()
   const since = asset.loan_remaining_date?.slice(0, 10) ?? ''
   const payments = label
@@ -44,13 +47,27 @@ function loanEstimate(asset: Asset, loanTxs: Transaction[]) {
     : []
 
   let remaining = asset.loan_remaining
-  let principalPaid = 0
+  let accruedFrom = since ? Date.parse(since) : payments.length > 0 ? Date.parse(payments[0].date) : NaN
+  const gaps: number[] = []
+  let prevDate = NaN
   for (const p of payments) {
-    const interest = remaining * monthlyRate
-    const principal = Math.max(p.amount.value - interest, 0)
-    principalPaid += principal
-    remaining = Math.max(remaining - principal, 0)
+    const at = Date.parse(p.date)
+    const days = Number.isFinite(accruedFrom) ? Math.max((at - accruedFrom) / MS_PER_DAY, 0) : 0
+    const interest = remaining * dailyRate * days
+    remaining = Math.max(remaining + interest - p.amount.value, 0)
+    accruedFrom = at
+    if (Number.isFinite(prevDate) && at > prevDate) gaps.push((at - prevDate) / MS_PER_DAY)
+    prevDate = at
   }
+  const principalPaid = Math.max(asset.loan_remaining - remaining, 0)
+
+  // Observed payment cadence (median gap, default monthly) — projections in
+  // "per payment" terms stay honest for bi-weekly or irregular payers.
+  gaps.sort((a, b) => a - b)
+  const periodDays = gaps.length > 0
+    ? Math.min(Math.max(gaps[Math.floor(gaps.length / 2)], 1), 92)
+    : 30.44
+
   const lastPayment = payments.length > 0 ? payments[payments.length - 1].amount.value : 0
   return {
     remaining,
@@ -58,35 +75,37 @@ function loanEstimate(asset: Asset, loanTxs: Transaction[]) {
     count: payments.length,
     // Real payments trump the manually-entered monthly amount.
     payment: lastPayment > 0 ? lastPayment : asset.loan_monthly_payment,
+    periodDays,
+    dailyRate,
     fromTransactions: payments.length > 0,
   }
 }
 
 // LoanProjection shows how the next payments reduce the balance: the
 // interest/principal split of the upcoming payment, the projected remaining
-// after it, and the payoff horizon at the current rate and payment.
+// after it, and the payoff horizon — all at the OBSERVED payment cadence,
+// so bi-weekly payers see per-payment figures, not misapplied monthly ones.
 function LoanProjection({ asset, est }: { asset: Asset; est: ReturnType<typeof loanEstimate> }) {
-  const monthlyRate = (asset.loan_margin + asset.loan_base_rate) / 100 / 12
+  const periodRate = est.dailyRate * est.periodDays
   const payment = est.payment
   if (!(payment > 0) || !(est.remaining > 0)) return null
 
-  const interest = est.remaining * monthlyRate
+  const interest = est.remaining * periodRate
   const principal = payment - interest
   if (principal <= 0) {
     return (
       <p className="text-xs text-red-600 mt-1.5">
-        ⚠ The monthly payment ({formatEuro(payment)}) doesn't cover the interest ({formatEuro(interest)}/mo)
-        — the balance won't reduce at this rate.
+        ⚠ The payment ({formatEuro(payment)}) doesn't cover the interest accruing between payments
+        ({formatEuro(interest)}) — the balance won't reduce at this rate.
       </p>
     )
   }
   const afterNext = est.remaining - principal
   // Standard amortization horizon: n = −ln(1 − B·r/p) / ln(1+r).
-  const months = monthlyRate > 0
-    ? Math.ceil(-Math.log(1 - (est.remaining * monthlyRate) / payment) / Math.log(1 + monthlyRate))
+  const periods = periodRate > 0
+    ? Math.ceil(-Math.log(1 - (est.remaining * periodRate) / payment) / Math.log(1 + periodRate))
     : Math.ceil(est.remaining / payment)
-  const payoff = new Date()
-  payoff.setMonth(payoff.getMonth() + months)
+  const payoff = new Date(Date.now() + periods * est.periodDays * MS_PER_DAY)
 
   return (
     <div className="mt-1.5 pt-1.5 border-t border-orange-100 text-xs text-orange-700/90 space-y-0.5">
@@ -103,7 +122,7 @@ function LoanProjection({ asset, est }: { asset: Asset; est: ReturnType<typeof l
         {' '}+ {formatEuro(interest)} interest · balance after ≈ {formatEuro(afterNext)}
       </p>
       <p className="text-orange-600/70">
-        At this pace: paid off in ~{months} payments ({payoff.toLocaleDateString('default', { month: 'short', year: 'numeric' })})
+        At this pace: paid off in ~{periods} payments ({payoff.toLocaleDateString('default', { month: 'short', year: 'numeric' })})
       </p>
     </div>
   )

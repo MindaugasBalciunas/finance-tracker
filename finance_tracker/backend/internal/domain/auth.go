@@ -4,10 +4,13 @@ import "time"
 
 // AuthSettings is a single-row table holding the app-lock configuration.
 type AuthSettings struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
-	PinHash   string    `json:"-"`
-	Enabled   bool      `json:"enabled"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID      uint   `gorm:"primarykey" json:"id"`
+	PinHash string `json:"-"`
+	Enabled bool   `json:"enabled"`
+	// APITokenHash is the SHA-256 of the read-only machine token (for the
+	// MCP server and other API clients). Only the hash is ever stored.
+	APITokenHash string    `json:"-"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // WebauthnCredential stores one enrolled authenticator (e.g. a phone's

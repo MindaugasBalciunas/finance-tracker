@@ -36,6 +36,10 @@ type InsightService interface {
 	SaveAISettings(gatewayURL, model, apiKey string, clearKey bool) (*domain.AISettings, error)
 	// TestGateway makes a minimal round-trip through the configured gateway.
 	TestGateway() error
+	// DataReport returns the full financial context report (all-time scope)
+	// — the same text the analysis and chat are grounded in. Contains no
+	// secrets; consumed by the MCP server's get_overview tool.
+	DataReport() (string, error)
 }
 
 type insightService struct {
@@ -147,6 +151,10 @@ func (s *insightService) ChatHistory() ([]domain.AIChatMessage, error) {
 
 func (s *insightService) ClearChat() error {
 	return s.repo.ClearChat()
+}
+
+func (s *insightService) DataReport() (string, error) {
+	return s.buildDataReport(nil, nil)
 }
 
 func (s *insightService) AISettings() (*domain.AISettings, error) {

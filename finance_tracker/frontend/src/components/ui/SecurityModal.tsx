@@ -14,6 +14,8 @@ export default function SecurityModal({ onClose }: Props) {
   const [currentPin, setCurrentPin] = useState('')
   const [deviceName, setDeviceName] = useState('')
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  // Freshly minted API token — displayed exactly once, never re-fetchable.
+  const [freshToken, setFreshToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<'overview' | 'setup' | 'change' | 'disable'>('overview')
 
@@ -164,6 +166,40 @@ export default function SecurityModal({ onClose }: Props) {
                       Not available here — fingerprint requires HTTPS or localhost. The PIN works everywhere.
                     </p>
                   )}
+                </div>
+
+                {/* Read-only API token for the MCP server / machine clients. */}
+                <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-800">🔑 API token (read-only)</p>
+                    <span className="text-xs text-gray-400">{status?.has_api_token ? 'active' : 'none'}</span>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Lets the MCP server (Claude Desktop / Code) read your data. GET-only, data routes only —
+                    it can never change anything or read backups, settings or keys.
+                  </p>
+                  {freshToken && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                      <p className="text-[11px] text-amber-700 mb-1">Copy it now — it is shown only once:</p>
+                      <code className="block text-[11px] break-all select-all text-gray-800">{freshToken}</code>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => run(async () => setFreshToken(await authApi.generateApiToken()), '')}
+                      className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100"
+                    >
+                      {status?.has_api_token ? 'Rotate token' : 'Generate token'}
+                    </button>
+                    {status?.has_api_token && (
+                      <button
+                        onClick={() => run(async () => { await authApi.revokeApiToken(); setFreshToken(null) }, '')}
+                        className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <button

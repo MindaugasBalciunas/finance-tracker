@@ -2,12 +2,16 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +48,7 @@ type AuthStatus struct {
 	Unlocked            bool `json:"unlocked"`
 	WebauthnRegistered  bool `json:"webauthn_registered"`
 	WebauthnCredentials int  `json:"webauthn_credentials"`
+	HasAPIToken         bool `json:"has_api_token"`
 }
 
 type AuthService struct {
@@ -93,6 +98,7 @@ func (s *AuthService) Status(sessionToken string) AuthStatus {
 		Unlocked:            !enabled || s.ValidSession(sessionToken),
 		WebauthnRegistered:  len(creds) > 0,
 		WebauthnCredentials: len(creds),
+		HasAPIToken:         settings != nil && settings.APITokenHash != "",
 	}
 }
 
@@ -338,4 +344,53 @@ func (s *AuthService) ListCredentials() ([]domain.WebauthnCredential, error) {
 
 func (s *AuthService) DeleteCredential(id uint) error {
 	return s.repo.DeleteCredential(id)
+}
+
+// ── API token (read-only machine access, e.g. the MCP server) ───────
+
+// GenerateAPIToken mints a fresh 256-bit bearer token, stores only its
+// SHA-256 hash, and returns the plaintext exactly once. Any previous token
+// is invalidated.
+func (s *AuthService) GenerateAPIToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	token := "ftk_" + hex.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(token))
+
+	settings, err := s.repo.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	settings.APITokenHash = hex.EncodeToString(sum[:])
+	if err := s.repo.SaveSettings(settings); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// RevokeAPIToken deletes the stored hash — the old token stops working
+// immediately.
+func (s *AuthService) RevokeAPIToken() error {
+	settings, err := s.repo.GetSettings()
+	if err != nil {
+		return err
+	}
+	settings.APITokenHash = ""
+	return s.repo.SaveSettings(settings)
+}
+
+// ValidAPIToken reports whether the presented bearer token matches the
+// stored hash (constant-time). No hash stored = no token access at all.
+func (s *AuthService) ValidAPIToken(token string) bool {
+	if token == "" || !strings.HasPrefix(token, "ftk_") {
+		return false
+	}
+	settings, err := s.repo.GetSettings()
+	if err != nil || settings.APITokenHash == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(settings.APITokenHash)) == 1
 }
