@@ -40,6 +40,9 @@ type InsightService interface {
 	// — the same text the analysis and chat are grounded in. Contains no
 	// secrets; consumed by the MCP server's get_overview tool.
 	DataReport() (string, error)
+	// ViewSummary returns a short AI review of one app view for the period;
+	// cached server-side for 15 minutes per view+period.
+	ViewSummary(view string, from, to *time.Time, refresh bool) (string, error)
 }
 
 type insightService struct {

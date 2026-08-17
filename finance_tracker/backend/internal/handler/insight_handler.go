@@ -34,6 +34,26 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// Read-only data report for machine clients (MCP get_overview) — plain
 	// financial aggregates, no secrets, allowlisted for API-token access.
 	ai.GET("/report", h.DataReport)
+	// Auto review of the currently open view. Session-only (not in the API
+	// token allowlist): every uncached call spends gateway tokens.
+	ai.GET("/view-summary", h.ViewSummary)
+}
+
+func (h *InsightHandler) ViewSummary(c *gin.Context) {
+	view := c.Query("view")
+	from := parseInsightDate(c.Query("date_from"))
+	to := parseInsightDate(c.Query("date_to"))
+	refresh := c.Query("refresh") == "1"
+	summary, err := h.svc.ViewSummary(view, from, to, refresh)
+	if err != nil {
+		if strings.Contains(err.Error(), "unknown view") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"summary": summary})
 }
 
 func (h *InsightHandler) DataReport(c *gin.Context) {

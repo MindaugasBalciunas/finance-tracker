@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import DateRangeFilter from '../ui/DateRangeFilter'
 import SecurityModal from '../ui/SecurityModal'
 import DataModal from '../ui/DataModal'
+import ViewInsightBar from '../ui/ViewInsightBar'
 // The single mobile menu is the top hamburger: date range + the tools that
 // don't earn a bottom tab (Assets, Data, Security, AI settings, API docs).
 
@@ -20,6 +21,19 @@ const navItems = [
   { to: '/labels', label: 'Labels', short: 'Labels', icon: '🏷️' },
   { to: '/ai', label: 'AI', short: 'AI', icon: '✦' },
 ]
+
+// Routes that get the auto AI review bar (the AI page reviews itself, and
+// More is chrome, not data).
+const VIEW_BY_PATH: Record<string, string> = {
+  '/': 'dashboard',
+  '/transactions': 'transactions',
+  '/balances': 'balances',
+  '/stocks': 'stocks',
+  '/assets': 'assets',
+  '/budget': 'budget',
+  '/reports': 'reports',
+  '/labels': 'labels',
+}
 
 // Icon-only tabs (labels hidden to save space) — aria-labels carry the names.
 const bottomBarItems = [
@@ -121,6 +135,7 @@ export default function Layout() {
 
       {/* ── Main content ── */}
       <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
+        {VIEW_BY_PATH[location.pathname] && <ViewInsightBar view={VIEW_BY_PATH[location.pathname]} />}
         <Outlet />
       </main>
 

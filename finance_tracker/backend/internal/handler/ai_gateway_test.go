@@ -405,3 +405,51 @@ func TestAIChatToolLoop(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "tool rounds")
 	assert.LessOrEqual(t, len(*requests3), 7, "loop is bounded")
 }
+
+// The view summary reviews the CURRENT tab: view-specific context goes to
+// the gateway once, then the cached blurb serves repeat visits for free.
+func TestViewSummary(t *testing.T) {
+	r, _ := aiTestRouter(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		hits++
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		msgs := body["messages"].([]any)
+		prompt := msgs[0].(map[string]any)["content"].(string)
+		assert.Contains(t, prompt, "transactions", "prompt names the view")
+		assert.Contains(t, prompt, "Maxima", "context carries the view's data")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Food dominates at €50."}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=transactions", nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "Food dominates")
+	assert.Equal(t, 1, hits)
+
+	// Second call: served from cache, no gateway spend.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=transactions", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Equal(t, 1, hits, "cached — no second gateway call")
+
+	// A different period is a different cache key.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=transactions&date_from=2020-01-01", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Equal(t, 2, hits)
+
+	// refresh=1 busts the cache.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=transactions&refresh=1", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Equal(t, 3, hits)
+
+	// Unknown views are rejected before any spend.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=admin", nil)
+	assert.Equal(t, 400, w.Code)
+	assert.Equal(t, 3, hits)
+}

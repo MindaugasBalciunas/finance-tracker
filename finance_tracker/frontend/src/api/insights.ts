@@ -75,4 +75,17 @@ export const aiApi = {
   clearChat: async (): Promise<void> => {
     await client.delete('/ai/chat/history')
   },
+
+  // Short AI review of the view the user has open; server-cached 15 min per
+  // view+period, so tab-hopping is free.
+  viewSummary: async (
+    view: string,
+    range: { date_from?: string; date_to?: string },
+    refresh = false,
+  ): Promise<string> => {
+    const { data } = await client.get<{ summary: string }>('/ai/view-summary', {
+      params: { view, ...range, ...(refresh ? { refresh: '1' } : {}) },
+    })
+    return data.summary
+  },
 }
