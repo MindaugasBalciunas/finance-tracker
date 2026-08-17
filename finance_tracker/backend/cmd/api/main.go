@@ -46,9 +46,9 @@ func main() {
 	balSvc := service.NewBalanceService(balRepo, txRepo)
 	txSvc := service.NewTransactionServiceWithRules(txRepo, balSvc, budgetRepo)
 	stockSvc := service.NewStockService(stockRepo)
-	// insightSvc reads budgets and stock positions for the AI data report.
-	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc)
 	assetSvc := service.NewAssetService(assetRepo)
+	// insightSvc reads budgets, stocks and assets for the AI report + chat tools.
+	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc, assetSvc)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)

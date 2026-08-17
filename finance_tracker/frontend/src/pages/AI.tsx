@@ -107,7 +107,7 @@ export default function AI() {
           <div>
             <h2 className="font-semibold text-gray-900">💬 Chat with your finances</h2>
             <p className="text-xs text-gray-400">
-              The AI sees your balances, this month's spending &amp; budget status, labels and live stock positions — ask anything.
+              The AI queries your data live as it answers — transactions, budgets, balances, stocks — the same tools the MCP server exposes.
             </p>
           </div>
           {messages.length > 0 && (
@@ -123,7 +123,7 @@ export default function AI() {
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{ maxHeight: '55vh' }}>
           {messages.length === 0 && !thinking && (
             <div className="text-sm text-gray-400 py-6 text-center space-y-2">
-              <p>{configured ? 'Ask a question about your money.' : 'Configure the nexos.ai gateway above to start chatting.'}</p>
+              <p>{configured ? 'Ask anything — the AI can search your transactions and query budgets, balances and live stock prices while answering.' : 'Configure the nexos.ai gateway above to start chatting.'}</p>
               {configured && (
                 <div className="flex flex-wrap justify-center gap-1.5">
                   {['Give me my daily status update', 'How am I tracking against my budgets this month?', "How are my stock positions doing?", 'Where can I save €200/month?'].map((q) => (

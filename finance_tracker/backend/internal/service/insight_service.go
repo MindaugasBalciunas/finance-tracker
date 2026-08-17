@@ -48,15 +48,16 @@ type insightService struct {
 	balSvc     BalanceService
 	budgetRepo repository.BudgetRepository // may be nil; budget section is skipped when so
 	stockSvc   StockService                // may be nil; stock section is skipped when so
+	assetSvc   AssetService                // may be nil; the assets chat tool reports unavailable
 	// quote fetches a live market quote; injectable so tests avoid the network.
 	quote func(ticker string) (*marketdata.Quote, error)
 }
 
 func NewInsightService(repo repository.InsightRepository, txSvc TransactionService, balSvc BalanceService,
-	budgetRepo repository.BudgetRepository, stockSvc StockService) InsightService {
+	budgetRepo repository.BudgetRepository, stockSvc StockService, assetSvc AssetService) InsightService {
 	return &insightService{
 		repo: repo, txSvc: txSvc, balSvc: balSvc,
-		budgetRepo: budgetRepo, stockSvc: stockSvc,
+		budgetRepo: budgetRepo, stockSvc: stockSvc, assetSvc: assetSvc,
 		quote: marketdata.Fetch,
 	}
 }
@@ -84,7 +85,7 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 	var content string
 	switch {
 	case settings.Configured():
-		content, err = callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 1024)
+		content, err = callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
 		if err != nil {
 			return nil, fmt.Errorf("calling AI gateway: %w", err)
 		}
@@ -124,16 +125,49 @@ func (s *insightService) Chat(message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	messages := make([]domain.ChatMessage, 0, len(history)+2)
-	messages = append(messages, domain.ChatMessage{Role: "system", Content: system})
+	messages := make([]gatewayMessage, 0, len(history)+2)
+	messages = append(messages, gatewayMessage{Role: "system", Content: system})
 	for _, m := range history {
-		messages = append(messages, domain.ChatMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, gatewayMessage{Role: m.Role, Content: m.Content})
 	}
-	messages = append(messages, domain.ChatMessage{Role: "user", Content: message})
-	reply, err := callGateway(settings, messages, 2048)
-	if err != nil {
-		return "", fmt.Errorf("calling AI gateway: %w", err)
+	messages = append(messages, gatewayMessage{Role: "user", Content: message})
+
+	// Agentic loop: the model may call read-only tools (the same surface the
+	// MCP server exposes) to query the database live before answering. Tool
+	// turns stay ephemeral — only the user question and the final answer are
+	// persisted to history.
+	tools := chatTools()
+	var reply string
+	for round := 0; ; round++ {
+		if round >= maxToolRounds {
+			return "", fmt.Errorf("the model exceeded %d tool rounds without answering — try a narrower question", maxToolRounds)
+		}
+		msg, err := callGatewayFull(settings, messages, 8192, tools)
+		if err != nil {
+			return "", fmt.Errorf("calling AI gateway: %w", err)
+		}
+		if len(msg.ToolCalls) == 0 {
+			if strings.TrimSpace(msg.Content) == "" {
+				return "", errors.New("gateway returned an empty reply — try again or raise the model's token limit")
+			}
+			reply = msg.Content
+			break
+		}
+		// Echo the assistant turn (with its tool_calls), then answer each
+		// call. Tool failures are reported back as text so the model can
+		// correct its arguments instead of the whole chat failing.
+		messages = append(messages, msg)
+		for _, call := range msg.ToolCalls {
+			result, terr := s.runChatTool(call.Function.Name, call.Function.Arguments)
+			if terr != nil {
+				result = "tool error: " + terr.Error()
+			}
+			messages = append(messages, gatewayMessage{
+				Role: "tool", ToolCallID: call.ID, Content: result,
+			})
+		}
 	}
+
 	// Persist both turns only after a successful reply — a failed call
 	// leaves history unchanged so a retry doesn't duplicate the question.
 	if err := s.repo.AppendChat(
@@ -193,7 +227,7 @@ func (s *insightService) TestGateway() error {
 	}
 	reply, err := callGateway(settings, []domain.ChatMessage{
 		{Role: "user", Content: "Reply with the single word: ok"},
-	}, 20)
+	}, 256)
 	if err != nil {
 		return err
 	}
@@ -404,7 +438,7 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it, quote concrete numbers, and say so plainly when the data cannot answer a question. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
+	return `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
 
 ` + report, nil
 }
@@ -603,39 +637,94 @@ func monthsBetween(a, b time.Time) int {
 }
 
 // OpenAI-compatible gateway types (nexos.ai and friends).
+// gatewayMessage is the OpenAI chat wire format, including the tool-calling
+// fields: an assistant turn may carry tool_calls instead of content, and a
+// "tool" turn answers one call by id.
+type gatewayMessage struct {
+	Role       string            `json:"role"`
+	Content    string            `json:"content"`
+	ToolCalls  []gatewayToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
+}
+
+type gatewayToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"` // JSON-encoded args
+	} `json:"function"`
+}
+
+type gatewayTool struct {
+	Type     string `json:"type"` // always "function"
+	Function struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Parameters  map[string]any `json:"parameters"`
+	} `json:"function"`
+}
+
 type gatewayRequest struct {
-	Model     string               `json:"model"`
-	MaxTokens int                  `json:"max_tokens,omitempty"`
-	Messages  []domain.ChatMessage `json:"messages"`
+	Model     string           `json:"model"`
+	MaxTokens int              `json:"max_tokens,omitempty"`
+	Messages  []gatewayMessage `json:"messages"`
+	Tools     []gatewayTool    `json:"tools,omitempty"`
 }
 
 type gatewayResponse struct {
 	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
+		Message      gatewayMessage `json:"message"`
+		FinishReason string         `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 }
 
+func toGatewayMessages(messages []domain.ChatMessage) []gatewayMessage {
+	out := make([]gatewayMessage, len(messages))
+	for i, m := range messages {
+		out[i] = gatewayMessage{Role: m.Role, Content: m.Content}
+	}
+	return out
+}
+
 // callGateway posts a chat completion to the configured OpenAI-compatible
-// gateway (nexos.ai by default) and returns the assistant's reply text.
+// gateway (nexos.ai by default) and returns the assistant's reply text —
+// the plain, tool-free path used by Generate and TestGateway.
 func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, maxTokens int) (string, error) {
+	msg, err := callGatewayFull(settings, toGatewayMessages(messages), maxTokens, nil)
+	if err != nil {
+		return "", err
+	}
+	// Reasoning models can exhaust max_tokens on hidden reasoning and return
+	// empty content — treat that as a failure rather than persisting a blank
+	// insight or wedging the chat with an unsendable empty turn.
+	if strings.TrimSpace(msg.Content) == "" {
+		return "", errors.New("gateway returned an empty reply — try again or raise the model's token limit")
+	}
+	return msg.Content, nil
+}
+
+// callGatewayFull is the tool-aware chat completion: it returns the full
+// assistant message, which may carry tool_calls instead of content.
+func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, maxTokens int, tools []gatewayTool) (gatewayMessage, error) {
+	var zero gatewayMessage
 	body, err := json.Marshal(gatewayRequest{
 		Model:     settings.Model,
 		MaxTokens: maxTokens,
 		Messages:  messages,
+		Tools:     tools,
 	})
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 
 	url := strings.TrimRight(settings.GatewayURL, "/") + "/chat/completions"
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 	req.Header.Set("Authorization", "Bearer "+settings.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -643,13 +732,13 @@ func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, max
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 
 	var result gatewayResponse
@@ -659,24 +748,28 @@ func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, max
 	// The raw upstream body is never reflected: with a user-controlled URL
 	// that would be a read primitive against internal endpoints.
 	if jsonErr == nil && result.Error != nil && result.Error.Message != "" {
-		return "", fmt.Errorf("gateway error: %s", result.Error.Message)
+		return zero, fmt.Errorf("gateway error: %s", result.Error.Message)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("gateway returned %s", resp.Status)
+		return zero, fmt.Errorf("gateway returned %s", resp.Status)
 	}
 	if jsonErr != nil {
-		return "", fmt.Errorf("gateway returned %s but the response was not valid JSON", resp.Status)
+		return zero, fmt.Errorf("gateway returned %s but the response was not valid JSON", resp.Status)
 	}
 	if len(result.Choices) == 0 {
-		return "", errors.New("gateway returned no choices")
+		return zero, errors.New("gateway returned no choices")
 	}
-	// Reasoning models can exhaust max_tokens on hidden reasoning and return
-	// empty content — treat that as a failure rather than persisting a blank
-	// insight or wedging the chat with an unsendable empty turn.
-	if strings.TrimSpace(result.Choices[0].Message.Content) == "" {
-		return "", errors.New("gateway returned an empty reply — try again or raise the model's token limit")
+	msg := result.Choices[0].Message
+	if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
+		return zero, errors.New("gateway returned an empty reply — try again or raise the model's token limit")
 	}
-	return result.Choices[0].Message.Content, nil
+	// A "length" finish means the model hit the output cap mid-answer. Keep
+	// the partial text but say so — a silently cut answer reads as complete
+	// and wrong, which is worse than a visibly truncated one.
+	if result.Choices[0].FinishReason == "length" && strings.TrimSpace(msg.Content) != "" {
+		msg.Content += "\n\n⚠ [answer truncated — the model hit its output token limit]"
+	}
+	return msg, nil
 }
 
 // Claude API types

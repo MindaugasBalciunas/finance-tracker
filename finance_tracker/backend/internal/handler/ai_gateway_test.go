@@ -40,7 +40,7 @@ func aiTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	stockRepo := repository.NewStockRepository(db)
 	balSvc := service.NewBalanceService(balRepo, txRepo)
 	txSvc := service.NewTransactionService(txRepo, balSvc)
-	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, service.NewStockService(stockRepo))
+	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, service.NewStockService(stockRepo), service.NewAssetService(repository.NewAssetRepository(db)))
 
 	r := gin.New()
 	NewInsightHandler(insightSvc).RegisterRoutes(r.Group("/api/v1"))
@@ -318,4 +318,90 @@ func TestAISettingsBackupRoundtrip(t *testing.T) {
 	assert.Equal(t, "nxs-roundtrip", s.APIKey)
 	assert.Equal(t, "gpt-5", s.Model)
 	assert.Equal(t, "https://api.nexos.ai/v1", s.GatewayURL)
+}
+
+// scriptedGateway returns canned responses in order and records every request.
+func scriptedGateway(t *testing.T, responses []string) (*httptest.Server, *[]map[string]any) {
+	t.Helper()
+	var requests []map[string]any
+	i := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		requests = append(requests, req)
+		w.Header().Set("Content-Type", "application/json")
+		resp := responses[len(responses)-1] // repeat last when script runs out
+		if i < len(responses) {
+			resp = responses[i]
+			i++
+		}
+		_, _ = w.Write([]byte(resp))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &requests
+}
+
+// The chat runs an agentic loop: the model calls a read-only tool, the
+// backend executes it against its own services and feeds the result back,
+// and only the final answer is persisted.
+func TestAIChatToolLoop(t *testing.T) {
+	r, db := aiTestRouter(t)
+	toolCallResp := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"search_transactions","arguments":"{\"label\":\"groceries\",\"limit\":5}"}}]},"finish_reason":"tool_calls"}]}`
+	finalResp := `{"choices":[{"message":{"role":"assistant","content":"You spent €50 at Maxima."},"finish_reason":"stop"}]}`
+	srv, requests := scriptedGateway(t, []string{toolCallResp, finalResp})
+
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "groceries this month?"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "You spent €50 at Maxima.")
+
+	require.Len(t, *requests, 2)
+	// Request 1 declared the tool surface.
+	tools, _ := (*requests)[0]["tools"].([]any)
+	require.NotEmpty(t, tools, "tools must be declared to the gateway")
+	names := map[string]bool{}
+	for _, tl := range tools {
+		fn := tl.(map[string]any)["function"].(map[string]any)
+		names[fn["name"].(string)] = true
+	}
+	for _, want := range []string{"get_overview", "search_transactions", "get_summary", "get_budgets", "get_stock_quote", "get_assets"} {
+		assert.True(t, names[want], "tool %s declared", want)
+	}
+	// Request 2 carried the executed tool result (the seeded Maxima row).
+	msgs := (*requests)[1]["messages"].([]any)
+	last := msgs[len(msgs)-1].(map[string]any)
+	assert.Equal(t, "tool", last["role"])
+	assert.Equal(t, "call_1", last["tool_call_id"])
+	assert.Contains(t, last["content"].(string), "Maxima", "tool result contains the matching transaction")
+	assert.Contains(t, last["content"].(string), `"total_matches":1`)
+
+	// Only the user question and final answer are persisted — no tool chatter.
+	var count int64
+	require.NoError(t, db.Model(&domain.AIChatMessage{}).Count(&count).Error)
+	assert.EqualValues(t, 2, count)
+
+	// An unknown tool comes back as a recoverable error message.
+	badCall := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_2","type":"function","function":{"name":"drop_tables","arguments":"{}"}}]}}]}`
+	srv2, requests2 := scriptedGateway(t, []string{badCall, finalResp})
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv2.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "hi"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	msgs2 := (*requests2)[1]["messages"].([]any)
+	last2 := msgs2[len(msgs2)-1].(map[string]any)
+	assert.Contains(t, last2["content"].(string), "unknown tool", "unknown tools error back to the model")
+
+	// A model that never stops calling tools is cut off at the round cap.
+	srv3, requests3 := scriptedGateway(t, []string{toolCallResp})
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv3.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "loop forever"})
+	assert.Equal(t, 502, w.Code)
+	assert.Contains(t, w.Body.String(), "tool rounds")
+	assert.LessOrEqual(t, len(*requests3), 7, "loop is bounded")
 }
