@@ -46,9 +46,11 @@ type InsightService interface {
 	// AssistTransaction suggests labels + a cleaner description for one
 	// transaction, learned from the user's own history.
 	AssistTransaction(input TransactionAssistInput) (*TransactionAssist, error)
-	// ReindexSuggest proposes labels for unlabeled transactions (review-only);
-	// ApplyLabelSuggestions writes the approved ones (add-only).
-	ReindexSuggest(limit int) (*ReindexResult, error)
+	// ReindexSuggest proposes labeling changes: mode "unlabeled" tags rows
+	// with no labels; mode "review" audits labeled rows and proposes remaps.
+	// ApplyLabelSuggestions writes the user-approved changes (fixed-obligation
+	// labels can never be removed).
+	ReindexSuggest(mode string, limit, offset int) (*ReindexResult, error)
 	ApplyLabelSuggestions(items []LabelApplyItem) (int, error)
 }
 

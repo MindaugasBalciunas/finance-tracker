@@ -33,7 +33,8 @@ type TransactionAssist struct {
 	Note    string   `json:"note,omitempty"`
 }
 
-// ReindexSuggestion proposes labels for one unlabeled transaction.
+// ReindexSuggestion proposes a labeling change for one transaction: adds
+// for unlabeled rows, add+remove remaps for the review of labeled rows.
 type ReindexSuggestion struct {
 	ID       uint     `json:"id"`
 	Date     string   `json:"date"`
@@ -41,7 +42,10 @@ type ReindexSuggestion struct {
 	Amount   float64  `json:"amount"`
 	Category string   `json:"category"`
 	Comment  string   `json:"comment"`
-	Labels   []string `json:"labels"`
+	Current  []string `json:"current,omitempty"`
+	Add      []string `json:"add"`
+	Remove   []string `json:"remove,omitempty"`
+	Reason   string   `json:"reason,omitempty"`
 }
 
 type ReindexResult struct {
@@ -50,9 +54,12 @@ type ReindexResult struct {
 	Remaining   int                 `json:"remaining_unlabeled"`
 }
 
-// LabelApplyItem is one approved suggestion.
+// LabelApplyItem is one approved suggestion. Labels is the pre-v1.19 wire
+// name for Add, kept as a fallback.
 type LabelApplyItem struct {
 	ID     uint     `json:"id"`
+	Add    []string `json:"add"`
+	Remove []string `json:"remove"`
 	Labels []string `json:"labels"`
 }
 
@@ -138,10 +145,40 @@ Reply as ONE JSON object, nothing else:
 const reindexChunk = 25
 const reindexMaxPerCall = 75
 
-// ReindexSuggest proposes labels for up to `limit` unlabeled transactions,
-// newest first. Suggestions are strictly from the existing vocabulary —
-// bulk-tagging must not invent new labels.
-func (s *insightService) ReindexSuggest(limit int) (*ReindexResult, error) {
+// fixedProtected blocks AI-driven removal of the fixed-obligation labels —
+// they feed budgets and insights, and stripping one silently reclassifies
+// committed money as discretionary.
+func fixedProtected(label string) bool {
+	return domain.IsFixedObligationLabel(label)
+}
+
+// splitLabels parses the comma multiset into a slice.
+func splitLabels(labels string) []string {
+	var out []string
+	for _, l := range strings.Split(labels, ",") {
+		if t := strings.TrimSpace(l); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func containsLabel(labels []string, l string) bool {
+	for _, x := range labels {
+		if x == l {
+			return true
+		}
+	}
+	return false
+}
+
+// ReindexSuggest proposes labeling changes, newest first. Two modes:
+//   - "unlabeled" (default): assign labels to rows that have none, strictly
+//     from the existing vocabulary.
+//   - "review": audit rows that ARE labeled and propose remaps (add/remove
+//     with a reason) where the labels don't fit the description, category or
+//     the user's own patterns. offset pages through the labeled history.
+func (s *insightService) ReindexSuggest(mode string, limit, offset int) (*ReindexResult, error) {
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
 		return nil, err
@@ -149,8 +186,17 @@ func (s *insightService) ReindexSuggest(limit int) (*ReindexResult, error) {
 	if !settings.Configured() {
 		return nil, errors.New("AI gateway not configured")
 	}
+	if mode == "" {
+		mode = "unlabeled"
+	}
+	if mode != "unlabeled" && mode != "review" {
+		return nil, fmt.Errorf("unknown mode %q", mode)
+	}
 	if limit <= 0 || limit > reindexMaxPerCall {
 		limit = reindexMaxPerCall
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	vocab, allowed, err := s.labelVocabulary(80)
@@ -172,38 +218,57 @@ func (s *insightService) ReindexSuggest(limit int) (*ReindexResult, error) {
 		}
 	}
 	sort.Slice(unlabeled, func(i, j int) bool { return unlabeled[i].Date.After(unlabeled[j].Date) })
-	totalUnlabeled := len(unlabeled)
-	if len(unlabeled) > limit {
-		unlabeled = unlabeled[:limit]
-	}
-	if len(unlabeled) == 0 {
-		return &ReindexResult{Suggestions: []ReindexSuggestion{}, Scanned: 0, Remaining: 0}, nil
-	}
+	sort.Slice(labeled, func(i, j int) bool { return labeled[i].Date.After(labeled[j].Date) })
 
 	// Pattern examples: the most recent labeled rows show the house style.
-	sort.Slice(labeled, func(i, j int) bool { return labeled[i].Date.After(labeled[j].Date) })
-	if len(labeled) > 40 {
-		labeled = labeled[:40]
+	examplePool := labeled
+	if len(examplePool) > 40 {
+		examplePool = examplePool[:40]
 	}
 	var exampleLines []string
-	for _, tx := range labeled {
+	for _, tx := range examplePool {
 		exampleLines = append(exampleLines, fmt.Sprintf("  %q (%s) -> %s", tx.Comment, tx.Category, tx.Labels))
 	}
 
-	byID := make(map[uint]domain.Transaction, len(unlabeled))
+	// Pick this pass's batch.
+	pool := unlabeled
+	if mode == "review" {
+		pool = labeled
+	}
+	total := len(pool)
+	if offset > total {
+		offset = total
+	}
+	batch := pool[offset:]
+	if len(batch) > limit {
+		batch = batch[:limit]
+	}
+	if len(batch) == 0 {
+		return &ReindexResult{Suggestions: []ReindexSuggestion{}, Scanned: 0, Remaining: 0}, nil
+	}
+
+	byID := make(map[uint]domain.Transaction, len(batch))
 	var suggestions []ReindexSuggestion
-	for start := 0; start < len(unlabeled); start += reindexChunk {
+	for start := 0; start < len(batch); start += reindexChunk {
 		end := start + reindexChunk
-		if end > len(unlabeled) {
-			end = len(unlabeled)
+		if end > len(batch) {
+			end = len(batch)
 		}
 		var txLines []string
-		for _, tx := range unlabeled[start:end] {
+		for _, tx := range batch[start:end] {
 			byID[tx.ID] = tx
-			txLines = append(txLines, fmt.Sprintf("  id=%d | %s | %s €%.2f | %s | %q",
-				tx.ID, tx.Date.Format("2006-01-02"), tx.Type, tx.Amount, tx.Category, tx.Comment))
+			if mode == "unlabeled" {
+				txLines = append(txLines, fmt.Sprintf("  id=%d | %s | %s €%.2f | %s | %q",
+					tx.ID, tx.Date.Format("2006-01-02"), tx.Type, tx.Amount, tx.Category, tx.Comment))
+			} else {
+				txLines = append(txLines, fmt.Sprintf("  id=%d | %s | %s €%.2f | %s | %q | labels: %s",
+					tx.ID, tx.Date.Format("2006-01-02"), tx.Type, tx.Amount, tx.Category, tx.Comment, tx.Labels))
+			}
 		}
-		prompt := fmt.Sprintf(`You are labeling personal-finance transactions to match how this user labels similar rows.
+
+		var prompt string
+		if mode == "unlabeled" {
+			prompt = fmt.Sprintf(`You are labeling personal-finance transactions to match how this user labels similar rows.
 
 ALLOWED LABELS (use ONLY these, never invent new ones):
 %s
@@ -216,7 +281,27 @@ TRANSACTIONS TO LABEL:
 
 For each transaction assign 1-3 allowed labels; when nothing fits confidently, use an empty list.
 Reply as ONE JSON array, nothing else: [{"id":123,"labels":["a","b"]}, ...]`,
-			strings.Join(vocab, ", "), strings.Join(exampleLines, "\n"), strings.Join(txLines, "\n"))
+				strings.Join(vocab, ", "), strings.Join(exampleLines, "\n"), strings.Join(txLines, "\n"))
+		} else {
+			prompt = fmt.Sprintf(`You are auditing label quality on personal-finance transactions. Most rows are labeled correctly — flag ONLY rows whose labels clearly do not fit the description, category or the user's own labeling patterns, and propose the fix.
+
+ALLOWED LABELS for additions (use ONLY these):
+%s
+
+HOW THE USER LABELS (recent examples, description (category) -> labels):
+%s
+
+TRANSACTIONS TO AUDIT (with their current labels):
+%s
+
+Rules:
+- Output only rows that need a change; skip correct rows entirely.
+- "remove" may only contain labels the row currently has; NEVER remove: loan, alimony, leasing, evelina.
+- "add" only from the allowed list; a change should leave the row with 1-3 sensible labels.
+- Give a short reason. When unsure, skip the row.
+Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"reason":"..."}, ...]`,
+				strings.Join(vocab, ", "), strings.Join(exampleLines, "\n"), strings.Join(txLines, "\n"))
+		}
 
 		reply, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
 		if err != nil {
@@ -225,6 +310,9 @@ Reply as ONE JSON array, nothing else: [{"id":123,"labels":["a","b"]}, ...]`,
 		var parsed []struct {
 			ID     uint     `json:"id"`
 			Labels []string `json:"labels"`
+			Add    []string `json:"add"`
+			Remove []string `json:"remove"`
+			Reason string   `json:"reason"`
 		}
 		if err := json.Unmarshal([]byte(extractJSON(reply, '[', ']')), &parsed); err != nil {
 			continue // a bad chunk shouldn't sink the whole scan
@@ -234,38 +322,71 @@ Reply as ONE JSON array, nothing else: [{"id":123,"labels":["a","b"]}, ...]`,
 			if !ok {
 				continue // never trust IDs the model made up
 			}
-			labels := normalizeSuggested(p.Labels, allowed, 3)
-			if len(labels) == 0 {
+			current := splitLabels(tx.Labels)
+			adds := normalizeSuggested(append(p.Add, p.Labels...), allowed, 3)
+			// Removals: only labels actually on the row, never fixed ones.
+			var removes []string
+			for _, l := range normalizeSuggested(p.Remove, nil, 5) {
+				if containsLabel(current, l) && !fixedProtected(l) {
+					removes = append(removes, l)
+				}
+			}
+			// Drop no-ops: adds already present count for nothing.
+			var newAdds []string
+			for _, l := range adds {
+				if !containsLabel(current, l) {
+					newAdds = append(newAdds, l)
+				}
+			}
+			if len(newAdds) == 0 && len(removes) == 0 {
 				continue
+			}
+			reason := strings.TrimSpace(p.Reason)
+			if len(reason) > 200 {
+				reason = reason[:200]
 			}
 			suggestions = append(suggestions, ReindexSuggestion{
 				ID: tx.ID, Date: tx.Date.Format("2006-01-02"), Type: string(tx.Type),
-				Amount: tx.Amount, Category: string(tx.Category), Comment: tx.Comment, Labels: labels,
+				Amount: tx.Amount, Category: string(tx.Category), Comment: tx.Comment,
+				Current: current, Add: newAdds, Remove: removes, Reason: reason,
 			})
 		}
 	}
 
 	return &ReindexResult{
 		Suggestions: suggestions,
-		Scanned:     len(unlabeled),
-		Remaining:   totalUnlabeled - len(unlabeled),
+		Scanned:     len(batch),
+		Remaining:   total - offset - len(batch),
 	}, nil
 }
 
-// ApplyLabelSuggestions adds the approved labels to their transactions.
-// Add-only: existing labels are never removed, accounts are preserved.
+// ApplyLabelSuggestions applies the approved changes: removals first (never
+// a fixed-obligation label), then additions. Accounts are preserved.
 func (s *insightService) ApplyLabelSuggestions(items []LabelApplyItem) (int, error) {
 	applied := 0
 	for _, item := range items {
-		labels := normalizeSuggested(item.Labels, nil, 5)
-		if len(labels) == 0 {
+		adds := normalizeSuggested(append(item.Add, item.Labels...), nil, 5)
+		removes := normalizeSuggested(item.Remove, nil, 5)
+		if len(adds) == 0 && len(removes) == 0 {
 			continue
 		}
 		tx, err := s.txSvc.GetByID(item.ID)
 		if err != nil {
 			continue
 		}
-		merged := domain.NormalizeLabels(tx.Labels + "," + strings.Join(labels, ","))
+		var kept []string
+		for _, l := range splitLabels(tx.Labels) {
+			if containsLabel(removes, l) && !fixedProtected(l) {
+				continue
+			}
+			kept = append(kept, l)
+		}
+		for _, l := range adds {
+			if !containsLabel(kept, l) {
+				kept = append(kept, l)
+			}
+		}
+		merged := domain.NormalizeLabels(strings.Join(kept, ","))
 		if merged == tx.Labels {
 			continue
 		}

@@ -60,11 +60,17 @@ func (h *InsightHandler) AssistTransaction(c *gin.Context) {
 
 func (h *InsightHandler) LabelReindex(c *gin.Context) {
 	var input struct {
-		Limit int `json:"limit"`
+		Mode   string `json:"mode"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
 	}
 	_ = c.ShouldBindJSON(&input)
-	out, err := h.svc.ReindexSuggest(input.Limit)
+	out, err := h.svc.ReindexSuggest(input.Mode, input.Limit, input.Offset)
 	if err != nil {
+		if strings.Contains(err.Error(), "unknown mode") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}

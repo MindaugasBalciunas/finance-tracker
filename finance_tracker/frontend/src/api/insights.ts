@@ -90,18 +90,22 @@ export const aiApi = {
     return data
   },
 
-  // Bulk reindex: AI proposes labels for unlabeled transactions (review-only).
-  labelReindex: async (): Promise<{
-    suggestions: { id: number; date: string; type: string; amount: number; category: string; comment: string; labels: string[] }[]
+  // Bulk reindex: mode 'unlabeled' tags rows with no labels; mode 'review'
+  // audits labeled rows and proposes remaps. Suggestion-only until applied.
+  labelReindex: async (mode: 'unlabeled' | 'review', offset = 0): Promise<{
+    suggestions: {
+      id: number; date: string; type: string; amount: number; category: string; comment: string
+      current?: string[]; add: string[]; remove?: string[]; reason?: string
+    }[]
     scanned: number
     remaining_unlabeled: number
   }> => {
-    const { data } = await client.post('/ai/label-reindex', {})
+    const { data } = await client.post('/ai/label-reindex', { mode, offset })
     return data
   },
 
-  // Writes the user-approved suggestions (add-only).
-  applyLabelSuggestions: async (items: { id: number; labels: string[] }[]): Promise<number> => {
+  // Writes the user-approved changes (fixed labels can never be removed).
+  applyLabelSuggestions: async (items: { id: number; add: string[]; remove?: string[] }[]): Promise<number> => {
     const { data } = await client.post<{ applied: number }>('/ai/label-reindex/apply', { items })
     return data.applied
   },

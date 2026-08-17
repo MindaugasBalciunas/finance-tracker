@@ -506,8 +506,8 @@ func TestAILabeling(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var res struct {
 		Suggestions []struct {
-			ID     uint     `json:"id"`
-			Labels []string `json:"labels"`
+			ID  uint     `json:"id"`
+			Add []string `json:"add"`
 		} `json:"suggestions"`
 		Scanned   int `json:"scanned"`
 		Remaining int `json:"remaining_unlabeled"`
@@ -515,7 +515,7 @@ func TestAILabeling(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 	require.Len(t, res.Suggestions, 1, w.Body.String())
 	assert.EqualValues(t, 2, res.Suggestions[0].ID)
-	assert.Equal(t, []string{"groceries"}, res.Suggestions[0].Labels, "junk-label filtered by vocabulary")
+	assert.Equal(t, []string{"groceries"}, res.Suggestions[0].Add, "junk-label filtered by vocabulary")
 	assert.Equal(t, 2, res.Scanned)
 
 	// Apply is add-only and preserves accounts.
@@ -535,4 +535,95 @@ func TestAILabeling(t *testing.T) {
 		"items": []map[string]any{{"id": 2, "labels": []string{"groceries"}}}})
 	require.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), `"applied":0`)
+}
+
+// Review mode audits LABELED rows and proposes remaps; fixed-obligation
+// labels can never be removed — not by suggestion, not at apply time.
+func TestAIReviewRemap(t *testing.T) {
+	r, db := aiTestRouter(t)
+	// Row 2: mislabeled (a bus ticket carrying 'bar'); row 3 carries a fixed label.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -2), Type: "expense", Amount: 2,
+		Category: "Transport", Comment: "Public transport ticket", Labels: "bar"}).Error)
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -1), Type: "expense", Amount: 1285,
+		Category: "Finance", Comment: "Busto paskola", Labels: "loan"}).Error)
+	// Vocabulary needs 'transport' to exist somewhere.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -5), Type: "expense", Amount: 30,
+		Category: "Transport", Comment: "CIRCLE K", Labels: "transport"}).Error)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+		require.Contains(t, prompt, "TRANSACTIONS TO AUDIT")
+		assert.Contains(t, prompt, `labels: bar`, "audit prompt carries current labels")
+		// Model proposes: fix row 2; also (maliciously) strip 'loan' from row 3
+		// and remove a label row 2 doesn't have.
+		reply := `[{"id":2,"remove":["bar","ghost"],"add":["transport"],"reason":"Bus ticket, not a bar."},{"id":3,"remove":["loan"],"add":["transport"],"reason":"nope"}]`
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex", map[string]any{"mode": "review"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var res struct {
+		Suggestions []struct {
+			ID      uint     `json:"id"`
+			Current []string `json:"current"`
+			Add     []string `json:"add"`
+			Remove  []string `json:"remove"`
+			Reason  string   `json:"reason"`
+		} `json:"suggestions"`
+		Scanned int `json:"scanned"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
+	// Row 3's only proposed change was removing 'loan' (blocked) + adding
+	// transport — the add survives, so it may appear; row 2 must be the fix.
+	var fix *struct {
+		ID      uint     `json:"id"`
+		Current []string `json:"current"`
+		Add     []string `json:"add"`
+		Remove  []string `json:"remove"`
+		Reason  string   `json:"reason"`
+	}
+	for i := range res.Suggestions {
+		if res.Suggestions[i].ID == 2 {
+			fix = &res.Suggestions[i]
+		}
+		if res.Suggestions[i].ID == 3 {
+			assert.NotContains(t, res.Suggestions[i].Remove, "loan", "fixed labels never suggested for removal")
+		}
+	}
+	require.NotNil(t, fix, w.Body.String())
+	assert.Equal(t, []string{"transport"}, fix.Add)
+	assert.Equal(t, []string{"bar"}, fix.Remove, "'ghost' dropped — not on the row")
+	assert.Equal(t, []string{"bar"}, fix.Current)
+	assert.Contains(t, fix.Reason, "Bus ticket")
+
+	// Apply the remap: bar out, transport in.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex/apply", map[string]any{
+		"items": []map[string]any{{"id": 2, "add": []string{"transport"}, "remove": []string{"bar"}}}})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var afterFix domain.Transaction
+	require.NoError(t, db.First(&afterFix, 2).Error)
+	assert.Equal(t, "transport", afterFix.Labels)
+
+	// A direct attempt to remove a fixed label via apply is ignored.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex/apply", map[string]any{
+		"items": []map[string]any{{"id": 3, "remove": []string{"loan"}}}})
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"applied":0`)
+	var afterHostile domain.Transaction
+	require.NoError(t, db.First(&afterHostile, 3).Error)
+	assert.Equal(t, "loan", afterHostile.Labels, "fixed label survives a hostile apply")
+
+	// Unknown mode is rejected.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex", map[string]any{"mode": "chaos"})
+	assert.Equal(t, 400, w.Code)
 }
