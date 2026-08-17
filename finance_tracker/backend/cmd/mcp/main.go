@@ -99,23 +99,36 @@ func clampLimit(limit int) int {
 type emptyArgs struct{}
 
 type searchTransactionsArgs struct {
-	Query    string `json:"query,omitempty" jsonschema:"case-insensitive substring of the transaction comment (merchant, description)"`
-	Label    string `json:"label,omitempty" jsonschema:"label filter; comma list matches ANY of the labels (labels are lowercase tags like 'groceries' or 'loan')"`
-	AllOf    bool   `json:"all_of,omitempty" jsonschema:"when true a comma list of labels must ALL be present on a row"`
-	Category string `json:"category,omitempty" jsonschema:"exact category name, e.g. Food, Housing, Transport, Salary"`
-	Type     string `json:"type,omitempty" jsonschema:"expense | income | investment"`
-	DateFrom string `json:"date_from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
-	DateTo   string `json:"date_to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
-	Sort     string `json:"sort,omitempty" jsonschema:"date (default) | amount | comment"`
-	Dir      string `json:"dir,omitempty" jsonschema:"asc | desc"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"max rows to return, default 100, cap 500"`
+	Query     string   `json:"query,omitempty" jsonschema:"case-insensitive substring of the transaction comment (merchant, description)"`
+	Label     string   `json:"label,omitempty" jsonschema:"label filter; comma list matches ANY of the labels (labels are lowercase tags like 'groceries' or 'loan')"`
+	AllOf     bool     `json:"all_of,omitempty" jsonschema:"when true a comma list of labels must ALL be present on a row"`
+	Category  string   `json:"category,omitempty" jsonschema:"exact category name, e.g. Food, Housing, Transport, Salary"`
+	Type      string   `json:"type,omitempty" jsonschema:"expense | income | investment"`
+	DateFrom  string   `json:"date_from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
+	DateTo    string   `json:"date_to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
+	AmountMin *float64 `json:"amount_min,omitempty" jsonschema:"only rows with amount >= this (EUR)"`
+	AmountMax *float64 `json:"amount_max,omitempty" jsonschema:"only rows with amount <= this (EUR)"`
+	Sort      string   `json:"sort,omitempty" jsonschema:"date (default) | amount | comment"`
+	Dir       string   `json:"dir,omitempty" jsonschema:"asc | desc"`
+	Limit     int      `json:"limit,omitempty" jsonschema:"max rows to return, default 100, cap 500"`
 }
 
 type summaryArgs struct {
-	DateFrom string `json:"date_from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
-	DateTo   string `json:"date_to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
-	Category string `json:"category,omitempty" jsonschema:"scope to one category"`
-	Label    string `json:"label,omitempty" jsonschema:"scope to one label"`
+	DateFrom  string   `json:"date_from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
+	DateTo    string   `json:"date_to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
+	Category  string   `json:"category,omitempty" jsonschema:"scope to one category"`
+	Label     string   `json:"label,omitempty" jsonschema:"scope to one label (comma list = any of them)"`
+	AmountMin *float64 `json:"amount_min,omitempty" jsonschema:"only rows with amount >= this (EUR)"`
+	AmountMax *float64 `json:"amount_max,omitempty" jsonschema:"only rows with amount <= this (EUR)"`
+}
+
+type budgetStatusArgs struct {
+	Month string `json:"month,omitempty" jsonschema:"YYYY-MM (default: current month)"`
+}
+
+type tradesArgs struct {
+	Ticker string `json:"ticker,omitempty" jsonschema:"filter to one ticker, e.g. VWCE"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"max trades to return, default 100, cap 500"`
 }
 
 type labelStatsArgs struct {
@@ -163,6 +176,12 @@ func handleSearchTransactions(ctx context.Context, req *mcp.CallToolRequest, a s
 	set("type", a.Type)
 	set("date_from", a.DateFrom)
 	set("date_to", a.DateTo)
+	if a.AmountMin != nil {
+		q.Set("amount_min", fmt.Sprint(*a.AmountMin))
+	}
+	if a.AmountMax != nil {
+		q.Set("amount_max", fmt.Sprint(*a.AmountMax))
+	}
 	set("sort", a.Sort)
 	set("dir", a.Dir)
 	q.Set("page", "1")
@@ -187,6 +206,12 @@ func handleSummary(ctx context.Context, req *mcp.CallToolRequest, a summaryArgs)
 	}
 	if a.Label != "" {
 		q.Set("label", a.Label)
+	}
+	if a.AmountMin != nil {
+		q.Set("amount_min", fmt.Sprint(*a.AmountMin))
+	}
+	if a.AmountMax != nil {
+		q.Set("amount_max", fmt.Sprint(*a.AmountMax))
 	}
 	body, err := apiGET("/transactions/summary", q)
 	if err != nil {
@@ -217,6 +242,54 @@ func handleBudgets(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (
 	body, err := apiGET("/budgets", nil)
 	if err != nil {
 		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleBudgetStatus(ctx context.Context, req *mcp.CallToolRequest, a budgetStatusArgs) (*mcp.CallToolResult, any, error) {
+	q := url.Values{}
+	if a.Month != "" {
+		q.Set("month", a.Month)
+	}
+	body, err := apiGET("/budgets/status", q)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleLabelRules(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	body, err := apiGET("/labels/rules", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleStockTrades(ctx context.Context, req *mcp.CallToolRequest, a tradesArgs) (*mcp.CallToolResult, any, error) {
+	body, err := apiGET("/stocks", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The endpoint returns the whole ledger (date ASC) — filter and cap here.
+	var trades []map[string]any
+	if err := json.Unmarshal(body, &trades); err == nil {
+		ticker := strings.ToUpper(strings.TrimSpace(a.Ticker))
+		var kept []map[string]any
+		for _, tr := range trades {
+			if t, _ := tr["ticker"].(string); ticker == "" || strings.EqualFold(t, ticker) {
+				kept = append(kept, tr)
+			}
+		}
+		for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+			kept[i], kept[j] = kept[j], kept[i] // newest first
+		}
+		if n := clampLimit(a.Limit); len(kept) > n {
+			kept = kept[:n]
+		}
+		if trimmed, err := json.Marshal(map[string]any{"total": len(trades), "returned": len(kept), "trades": kept}); err == nil {
+			body = trimmed
+		}
 	}
 	return textResult(body), nil, nil
 }
@@ -290,12 +363,12 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_transactions",
-		Description: "Search individual transactions with filters (comment substring, labels, category, type, date range, sort). Returns paginated rows (capped at 500)." + dataNotes,
+		Description: "Search individual transactions with filters (comment substring, labels, category, type, date range, amount range, sort). Returns paginated rows (capped at 500)." + dataNotes,
 	}, handleSearchTransactions)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_summary",
-		Description: "Aggregated totals for a period and/or category/label: total income, expenses, investments, plus per-category and per-month breakdowns. Prefer this over search_transactions for sums and trends.",
+		Description: "Aggregated totals for any filter combination: total income, expenses, investments, plus per-category, per-month AND per-label breakdowns. Accepts the same filters as search_transactions (dates, category, label, amount range). Prefer this over search_transactions for sums, trends and 'where does money go' questions.",
 	}, handleSummary)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -305,8 +378,18 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_budgets",
-		Description: "The monthly budget plan: fixed obligations, investment targets and spending limits, each with its matcher (label and/or category) and monthly amount.",
+		Description: "The monthly budget plan as configured: fixed obligations, investment targets and spending limits, each with its matcher (label and/or category) and monthly amount. For actual progress against the plan use get_budget_status.",
 	}, handleBudgets)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_budget_status",
+		Description: "Month-to-date progress against every budget line: budgeted vs spent vs remaining, fixed/investment totals, discretionary spending and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
+	}, handleBudgetStatus)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_label_rules",
+		Description: "The auto-labeling rules: each rule applies its label to transactions whose comment contains the pattern (^ anchors to the start) and category matches. Explains WHY rows carry a label.",
+	}, handleLabelRules)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_balances",
@@ -317,6 +400,11 @@ func main() {
 		Name:        "get_stock_portfolio",
 		Description: "Stock holdings from the trade ledger: shares, average cost, total cost basis and realized gains per ticker (cost basis only — use get_stock_quote for live prices).",
 	}, handlePortfolio)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_stock_trades",
+		Description: "Individual stock trades (buys/sells), newest first: date, action, ticker, shares, price, source. Optional ticker filter.",
+	}, handleStockTrades)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_stock_quote",

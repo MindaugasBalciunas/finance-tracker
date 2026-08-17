@@ -57,6 +57,9 @@ type InsightService interface {
 	// ApplyRuleSuggestions writes the user-approved rule changes.
 	RuleReview() (*RuleReviewResult, error)
 	ApplyRuleSuggestions(items []RuleApplyItem) (*RuleApplyResult, error)
+	// BudgetStatus computes per-budget month-to-date progress (current month
+	// when year/month are zero) — the JSON twin of the report's text section.
+	BudgetStatus(year, month int) (*BudgetStatusReport, error)
 }
 
 type insightService struct {

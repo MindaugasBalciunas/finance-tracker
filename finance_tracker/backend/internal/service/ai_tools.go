@@ -32,8 +32,9 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-func str(desc string) map[string]any  { return map[string]any{"type": "string", "description": desc} }
-func num(desc string) map[string]any  { return map[string]any{"type": "integer", "description": desc} }
+func str(desc string) map[string]any   { return map[string]any{"type": "string", "description": desc} }
+func flt(desc string) map[string]any   { return map[string]any{"type": "number", "description": desc} }
+func num(desc string) map[string]any   { return map[string]any{"type": "integer", "description": desc} }
 func boolp(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 
 func mkTool(name, description string, params map[string]any) gatewayTool {
@@ -54,30 +55,40 @@ func chatTools() []gatewayTool {
 		mkTool("search_transactions",
 			"Search individual transactions with filters. Returns up to 'limit' rows (default 100, max 500) plus the total match count."+aiToolDataNotes,
 			obj(map[string]any{
-				"query":     str("case-insensitive substring of the comment (merchant, description)"),
-				"label":     str("label filter; comma list matches ANY of the labels"),
-				"all_of":    boolp("when true, a comma list of labels must ALL be present"),
-				"category":  str("exact category name, e.g. Food, Housing, Salary"),
-				"type":      str("expense | income | investment"),
-				"date_from": str("YYYY-MM-DD inclusive"),
-				"date_to":   str("YYYY-MM-DD inclusive"),
-				"sort":      str("date (default) | amount | comment"),
-				"dir":       str("asc | desc"),
-				"limit":     num("max rows, default 100, cap 500"),
+				"query":      str("case-insensitive substring of the comment (merchant, description)"),
+				"label":      str("label filter; comma list matches ANY of the labels"),
+				"all_of":     boolp("when true, a comma list of labels must ALL be present"),
+				"category":   str("exact category name, e.g. Food, Housing, Salary"),
+				"type":       str("expense | income | investment"),
+				"date_from":  str("YYYY-MM-DD inclusive"),
+				"date_to":    str("YYYY-MM-DD inclusive"),
+				"amount_min": flt("only rows with amount >= this (EUR)"),
+				"amount_max": flt("only rows with amount <= this (EUR)"),
+				"sort":       str("date (default) | amount | comment"),
+				"dir":        str("asc | desc"),
+				"limit":      num("max rows, default 100, cap 500"),
 			})),
 		mkTool("get_summary",
-			"Aggregated totals for a period and/or category/label: income, expenses, investments, per-category and per-month breakdowns. Prefer this over search_transactions for sums and trends.",
+			"Aggregated totals for any filter combination: income, expenses, investments, plus per-category, per-month AND per-label breakdowns. Accepts the same filters as search_transactions (dates, category, label, amount range). Prefer this over search_transactions for sums, trends and 'where does money go' questions.",
 			obj(map[string]any{
-				"date_from": str("YYYY-MM-DD inclusive"),
-				"date_to":   str("YYYY-MM-DD inclusive"),
-				"category":  str("scope to one category"),
-				"label":     str("scope to one label"),
+				"date_from":  str("YYYY-MM-DD inclusive"),
+				"date_to":    str("YYYY-MM-DD inclusive"),
+				"category":   str("scope to one category"),
+				"label":      str("scope to one label (comma list = any of them)"),
+				"amount_min": flt("only rows with amount >= this (EUR)"),
+				"amount_max": flt("only rows with amount <= this (EUR)"),
 			})),
 		mkTool("get_label_stats",
 			"Every label's footprint: transaction count, EUR volume, rules/budget usage, first/last use.",
 			obj(map[string]any{"limit": num("max labels, default 100")})),
 		mkTool("get_budgets",
-			"The monthly budget plan: fixed obligations, investment targets and spending limits with their matchers and amounts.",
+			"The monthly budget plan as configured: fixed obligations, investment targets and spending limits with their matchers and amounts. For actual progress against the plan use get_budget_status.",
+			obj(map[string]any{})),
+		mkTool("get_budget_status",
+			"Month-to-date progress against every budget line: budgeted vs spent vs remaining, fixed/investment totals, discretionary spending and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
+			obj(map[string]any{"month": str("YYYY-MM (default: current month)")})),
+		mkTool("get_label_rules",
+			"The auto-labeling rules: each rule applies its label to transactions whose comment contains the pattern (^ anchors to the start) and category matches. Explains WHY rows carry a label.",
 			obj(map[string]any{})),
 		mkTool("get_balances",
 			"Account balance snapshots over time (per-account net worth history). Optional date range; capped at 200 snapshots.",
@@ -88,6 +99,12 @@ func chatTools() []gatewayTool {
 		mkTool("get_stock_portfolio",
 			"Stock holdings from the trade ledger: shares, average cost, cost basis, realized gains per ticker (cost basis only; use get_stock_quote for live prices).",
 			obj(map[string]any{})),
+		mkTool("get_stock_trades",
+			"Individual stock trades (buys/sells), newest first: date, action, ticker, shares, price, source. Optional ticker filter.",
+			obj(map[string]any{
+				"ticker": str("filter to one ticker, e.g. VWCE"),
+				"limit":  num("max trades, default 100, cap 500"),
+			})),
 		mkTool("get_stock_quote",
 			"Live market price for one ticker (Yahoo Finance, cached ~5 min).",
 			obj(map[string]any{"ticker": str("ticker symbol, e.g. VWCE or AAPL")}, "ticker")),
@@ -101,17 +118,20 @@ func chatTools() []gatewayTool {
 // back as strings so the model can see what went wrong and adjust.
 func (s *insightService) runChatTool(name string, rawArgs string) (string, error) {
 	var args struct {
-		Query    string `json:"query"`
-		Label    string `json:"label"`
-		AllOf    bool   `json:"all_of"`
-		Category string `json:"category"`
-		Type     string `json:"type"`
-		DateFrom string `json:"date_from"`
-		DateTo   string `json:"date_to"`
-		Sort     string `json:"sort"`
-		Dir      string `json:"dir"`
-		Limit    int    `json:"limit"`
-		Ticker   string `json:"ticker"`
+		Query     string   `json:"query"`
+		Label     string   `json:"label"`
+		AllOf     bool     `json:"all_of"`
+		Category  string   `json:"category"`
+		Type      string   `json:"type"`
+		DateFrom  string   `json:"date_from"`
+		DateTo    string   `json:"date_to"`
+		AmountMin *float64 `json:"amount_min"`
+		AmountMax *float64 `json:"amount_max"`
+		Sort      string   `json:"sort"`
+		Dir       string   `json:"dir"`
+		Limit     int      `json:"limit"`
+		Ticker    string   `json:"ticker"`
+		Month     string   `json:"month"`
 	}
 	if rawArgs != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -142,14 +162,16 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 
 	case "search_transactions":
 		filter := domain.TransactionFilter{
-			DateFrom: parseDay(args.DateFrom),
-			DateTo:   parseDay(args.DateTo),
-			Label:    strings.ToLower(strings.TrimSpace(args.Label)),
-			Search:   strings.TrimSpace(args.Query),
-			Sort:     args.Sort,
-			Dir:      args.Dir,
-			Page:     1,
-			PageSize: limit,
+			DateFrom:  parseDay(args.DateFrom),
+			DateTo:    parseDay(args.DateTo),
+			Label:     strings.ToLower(strings.TrimSpace(args.Label)),
+			Search:    strings.TrimSpace(args.Query),
+			AmountMin: args.AmountMin,
+			AmountMax: args.AmountMax,
+			Sort:      args.Sort,
+			Dir:       args.Dir,
+			Page:      1,
+			PageSize:  limit,
 		}
 		if args.AllOf {
 			filter.LabelMode = "all"
@@ -185,9 +207,11 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 
 	case "get_summary":
 		filter := domain.TransactionFilter{
-			DateFrom: parseDay(args.DateFrom),
-			DateTo:   parseDay(args.DateTo),
-			Label:    strings.ToLower(strings.TrimSpace(args.Label)),
+			DateFrom:  parseDay(args.DateFrom),
+			DateTo:    parseDay(args.DateTo),
+			Label:     strings.ToLower(strings.TrimSpace(args.Label)),
+			AmountMin: args.AmountMin,
+			AmountMax: args.AmountMax,
 		}
 		if args.Category != "" {
 			cat := domain.Category(args.Category)
@@ -221,6 +245,55 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			return "", err
 		}
 		return marshalToolResult(budgets)
+
+	case "get_budget_status":
+		year, month := 0, 0
+		if args.Month != "" {
+			t, err := time.Parse("2006-01", args.Month)
+			if err != nil {
+				return "", fmt.Errorf("month must be YYYY-MM")
+			}
+			year, month = t.Year(), int(t.Month())
+		}
+		status, err := s.BudgetStatus(year, month)
+		if err != nil {
+			return "", err
+		}
+		return marshalToolResult(status)
+
+	case "get_label_rules":
+		if s.budgetRepo == nil {
+			return "", fmt.Errorf("label rules unavailable")
+		}
+		rules, err := s.budgetRepo.ListRules()
+		if err != nil {
+			return "", err
+		}
+		return marshalToolResult(rules)
+
+	case "get_stock_trades":
+		if s.stockSvc == nil {
+			return "", fmt.Errorf("stocks unavailable")
+		}
+		trades, err := s.stockSvc.ListAll()
+		if err != nil {
+			return "", err
+		}
+		ticker := strings.ToUpper(strings.TrimSpace(args.Ticker))
+		var kept []domain.StockTrade
+		for _, tr := range trades {
+			if ticker == "" || strings.EqualFold(tr.Ticker, ticker) {
+				kept = append(kept, tr)
+			}
+		}
+		// Newest first, capped.
+		for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+			kept[i], kept[j] = kept[j], kept[i]
+		}
+		if len(kept) > limit {
+			kept = kept[:limit]
+		}
+		return marshalToolResult(map[string]any{"total": len(trades), "returned": len(kept), "trades": kept})
 
 	case "get_balances":
 		balances, err := s.balSvc.List(domain.BalanceFilter{DateFrom: parseDay(args.DateFrom), DateTo: parseDay(args.DateTo)}, 0)

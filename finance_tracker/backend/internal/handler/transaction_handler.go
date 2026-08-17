@@ -245,6 +245,16 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 			filter.DateTo = &t
 		}
 	}
+	if v := c.Query("amount_min"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filter.AmountMin = &f
+		}
+	}
+	if v := c.Query("amount_max"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filter.AmountMax = &f
+		}
+	}
 	if v := c.Query("type"); v != "" {
 		t := domain.TransactionType(v)
 		filter.Type = &t

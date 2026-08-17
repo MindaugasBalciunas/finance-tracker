@@ -176,6 +176,9 @@ type TransactionFilter struct {
 	LabelMode string
 	// Search is a case-insensitive substring match on the comment.
 	Search string
+	// AmountMin/AmountMax bound the transaction amount (EUR), inclusive.
+	AmountMin *float64
+	AmountMax *float64
 	// Sort: "date" (default), "amount" or "comment"; Desc defaults to true
 	// for date/amount (newest/biggest first) and is overridable via Dir.
 	Sort     string
@@ -392,6 +395,16 @@ type TransactionSummary struct {
 	NetBalance       float64           `json:"net_balance"`
 	ByCategory       []CategorySummary `json:"by_category"`
 	ByMonth          []MonthlySummary  `json:"by_month"`
+	ByLabel          []LabelSummary    `json:"by_label"`
+}
+
+// LabelSummary holds totals per label within a filtered summary. A row
+// carrying several labels counts toward each of them; Transfers rows are
+// excluded (internal moves, not money in or out).
+type LabelSummary struct {
+	Label string  `json:"label"`
+	Total float64 `json:"total"`
+	Count int     `json:"count"`
 }
 
 // CategorySummary holds totals per category

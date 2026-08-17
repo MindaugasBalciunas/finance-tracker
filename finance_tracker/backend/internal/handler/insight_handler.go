@@ -45,6 +45,30 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// AI audit of the auto-labeling rule set, and user-approved apply.
 	ai.POST("/rule-review", h.RuleReview)
 	ai.POST("/rule-review/apply", h.ApplyRuleSuggestions)
+
+	// Structured month-to-date budget progress. Lives under /budgets so the
+	// read-only API token (and thus MCP) can reach it.
+	rg.GET("/budgets/status", h.BudgetStatus)
+}
+
+// BudgetStatus returns per-budget month-to-date progress; ?month=YYYY-MM
+// selects a month (default: current).
+func (h *InsightHandler) BudgetStatus(c *gin.Context) {
+	year, month := 0, 0
+	if v := c.Query("month"); v != "" {
+		t, err := time.Parse("2006-01", v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "month must be YYYY-MM"})
+			return
+		}
+		year, month = t.Year(), int(t.Month())
+	}
+	out, err := h.svc.BudgetStatus(year, month)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *InsightHandler) AssistTransaction(c *gin.Context) {

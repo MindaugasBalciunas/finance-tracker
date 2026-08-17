@@ -267,6 +267,45 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 		return summary.ByMonth[i].Month < summary.ByMonth[j].Month
 	})
 
+	// By label — labels are a comma multiset, so aggregate in Go: a row with
+	// several labels counts toward each. Transfers rows are internal moves
+	// and excluded, matching the totals above.
+	type labelRow struct {
+		Labels   string
+		Amount   float64
+		Category domain.Category
+	}
+	var labelRows []labelRow
+	lQuery := applyTransactionFilters(r.db.Model(&domain.Transaction{}), filter)
+	if err := lQuery.Select("labels, amount, category").Where("labels != ''").Scan(&labelRows).Error; err != nil {
+		return nil, err
+	}
+	agg := map[string]*domain.LabelSummary{}
+	for _, row := range labelRows {
+		if row.Category == "Transfers" {
+			continue
+		}
+		for _, l := range strings.Split(row.Labels, ",") {
+			l = strings.TrimSpace(l)
+			if l == "" {
+				continue
+			}
+			if agg[l] == nil {
+				agg[l] = &domain.LabelSummary{Label: l}
+			}
+			agg[l].Total += row.Amount
+			agg[l].Count++
+		}
+	}
+	summary.ByLabel = []domain.LabelSummary{}
+	for _, ls := range agg {
+		summary.ByLabel = append(summary.ByLabel, *ls)
+	}
+	sort.Slice(summary.ByLabel, func(i, j int) bool { return summary.ByLabel[i].Total > summary.ByLabel[j].Total })
+	if len(summary.ByLabel) > 40 {
+		summary.ByLabel = summary.ByLabel[:40]
+	}
+
 	return summary, nil
 }
 
@@ -307,6 +346,12 @@ func applyTransactionFilters(query *gorm.DB, filter domain.TransactionFilter) *g
 	}
 	if filter.Search != "" {
 		query = query.Where("LOWER(comment) LIKE ?", "%"+strings.ToLower(filter.Search)+"%")
+	}
+	if filter.AmountMin != nil {
+		query = query.Where("amount >= ?", *filter.AmountMin)
+	}
+	if filter.AmountMax != nil {
+		query = query.Where("amount <= ?", *filter.AmountMax)
 	}
 	return query
 }
