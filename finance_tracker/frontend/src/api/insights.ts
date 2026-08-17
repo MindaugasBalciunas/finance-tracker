@@ -36,6 +36,19 @@ export interface ChatMessage {
   content: string
 }
 
+export interface RuleSuggestion {
+  action: 'add' | 'update' | 'delete'
+  rule_id?: number
+  label: string
+  comment_match?: string
+  category?: string
+  old_comment_match?: string
+  old_category?: string
+  reason?: string
+  matches: number
+  would_label: number
+}
+
 // LLM gateway (nexos.ai by default): settings, connectivity test, chat.
 export const aiApi = {
   getSettings: async (): Promise<AISettings> => {
@@ -108,6 +121,23 @@ export const aiApi = {
   applyLabelSuggestions: async (items: { id: number; add: string[]; remove?: string[] }[]): Promise<number> => {
     const { data } = await client.post<{ applied: number }>('/ai/label-reindex/apply', { items })
     return data.applied
+  },
+
+  // AI audit of the auto-labeling rule set: proposes new rules for recurring
+  // uncovered merchants, updates for misfiring patterns and cleanup of dead
+  // rules. Suggestion-only — every item carries live match counts.
+  ruleReview: async (): Promise<{ suggestions: RuleSuggestion[]; rules_scanned: number }> => {
+    const { data } = await client.post('/ai/rule-review', {})
+    return data
+  },
+
+  // Writes the user-approved rule changes; adds/updates also label matching
+  // history (add-only). Returns what was touched.
+  applyRuleSuggestions: async (
+    items: { action: string; rule_id?: number; label: string; comment_match?: string; category?: string }[],
+  ): Promise<{ added: number; updated: number; deleted: number; relabeled: number }> => {
+    const { data } = await client.post('/ai/rule-review/apply', { items })
+    return data
   },
 
   // Short AI review of the view the user has open; server-cached 15 min per

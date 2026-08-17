@@ -52,6 +52,11 @@ type InsightService interface {
 	// labels can never be removed).
 	ReindexSuggest(mode string, limit, offset int) (*ReindexResult, error)
 	ApplyLabelSuggestions(items []LabelApplyItem) (int, error)
+	// RuleReview audits the auto-labeling rule set (dead/redundant/too-broad
+	// rules, recurring uncovered patterns) and proposes adds/updates/deletes.
+	// ApplyRuleSuggestions writes the user-approved rule changes.
+	RuleReview() (*RuleReviewResult, error)
+	ApplyRuleSuggestions(items []RuleApplyItem) (*RuleApplyResult, error)
 }
 
 type insightService struct {

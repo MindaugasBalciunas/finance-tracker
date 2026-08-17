@@ -42,6 +42,9 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.POST("/assist-transaction", h.AssistTransaction)
 	ai.POST("/label-reindex", h.LabelReindex)
 	ai.POST("/label-reindex/apply", h.ApplyLabelSuggestions)
+	// AI audit of the auto-labeling rule set, and user-approved apply.
+	ai.POST("/rule-review", h.RuleReview)
+	ai.POST("/rule-review/apply", h.ApplyRuleSuggestions)
 }
 
 func (h *InsightHandler) AssistTransaction(c *gin.Context) {
@@ -72,6 +75,38 @@ func (h *InsightHandler) LabelReindex(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// RuleReview asks the AI to audit the auto-labeling rule set and returns
+// validated suggestions with live match counts. Suggestion-only.
+func (h *InsightHandler) RuleReview(c *gin.Context) {
+	out, err := h.svc.RuleReview()
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// ApplyRuleSuggestions writes the user-approved rule changes.
+func (h *InsightHandler) ApplyRuleSuggestions(c *gin.Context) {
+	var input struct {
+		Items []service.RuleApplyItem `json:"items" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(input.Items) == 0 || len(input.Items) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "items must contain 1-100 suggestions"})
+		return
+	}
+	out, err := h.svc.ApplyRuleSuggestions(input.Items)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, out)
