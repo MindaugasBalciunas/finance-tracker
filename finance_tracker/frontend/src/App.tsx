@@ -16,6 +16,8 @@ const Stocks = lazy(() => import('./pages/Stocks'))
 const Assets = lazy(() => import('./pages/Assets'))
 const Budget = lazy(() => import('./pages/Budget'))
 const Labels = lazy(() => import('./pages/Labels'))
+const LabelRules = lazy(() => import('./pages/LabelRules'))
+const LabelAI = lazy(() => import('./pages/LabelAI'))
 const AI = lazy(() => import('./pages/AI'))
 const More = lazy(() => import('./pages/More'))
 
@@ -47,6 +49,8 @@ export default function App() {
               <Route path="budget" element={<Suspense fallback={<LoadingSpinner />}><Budget /></Suspense>} />
               <Route path="reports" element={<Suspense fallback={<LoadingSpinner />}><Reports /></Suspense>} />
               <Route path="labels" element={<Suspense fallback={<LoadingSpinner />}><Labels /></Suspense>} />
+              <Route path="labels/rules" element={<Suspense fallback={<LoadingSpinner />}><LabelRules /></Suspense>} />
+              <Route path="labels/ai" element={<Suspense fallback={<LoadingSpinner />}><LabelAI /></Suspense>} />
               <Route path="ai" element={<Suspense fallback={<LoadingSpinner />}><AI /></Suspense>} />
               <Route path="more" element={<Suspense fallback={<LoadingSpinner />}><More /></Suspense>} />
             </Route>

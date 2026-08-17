@@ -7,6 +7,13 @@ if [ -f "$OPTIONS_FILE" ]; then
     ANTHROPIC_API_KEY=$(jq -r '.anthropic_api_key // ""' "$OPTIONS_FILE")
     export ANTHROPIC_API_KEY
 
+    # nexos.ai gateway seed: applied at boot only when the database has no
+    # key, so a wiped/reinstalled instance comes back with AI working.
+    NEXOS_API_KEY=$(jq -r '.nexos_api_key // ""' "$OPTIONS_FILE")
+    NEXOS_MODEL=$(jq -r '.nexos_model // ""' "$OPTIONS_FILE")
+    NEXOS_GATEWAY_URL=$(jq -r '.nexos_gateway_url // ""' "$OPTIONS_FILE")
+    export NEXOS_API_KEY NEXOS_MODEL NEXOS_GATEWAY_URL
+
     AUTH_PASSWORD=$(jq -r '.auth_password // ""' "$OPTIONS_FILE")
     AUTH_USER=$(jq -r '.auth_user // "admin"' "$OPTIONS_FILE")
 else

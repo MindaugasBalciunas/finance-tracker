@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/marketdata"
 )
 
 // Auto AI review of the view the user is currently looking at: a compact,
@@ -62,9 +63,13 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		return "", fmt.Errorf("building view context: %w", err)
 	}
 
-	prompt := fmt.Sprintf(`You are a personal finance assistant. Below is the data behind the "%s" view the user has open right now (period: %s). In 2-4 short sentences, point out the most interesting, unusual or actionable things in THIS view. Quote concrete EUR figures. Plain text only — no headers, no bullet points, no preamble, no restating what the view is.
+	extra := ""
+	if view == "stocks" {
+		extra = " Relate the live market sentiment, news and social chatter to the user's actual positions."
+	}
+	prompt := fmt.Sprintf(`You are a personal finance assistant. Below is the data behind the "%s" view the user has open right now (period: %s). In 2-4 short sentences, point out the most interesting, unusual or actionable things in THIS view.%s Quote concrete EUR figures. Plain text only — no headers, no bullet points, no preamble, no restating what the view is.
 
-%s`, view, periodLabel(from, to), context)
+%s`, view, periodLabel(from, to), extra, context)
 
 	text, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 2048)
 	if err != nil {
@@ -161,9 +166,9 @@ func (s *insightService) viewContext(view string, from, to *time.Time) (string, 
 		latest, _ := s.balSvc.GetLatest(0)
 		sec := s.stockPositionsSection(latest)
 		if sec == "" {
-			return "No stock positions recorded.", nil
+			sec = "No stock positions recorded."
 		}
-		return sec, nil
+		return sec + s.marketContextSection(), nil
 
 	case "assets":
 		if s.assetSvc == nil {
@@ -242,4 +247,104 @@ func (s *insightService) snapshotLines(latest *domain.Balance) string {
 	}
 	return fmt.Sprintf("Balance snapshot (%s): net worth €%.0f — free cash €%.0f, investments €%.0f, pensions €%.0f, crypto €%.0f",
 		latest.Date.Format("2006-01-02"), latest.Total, freeCash, investments, pensions, cryptoEur)
+}
+
+// marketContextSection gathers live market color for the stocks review:
+// overall sentiment plus headlines and social chatter for the biggest open
+// positions. Everything is fetched concurrently under one deadline and
+// degrades to absence — the review must never fail because a feed is down.
+func (s *insightService) marketContextSection() string {
+	if s.stockSvc == nil {
+		return ""
+	}
+	portfolio, err := s.stockSvc.GetPortfolio()
+	if err != nil || portfolio == nil {
+		return ""
+	}
+	var open []domain.StockHolding
+	for _, h := range portfolio.Holdings {
+		if h.Shares > 0.0001 {
+			open = append(open, h)
+		}
+	}
+	if len(open) == 0 {
+		return "" // nothing held — market color would be noise (and tests stay offline)
+	}
+	sort.Slice(open, func(i, j int) bool { return open[i].TotalCost.Value > open[j].TotalCost.Value })
+	if len(open) > 5 {
+		open = open[:5]
+	}
+
+	var mu sync.Mutex
+	var fng string
+	news := map[string][]string{}
+	social := map[string][]string{}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); fng = marketdata.FearGreed() }()
+	for _, h := range open {
+		ticker := h.Ticker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if lines := marketdata.Headlines(ticker, 2); len(lines) > 0 {
+				mu.Lock()
+				news[ticker] = lines
+				mu.Unlock()
+			}
+		}()
+	}
+	// Social chatter only for the two biggest positions — it's the noisiest source.
+	for i, h := range open {
+		if i >= 2 {
+			break
+		}
+		ticker := h.Ticker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if lines := marketdata.SocialBuzz(ticker, 3); len(lines) > 0 {
+				mu.Lock()
+				social[ticker] = lines
+				mu.Unlock()
+			}
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		// take whatever arrived; the goroutines finish on their own timeouts
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var b strings.Builder
+	b.WriteString("\n\n=== LIVE MARKET CONTEXT (best-effort) ===\n")
+	wrote := false
+	if fng != "" {
+		b.WriteString(fng + "\n")
+		wrote = true
+	}
+	for _, h := range open {
+		if lines, ok := news[h.Ticker]; ok {
+			fmt.Fprintf(&b, "News %s:\n", h.Ticker)
+			for _, l := range lines {
+				b.WriteString("  - " + l + "\n")
+			}
+			wrote = true
+		}
+		if lines, ok := social[h.Ticker]; ok {
+			fmt.Fprintf(&b, "Social chatter %s :\n", h.Ticker)
+			for _, l := range lines {
+				b.WriteString("  - " + l + "\n")
+			}
+			wrote = true
+		}
+	}
+	if !wrote {
+		return ""
+	}
+	return b.String()
 }

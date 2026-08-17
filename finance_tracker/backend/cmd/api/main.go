@@ -47,6 +47,24 @@ func main() {
 	txSvc := service.NewTransactionServiceWithRules(txRepo, balSvc, budgetRepo)
 	stockSvc := service.NewStockService(stockRepo)
 	assetSvc := service.NewAssetService(assetRepo)
+
+	// Seed the AI gateway from the add-on options when the database carries
+	// no key — a wiped or reinstalled instance comes back with AI working,
+	// and a key the user set in the app is NEVER overwritten by the env.
+	if key := os.Getenv("NEXOS_API_KEY"); key != "" {
+		if s, err := insightRepo.GetAISettings(); err == nil && s.APIKey == "" {
+			s.APIKey = key
+			if m := os.Getenv("NEXOS_MODEL"); m != "" && s.Model == "" {
+				s.Model = m
+			}
+			if u := os.Getenv("NEXOS_GATEWAY_URL"); u != "" {
+				s.GatewayURL = u
+			}
+			if err := insightRepo.SaveAISettings(s); err == nil {
+				log.Println("AI gateway seeded from add-on options")
+			}
+		}
+	}
 	// insightSvc reads budgets, stocks and assets for the AI report + chat tools.
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc, assetSvc)
 

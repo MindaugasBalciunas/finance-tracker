@@ -1,39 +1,25 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import {
   useLabelStats, useLabelSuggestions, useRenameLabel, useDeleteLabel,
-  useReapplyRules, useLabelRules, useDeleteRule, useApplyLabel,
 } from '../hooks/useBudgets'
-import { budgetsApi } from '../api/budgets'
-import { aiApi } from '../api/insights'
-import { useAISettings } from '../hooks/useInsights'
-import { useQueryClient } from '@tanstack/react-query'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import LabelsNav, { BannerAlert, errText, type Banner } from '../components/ui/LabelsNav'
 import { formatEuro } from '../utils/format'
 import { FIXED_LABELS } from '../utils/labels'
-import { CATEGORIES } from '../constants/categories'
 import type { LabelStat, RelabelResult } from '../types'
-
-type Banner = { kind: 'ok' | 'error'; text: string } | null
-
-function errText(err: unknown): string {
-  const e = err as { response?: { data?: { error?: string } }; message?: string }
-  return e.response?.data?.error ?? e.message ?? 'Something went wrong'
-}
 
 type SortKey = 'label' | 'transactions' | 'amount' | 'rules' | 'budgets' | 'last_used'
 
-// Labels management: every label's footprint, typo/merge suggestions,
+// Labels management: every label's footprint, typo/merge suggestions, and
 // rename/merge/delete that rewrite the whole database (transactions, rules,
-// budget label lists), the rules themselves, and per-label transaction review.
+// budget label lists). Rules and AI tagging live on their own pages now.
 export default function Labels() {
   const { data: stats = [], isLoading } = useLabelStats()
   const { data: suggestions = [] } = useLabelSuggestions()
   const renameLabel = useRenameLabel()
   const deleteLabel = useDeleteLabel()
-  const reapply = useReapplyRules()
 
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'transactions', dir: -1 })
@@ -96,32 +82,10 @@ export default function Labels() {
             {stats.length} labels in use — rename, merge or delete them everywhere in one action
           </p>
         </div>
-        <button
-          onClick={async () => {
-            try {
-              const res = await reapply.mutateAsync()
-              setBanner({ kind: 'ok', text: `Re-applied ${res.rules} rules across the whole database — ${res.relabeled} transactions labeled.` })
-            } catch (err) {
-              setBanner({ kind: 'error', text: `Re-apply failed: ${errText(err)}` })
-            }
-          }}
-          disabled={reapply.isPending}
-          className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {reapply.isPending ? 'Re-applying…' : '↻ Re-apply all rules'}
-        </button>
+        <LabelsNav />
       </div>
 
-      {banner && (
-        <div className={`flex items-start justify-between gap-3 text-sm rounded-xl px-4 py-2.5 border ${
-          banner.kind === 'ok'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : 'bg-red-50 border-red-200 text-red-800'
-        }`}>
-          <span>{banner.text}</span>
-          <button onClick={() => setBanner(null)} className="opacity-60 hover:opacity-100">✕</button>
-        </div>
-      )}
+      <BannerAlert banner={banner} onClose={() => setBanner(null)} />
 
       {liveSuggestions.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
@@ -275,10 +239,6 @@ export default function Labels() {
         )}
       </div>
 
-      <AIReindexCard onBanner={setBanner} />
-
-      <RulesSection onBanner={setBanner} />
-
       {renaming && (
         <RenameModal
           stat={renaming}
@@ -351,316 +311,6 @@ export default function Labels() {
           onClose={() => setReviewing(null)}
         />
       )}
-    </div>
-  )
-}
-
-// AIReindexCard: bulk AI tagging. Scans unlabeled transactions, shows the
-// model's proposals for review (vocabulary-only, nothing invented), and
-// applies ONLY what the user keeps checked. Add-only — existing labels are
-// never touched.
-function AIReindexCard({ onBanner }: { onBanner: (b: Banner) => void }) {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
-  const qc = useQueryClient()
-  const [mode, setMode] = useState<'unlabeled' | 'review'>('unlabeled')
-  const [offset, setOffset] = useState(0)
-  const [scanning, setScanning] = useState(false)
-  const [applying, setApplying] = useState(false)
-  const [result, setResult] = useState<Awaited<ReturnType<typeof aiApi.labelReindex>> | null>(null)
-  const [checked, setChecked] = useState<Set<number>>(new Set())
-
-  if (!configured) return null
-
-  const scan = async (m: 'unlabeled' | 'review', nextOffset: number) => {
-    setScanning(true)
-    setMode(m)
-    try {
-      const res = await aiApi.labelReindex(m, nextOffset)
-      setResult(res)
-      setOffset(nextOffset + res.scanned)
-      setChecked(new Set(res.suggestions.map((s) => s.id)))
-      if (res.suggestions.length === 0) {
-        onBanner({ kind: 'ok', text: res.scanned === 0
-          ? (m === 'unlabeled'
-              ? 'Nothing to tag — every transaction with a description already has labels.'
-              : 'Nothing left to review in this pass.')
-          : m === 'unlabeled'
-            ? `Scanned ${res.scanned} unlabeled transactions — the AI found no confident matches.`
-            : `Reviewed ${res.scanned} labeled transactions — everything looks consistent.` })
-      }
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      onBanner({ kind: 'error', text: `Scan failed: ${e.response?.data?.error ?? e.message ?? 'unknown error'}` })
-    } finally {
-      setScanning(false)
-    }
-  }
-
-  const apply = async () => {
-    if (!result) return
-    const items = result.suggestions
-      .filter((s) => checked.has(s.id))
-      .map((s) => ({ id: s.id, add: s.add, remove: s.remove ?? [] }))
-    if (items.length === 0) return
-    setApplying(true)
-    try {
-      const applied = await aiApi.applyLabelSuggestions(items)
-      onBanner({ kind: 'ok', text: mode === 'unlabeled'
-        ? `Tagged ${applied} transaction${applied === 1 ? '' : 's'} with AI suggestions.`
-        : `Remapped labels on ${applied} transaction${applied === 1 ? '' : 's'}.` })
-      setResult(null)
-      for (const key of ['transactions', 'labels', 'label-stats', 'label-suggestions']) {
-        qc.invalidateQueries({ queryKey: [key] })
-      }
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      onBanner({ kind: 'error', text: `Apply failed: ${e.response?.data?.error ?? e.message ?? 'unknown error'}` })
-    } finally {
-      setApplying(false)
-    }
-  }
-
-  const toggle = (id: number) =>
-    setChecked((c) => {
-      const next = new Set(c)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h2 className="font-semibold text-gray-900">✦ AI tagging</h2>
-        <span className="flex gap-2">
-          <button
-            onClick={() => scan('unlabeled', 0)}
-            disabled={scanning}
-            className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {scanning && mode === 'unlabeled' ? 'Scanning…' : 'Scan unlabeled'}
-          </button>
-          <button
-            onClick={() => scan('review', 0)}
-            disabled={scanning}
-            title="Audit already-labeled transactions and propose remaps where labels don't fit"
-            className="text-sm px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-          >
-            {scanning && mode === 'review' ? 'Reviewing…' : 'Review labeled'}
-          </button>
-        </span>
-      </div>
-      <p className="text-xs text-gray-400">
-        “Scan unlabeled” proposes labels for untagged rows; “Review labeled” audits existing labels against
-        your history and suggests remaps where they don't make sense (with the reason). 75 rows per pass,
-        vocabulary-only, fixed labels are never removed — and nothing is written until you apply.
-      </p>
-
-      {result && result.suggestions.length > 0 && (
-        <>
-          <div className="mt-3 max-h-96 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-xl">
-            {result.suggestions.map((s) => (
-              <label key={s.id} className="flex items-start gap-2.5 px-3 py-2 text-sm hover:bg-gray-50/60 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={checked.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                  className="mt-1"
-                />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-gray-700 truncate">{s.comment}</span>
-                  <span className="block text-xs text-gray-400">
-                    {s.date} · {formatEuro(s.amount)} · {s.category}
-                  </span>
-                  {s.reason && <span className="block text-[11px] text-indigo-400 mt-0.5">✦ {s.reason}</span>}
-                </span>
-                <span className="flex flex-wrap gap-1 justify-end max-w-44">
-                  {(s.remove ?? []).map((l) => (
-                    <span key={`rm-${l}`} className="text-[11px] font-medium bg-red-50 text-red-500 rounded px-1.5 py-0.5 line-through">−{l}</span>
-                  ))}
-                  {s.add.map((l) => (
-                    <span key={l} className="text-[11px] font-medium bg-emerald-50 text-emerald-600 rounded px-1.5 py-0.5">+{l}</span>
-                  ))}
-                </span>
-              </label>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
-            <button
-              onClick={apply}
-              disabled={applying || checked.size === 0}
-              className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {applying ? 'Applying…' : `Apply ${checked.size} selected`}
-            </button>
-            <button
-              onClick={() => setChecked(new Set())}
-              className="px-2 py-1 text-xs text-gray-400 hover:text-gray-700"
-            >
-              Uncheck all
-            </button>
-            {result.remaining_unlabeled > 0 && (
-              <button
-                onClick={() => scan(mode, offset)}
-                disabled={scanning}
-                className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {mode === 'unlabeled' ? 'Scan next batch' : 'Review next batch'}
-              </button>
-            )}
-            <span className="text-xs text-gray-400 ml-auto">
-              {result.suggestions.length} suggestion{result.suggestions.length === 1 ? '' : 's'} from {result.scanned} scanned
-              {result.remaining_unlabeled > 0 && <> · {result.remaining_unlabeled} left</>}
-            </span>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-// All saved rules, grouped by label, plus a form to add one — auto-labeling
-// lives on this page now instead of behind a modal.
-function RulesSection({ onBanner }: { onBanner: (b: Banner) => void }) {
-  const { data: rules = [], isLoading } = useLabelRules()
-  const deleteRule = useDeleteRule()
-  const applyLabel = useApplyLabel()
-  const [confirmId, setConfirmId] = useState<number | null>(null)
-  const [form, setForm] = useState({ label: '', category: '', comment_match: '' })
-
-  const grouped = useMemo(() => {
-    const g = new Map<string, typeof rules>()
-    for (const r of rules) {
-      const list = g.get(r.label) ?? []
-      list.push(r)
-      g.set(r.label, list)
-    }
-    return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }, [rules])
-
-  const formReady = form.label.trim() !== '' && (form.category !== '' || form.comment_match.trim() !== '')
-  const { data: preview } = useQuery({
-    queryKey: ['label-preview', form.label, form.category, form.comment_match],
-    queryFn: () => budgetsApi.previewLabel({
-      label: form.label.trim().toLowerCase(),
-      ...(form.category ? { category: form.category } : {}),
-      ...(form.comment_match.trim() ? { comment_match: form.comment_match.trim() } : {}),
-    }),
-    enabled: formReady,
-  })
-
-  const submit = async () => {
-    try {
-      const res = await applyLabel.mutateAsync({
-        label: form.label.trim().toLowerCase(),
-        ...(form.category ? { category: form.category } : {}),
-        ...(form.comment_match.trim() ? { comment_match: form.comment_match.trim() } : {}),
-        create_rule: true,
-      })
-      onBanner({ kind: 'ok', text: `Rule saved — ${res.labeled} existing transactions labeled “${form.label.trim().toLowerCase()}”.` })
-      setForm({ label: '', category: '', comment_match: '' })
-    } catch (err) {
-      onBanner({ kind: 'error', text: `Rule failed: ${errText(err)}` })
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
-      <h2 className="font-semibold text-gray-900">⚡ Label rules</h2>
-      <p className="text-xs text-gray-400 mb-3">
-        {rules.length} rules — new transactions matching a pattern get the label automatically.
-        “Re-apply all rules” runs them over the whole history.
-      </p>
-
-      <div className="flex flex-wrap items-end gap-2 pb-4 mb-4 border-b border-gray-100">
-        <label className="text-xs text-gray-500">
-          Label
-          <input
-            value={form.label}
-            onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase() })}
-            placeholder="groceries"
-            className="block mt-1 w-32 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5"
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Comment contains
-          <input
-            value={form.comment_match}
-            onChange={(e) => setForm({ ...form, comment_match: e.target.value })}
-            placeholder="lidl (use ^ to anchor)"
-            className="block mt-1 w-44 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5"
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Category
-          <select
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-          >
-            <option value="">Any</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        <button
-          onClick={submit}
-          disabled={!formReady || applyLabel.isPending}
-          className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {applyLabel.isPending ? 'Saving…' : 'Add rule + label history'}
-        </button>
-        {formReady && preview && (
-          <span className="text-xs text-gray-400 pb-1.5">
-            matches {preview.matches} transactions, {preview.unlabeled} still unlabeled
-          </span>
-        )}
-      </div>
-
-      {isLoading && <p className="text-sm text-gray-400">Loading…</p>}
-      <div className="space-y-3">
-        {grouped.map(([label, list]) => (
-          <div key={label}>
-            <p className="text-xs font-semibold text-indigo-600 mb-1">{label}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {list.map((r) => (
-                <span
-                  key={r.id}
-                  className="inline-flex items-center gap-1.5 text-xs bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1"
-                >
-                  <span className="text-gray-700">
-                    {r.comment_match ? <>“{r.comment_match}”</> : null}
-                    {r.comment_match && r.category ? ' · ' : null}
-                    {r.category ? <span className="text-gray-400">{r.category}</span> : null}
-                  </span>
-                  {confirmId === r.id ? (
-                    <button
-                      onClick={() => { deleteRule.mutate(r.id); setConfirmId(null) }}
-                      className="text-red-600 font-semibold hover:text-red-800"
-                    >
-                      delete?
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmId(r.id)}
-                      className="text-gray-300 hover:text-red-500 leading-none"
-                      aria-label={`Delete rule ${r.comment_match || r.category} for ${label}`}
-                    >
-                      ×
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-        {!isLoading && rules.length === 0 && (
-          <p className="text-sm text-gray-400">No rules yet — add one above, or from any transaction form.</p>
-        )}
-      </div>
-      <p className="text-[11px] text-gray-400 pt-3">
-        Deleting a rule stops future auto-labeling; already-applied labels stay on transactions.
-      </p>
     </div>
   )
 }
