@@ -5,6 +5,7 @@ import StockTradeForm from '../components/forms/StockTradeForm'
 import StockForecastSection from '../components/charts/StockForecastSection'
 import PortfolioRow, { PortfolioCard, DualAmount, DualAmountEur } from '../components/stocks/PortfolioRow'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import { formatDate, formatEuro, formatUsd, gainColor } from '../utils/format'
 import { computeSellPnL } from '../utils/stockCalculations'
 import type { CreateStockTradeInput, StockTrade } from '../types'
@@ -33,7 +34,7 @@ export default function Stocks() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data: trades, isLoading: tradesLoading } = useStockTrades()
-  const { data: portfolio, isLoading: portfolioLoading } = useStockPortfolio()
+  const { data: portfolio, isLoading: portfolioLoading, isError, error, refetch } = useStockPortfolio()
   const createMutation = useCreateStockTrade()
   const updateMutation = useUpdateStockTrade()
   const deleteMutation = useDeleteStockTrade()
@@ -65,6 +66,7 @@ export default function Stocks() {
   }
 
   if (tradesLoading || portfolioLoading) return <LoadingSpinner message="Loading stocks & ETFs…" />
+  if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
   const activeHoldings = (portfolio?.holdings ?? []).filter((h) => h.shares > 0.0001)
   const closedHoldings = (portfolio?.holdings ?? []).filter((h) => h.shares <= 0.0001 && h.realized_gain.value !== 0)
@@ -81,9 +83,12 @@ export default function Stocks() {
     ? allHoldings.reduce((sum, h) => sum + toEur(h.realized_gain.value, h.currency)!, 0)
     : null
 
-  // Price map: ticker → live price (aligns with activeHoldings order)
-  const priceMap: Record<string, number | null> = {}
-  activeHoldings.forEach((h, i) => { priceMap[h.ticker] = allPriceQueries[i]?.data?.price ?? null })
+  // Price map: ticker → live price. Keyed by the ticker each query was made
+  // for, so holdings and prices can never be misassigned by index drift.
+  const priceMap = new Map<string, number | null>()
+  activeTickersEarly.forEach((ticker, i) => {
+    priceMap.set(ticker, allPriceQueries[i]?.data?.price ?? null)
+  })
 
   // Cost-recovered: tickers where total sell proceeds >= total buy cost (remaining shares are "free money")
   const tickerBuyCostEur: Record<string, number> = {}
@@ -101,7 +106,7 @@ export default function Stocks() {
 
   // Total current unrealized P&L in EUR (for combined cumulative extension)
   const totalUnrealizedEur = activeHoldings.reduce((sum, h) => {
-    const price = priceMap[h.ticker]
+    const price = priceMap.get(h.ticker)
     if (price == null) return sum
     const unrealNative = (price - h.avg_cost.value) * h.shares
     return sum + (toEur(unrealNative, h.currency) ?? unrealNative)
@@ -110,7 +115,7 @@ export default function Stocks() {
   // Comparison data: realized + unrealized per ticker, sorted by abs total desc
   const pnlCompData = [
     ...activeHoldings.map((h) => {
-      const price = priceMap[h.ticker]
+      const price = priceMap.get(h.ticker)
       const unrealNative = price != null ? (price - h.avg_cost.value) * h.shares : null
       const unrealEur = unrealNative != null ? (toEur(unrealNative, h.currency) ?? unrealNative) : null
       return {
@@ -200,7 +205,7 @@ export default function Stocks() {
 
       {/* Summary KPI cards */}
       {portfolio && (() => {
-        const totalUnrealPricesLoaded = activeHoldings.every((h) => priceMap[h.ticker] != null)
+        const totalUnrealPricesLoaded = activeHoldings.every((h) => priceMap.get(h.ticker) != null)
         const totalUnrealDisplay = totalUnrealPricesLoaded ? totalUnrealizedEur : null
         const totalPnl = totalRealizedEur != null && totalUnrealDisplay != null
           ? totalRealizedEur + totalUnrealDisplay : null
@@ -425,7 +430,7 @@ export default function Stocks() {
         const lastDate = cumPoints.length > 0 ? cumPoints[cumPoints.length - 1].date : today
 
         // Extend chart to today: add a "now" point showing realized + unrealized
-        const allPricesLoaded = activeHoldings.length === 0 || activeHoldings.every((h) => priceMap[h.ticker] != null)
+        const allPricesLoaded = activeHoldings.length === 0 || activeHoldings.every((h) => priceMap.get(h.ticker) != null)
         const extPoint = allPricesLoaded && lastDate < today
           ? [{ date: today, realized: finalRealized, total: finalRealized + totalUnrealizedEur }]
           : []

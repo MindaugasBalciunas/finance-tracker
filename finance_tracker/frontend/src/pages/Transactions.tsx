@@ -10,6 +10,7 @@ import {
 import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import { formatEuro, formatDate } from '../utils/format'
 import { txLabels } from '../utils/labels'
 import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput, AccountKey } from '../types'
@@ -135,7 +136,7 @@ export default function Transactions() {
     return () => clearTimeout(t)
   }, [searchDraft])
 
-  const { data, isLoading } = useTransactions(filter)
+  const { data, isLoading, isError, error, refetch } = useTransactions(filter)
   // Scoped to the selected category (when set), so the dropdown only offers
   // labels that can actually match — 78 flat labels don't fit a phone screen.
   const { data: allLabels = [] } = useLabels(filter.category as string | undefined)
@@ -365,7 +366,9 @@ export default function Transactions() {
       </div>
 
       {/* Transaction list */}
-      {isLoading ? (
+      {isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
         <LoadingSpinner />
       ) : (
         <>

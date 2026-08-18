@@ -5,6 +5,7 @@ import {
 } from '../hooks/useBudgets'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import LabelsNav, { BannerAlert, errText, type Banner } from '../components/ui/LabelsNav'
 import { formatEuro } from '../utils/format'
 import { FIXED_LABELS } from '../utils/labels'
@@ -16,7 +17,7 @@ type SortKey = 'label' | 'transactions' | 'amount' | 'rules' | 'budgets' | 'last
 // rename/merge/delete that rewrite the whole database (transactions, rules,
 // budget label lists). Rules and AI tagging live on their own pages now.
 export default function Labels() {
-  const { data: stats = [], isLoading } = useLabelStats()
+  const { data: stats = [], isLoading, isError, error, refetch } = useLabelStats()
   const { data: suggestions = [] } = useLabelSuggestions()
   const renameLabel = useRenameLabel()
   const deleteLabel = useDeleteLabel()
@@ -146,7 +147,11 @@ export default function Labels() {
             className="w-full sm:w-64 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
           />
         </div>
-        {isLoading ? (
+        {isError ? (
+          <div className="p-3">
+            <QueryError error={error} onRetry={() => refetch()} />
+          </div>
+        ) : isLoading ? (
           <LoadingSpinner />
         ) : (
           <div className="overflow-x-auto">

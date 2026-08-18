@@ -4,6 +4,7 @@ import { useAllTransactions } from '../hooks/useTransactions'
 import { txLabels } from '../utils/labels'
 import AssetForm from '../components/forms/AssetForm'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import { formatDate, formatEuro, formatPercent, gainColor } from '../utils/format'
 import type { Asset, AssetType, CreateAssetInput, Transaction } from '../types'
 import { ASSET_TYPE_LABELS, ACCOUNT_LABELS } from '../types'
@@ -224,7 +225,7 @@ export default function Assets() {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data: assets, isLoading: assetsLoading } = useAssets()
+  const { data: assets, isLoading: assetsLoading, isError, error, refetch } = useAssets()
   const { data: summary, isLoading: summaryLoading } = useAssetSummary()
 
   // One fetch covers every asset's loan-payment label since the earliest
@@ -267,6 +268,7 @@ export default function Assets() {
   }
 
   if (assetsLoading || summaryLoading) return <LoadingSpinner message="Loading assets…" />
+  if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
   const valueGain = (summary?.total_value ?? 0) - (summary?.total_purchase_price ?? 0)
 

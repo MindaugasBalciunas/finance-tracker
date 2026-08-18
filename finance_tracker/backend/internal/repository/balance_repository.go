@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"sort"
+
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"gorm.io/gorm"
 )
@@ -92,13 +94,7 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 	for _, e := range byDay {
 		balances = append(balances, e.b)
 	}
-	for i := 0; i < len(balances); i++ {
-		for j := i + 1; j < len(balances); j++ {
-			if balances[j].Date.Before(balances[i].Date) {
-				balances[i], balances[j] = balances[j], balances[i]
-			}
-		}
-	}
+	sort.Slice(balances, func(i, j int) bool { return balances[i].Date.Before(balances[j].Date) })
 
 	trend := &domain.BalanceTrend{
 		Dates:  []string{},

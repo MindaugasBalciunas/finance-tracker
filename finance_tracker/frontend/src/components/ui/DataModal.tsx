@@ -171,10 +171,10 @@ export default function DataModal({ onClose, mode }: Props) {
     setDeleting(true)
     try {
       const responses = await Promise.all([
-        fetch('/api/v1/transactions', { method: 'DELETE' }),
-        fetch('/api/v1/balances', { method: 'DELETE' }),
-        fetch('/api/v1/stocks', { method: 'DELETE' }),
-        fetch('/api/v1/assets', { method: 'DELETE' }),
+        fetch('/api/v1/transactions?confirm=all', { method: 'DELETE' }),
+        fetch('/api/v1/balances?confirm=all', { method: 'DELETE' }),
+        fetch('/api/v1/stocks?confirm=all', { method: 'DELETE' }),
+        fetch('/api/v1/assets?confirm=all', { method: 'DELETE' }),
       ])
       if (responses.some(r => !r.ok)) throw new Error('Some data could not be deleted')
       qc.invalidateQueries()

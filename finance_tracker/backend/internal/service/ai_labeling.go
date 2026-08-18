@@ -52,6 +52,10 @@ type ReindexResult struct {
 	Suggestions []ReindexSuggestion `json:"suggestions"`
 	Scanned     int                 `json:"scanned"`
 	Remaining   int                 `json:"remaining_unlabeled"`
+	// Warning is set when a scan stopped early (gateway error or unparseable
+	// model output after the first chunk). Scanned then counts only the rows
+	// actually processed, so advancing the offset by it re-offers the rest.
+	Warning string `json:"warning,omitempty"`
 }
 
 // LabelApplyItem is one approved suggestion. Labels is the pre-v1.19 wire
@@ -305,6 +309,17 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 
 		reply, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
 		if err != nil {
+			// Chunks already processed are paid-for work — return them with
+			// Scanned = rows actually covered, so the client's offset advance
+			// re-offers the rest next pass instead of discarding everything.
+			if start > 0 {
+				return &ReindexResult{
+					Suggestions: suggestions,
+					Scanned:     start,
+					Remaining:   total - offset - start,
+					Warning:     fmt.Sprintf("scan stopped early (%v) — %d rows deferred to the next pass", err, len(batch)-start),
+				}, nil
+			}
 			return nil, err
 		}
 		var parsed []struct {
@@ -315,7 +330,16 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 			Reason string   `json:"reason"`
 		}
 		if err := json.Unmarshal([]byte(extractJSON(reply, '[', ']')), &parsed); err != nil {
-			continue // a bad chunk shouldn't sink the whole scan
+			// Stop at the failed chunk: counting its rows as "scanned" let
+			// the client advance the offset past rows that were never
+			// processed — up to 25 rows silently skipped forever per bad
+			// chunk. They stay in the pool for the next pass instead.
+			return &ReindexResult{
+				Suggestions: suggestions,
+				Scanned:     start,
+				Remaining:   total - offset - start,
+				Warning:     "the model returned unparseable output — the remaining rows will be retried on the next pass",
+			}, nil
 		}
 		for _, p := range parsed {
 			tx, ok := byID[p.ID]
@@ -371,15 +395,32 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 // ApplyLabelSuggestions applies the approved changes: removals first (never
 // a fixed-obligation label), then additions. Accounts are preserved.
 func (s *insightService) ApplyLabelSuggestions(items []LabelApplyItem) (int, error) {
-	applied := 0
+	// Additions are validated against the SAME vocabulary the scan offers —
+	// without this the apply endpoint is a general bulk label writer that
+	// accepts arbitrary (id, labels) pairs with no proof they came from a
+	// scan.
+	_, allowed, err := s.labelVocabulary(80)
+	if err != nil {
+		return 0, err
+	}
+
+	applied, failed := 0, 0
+	var firstErr error
+	fail := func(err error) {
+		failed++
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	for _, item := range items {
-		adds := normalizeSuggested(append(item.Add, item.Labels...), nil, 5)
+		adds := normalizeSuggested(append(item.Add, item.Labels...), allowed, 5)
 		removes := normalizeSuggested(item.Remove, nil, 5)
 		if len(adds) == 0 && len(removes) == 0 {
 			continue
 		}
 		tx, err := s.txSvc.GetByID(item.ID)
 		if err != nil {
+			fail(fmt.Errorf("transaction %d: %w", item.ID, err))
 			continue
 		}
 		var kept []string
@@ -398,17 +439,22 @@ func (s *insightService) ApplyLabelSuggestions(items []LabelApplyItem) (int, err
 		if merged == tx.Labels {
 			continue
 		}
-		// Pass accounts through — Update overwrites them unconditionally.
+		// Labels-only update — accounts stay untouched (nil = keep).
 		if _, err := s.txSvc.Update(item.ID, UpdateTransactionInput{
-			Labels:        &merged,
-			DebitAccount:  tx.DebitAccount,
-			CreditAccount: tx.CreditAccount,
-		}); err == nil {
-			applied++
+			Labels: &merged,
+		}); err != nil {
+			fail(fmt.Errorf("transaction %d: %w", item.ID, err))
+			continue
 		}
+		applied++
 	}
 	if applied > 0 {
 		s.logAIActivity("tagging", "applied", fmt.Sprintf("user approved AI label changes on %d transactions", applied))
+	}
+	if failed > 0 {
+		// Partial failures were silently folded into a smaller "applied"
+		// count; surface them — a retry is safe, applied items no-op.
+		return applied, fmt.Errorf("applied %d, but %d failed (first error: %v) — retrying is safe", applied, failed, firstErr)
 	}
 	return applied, nil
 }

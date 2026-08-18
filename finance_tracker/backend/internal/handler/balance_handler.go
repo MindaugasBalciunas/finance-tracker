@@ -125,6 +125,9 @@ func (h *BalanceHandler) Update(c *gin.Context) {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /balances/{id} [delete]
 func (h *BalanceHandler) DeleteAll(c *gin.Context) {
+	if !confirmWipe(c, "balance snapshot") {
+		return
+	}
 	if err := h.svc.DeleteAll(); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -195,7 +198,9 @@ func (h *BalanceHandler) GetProjected(c *gin.Context) {
 
 func parseBtcPrice(c *gin.Context) float64 {
 	if v := c.Query("btc_price"); v != "" {
-		if p, err := strconv.ParseFloat(v, 64); err == nil {
+		// A negative, absurd or non-finite price would recompute the net
+		// worth to garbage — outside sane bounds means "no live price".
+		if p, err := strconv.ParseFloat(v, 64); err == nil && p > 0 && p < 100_000_000 {
 			return p
 		}
 	}

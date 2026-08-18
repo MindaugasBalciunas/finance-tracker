@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,16 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/marketdata"
 	"github.com/mindaugas/finance-tracker/internal/service"
 )
+
+// validTicker bounds what a path ticker may look like — tickers end up
+// interpolated into Yahoo URLs, so anything outside this set is rejected
+// before it leaves the handler.
+var validTicker = regexp.MustCompile(`^[A-Za-z0-9.\-]{1,12}$`)
+
+// allowedHistoryRanges is the documented range set for GetHistory.
+var allowedHistoryRanges = map[string]bool{
+	"1mo": true, "3mo": true, "6mo": true, "1y": true, "2y": true, "5y": true,
+}
 
 type StockHandler struct {
 	svc service.StockService
@@ -115,6 +126,26 @@ func (h *StockHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, t)
 }
 
+// DeleteAll godoc
+// @Summary      Delete all stock trades
+// @Tags         stocks
+// @Param        confirm  query  string  true  "Must be 'all'"
+// @Success      204
+// @Failure      400  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /stocks [delete]
+func (h *StockHandler) DeleteAll(c *gin.Context) {
+	if c.Query("confirm") != "all" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "add ?confirm=all to delete every stock trade"})
+		return
+	}
+	if err := h.svc.DeleteAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // Delete godoc
 // @Summary      Delete a stock trade
 // @Tags         stocks
@@ -123,14 +154,6 @@ func (h *StockHandler) Update(c *gin.Context) {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /stocks/{id} [delete]
-func (h *StockHandler) DeleteAll(c *gin.Context) {
-	if err := h.svc.DeleteAll(); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 func (h *StockHandler) Delete(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
@@ -186,6 +209,10 @@ func (h *StockHandler) GetPortfolio(c *gin.Context) {
 // @Router       /stocks/price/{ticker} [get]
 func (h *StockHandler) GetPrice(c *gin.Context) {
 	ticker := strings.ToUpper(c.Param("ticker"))
+	if !validTicker.MatchString(ticker) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid ticker"})
+		return
+	}
 	price, err := fetchYahooPrice(ticker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("could not fetch price for %s: %v", ticker, err)})
@@ -205,7 +232,15 @@ func (h *StockHandler) GetPrice(c *gin.Context) {
 // @Router       /stocks/history/{ticker} [get]
 func (h *StockHandler) GetHistory(c *gin.Context) {
 	ticker := strings.ToUpper(c.Param("ticker"))
+	if !validTicker.MatchString(ticker) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid ticker"})
+		return
+	}
 	rangeParam := c.DefaultQuery("range", "1y")
+	if !allowedHistoryRanges[rangeParam] {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid range (use 1mo 3mo 6mo 1y 2y 5y)"})
+		return
+	}
 	points, err := fetchYahooHistory(ticker, rangeParam)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("could not fetch history for %s: %v", ticker, err)})
@@ -240,7 +275,13 @@ func yahooCacheGet(key string) (any, bool) {
 func yahooCacheSet(key string, val any, ttl time.Duration) {
 	yahooCache.mu.Lock()
 	defer yahooCache.mu.Unlock()
-	yahooCache.m[key] = yahooCacheEntry{val: val, expires: time.Now().Add(ttl)}
+	now := time.Now()
+	for k, e := range yahooCache.m {
+		if now.After(e.expires) {
+			delete(yahooCache.m, k)
+		}
+	}
+	yahooCache.m[key] = yahooCacheEntry{val: val, expires: now.Add(ttl)}
 }
 
 // fetchYahooPrice / fetchYahooMeta delegate to the shared marketdata package
@@ -366,6 +407,10 @@ type AnalystData struct {
 // @Router       /stocks/analyst/{ticker} [get]
 func (h *StockHandler) GetAnalyst(c *gin.Context) {
 	ticker := strings.ToUpper(c.Param("ticker"))
+	if !validTicker.MatchString(ticker) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid ticker"})
+		return
+	}
 	data, err := fetchYahooAnalyst(ticker)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("no analyst data for %s: %v", ticker, err)})
@@ -437,7 +482,7 @@ func fetchYahooAnalystRaw(ticker string) (*AnalystData, error) {
 	}
 	apiURL := fmt.Sprintf(
 		"https://query2.finance.yahoo.com/v10/finance/quoteSummary/%s?modules=financialData&crumb=%s",
-		ticker, url.QueryEscape(crumb),
+		url.PathEscape(ticker), url.QueryEscape(crumb),
 	)
 	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
 	req, err := http.NewRequest("GET", apiURL, nil)
@@ -511,12 +556,12 @@ func fetchYahooAnalystRaw(ticker string) (*AnalystData, error) {
 }
 
 func fetchYahooHistoryRaw(ticker, interval, rangeParam string) ([]HistoryPoint, error) {
-	url := fmt.Sprintf(
+	apiURL := fmt.Sprintf(
 		"https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=%s&range=%s",
-		ticker, interval, rangeParam,
+		url.PathEscape(ticker), interval, rangeParam,
 	)
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}

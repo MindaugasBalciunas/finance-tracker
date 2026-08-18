@@ -242,7 +242,13 @@ func TestAssetHandler_DeleteAll(t *testing.T) {
 	r := setupAssetRouter(svc)
 	svc.On("DeleteAll").Return(nil)
 
+	// Without the explicit confirmation the wipe is refused.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/v1/assets", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	svc.AssertNotCalled(t, "DeleteAll")
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/v1/assets?confirm=all", nil))
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }

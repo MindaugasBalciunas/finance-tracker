@@ -8,6 +8,7 @@ import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCate
 import MonthlyLabelChart from '../components/charts/MonthlyLabelChart'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import { formatEuro } from '../utils/format'
 import { useDateRange } from '../context/DateRangeContext'
 import { txLabels, FIXED_LABELS } from '../utils/labels'
@@ -76,7 +77,7 @@ export default function Reports() {
   const [catSort, setCatSort] = useState<SortState>({ key: 'total', dir: -1 })
   const [labelSort, setLabelSort] = useState<SortState>({ key: 'total', dir: -1 })
 
-  const { data: summary, isLoading } = useTransactionSummary(dateRange)
+  const { data: summary, isLoading, isError, error, refetch } = useTransactionSummary(dateRange)
   const { data: allExpenses } = useAllExpenses(dateRange)
   const { data: allIncome } = useAllTransactions({ type: 'income', ...dateRange })
 
@@ -235,7 +236,7 @@ export default function Reports() {
         <p className="text-sm text-gray-500 mt-1">Financial analytics and breakdowns</p>
       </div>
 
-      {isLoading ? <LoadingSpinner /> : summary ? (
+      {isError ? <QueryError error={error} onRetry={() => refetch()} /> : isLoading ? <LoadingSpinner /> : summary ? (
         <>
           {/* Summary KPIs */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">

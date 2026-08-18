@@ -84,7 +84,10 @@ func orderClause(filter domain.TransactionFilter) string {
 	if col == "date" {
 		return "date " + dir + ", id " + dir
 	}
-	return col + " " + dir + ", date DESC"
+	// The id tiebreak keeps OFFSET pagination stable: rows sharing the same
+	// amount/comment AND date would otherwise order arbitrarily, repeating
+	// or skipping rows across page boundaries.
+	return col + " " + dir + ", date DESC, id DESC"
 }
 
 func (r *transactionRepository) List(filter domain.TransactionFilter) (*domain.PaginatedTransactions, error) {

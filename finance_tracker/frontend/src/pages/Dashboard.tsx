@@ -15,13 +15,14 @@ import InsightsPanel from '../components/ui/InsightsPanel'
 import BudgetPulseCard from '../components/ui/BudgetPulseCard'
 import TopLabelsCard from '../components/ui/TopLabelsCard'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import { useDateRange } from '../context/DateRangeContext'
 
 export default function Dashboard() {
   const { dateRange } = useDateRange()
 
   const { price: liveBtcPrice } = useBtcEur()
-  const { data: summary, isLoading: summaryLoading } = useTransactionSummary(dateRange)
+  const { data: summary, isLoading: summaryLoading, isError, error, refetch } = useTransactionSummary(dateRange)
   const { data: allTimeSummary } = useTransactionSummary({})
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance(liveBtcPrice)
   const { data: trend, isLoading: trendLoading } = useBalanceTrend(dateRange)
@@ -113,6 +114,7 @@ export default function Dashboard() {
     : null
 
   if (isLoading) return <LoadingSpinner message="Loading dashboard..." />
+  if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
   return (
     <div className="space-y-4 sm:space-y-8">

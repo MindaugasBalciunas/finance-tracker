@@ -177,8 +177,15 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 	// The user's CFO briefing rides along, so an AI session started from
 	// this ZIP has the framework, not just the numbers.
 	if ctx := h.aiContextContent(); strings.TrimSpace(ctx) != "" {
-		if f, err := zw.Create("cfo-context.md"); err == nil {
-			_, _ = f.Write([]byte(ctx))
+		// A silently-missing file defeats the manifest's own integrity check.
+		f, err := zw.Create("cfo-context.md")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if _, err := f.Write([]byte(ctx)); err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
 		}
 	}
 
@@ -346,8 +353,14 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 	manifest.add("budgets.csv", planRows)
 
 	// README last, so it can carry the live data manifest.
-	if f, err := zw.Create("README.md"); err == nil {
-		_, _ = f.Write([]byte(aiReadme + manifest.render()))
+	f, err := zw.Create("README.md")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if _, err := f.Write([]byte(aiReadme + manifest.render())); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
 	}
 
 	if err := zw.Close(); err != nil {

@@ -396,15 +396,16 @@ func (s *insightService) ApplyRuleSuggestions(items []RuleApplyItem) (*RuleApply
 				continue
 			}
 			rule := domain.LabelRule{Label: label, CommentMatch: pattern, Category: cat}
-			n, err := s.budgetRepo.ApplyLabel(rule)
-			if err != nil {
-				continue
-			}
+			// Persist the rule BEFORE relabeling history: the old order could
+			// rewrite history and then fail the save, leaving relabeled rows
+			// with no rule to explain them — and report nothing happened.
 			if err := s.budgetRepo.SaveRule(&rule); err != nil {
 				continue
 			}
 			res.Added++
-			res.Relabeled += n
+			if n, err := s.budgetRepo.ApplyLabel(rule); err == nil {
+				res.Relabeled += n
+			}
 		case "update":
 			rule, ok := byID[item.RuleID]
 			if !ok {
@@ -416,7 +417,12 @@ func (s *insightService) ApplyRuleSuggestions(items []RuleApplyItem) (*RuleApply
 				continue
 			}
 			rule.CommentMatch = pattern
-			rule.Category = cat // label stays — relabeling is delete+add
+			// Label stays — relabeling is delete+add. And a model reply that
+			// simply omits the category must not silently widen the rule from
+			// category-scoped to match-everything.
+			if cat != "" {
+				rule.Category = cat
+			}
 			if err := s.budgetRepo.SaveRule(&rule); err != nil {
 				continue
 			}

@@ -28,7 +28,9 @@ export default function LabelAI() {
       const res = await aiApi.labelReindex(m, nextOffset)
       setResult(res)
       setOffset(nextOffset + res.scanned)
-      setChecked(new Set(res.suggestions.map((s) => s.id)))
+      // Additions are pre-checked; anything that removes a label defaults to
+      // unchecked so destructive changes need an explicit opt-in.
+      setChecked(new Set(res.suggestions.filter((s) => !(s.remove?.length)).map((s) => s.id)))
       if (res.suggestions.length === 0) {
         setBanner({ kind: 'ok', text: res.scanned === 0
           ? (m === 'unlabeled'
@@ -77,6 +79,18 @@ export default function LabelAI() {
       else next.add(id)
       return next
     })
+
+  // Label operations among the checked suggestions — the apply button calls
+  // out removals so they can't ride along unnoticed.
+  const selected = (result?.suggestions ?? []).filter((s) => checked.has(s.id))
+  const addCount = selected.reduce((n, s) => n + (s.add?.length ?? 0), 0)
+  const removeCount = selected.reduce((n, s) => n + (s.remove?.length ?? 0), 0)
+  const applyText = removeCount > 0
+    ? `Apply (${[
+        addCount > 0 ? `${addCount} addition${addCount === 1 ? '' : 's'}` : '',
+        `${removeCount} removal${removeCount === 1 ? '' : 's'}`,
+      ].filter(Boolean).join(', ')})`
+    : `Apply ${checked.size} selected`
 
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-5xl mx-auto">
@@ -160,7 +174,7 @@ export default function LabelAI() {
                   disabled={applying || checked.size === 0}
                   className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  {applying ? 'Applying…' : `Apply ${checked.size} selected`}
+                  {applying ? 'Applying…' : applyText}
                 </button>
                 <button
                   onClick={() => setChecked(new Set())}

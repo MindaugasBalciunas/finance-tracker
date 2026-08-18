@@ -134,9 +134,11 @@ const (
 // Transaction represents a financial transaction record
 // All amounts are in EUR.
 type Transaction struct {
-	ID     uint            `json:"id" gorm:"primaryKey;autoIncrement"`
-	Date   time.Time       `json:"date" gorm:"not null;index"`
-	Type   TransactionType `json:"type" gorm:"not null"`
+	ID   uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Date time.Time `json:"date" gorm:"not null;index;index:idx_tx_date_type,priority:1"`
+	// Type is indexed both alone and composite with Date — every summary
+	// filters/groups on type, and the dominant query is date-range + type.
+	Type   TransactionType `json:"type" gorm:"not null;index;index:idx_tx_date_type,priority:2"`
 	Amount float64         `json:"-" gorm:"not null"` // DB column; use AmountMoney in responses
 
 	Comment  string   `json:"comment"`
@@ -304,7 +306,7 @@ type RelabelResult struct {
 // for short store names ("iki") that substring-match everyday words.
 type LabelRule struct {
 	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Label        string    `json:"label" gorm:"not null"`
+	Label        string    `json:"label" gorm:"not null;index"`
 	Category     string    `json:"category" gorm:"not null;default:''"`
 	CommentMatch string    `json:"comment_match" gorm:"not null;default:''"`
 	CreatedAt    time.Time `json:"created_at"`

@@ -6,6 +6,7 @@ import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
+import QueryError from '../components/ui/QueryError'
 import StatCard from '../components/ui/StatCard'
 import WhereMoneySits from '../components/ui/WhereMoneySits'
 import AccountMovement from '../components/ui/AccountMovement'
@@ -38,7 +39,7 @@ export default function Balances() {
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
   const { data: projected } = useProjectedBalance(liveBtcPrice)
-  const { data: allBalances, isLoading } = useBalances({}, liveBtcPrice)
+  const { data: allBalances, isLoading, isError, error, refetch } = useBalances({}, liveBtcPrice)
   // Auto-generated snapshots are internal projection caches — hide from history table
   const balances = allBalances?.filter(b => !b.is_auto)
   // The trend chart and the movement card follow the global date range;
@@ -82,6 +83,7 @@ export default function Balances() {
   }
 
   if (isLoading) return <LoadingSpinner />
+  if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
   return (
     <div className="space-y-6">

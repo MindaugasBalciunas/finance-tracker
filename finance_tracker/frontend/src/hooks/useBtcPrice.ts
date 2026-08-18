@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 
-async function fetchBtcEurPrice(): Promise<number> {
+async function fetchBtcEurPrice(): Promise<number | null> {
   const res = await fetch(
-    'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur'
+    'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur',
+    { signal: AbortSignal.timeout(10_000) }
   )
   if (!res.ok) throw new Error('Failed to fetch BTC price')
   const data = await res.json()
-  return data.bitcoin.eur as number
+  const price = data?.bitcoin?.eur
+  // Guard the response shape — a malformed payload yields null, not a TypeError.
+  return typeof price === 'number' && Number.isFinite(price) ? price : null
 }
 
 export function useBtcPrice() {

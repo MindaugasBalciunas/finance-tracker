@@ -54,9 +54,7 @@ func cacheGetStr(key string) (string, bool) {
 }
 
 func cacheSetStr(key, val string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.m[key] = cacheEntry{q: &Quote{Currency: val}, expires: time.Now().Add(contextTTL)}
+	cacheSet(key, cacheEntry{q: &Quote{Currency: val}, expires: time.Now().Add(contextTTL)})
 }
 
 // FearGreed returns a one-line market sentiment reading: CNN's Fear & Greed

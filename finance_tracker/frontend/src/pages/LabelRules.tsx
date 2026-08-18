@@ -5,12 +5,13 @@ import { budgetsApi } from '../api/budgets'
 import { aiApi, type RuleSuggestion } from '../api/insights'
 import { useAISettings } from '../hooks/useInsights'
 import LabelsNav, { BannerAlert, errText, type Banner } from '../components/ui/LabelsNav'
+import QueryError from '../components/ui/QueryError'
 import { CATEGORIES } from '../constants/categories'
 
 // Label rules on their own page: all saved rules grouped by label, a form to
 // add one (with live match preview), and the re-apply-everything action.
 export default function LabelRules() {
-  const { data: rules = [], isLoading } = useLabelRules()
+  const { data: rules = [], isLoading, isError, error, refetch } = useLabelRules()
   const deleteRule = useDeleteRule()
   const applyLabel = useApplyLabel()
   const reapply = useReapplyRules()
@@ -52,6 +53,23 @@ export default function LabelRules() {
     } catch (err) {
       setBanner({ kind: 'error', text: `Rule failed: ${errText(err)}` })
     }
+  }
+
+  if (isError) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4 max-w-5xl mx-auto">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">⚡ Label rules</h1>
+            <p className="text-xs text-gray-400">
+              new transactions matching a pattern get the label automatically
+            </p>
+          </div>
+          <LabelsNav />
+        </div>
+        <QueryError error={error} onRetry={() => refetch()} />
+      </div>
+    )
   }
 
   return (
@@ -204,7 +222,9 @@ function AIRuleReviewCard({ onBanner }: { onBanner: (b: Banner) => void }) {
     try {
       const res = await aiApi.ruleReview()
       setResult(res)
-      setChecked(new Set(res.suggestions.map((_, i) => i)))
+      // Adds and updates are pre-checked; deletes default to unchecked so
+      // destructive changes need an explicit opt-in.
+      setChecked(new Set(res.suggestions.flatMap((s, i) => (s.action === 'delete' ? [] : [i]))))
       if (res.suggestions.length === 0) {
         onBanner({ kind: 'ok', text: `Reviewed ${res.rules_scanned} rules — the AI found nothing worth changing.` })
       }
@@ -255,6 +275,20 @@ function AIRuleReviewCard({ onBanner }: { onBanner: (b: Banner) => void }) {
       else next.add(i)
       return next
     })
+
+  // Per-action counts among the checked suggestions — the apply button calls
+  // out deletions so they can't ride along unnoticed.
+  const selected = (result?.suggestions ?? []).filter((_, i) => checked.has(i))
+  const deleteCount = selected.filter((s) => s.action === 'delete').length
+  const addCount = selected.filter((s) => s.action === 'add').length
+  const updateCount = selected.filter((s) => s.action === 'update').length
+  const applyText = deleteCount > 0
+    ? `Apply (${[
+        addCount > 0 ? `${addCount} addition${addCount === 1 ? '' : 's'}` : '',
+        updateCount > 0 ? `${updateCount} update${updateCount === 1 ? '' : 's'}` : '',
+        `${deleteCount} removal${deleteCount === 1 ? '' : 's'}`,
+      ].filter(Boolean).join(', ')})`
+    : `Apply ${checked.size} selected`
 
   const chip = (action: RuleSuggestion['action']) =>
     action === 'add'
@@ -316,7 +350,7 @@ function AIRuleReviewCard({ onBanner }: { onBanner: (b: Banner) => void }) {
               disabled={applying || checked.size === 0}
               className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {applying ? 'Applying…' : `Apply ${checked.size} selected`}
+              {applying ? 'Applying…' : applyText}
             </button>
             <button
               onClick={() => setChecked(new Set())}

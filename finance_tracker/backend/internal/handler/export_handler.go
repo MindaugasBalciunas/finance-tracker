@@ -599,7 +599,13 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 	case c.Query("purpose") == "export":
 		filename = fmt.Sprintf("export_finances_all_%s.json", ts)
 	default:
-		_ = h.exportLogRepo.Save("full")
+		// The marker anchors the partial-export chain: if it silently fails,
+		// the next partial export starts from a stale point and quietly
+		// misses data. Fail loudly instead — the export is repeatable.
+		if err := h.exportLogRepo.Save("full"); err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "could not record the export marker: " + err.Error()})
+			return
+		}
 	}
 	budgetRows, ruleRows := h.budgetRows()
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
@@ -664,7 +670,10 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 
 	ts := time.Now().Format("2006-01-02")
 	fromStr := since.Format("2006-01-02")
-	_ = h.exportLogRepo.Save("partial")
+	if err := h.exportLogRepo.Save("partial"); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "could not record the export marker: " + err.Error()})
+		return
+	}
 	budgetRows, ruleRows := h.budgetRows()
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"partial_finances_%s_since_%s.json\"", ts, fromStr))
 	c.JSON(http.StatusOK, financeExport{

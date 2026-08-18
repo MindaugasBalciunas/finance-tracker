@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -915,17 +916,41 @@ func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, max
 	}
 
 	url := strings.TrimRight(settings.GatewayURL, "/") + "/messages"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return zero, err
-	}
-	req.Header.Set("Authorization", "Bearer "+settings.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return zero, err
+
+	// Rate limits and gateway-side transient failures (429/502/503/529) get
+	// a short retry with backoff, honoring Retry-After — one hiccup should
+	// not fail a whole analysis, chat turn or labeling scan. Other statuses
+	// (including 500) are treated as final: through an LLM gateway they are
+	// almost always a real config/request problem, and retrying them would
+	// just triple the latency of a genuine failure.
+	const maxGatewayAttempts = 3
+	var resp *http.Response
+	for attempt := 1; ; attempt++ {
+		req, rerr := http.NewRequest("POST", url, bytes.NewReader(body))
+		if rerr != nil {
+			return zero, rerr
+		}
+		req.Header.Set("Authorization", "Bearer "+settings.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		var derr error
+		resp, derr = client.Do(req)
+		if derr != nil {
+			return zero, derr
+		}
+		transient := resp.StatusCode == 429 || resp.StatusCode == 502 ||
+			resp.StatusCode == 503 || resp.StatusCode == 529
+		if !transient || attempt == maxGatewayAttempts {
+			break
+		}
+		delay := time.Duration(attempt) * 2 * time.Second
+		if ra, aerr := strconv.Atoi(resp.Header.Get("Retry-After")); aerr == nil && ra > 0 && ra <= 60 {
+			delay = time.Duration(ra) * time.Second
+		}
+		resp.Body.Close()
+		log.Printf("gateway: %s (attempt %d/%d), retrying in %s", resp.Status, attempt, maxGatewayAttempts, delay)
+		time.Sleep(delay)
 	}
 	defer resp.Body.Close()
 

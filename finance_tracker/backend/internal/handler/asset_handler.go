@@ -131,6 +131,9 @@ func (h *AssetHandler) Delete(c *gin.Context) {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /assets [delete]
 func (h *AssetHandler) DeleteAll(c *gin.Context) {
+	if !confirmWipe(c, "asset") {
+		return
+	}
 	if err := h.svc.DeleteAll(); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

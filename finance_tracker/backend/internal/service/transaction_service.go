@@ -33,9 +33,12 @@ type UpdateTransactionInput struct {
 	Amount        float64                `json:"amount" binding:"omitempty,gt=0"`
 	Comment       string                 `json:"comment"`
 	Category      domain.Category        `json:"category"`
-	Labels        *string                `json:"labels"`
-	DebitAccount  string                 `json:"debit_account"`
-	CreditAccount string                 `json:"credit_account"`
+	Labels *string `json:"labels"`
+	// Pointers so a partial update can't erase account linkage: nil = keep
+	// the current value, "" (explicitly sent) = clear it. The transaction
+	// form always sends both fields, so clearing via the UI still works.
+	DebitAccount  *string `json:"debit_account"`
+	CreditAccount *string `json:"credit_account"`
 }
 
 // LabelRuleSource provides auto-labeling rules applied on transaction create.
@@ -185,8 +188,12 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if input.Labels != nil {
 		tx.Labels = domain.NormalizeLabels(*input.Labels)
 	}
-	tx.DebitAccount = input.DebitAccount
-	tx.CreditAccount = input.CreditAccount
+	if input.DebitAccount != nil {
+		tx.DebitAccount = *input.DebitAccount
+	}
+	if input.CreditAccount != nil {
+		tx.CreditAccount = *input.CreditAccount
+	}
 
 	// Deterministic labeling on edits: only rules that NEWLY match (because
 	// the comment/category changed) add their label. Rules that already

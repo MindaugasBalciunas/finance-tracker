@@ -181,11 +181,26 @@ func (h *TransactionHandler) DeleteBatch(c *gin.Context) {
 }
 
 func (h *TransactionHandler) DeleteAll(c *gin.Context) {
+	if !confirmWipe(c, "transaction") {
+		return
+	}
 	if err := h.svc.DeleteAll(); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// confirmWipe guards the collection-level DELETE routes: wiping a whole
+// table is unrecoverable (hard deletes), so one stray request must not be
+// enough — the caller has to say ?confirm=all explicitly.
+func confirmWipe(c *gin.Context, what string) bool {
+	if c.Query("confirm") == "all" {
+		return true
+	}
+	c.JSON(http.StatusBadRequest, ErrorResponse{
+		Error: "add ?confirm=all to delete every " + what + " — this cannot be undone"})
+	return false
 }
 
 // List godoc
@@ -325,6 +340,11 @@ func buildTransactionFilter(c *gin.Context) (domain.TransactionFilter, error) {
 }
 
 func parseID(c *gin.Context) (uint, error) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	// 32-bit so the uint conversion can't truncate, and 0 is rejected —
+	// no row ever has id 0, but GORM treats it as "no condition".
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err == nil && id == 0 {
+		return 0, fmt.Errorf("invalid id 0")
+	}
 	return uint(id), err
 }
