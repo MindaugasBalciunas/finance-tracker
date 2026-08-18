@@ -88,6 +88,18 @@ func (h *ExportHandler) WithAI(repo repository.InsightRepository) *ExportHandler
 	return h
 }
 
+// aiContextContent returns the CFO-context document ("" when unset).
+func (h *ExportHandler) aiContextContent() string {
+	if h.insightRepo == nil {
+		return ""
+	}
+	c, err := h.insightRepo.GetAIContext()
+	if err != nil {
+		return ""
+	}
+	return c.Content
+}
+
 func (h *ExportHandler) aiSettingsRow() *aiSettingsExportRow {
 	if h.insightRepo == nil {
 		return nil
@@ -214,7 +226,8 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //	v2 — schema_version field, balance rows carry id + time (multi-snapshot days)
 //	v3 — ai_settings (gateway URL, model and API key travel with the backup,
 //	     so a wipe-and-restore doesn't lose the AI configuration)
-const exportSchemaVersion = 3
+//	v4 — ai_context (the user's CFO briefing travels with the backup)
+const exportSchemaVersion = 4
 
 type financeExport struct {
 	SchemaVersion   int                  `json:"schema_version,omitempty"`
@@ -228,6 +241,8 @@ type financeExport struct {
 	LabelRules      []labelRuleExportRow `json:"label_rules,omitempty"`
 	BudgetSettings  *budgetSettingsRow   `json:"budget_settings,omitempty"`
 	AISettings      *aiSettingsExportRow `json:"ai_settings,omitempty"`
+	// AIContext is the user's CFO-briefing document (v4 backups).
+	AIContext string `json:"ai_context,omitempty"`
 }
 
 // aiSettingsExportRow carries the gateway configuration INCLUDING the API
@@ -584,6 +599,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		LabelRules:      ruleRows,
 		BudgetSettings:  h.settingsRow(),
 		AISettings:      h.aiSettingsRow(),
+		AIContext:       h.aiContextContent(),
 	})
 }
 
@@ -647,6 +663,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		LabelRules:      ruleRows,
 		BudgetSettings:  h.settingsRow(),
 		AISettings:      h.aiSettingsRow(),
+		AIContext:       h.aiContextContent(),
 	})
 }
 

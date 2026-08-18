@@ -582,6 +582,14 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			}
 		}
 
+		// CFO context (v4 backups): restore only when nothing is written
+		// locally — an old backup must never clobber a newer briefing.
+		if strings.TrimSpace(payload.AIContext) != "" && h.insightRepo != nil {
+			if cur, err := h.insightRepo.GetAIContext(); err == nil && strings.TrimSpace(cur.Content) == "" {
+				_, _ = h.insightRepo.SaveAIContext(payload.AIContext)
+			}
+		}
+
 		// Deterministic migration: re-apply every rule across the whole table so
 		// imported historical records (and pre-label rows) get their labels.
 		allRules, _ := h.budgetRepo.ListRules()

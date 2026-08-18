@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,9 @@ enough for AI chat uploads — concatenate a column's files for full history.
 - category_year_totals.csv — precomputed totals per category, type and year
 - assets.csv — physical assets (real estate, vehicles…) with loans
 - budgets.csv — the owner's monthly plan (fixed obligations, targets, limits)
+- cfo-context.md — the owner's own briefing (framework, standing rules,
+  communication style) — READ IT FIRST and advise accordingly (present only
+  when the owner has written one)
 
 ## Transactions
 
@@ -147,6 +151,14 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 
 	if f, err := zw.Create("README.md"); err == nil {
 		_, _ = f.Write([]byte(aiReadme))
+	}
+
+	// The user's CFO briefing rides along, so an AI session started from
+	// this ZIP has the framework, not just the numbers.
+	if ctx := h.aiContextContent(); strings.TrimSpace(ctx) != "" {
+		if f, err := zw.Create("cfo-context.md"); err == nil {
+			_, _ = f.Write([]byte(ctx))
+		}
 	}
 
 	// Transactions, one file per year.
