@@ -10,25 +10,25 @@ import (
 )
 
 type CreateStockTradeInput struct {
-	Date          string              `json:"date" binding:"required"`
-	Action        domain.StockAction  `json:"action" binding:"required,oneof=buy sell"`
-	Ticker        string              `json:"ticker" binding:"required"`
-	Shares        float64             `json:"shares" binding:"required,gt=0"`
-	PricePerShare float64             `json:"price_per_share" binding:"required,gt=0"`
-	Currency      string              `json:"currency"`
-	Source        domain.StockSource  `json:"source" binding:"required,oneof=Revolut IBKR"`
-	Notes         string              `json:"notes"`
+	Date          string             `json:"date" binding:"required"`
+	Action        domain.StockAction `json:"action" binding:"required,oneof=buy sell"`
+	Ticker        string             `json:"ticker" binding:"required"`
+	Shares        float64            `json:"shares" binding:"required,gt=0"`
+	PricePerShare float64            `json:"price_per_share" binding:"required,gt=0"`
+	Currency      string             `json:"currency"`
+	Source        domain.StockSource `json:"source" binding:"required,oneof=Revolut IBKR"`
+	Notes         string             `json:"notes"`
 }
 
 type UpdateStockTradeInput struct {
-	Date          string              `json:"date"`
-	Action        domain.StockAction  `json:"action" binding:"omitempty,oneof=buy sell"`
-	Ticker        string              `json:"ticker"`
-	Shares        float64             `json:"shares" binding:"omitempty,gt=0"`
-	PricePerShare float64             `json:"price_per_share" binding:"omitempty,gt=0"`
-	Currency      string              `json:"currency"`
-	Source        domain.StockSource  `json:"source" binding:"omitempty,oneof=Revolut IBKR"`
-	Notes         string              `json:"notes"`
+	Date          string             `json:"date"`
+	Action        domain.StockAction `json:"action" binding:"omitempty,oneof=buy sell"`
+	Ticker        string             `json:"ticker"`
+	Shares        float64            `json:"shares" binding:"omitempty,gt=0"`
+	PricePerShare float64            `json:"price_per_share" binding:"omitempty,gt=0"`
+	Currency      string             `json:"currency"`
+	Source        domain.StockSource `json:"source" binding:"omitempty,oneof=Revolut IBKR"`
+	Notes         string             `json:"notes"`
 }
 
 type StockService interface {

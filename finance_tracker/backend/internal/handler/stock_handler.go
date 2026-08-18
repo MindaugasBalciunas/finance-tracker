@@ -462,12 +462,20 @@ func fetchYahooAnalystRaw(ticker string) (*AnalystData, error) {
 		QuoteSummary struct {
 			Result []struct {
 				FinancialData struct {
-					TargetMeanPrice          struct{ Raw float64 `json:"raw"` } `json:"targetMeanPrice"`
-					TargetLowPrice           struct{ Raw float64 `json:"raw"` } `json:"targetLowPrice"`
-					TargetHighPrice          struct{ Raw float64 `json:"raw"` } `json:"targetHighPrice"`
-					RecommendationKey        string                             `json:"recommendationKey"`
-					NumberOfAnalystOpinions  struct{ Raw int `json:"raw"` }     `json:"numberOfAnalystOpinions"`
-					FinancialCurrency        string                             `json:"financialCurrency"`
+					TargetMeanPrice struct {
+						Raw float64 `json:"raw"`
+					} `json:"targetMeanPrice"`
+					TargetLowPrice struct {
+						Raw float64 `json:"raw"`
+					} `json:"targetLowPrice"`
+					TargetHighPrice struct {
+						Raw float64 `json:"raw"`
+					} `json:"targetHighPrice"`
+					RecommendationKey       string `json:"recommendationKey"`
+					NumberOfAnalystOpinions struct {
+						Raw int `json:"raw"`
+					} `json:"numberOfAnalystOpinions"`
+					FinancialCurrency string `json:"financialCurrency"`
 				} `json:"financialData"`
 			} `json:"result"`
 			Error *struct {

@@ -380,7 +380,7 @@ func (s *insightService) buildDataReport(dateFrom, dateTo *time.Time) (string, e
 	}
 
 	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR
-	investments := latest.SwedETF + latest.RevStocks
+	investments := latest.SwedETF + latest.RevStocks + latest.IBKRStocks
 	pensions := latest.SebPen + latest.Art
 
 	// Convert BTC to EUR using snapshot price or 0 for legacy entries
@@ -400,7 +400,7 @@ func (s *insightService) buildDataReport(dateFrom, dateTo *time.Time) (string, e
 === CURRENT BALANCE SNAPSHOT (as of %s) ===
 Net Worth:    €%.0f
 Free Cash:    €%.0f  (SEB + Swedbank + Luminor + Cash + Revolut)
-Investments:  €%.0f  (Swed ETF + Revolut Stocks)
+Investments:  €%.0f  (Swed ETF + Revolut Stocks + IBKR)
 Pensions:     €%.0f  (Swed 2nd Pillar + Artea 3rd Pillar)
 Crypto (BTC): €%.0f  (Revolut R + M BTC)
 

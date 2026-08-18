@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/mindaugas/finance-tracker/internal/service"
-	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"

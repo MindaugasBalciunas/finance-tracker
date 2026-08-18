@@ -76,7 +76,7 @@ func (m *mockTransactionService) ListSince(since time.Time) ([]domain.Transactio
 	}
 	return args.Get(0).([]domain.Transaction), args.Error(1)
 }
-func (m *mockTransactionService) DeleteAll() error   { return m.Called().Error(0) }
+func (m *mockTransactionService) DeleteAll() error             { return m.Called().Error(0) }
 func (m *mockTransactionService) DeleteBatch(ids []uint) error { return m.Called(ids).Error(0) }
 func (m *mockTransactionService) GetDistinctComments() ([]string, error) {
 	args := m.Called()

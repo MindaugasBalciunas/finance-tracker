@@ -359,7 +359,7 @@ func TestStockService_GetPortfolio_BuyThenSellAll(t *testing.T) {
 	require.Len(t, portfolio.Holdings, 1)
 
 	h := portfolio.Holdings[0]
-	assert.Equal(t, 0.0, h.Shares)       // fully sold
+	assert.Equal(t, 0.0, h.Shares) // fully sold
 	assert.Equal(t, 0.0, h.TotalCost.Value)
 	assert.Equal(t, 500.0, h.RealizedGain.Value)
 	repo.AssertExpectations(t)

@@ -163,8 +163,8 @@ func (r *transactionRepository) GetSummary(filter domain.TransactionFilter) (*do
 	query = applyTransactionFilters(query, filter)
 
 	type aggregateResult struct {
-		Type   domain.TransactionType
-		Total  float64
+		Type  domain.TransactionType
+		Total float64
 	}
 	// Transfers move money between own accounts — neither spending nor
 	// investing, so they contribute nothing to the totals. The rows stay in

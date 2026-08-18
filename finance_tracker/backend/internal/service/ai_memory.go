@@ -87,6 +87,6 @@ func (s *insightService) recentAIContext(limit int, excludeKinds ...string) stri
 	if len(lines) == 0 {
 		return ""
 	}
-	return "=== RECENT AI ACTIVITY (what you or other AI features already told the user, last 7 days — don't repeat, build on it) ===\n" +
+	return "=== RECENT AI ACTIVITY (what you or other AI features already told the user, last 7 days — don't repeat, build on it; discipline points listed here were ALREADY made, do not restate them) ===\n" +
 		strings.Join(lines, "\n")
 }

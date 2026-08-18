@@ -233,6 +233,7 @@ func TestGenerateViaGateway(t *testing.T) {
 	assert.Equal(t, "user", cap.Req.Messages[0].Role)
 	prompt := cap.Req.Messages[0].Content[0].Text
 	assert.Contains(t, prompt, "personal finance advisor")
+	assert.Contains(t, prompt, "(Swed ETF + Revolut Stocks + IBKR)", "investments headline includes IBKR")
 	// The overview must be requested per section.
 	for _, h := range []string{"## Transactions", "## Categories", "## Balances", "## Stocks", "## Budget", "## Reports"} {
 		assert.Contains(t, prompt, h, "prompt asks for section %s", h)

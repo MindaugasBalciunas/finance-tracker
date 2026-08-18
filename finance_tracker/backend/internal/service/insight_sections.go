@@ -20,6 +20,7 @@ import (
 func (s *insightService) currentMonthSection(allTxs []domain.Transaction, now time.Time) string {
 	y, m := now.Year(), int(now.Month())
 	var income, expenses, invested float64
+	var monthExpenses []domain.Transaction
 	for _, tx := range allTxs {
 		if tx.Date.Year() != y || int(tx.Date.Month()) != m {
 			continue
@@ -29,6 +30,7 @@ func (s *insightService) currentMonthSection(allTxs []domain.Transaction, now ti
 			income += tx.Amount
 		case domain.TransactionTypeExpense:
 			expenses += tx.Amount
+			monthExpenses = append(monthExpenses, tx)
 		case domain.TransactionTypeInvestment:
 			invested += tx.Amount
 		}
@@ -36,9 +38,41 @@ func (s *insightService) currentMonthSection(allTxs []domain.Transaction, now ti
 	dayOfMonth := now.Day()
 	daysInMonth := time.Date(y, now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	var perDay, projected float64
+	projNote := "at the current daily rate"
 	if dayOfMonth > 0 {
 		perDay = expenses / float64(dayOfMonth)
 		projected = perDay * float64(daysInMonth)
+		// A naive daily-rate extrapolation double-counts fixed obligations,
+		// which are front-loaded (paid once, early). When fixed budgets are
+		// configured, project as: everything paid so far + the DISCRETIONARY
+		// run rate for the remaining days.
+		if s.budgetRepo != nil {
+			if budgets, err := s.budgetRepo.ListBudgets(); err == nil {
+				var fixed []domain.Budget
+				for _, b := range budgets {
+					if b.Kind == "fixed" {
+						fixed = append(fixed, b)
+					}
+				}
+				if len(fixed) > 0 {
+					var discretionary float64
+					for _, tx := range monthExpenses {
+						claimed := false
+						for _, b := range fixed {
+							if budgetMatchesTx(b, tx) {
+								claimed = true
+								break
+							}
+						}
+						if !claimed {
+							discretionary += tx.Amount
+						}
+					}
+					projected = expenses + discretionary/float64(dayOfMonth)*float64(daysInMonth-dayOfMonth)
+					projNote = "fixed costs counted once + discretionary run rate"
+				}
+			}
+		}
 	}
 	return fmt.Sprintf(`=== THIS MONTH SO FAR (%s, day %d of %d) ===
 Income received:  €%.0f
@@ -46,9 +80,9 @@ Spent:            €%.0f
 Invested:         €%.0f
 Net so far:       €%.0f
 Avg daily spend:  €%.1f/day
-Projected month-end spend: €%.0f (at the current daily rate)`,
+Projected month-end spend: €%.0f (%s)`,
 		now.Format("2006-01"), dayOfMonth, daysInMonth,
-		income, expenses, invested, income-expenses-invested, perDay, projected)
+		income, expenses, invested, income-expenses-invested, perDay, projected, projNote)
 }
 
 // budgetStatusSection mirrors the frontend computeMonthPlan: per-budget
@@ -214,8 +248,24 @@ func (s *insightService) stockPositionsSection(latest *domain.Balance) string {
 
 	quotes := s.fetchQuotes(open)
 
+	// Live EUR/USD so USD positions can be judged against EUR-denominated
+	// rules (position caps, share-of-liquid) without model-side conversion.
+	var usdPerEur float64
+	for _, h := range open {
+		if strings.EqualFold(string(h.AvgCost.Currency), "USD") {
+			if s.quote != nil {
+				if fx, err := s.quote("EURUSD=X"); err == nil && fx != nil && fx.Price > 0 {
+					usdPerEur = fx.Price
+				}
+			}
+			break
+		}
+	}
+
 	var lines []string
 	anyLive := false
+	totalCostEur, totalValueEur := 0.0, 0.0
+	eurTotalsComplete := true
 	for _, h := range open {
 		cur := string(h.AvgCost.Currency)
 		base := fmt.Sprintf("  - %s: %.4g sh @ %.2f %s avg = %.0f %s cost",
@@ -232,11 +282,25 @@ func (s *insightService) stockPositionsSection(latest *domain.Balance) string {
 					gainPct = (mktValue - h.TotalCost.Value) / h.TotalCost.Value * 100
 				}
 				base += fmt.Sprintf(" · now %.2f %s → %.0f %s (%+.1f%%)", price, cur, mktValue, cur, gainPct)
+				switch {
+				case strings.EqualFold(cur, "EUR"):
+					totalCostEur += h.TotalCost.Value
+					totalValueEur += mktValue
+				case strings.EqualFold(cur, "USD") && usdPerEur > 0:
+					costEur := h.TotalCost.Value / usdPerEur
+					valueEur := mktValue / usdPerEur
+					totalCostEur += costEur
+					totalValueEur += valueEur
+					base += fmt.Sprintf(" ≈ €%.0f cost / €%.0f now", costEur, valueEur)
+				default:
+					eurTotalsComplete = false
+				}
 			} else {
 				// Yahoo prices this listing in a different currency than the
 				// trade was recorded in. Show the live price honestly but do
 				// NOT invent a cross-currency gain % (no FX rate available).
 				base += fmt.Sprintf(" · now %.2f %s (live; cost recorded in %s, no FX conversion applied)", price, qcur, cur)
+				eurTotalsComplete = false
 			}
 		}
 		lines = append(lines, base)
@@ -255,6 +319,19 @@ func (s *insightService) stockPositionsSection(latest *domain.Balance) string {
 	}
 	if gainByCur := realizedByCurrency(portfolio.Holdings); len(gainByCur) > 0 {
 		lines = append(lines, "Realized gains to date: "+moneyByCurrency(gainByCur))
+	}
+	if anyLive && totalValueEur > 0 && eurTotalsComplete {
+		fxNote := ""
+		if usdPerEur > 0 {
+			fxNote = fmt.Sprintf(" (USD converted at live EUR/USD %.4f)", usdPerEur)
+		}
+		line := fmt.Sprintf("All positions in EUR%s: cost €%.0f → market value €%.0f", fxNote, totalCostEur, totalValueEur)
+		if latest != nil {
+			if liquid := latest.Total - latest.SebPen - latest.Art; liquid > 0 {
+				line += fmt.Sprintf(" · %.1f%% of liquid net worth (net worth minus pensions €%.0f)", totalValueEur/liquid*100, liquid)
+			}
+		}
+		lines = append(lines, line)
 	}
 	if latest != nil {
 		lines = append(lines, fmt.Sprintf("EUR portfolio snapshots (manually tracked): Swed ETF €%.0f · Revolut stocks €%.0f · IBKR €%.0f",

@@ -25,7 +25,7 @@ type StockTrade struct {
 	Action        StockAction `json:"action" gorm:"not null"`
 	Ticker        string      `json:"ticker" gorm:"not null;index"`
 	Shares        float64     `json:"shares" gorm:"not null"`
-	PricePerShare float64     `json:"-" gorm:"not null"`    // DB column; use PricePerShareMoney in responses
+	PricePerShare float64     `json:"-" gorm:"not null"`             // DB column; use PricePerShareMoney in responses
 	Currency      string      `json:"currency" gorm:"default:'USD'"` // currency of PricePerShare
 	Source        StockSource `json:"source" gorm:"not null;default:'Revolut'"`
 	Notes         string      `json:"notes"`

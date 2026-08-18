@@ -190,7 +190,9 @@ func TestE2E_UpdateAndDeleteDoNotChangeBalance(t *testing.T) {
 	createSnapshot(t, r, map[string]any{"date": "2026-06-13T17:09", "swed": 3507.14})
 
 	// Create a transaction (this creates an auto snapshot → 3479.70)
-	var txResp struct{ ID uint `json:"id"` }
+	var txResp struct {
+		ID uint `json:"id"`
+	}
 	w := e2ePostJSON(t, r, "/api/v1/transactions", map[string]any{
 		"date": "2026-06-14", "type": "expense", "amount": 27.44,
 		"category": "Housing", "debit_account": "swed",
@@ -298,5 +300,5 @@ func TestE2E_DeleteSnapshot(t *testing.T) {
 }
 
 func itoa(n uint) string {
-	return string(rune('0'+n%10)) // only works for single-digit IDs in tests
+	return string(rune('0' + n%10)) // only works for single-digit IDs in tests
 }

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,4 +159,44 @@ func TestAIZipCarriesContext(t *testing.T) {
 	require.Contains(t, files, "cfo-context.md")
 	assert.Contains(t, files["cfo-context.md"], "50% rule")
 	assert.Contains(t, files["README.md"], "cfo-context.md", "README tells the AI to read it first")
+}
+
+// The chat's record_user_decision tool appends a dated entry to the context
+// document — the only write in the chat loop, and it must confine itself to
+// the Decisions log.
+func TestRecordUserDecision(t *testing.T) {
+	r, db := aiTestRouter(t)
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/context", map[string]any{"content": "# Briefing\nRules here."})
+	require.Equal(t, 200, w.Code)
+
+	call := `{"content":[{"type":"tool_use","id":"d1","name":"record_user_decision","input":{"decision":"Buffer floor revised to €15,000."}}],"stop_reason":"tool_use"}`
+	final := anthropicText("Recorded: buffer floor €15,000.")
+	srv, requests := scriptedGateway(t, []string{call, final})
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "the buffer floor is now 15k, record it"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+
+	var ctx domain.AIContext
+	require.NoError(t, db.First(&ctx, 1).Error)
+	assert.Contains(t, ctx.Content, "# Briefing\nRules here.", "original content untouched")
+	assert.Contains(t, ctx.Content, "## Decisions log")
+	assert.Contains(t, ctx.Content, time.Now().Format("2006-01-02")+": Buffer floor revised to €15,000.")
+
+	// The tool result confirmed the write back to the model.
+	toolMsg := extractToolContent(t, (*requests)[1], "d1")
+	assert.Contains(t, toolMsg, "appended to the user's context document")
+
+	// A second decision appends to the SAME log without duplicating the header.
+	call2 := `{"content":[{"type":"tool_use","id":"d2","name":"record_user_decision","input":{"decision":"Monthly VWCE target raised to €2,000."}}],"stop_reason":"tool_use"}`
+	srv2, _ := scriptedGateway(t, []string{call2, final})
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{"gateway_url": srv2.URL, "model": "m"})
+	require.Equal(t, 200, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "and vwce target 2000"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.NoError(t, db.First(&ctx, 1).Error)
+	assert.Equal(t, 1, strings.Count(ctx.Content, "## Decisions log"), "one log section")
+	assert.Contains(t, ctx.Content, "VWCE target raised")
 }

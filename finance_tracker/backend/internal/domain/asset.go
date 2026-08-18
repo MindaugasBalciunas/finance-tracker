@@ -33,9 +33,9 @@ type Asset struct {
 	// Structured interest: total rate = bank margin + variable base
 	// (EURIBOR); the base resets on LoanRateResetDate. LoanMonthlyPayment
 	// drives the amortization projection of the remaining balance.
-	LoanMargin         float64    `json:"loan_margin"`    // % p.a., fixed part
+	LoanMargin         float64    `json:"loan_margin"`          // % p.a., fixed part
 	LoanLabel          string     `json:"loan_label,omitempty"` // transaction label identifying this loan's payments
-	LoanBaseRate       float64    `json:"loan_base_rate"` // % p.a., variable part (EURIBOR)
+	LoanBaseRate       float64    `json:"loan_base_rate"`       // % p.a., variable part (EURIBOR)
 	LoanRateResetDate  *time.Time `json:"loan_rate_reset_date,omitempty"`
 	LoanMonthlyPayment float64    `json:"loan_monthly_payment"`
 

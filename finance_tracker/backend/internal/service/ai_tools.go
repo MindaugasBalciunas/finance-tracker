@@ -111,6 +111,11 @@ func chatTools() []gatewayTool {
 		mkTool("get_assets",
 			"Physical assets (real estate, vehicles, solar): valuations, loan balances, interest structure and net equity.",
 			obj(map[string]any{})),
+		mkTool("record_user_decision",
+			"PERSISTENTLY record a decision the user just stated in this conversation — e.g. answering an [OPEN] question from their CFO context, or changing a standing rule. Appends a dated entry to the Decisions log in their context document, which every future AI call reads. Use ONLY when the user explicitly states a decision; NEVER to record your own suggestions or tentative leanings. Confirm to the user what was recorded.",
+			obj(map[string]any{
+				"decision": str("the decision in one sentence, as the user stated it, e.g. 'Buffer floor revised to €15,000 (5 months × €3,000 critical burn)'"),
+			}, "decision")),
 	}
 }
 
@@ -132,6 +137,7 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		Limit     int      `json:"limit"`
 		Ticker    string   `json:"ticker"`
 		Month     string   `json:"month"`
+		Decision  string   `json:"decision"`
 	}
 	if rawArgs != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -342,6 +348,33 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			return "", err
 		}
 		return marshalToolResult(map[string]any{"assets": assets, "summary": summary})
+
+	case "record_user_decision":
+		// The ONLY writing tool in the chat loop, and deliberately narrow:
+		// it can append a dated line to the user's own context document,
+		// nothing else. Not exposed via MCP (the API token is GET-only).
+		decision := clipText(args.Decision, 300)
+		if decision == "" {
+			return "", fmt.Errorf("decision text is required")
+		}
+		ctx, err := s.repo.GetAIContext()
+		if err != nil {
+			return "", err
+		}
+		content := strings.TrimRight(ctx.Content, "\n")
+		const logHeader = "## Decisions log (recorded from chat at the user's request)"
+		if !strings.Contains(content, logHeader) {
+			if content != "" {
+				content += "\n\n"
+			}
+			content += logHeader
+		}
+		content += "\n- " + time.Now().Format("2006-01-02") + ": " + decision
+		if _, err := s.SaveAIContext(content); err != nil {
+			return "", err
+		}
+		s.logAIActivity("decision", "", decision)
+		return marshalToolResult(map[string]any{"recorded": decision, "note": "appended to the user's context document — all future AI calls will see it"})
 
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
