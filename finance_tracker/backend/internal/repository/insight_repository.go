@@ -23,6 +23,9 @@ type InsightRepository interface {
 	// than 30 days. RecentActivity returns digests newest-first.
 	LogActivity(a *domain.AIActivity) error
 	RecentActivity(since time.Time, limit int) ([]domain.AIActivity, error)
+	// GetAIContext/SaveAIContext manage the user's CFO-context document.
+	GetAIContext() (*domain.AIContext, error)
+	SaveAIContext(content string) (*domain.AIContext, error)
 }
 
 type insightRepository struct {
@@ -66,6 +69,26 @@ func (r *insightRepository) GetAISettings() (*domain.AISettings, error) {
 		s.GatewayURL = domain.DefaultGatewayURL
 	}
 	return &s, nil
+}
+
+func (r *insightRepository) GetAIContext() (*domain.AIContext, error) {
+	var c domain.AIContext
+	if err := r.db.FirstOrCreate(&c, domain.AIContext{ID: 1}).Error; err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (r *insightRepository) SaveAIContext(content string) (*domain.AIContext, error) {
+	c, err := r.GetAIContext()
+	if err != nil {
+		return nil, err
+	}
+	c.Content = content
+	if err := r.db.Save(c).Error; err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func (r *insightRepository) ListChat(limit int) ([]domain.AIChatMessage, error) {

@@ -46,9 +46,39 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.POST("/rule-review", h.RuleReview)
 	ai.POST("/rule-review/apply", h.ApplyRuleSuggestions)
 
+	// The user's CFO-context document: GET is token-reachable (MCP exposes
+	// it), PUT is session-only.
+	ai.GET("/context", h.GetAIContext)
+	ai.PUT("/context", h.SaveAIContext)
+
 	// Structured month-to-date budget progress. Lives under /budgets so the
 	// read-only API token (and thus MCP) can reach it.
 	rg.GET("/budgets/status", h.BudgetStatus)
+}
+
+func (h *InsightHandler) GetAIContext(c *gin.Context) {
+	ctx, err := h.svc.AIContext()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, ctx)
+}
+
+func (h *InsightHandler) SaveAIContext(c *gin.Context) {
+	var input struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx, err := h.svc.SaveAIContext(input.Content)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, ctx)
 }
 
 // BudgetStatus returns per-budget month-to-date progress; ?month=YYYY-MM

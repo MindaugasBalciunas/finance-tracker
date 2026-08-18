@@ -22,6 +22,18 @@ type AISettings struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+// AIContext is a single-row, user-authored markdown document describing who
+// the user is and how the AI should advise them (their "CFO context"):
+// income structure, investment framework, standing rules, open decisions,
+// communication style. Every AI integration injects it as a system block and
+// the MCP server exposes it read-only, so any client advises with the same
+// personal framework.
+type AIContext struct {
+	ID        uint      `gorm:"primarykey" json:"id"`
+	Content   string    `json:"content" gorm:"type:text;not null;default:''"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // DefaultGatewayURL is the nexos.ai gateway API base.
 const DefaultGatewayURL = "https://api.nexos.ai/v1"
 

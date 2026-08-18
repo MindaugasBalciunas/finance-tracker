@@ -74,7 +74,12 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 
 %s`, view, periodLabel(from, to), extra, context)
 
-	text, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 2048)
+	msgs := []domain.ChatMessage{}
+	if ctx := s.userContextBlock(); ctx != "" {
+		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
+	}
+	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
+	text, err := callGateway(settings, msgs, 2048)
 	if err != nil {
 		return "", err
 	}

@@ -246,6 +246,23 @@ func handleBudgets(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (
 	return textResult(body), nil, nil
 }
 
+func handleUserContext(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	body, err := apiGET("/ai/context", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(out.Content) == "" {
+		return textResult([]byte("(no CFO context written yet — the user can add one in the app under AI → Overview)")), nil, nil
+	}
+	return textResult([]byte(out.Content)), nil, nil
+}
+
 func handleBudgetStatus(ctx context.Context, req *mcp.CallToolRequest, a budgetStatusArgs) (*mcp.CallToolResult, any, error) {
 	q := url.Values{}
 	if a.Month != "" {
@@ -355,6 +372,11 @@ func main() {
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "finance-tracker", Version: "1.0.0"}, nil)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_user_context",
+		Description: "The user's own CFO-context briefing: who they are, income structure, investment framework, standing rules, open decisions and preferred communication style. Call it FIRST and follow it — it defines how to advise this user.",
+	}, handleUserContext)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_overview",

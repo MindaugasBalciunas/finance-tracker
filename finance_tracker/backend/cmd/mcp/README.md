@@ -81,7 +81,7 @@ or add it to `~/.gemini/settings.json` (same shape as the Claude config):
 }
 ```
 
-Check it with `/mcp` inside the CLI — the twelve tools should list. Keep
+Check it with `/mcp` inside the CLI — the thirteen tools should list. Keep
 `trust: false` so tool calls stay confirm-first; everything is read-only
 regardless, enforced server-side by the token scope.
 
@@ -116,6 +116,7 @@ row counts, and a revocable token — nothing a model can call mutates data.
 
 | Tool | What it returns |
 |---|---|
+| `get_user_context` | The user's own CFO briefing (framework, standing rules, communication style) — call first and follow it |
 | `get_overview` | The full financial report: balances, summaries, this month vs budgets, safe-to-spend, stock positions with live prices |
 | `search_transactions` | Filtered transaction rows (comment substring, labels any/all, category, type, date range, **amount range**, sort; capped) |
 | `get_summary` | Aggregated totals + per-category, per-month **and per-label** breakdowns, same filters as search |
@@ -129,6 +130,6 @@ row counts, and a revocable token — nothing a model can call mutates data.
 | `get_stock_quote` | Live market price for one ticker |
 | `get_assets` | Physical assets with loans, interest structure and equity |
 
-The same twelve tools are available to the in-app AI chat (executed
+The same tools are available to the in-app AI chat (executed
 in-process), so the web chat and any MCP client answer with identical
 query power.

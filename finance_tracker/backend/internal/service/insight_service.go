@@ -61,6 +61,10 @@ type InsightService interface {
 	// BudgetStatus computes per-budget month-to-date progress (current month
 	// when year/month are zero) — the JSON twin of the report's text section.
 	BudgetStatus(year, month int) (*BudgetStatusReport, error)
+	// AIContext returns the user's CFO-context document; SaveAIContext
+	// replaces it (capped at 32KB).
+	AIContext() (*domain.AIContext, error)
+	SaveAIContext(content string) (*domain.AIContext, error)
 }
 
 type insightService struct {
@@ -106,7 +110,12 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 	var content string
 	switch {
 	case settings.Configured():
-		content, err = callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
+		msgs := []domain.ChatMessage{}
+		if ctx := s.userContextBlock(); ctx != "" {
+			msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
+		}
+		msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
+		content, err = callGateway(settings, msgs, 4096)
 		if err != nil {
 			return nil, fmt.Errorf("calling AI gateway: %w", err)
 		}
@@ -217,6 +226,33 @@ func (s *insightService) Chat(message string) (string, error) {
 
 func (s *insightService) ChatHistory() ([]domain.AIChatMessage, error) {
 	return s.repo.ListChat(200)
+}
+
+// maxAIContextBytes bounds the CFO-context document — it rides along on
+// every AI call (cached, but still), so keep it a briefing, not an archive.
+const maxAIContextBytes = 32_000
+
+func (s *insightService) AIContext() (*domain.AIContext, error) {
+	return s.repo.GetAIContext()
+}
+
+func (s *insightService) SaveAIContext(content string) (*domain.AIContext, error) {
+	content = strings.TrimSpace(content)
+	if len(content) > maxAIContextBytes {
+		return nil, fmt.Errorf("context is %d bytes — keep it under %d (it travels with every AI call)", len(content), maxAIContextBytes)
+	}
+	return s.repo.SaveAIContext(content)
+}
+
+// userContextBlock renders the CFO context as a prompt section ("" when the
+// user hasn't written one). Injected as a system block, so with the prompt
+// cache it costs almost nothing after the first call.
+func (s *insightService) userContextBlock() string {
+	c, err := s.repo.GetAIContext()
+	if err != nil || strings.TrimSpace(c.Content) == "" {
+		return ""
+	}
+	return "=== USER CFO CONTEXT (written by the user: who they are, their framework, standing rules and communication style — follow it) ===\n" + c.Content
 }
 
 func (s *insightService) ClearChat() error {
@@ -484,6 +520,9 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Answers render as GitHub-flavored markdown in the app — use bullets, **bold** for key figures, and compact tables when comparing numbers; avoid top-level headings.
 
 ` + report
+	if ctx := s.userContextBlock(); ctx != "" {
+		system += "\n\n" + ctx
+	}
 	if memo := s.recentAIContext(8, "chat"); memo != "" {
 		system += "\n\n" + memo
 	}

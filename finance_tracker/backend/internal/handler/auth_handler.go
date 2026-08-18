@@ -52,6 +52,7 @@ var apiTokenPrefixes = []string{
 	"/api/v1/assets",
 	"/api/v1/insights",
 	"/api/v1/ai/report",
+	"/api/v1/ai/context",
 	"/api/v1/health",
 }
 

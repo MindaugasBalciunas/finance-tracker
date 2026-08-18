@@ -123,6 +123,18 @@ export const aiApi = {
     return data.applied
   },
 
+  // The user's CFO-context document — injected into every AI call and
+  // exposed read-only via MCP (get_user_context).
+  getContext: async (): Promise<{ content: string; updated_at: string }> => {
+    const { data } = await client.get('/ai/context')
+    return data
+  },
+
+  saveContext: async (content: string): Promise<{ content: string; updated_at: string }> => {
+    const { data } = await client.put('/ai/context', { content })
+    return data
+  },
+
   // AI audit of the auto-labeling rule set: proposes new rules for recurring
   // uncovered merchants, updates for misfiring patterns and cleanup of dead
   // rules. Suggestion-only — every item carries live match counts.
