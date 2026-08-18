@@ -19,8 +19,11 @@ import (
 
 // validTicker bounds what a path ticker may look like — tickers end up
 // interpolated into Yahoo URLs, so anything outside this set is rejected
-// before it leaves the handler.
-var validTicker = regexp.MustCompile(`^[A-Za-z0-9.\-]{1,12}$`)
+// before it leaves the handler. Beyond plain symbols this must admit
+// Yahoo's punctuated forms: FX pairs ("EURUSD=X" — the app fetches this as
+// its USD/EUR rate), futures ("GC=F"), indices ("^GSPC") and class shares
+// ("BRK-B"). The '^' sits mid-class so it is a literal, not a negation.
+var validTicker = regexp.MustCompile(`^[A-Za-z0-9.=^\-]{1,15}$`)
 
 // allowedHistoryRanges is the documented range set for GetHistory.
 var allowedHistoryRanges = map[string]bool{
