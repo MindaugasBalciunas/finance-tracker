@@ -32,7 +32,7 @@ func TestAIRuleReview(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-		prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+		prompt := promptText(body)
 		require.Contains(t, prompt, "CURRENT RULES")
 		assert.Contains(t, prompt, `"closed pub xyz"`, "prompt lists existing rules")
 		assert.Contains(t, prompt, `"wolt vilnius"`, "prompt surfaces uncovered recurring patterns")
@@ -47,7 +47,7 @@ func TestAIRuleReview(t *testing.T) {
 		  {"action":"delete","rule_id":2,"reason":"dead rule"}
 		]`
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+		_, _ = w.Write([]byte(anthropicText(reply)))
 	}))
 	t.Cleanup(srv.Close)
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{

@@ -48,7 +48,8 @@ func aiTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	return r, db
 }
 
-// fakeGateway is an OpenAI-compatible stub that records the last request.
+// fakeGateway is an Anthropic-Messages-API stub (the nexos.ai native
+// passthrough wire format) that records the last request.
 func fakeGateway(t *testing.T, reply string) (*httptest.Server, *gatewayCapture) {
 	t.Helper()
 	cap := &gatewayCapture{}
@@ -57,7 +58,7 @@ func fakeGateway(t *testing.T, reply string) (*httptest.Server, *gatewayCapture)
 		cap.Auth = r.Header.Get("Authorization")
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&cap.Req))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+		_, _ = w.Write([]byte(anthropicText(reply)))
 	}))
 	t.Cleanup(srv.Close)
 	return srv, cap
@@ -68,12 +69,44 @@ func jsonString(s string) string {
 	return string(b)
 }
 
+// anthropicText renders a plain text reply in the Messages API wire format.
+func anthropicText(reply string) string {
+	return `{"content":[{"type":"text","text":` + jsonString(reply) + `}],"stop_reason":"end_turn"}`
+}
+
+// promptText extracts the first message's text from a decoded request body —
+// plain prompts travel as a single text block.
+func promptText(body map[string]any) string {
+	blocks := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	return blocks[0].(map[string]any)["text"].(string)
+}
+
+// systemText concatenates the top-level system blocks of a decoded request.
+func systemText(body map[string]any) string {
+	sys, _ := body["system"].([]any)
+	var out string
+	for _, b := range sys {
+		out += b.(map[string]any)["text"].(string)
+	}
+	return out
+}
+
 type gatewayCapture struct {
 	Path string
 	Auth string
 	Req  struct {
-		Model    string               `json:"model"`
-		Messages []domain.ChatMessage `json:"messages"`
+		Model  string `json:"model"`
+		System []struct {
+			Text         string         `json:"text"`
+			CacheControl map[string]any `json:"cache_control"`
+		} `json:"system"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
 	}
 }
 
@@ -126,14 +159,16 @@ func TestAIChatThroughGateway(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 	assert.Equal(t, "You spent €50 on groceries.", res["reply"])
 
-	assert.Equal(t, "/chat/completions", cap.Path)
+	assert.Equal(t, "/messages", cap.Path, "Anthropic-native passthrough endpoint")
 	assert.Equal(t, "Bearer sk-test", cap.Auth)
 	assert.Equal(t, "test-model", cap.Req.Model)
-	require.GreaterOrEqual(t, len(cap.Req.Messages), 2)
-	assert.Equal(t, "system", cap.Req.Messages[0].Role)
-	assert.Contains(t, cap.Req.Messages[0].Content, "CURRENT BALANCE SNAPSHOT",
-		"system message carries the financial data report")
-	assert.Equal(t, "user", cap.Req.Messages[1].Role)
+	require.NotEmpty(t, cap.Req.System, "system prompt travels as top-level blocks")
+	assert.Contains(t, cap.Req.System[0].Text, "CURRENT BALANCE SNAPSHOT",
+		"system block carries the financial data report")
+	require.NotNil(t, cap.Req.System[len(cap.Req.System)-1].CacheControl,
+		"last system block carries the prompt-cache breakpoint")
+	require.GreaterOrEqual(t, len(cap.Req.Messages), 1)
+	assert.Equal(t, "user", cap.Req.Messages[0].Role)
 
 	// Both turns persisted server-side; a second question replays them.
 	w = budgetDoJSON(r, "GET", "/api/v1/ai/chat/history", nil)
@@ -143,10 +178,10 @@ func TestAIChatThroughGateway(t *testing.T) {
 
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "and last year?"})
 	require.Equal(t, 200, w.Code)
-	require.GreaterOrEqual(t, len(cap.Req.Messages), 4, "prior turns replayed from server history")
-	assert.Equal(t, "how much did I spend?", cap.Req.Messages[1].Content)
-	assert.Equal(t, "assistant", cap.Req.Messages[2].Role)
-	assert.Equal(t, "and last year?", cap.Req.Messages[3].Content)
+	require.GreaterOrEqual(t, len(cap.Req.Messages), 3, "prior turns replayed from server history")
+	assert.Equal(t, "how much did I spend?", cap.Req.Messages[0].Content[0].Text)
+	assert.Equal(t, "assistant", cap.Req.Messages[1].Role)
+	assert.Equal(t, "and last year?", cap.Req.Messages[2].Content[0].Text)
 
 	// Legacy wire format (messages[]) still lands the last user turn.
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
@@ -196,7 +231,7 @@ func TestGenerateViaGateway(t *testing.T) {
 	assert.EqualValues(t, 1, count)
 	require.Len(t, cap.Req.Messages, 1)
 	assert.Equal(t, "user", cap.Req.Messages[0].Role)
-	prompt := cap.Req.Messages[0].Content
+	prompt := cap.Req.Messages[0].Content[0].Text
 	assert.Contains(t, prompt, "personal finance advisor")
 	// The overview must be requested per section.
 	for _, h := range []string{"## Transactions", "## Balances", "## Stocks", "## Budget", "## Reports"} {
@@ -217,7 +252,7 @@ func TestGenerateWithPeriod(t *testing.T) {
 	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", map[string]any{
 		"date_from": "2026-01-01", "date_to": "2026-06-30"})
 	require.Equal(t, 201, w.Code, w.Body.String())
-	prompt := cap.Req.Messages[0].Content
+	prompt := cap.Req.Messages[0].Content[0].Text
 	assert.Contains(t, prompt, "2026-01-01 to 2026-06-30", "period reflected in the report")
 	assert.Contains(t, prompt, "TRANSACTION SUMMARY (2026-01-01 to 2026-06-30)")
 }
@@ -228,7 +263,7 @@ func TestEmptyGatewayReplyRejected(t *testing.T) {
 	r, db := aiTestRouter(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":""}}]}`))
+		_, _ = w.Write([]byte(`{"content":[],"stop_reason":"end_turn"}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -347,8 +382,8 @@ func scriptedGateway(t *testing.T, responses []string) (*httptest.Server, *[]map
 // and only the final answer is persisted.
 func TestAIChatToolLoop(t *testing.T) {
 	r, db := aiTestRouter(t)
-	toolCallResp := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"search_transactions","arguments":"{\"label\":\"groceries\",\"limit\":5}"}}]},"finish_reason":"tool_calls"}]}`
-	finalResp := `{"choices":[{"message":{"role":"assistant","content":"You spent €50 at Maxima."},"finish_reason":"stop"}]}`
+	toolCallResp := `{"content":[{"type":"tool_use","id":"call_1","name":"search_transactions","input":{"label":"groceries","limit":5}}],"stop_reason":"tool_use"}`
+	finalResp := anthropicText("You spent €50 at Maxima.")
 	srv, requests := scriptedGateway(t, []string{toolCallResp, finalResp})
 
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
@@ -365,19 +400,21 @@ func TestAIChatToolLoop(t *testing.T) {
 	require.NotEmpty(t, tools, "tools must be declared to the gateway")
 	names := map[string]bool{}
 	for _, tl := range tools {
-		fn := tl.(map[string]any)["function"].(map[string]any)
-		names[fn["name"].(string)] = true
+		names[tl.(map[string]any)["name"].(string)] = true
 	}
 	for _, want := range []string{"get_overview", "search_transactions", "get_summary", "get_budgets", "get_stock_quote", "get_assets"} {
 		assert.True(t, names[want], "tool %s declared", want)
 	}
-	// Request 2 carried the executed tool result (the seeded Maxima row).
+	// Request 2 carried the executed tool result (the seeded Maxima row) as
+	// a tool_result block in a user message.
 	msgs := (*requests)[1]["messages"].([]any)
 	last := msgs[len(msgs)-1].(map[string]any)
-	assert.Equal(t, "tool", last["role"])
-	assert.Equal(t, "call_1", last["tool_call_id"])
-	assert.Contains(t, last["content"].(string), "Maxima", "tool result contains the matching transaction")
-	assert.Contains(t, last["content"].(string), `"total_matches":1`)
+	assert.Equal(t, "user", last["role"])
+	tr := last["content"].([]any)[0].(map[string]any)
+	assert.Equal(t, "tool_result", tr["type"])
+	assert.Equal(t, "call_1", tr["tool_use_id"])
+	assert.Contains(t, tr["content"].(string), "Maxima", "tool result contains the matching transaction")
+	assert.Contains(t, tr["content"].(string), `"total_matches":1`)
 
 	// Only the user question and final answer are persisted — no tool chatter.
 	var count int64
@@ -385,7 +422,7 @@ func TestAIChatToolLoop(t *testing.T) {
 	assert.EqualValues(t, 2, count)
 
 	// An unknown tool comes back as a recoverable error message.
-	badCall := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_2","type":"function","function":{"name":"drop_tables","arguments":"{}"}}]}}]}`
+	badCall := `{"content":[{"type":"tool_use","id":"call_2","name":"drop_tables","input":{}}],"stop_reason":"tool_use"}`
 	srv2, requests2 := scriptedGateway(t, []string{badCall, finalResp})
 	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
 		"gateway_url": srv2.URL, "model": "m", "api_key": "k"})
@@ -394,7 +431,8 @@ func TestAIChatToolLoop(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 	msgs2 := (*requests2)[1]["messages"].([]any)
 	last2 := msgs2[len(msgs2)-1].(map[string]any)
-	assert.Contains(t, last2["content"].(string), "unknown tool", "unknown tools error back to the model")
+	tr2 := last2["content"].([]any)[0].(map[string]any)
+	assert.Contains(t, tr2["content"].(string), "unknown tool", "unknown tools error back to the model")
 
 	// A model that never stops calling tools is cut off at the round cap.
 	srv3, requests3 := scriptedGateway(t, []string{toolCallResp})
@@ -416,12 +454,11 @@ func TestViewSummary(t *testing.T) {
 		hits++
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-		msgs := body["messages"].([]any)
-		prompt := msgs[0].(map[string]any)["content"].(string)
+		prompt := promptText(body)
 		assert.Contains(t, prompt, "transactions", "prompt names the view")
 		assert.Contains(t, prompt, "Maxima", "context carries the view's data")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Food dominates at €50."}}]}`))
+		_, _ = w.Write([]byte(anthropicText("Food dominates at €50.")))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -472,7 +509,7 @@ func TestAILabeling(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-		prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+		prompt := promptText(body)
 		w.Header().Set("Content-Type", "application/json")
 		var reply string
 		if strings.Contains(prompt, "TRANSACTIONS TO LABEL") {
@@ -484,7 +521,7 @@ func TestAILabeling(t *testing.T) {
 			assert.Contains(t, prompt, "TRANSACTION TO TAG")
 			reply = `{"labels":["groceries"],"comment":"Lidl Šnipiškės groceries","note":"Matches your Lidl pattern."}`
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+		_, _ = w.Write([]byte(anthropicText(reply)))
 	}))
 	t.Cleanup(srv.Close)
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
@@ -556,14 +593,14 @@ func TestAIReviewRemap(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-		prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+		prompt := promptText(body)
 		require.Contains(t, prompt, "TRANSACTIONS TO AUDIT")
 		assert.Contains(t, prompt, `labels: bar`, "audit prompt carries current labels")
 		// Model proposes: fix row 2; also (maliciously) strip 'loan' from row 3
 		// and remove a label row 2 doesn't have.
 		reply := `[{"id":2,"remove":["bar","ghost"],"add":["transport"],"reason":"Bus ticket, not a bar."},{"id":3,"remove":["loan"],"add":["transport"],"reason":"nope"}]`
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(reply) + `}}]}`))
+		_, _ = w.Write([]byte(anthropicText(reply)))
 	}))
 	t.Cleanup(srv.Close)
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{

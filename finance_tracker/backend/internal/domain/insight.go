@@ -10,8 +10,9 @@ type AIInsight struct {
 }
 
 // AISettings is a single-row table configuring the LLM gateway used for AI
-// analysis and chat. The nexos.ai gateway exposes an OpenAI-compatible API;
-// any compatible base URL works. The key is write-only — json:"-" keeps it
+// analysis and chat. Calls go to the gateway's Anthropic-native Messages
+// endpoint ({base}/messages — nexos.ai passthrough preserves prompt caching);
+// any base URL exposing that API works. The key is write-only — json:"-" keeps it
 // out of every response and export.
 type AISettings struct {
 	ID         uint      `gorm:"primarykey" json:"id"`
@@ -21,7 +22,7 @@ type AISettings struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// DefaultGatewayURL is the nexos.ai OpenAI-compatible endpoint.
+// DefaultGatewayURL is the nexos.ai gateway API base.
 const DefaultGatewayURL = "https://api.nexos.ai/v1"
 
 // Configured reports whether the gateway can be called.
@@ -29,7 +30,7 @@ func (s *AISettings) Configured() bool {
 	return s.APIKey != "" && s.Model != ""
 }
 
-// ChatMessage is one turn of the AI chat, OpenAI wire format.
+// ChatMessage is one turn of the AI chat (role: user | assistant | system).
 type ChatMessage struct {
 	Role    string `json:"role"` // "system" | "user" | "assistant"
 	Content string `json:"content"`

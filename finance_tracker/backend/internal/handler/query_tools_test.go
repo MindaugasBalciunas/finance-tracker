@@ -67,8 +67,7 @@ func TestBudgetStatusEndpoint(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, db.Create(&domain.Budget{Name: "Loan", Kind: "fixed", Label: "loan", Amount: 1200}).Error)
 	require.NoError(t, db.Create(&domain.Budget{Name: "Eating out", Kind: "spending", Label: "restaurant", Amount: 200}).Error)
-	// This month: the loan payment, a restaurant bill, and a loan-labeled
-	// restaurant?? no — keep clean: loan expense + restaurant expense.
+	// This month: the loan payment and a restaurant bill.
 	require.NoError(t, db.Create(&domain.Transaction{
 		Date: now, Type: "expense", Amount: 1200, Category: "Finance", Comment: "Busto paskola", Labels: "loan"}).Error)
 	require.NoError(t, db.Create(&domain.Transaction{
@@ -142,9 +141,9 @@ func TestAIChatExpandedTools(t *testing.T) {
 	require.NoError(t, db.Create(&domain.Budget{Name: "Loan", Kind: "fixed", Label: "loan", Amount: 1200}).Error)
 	require.NoError(t, db.Create(&domain.LabelRule{Label: "house", CommentMatch: "repair"}).Error)
 
-	searchCall := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"search_transactions","arguments":"{\"amount_min\":100}"}}]},"finish_reason":"tool_calls"}]}`
-	statusCall := `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"c2","type":"function","function":{"name":"get_budget_status","arguments":"{}"}},{"id":"c3","type":"function","function":{"name":"get_label_rules","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`
-	final := `{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`
+	searchCall := `{"content":[{"type":"tool_use","id":"c1","name":"search_transactions","input":{"amount_min":100}}],"stop_reason":"tool_use"}`
+	statusCall := `{"content":[{"type":"tool_use","id":"c2","name":"get_budget_status","input":{}},{"type":"tool_use","id":"c3","name":"get_label_rules","input":{}}],"stop_reason":"tool_use"}`
+	final := anthropicText("done")
 	srv, requests := scriptedGateway(t, []string{searchCall, statusCall, final})
 
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
@@ -168,8 +167,8 @@ func TestAIChatExpandedTools(t *testing.T) {
 	assert.Contains(t, rulesMsg, `"comment_match":"repair"`)
 }
 
-// extractToolContent finds the tool message with the given tool_call_id in a
-// captured gateway request.
+// extractToolContent finds the tool_result block with the given tool_use_id
+// in a captured gateway request.
 func extractToolContent(t *testing.T, req map[string]any, callID string) string {
 	t.Helper()
 	msgs, ok := req["messages"].([]any)
@@ -179,12 +178,19 @@ func extractToolContent(t *testing.T, req map[string]any, callID string) string 
 		if !ok {
 			continue
 		}
-		if mm["role"] == "tool" && mm["tool_call_id"] == callID {
-			s, _ := mm["content"].(string)
-			return s
+		blocks, ok := mm["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, b := range blocks {
+			bb, ok := b.(map[string]any)
+			if ok && bb["type"] == "tool_result" && bb["tool_use_id"] == callID {
+				s, _ := bb["content"].(string)
+				return s
+			}
 		}
 	}
-	t.Fatalf("no tool message for call %s", callID)
+	t.Fatalf("no tool_result for call %s", callID)
 	return ""
 }
 

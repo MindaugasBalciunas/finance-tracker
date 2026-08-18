@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -675,8 +676,9 @@ func monthsBetween(a, b time.Time) int {
 	return m
 }
 
-// OpenAI-compatible gateway types (nexos.ai and friends).
-// gatewayMessage is the OpenAI chat wire format, including the tool-calling
+// Internal gateway abstraction (OpenAI-style shapes, kept as the app-wide
+// interface; the wire layer below translates to the Anthropic Messages API).
+// gatewayMessage is one transcript turn, including the tool-calling
 // fields: an assistant turn may carry tool_calls instead of content, and a
 // "tool" turn answers one call by id.
 type gatewayMessage struct {
@@ -704,19 +706,67 @@ type gatewayTool struct {
 	} `json:"function"`
 }
 
-type gatewayRequest struct {
-	Model     string           `json:"model"`
-	MaxTokens int              `json:"max_tokens,omitempty"`
-	Messages  []gatewayMessage `json:"messages"`
-	Tools     []gatewayTool    `json:"tools,omitempty"`
+// ── Anthropic Messages API wire types ─────────────────────────────────
+// The gateway is called through nexos.ai's Anthropic-native /messages
+// passthrough (docs.nexos.ai/gateway-api/messages): unlike the OpenAI
+// translation layer, it preserves cache_control, so the big system report
+// and tool definitions are prompt-cached between rounds and turns. The
+// internal gatewayMessage/gatewayTool shapes above stay as the app-wide
+// abstraction; translation happens only here.
+
+type anthropicCacheControl struct {
+	Type string `json:"type"`          // "ephemeral"
+	TTL  string `json:"ttl,omitempty"` // "5m" (default) | "1h"
 }
 
-type gatewayResponse struct {
-	Choices []struct {
-		Message      gatewayMessage `json:"message"`
-		FinishReason string         `json:"finish_reason"`
-	} `json:"choices"`
+// anthropicBlock is one content block — text, tool_use or tool_result
+// (fields overlap; unused ones stay empty).
+type anthropicBlock struct {
+	Type string `json:"type"`
+	// text blocks
+	Text string `json:"text,omitempty"`
+	// tool_use blocks
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+	// tool_result blocks
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   string `json:"content,omitempty"`
+
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+type anthropicMessage struct {
+	Role    string           `json:"role"` // "user" | "assistant"
+	Content []anthropicBlock `json:"content"`
+}
+
+type anthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type anthropicRequest struct {
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	System    []anthropicBlock   `json:"system,omitempty"`
+	Messages  []anthropicMessage `json:"messages"`
+	Tools     []anthropicTool    `json:"tools,omitempty"`
+}
+
+type anthropicResponse struct {
+	Content    []anthropicBlock `json:"content"`
+	StopReason string           `json:"stop_reason"`
+	Usage      struct {
+		InputTokens        int     `json:"input_tokens"`
+		OutputTokens       int     `json:"output_tokens"`
+		CacheCreationInput int     `json:"cache_creation_input_tokens"`
+		CacheReadInput     int     `json:"cache_read_input_tokens"`
+		NexosCreditsCost   float64 `json:"nexos_credits_cost"`
+	} `json:"usage"`
 	Error *struct {
+		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 }
@@ -729,9 +779,9 @@ func toGatewayMessages(messages []domain.ChatMessage) []gatewayMessage {
 	return out
 }
 
-// callGateway posts a chat completion to the configured OpenAI-compatible
-// gateway (nexos.ai by default) and returns the assistant's reply text —
-// the plain, tool-free path used by Generate and TestGateway.
+// callGateway posts one exchange to the configured gateway's Anthropic-native
+// Messages endpoint and returns the assistant's reply text — the plain,
+// tool-free path used by Generate and TestGateway.
 func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, maxTokens int) (string, error) {
 	msg, err := callGatewayFull(settings, toGatewayMessages(messages), maxTokens, nil)
 	if err != nil {
@@ -746,21 +796,79 @@ func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, max
 	return msg.Content, nil
 }
 
-// callGatewayFull is the tool-aware chat completion: it returns the full
-// assistant message, which may carry tool_calls instead of content.
+// callGatewayFull is the tool-aware gateway call over the Anthropic-native
+// Messages API: it returns the full assistant message, which may carry
+// tool_calls instead of content. The last system block gets a cache_control
+// breakpoint, so tools + system (the expensive, stable prefix) are read from
+// the prompt cache on tool rounds and follow-up turns.
 func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, maxTokens int, tools []gatewayTool) (gatewayMessage, error) {
 	var zero gatewayMessage
-	body, err := json.Marshal(gatewayRequest{
+
+	// Translate the internal transcript to Anthropic wire form: system turns
+	// become top-level system blocks; tool results become tool_result blocks
+	// inside a user message (consecutive results share one message, as the
+	// API requires them directly after the tool_use turn).
+	var system []anthropicBlock
+	var wire []anthropicMessage
+	appendBlocks := func(role string, blocks ...anthropicBlock) {
+		wire = append(wire, anthropicMessage{Role: role, Content: blocks})
+	}
+	for _, m := range messages {
+		switch {
+		case m.Role == "system":
+			system = append(system, anthropicBlock{Type: "text", Text: m.Content})
+		case m.ToolCallID != "":
+			block := anthropicBlock{Type: "tool_result", ToolUseID: m.ToolCallID, Content: m.Content}
+			if n := len(wire); n > 0 && wire[n-1].Role == "user" && len(wire[n-1].Content) > 0 && wire[n-1].Content[0].Type == "tool_result" {
+				wire[n-1].Content = append(wire[n-1].Content, block)
+			} else {
+				appendBlocks("user", block)
+			}
+		case m.Role == "assistant" && len(m.ToolCalls) > 0:
+			var blocks []anthropicBlock
+			if strings.TrimSpace(m.Content) != "" {
+				blocks = append(blocks, anthropicBlock{Type: "text", Text: m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				input := strings.TrimSpace(tc.Function.Arguments)
+				if input == "" {
+					input = "{}"
+				}
+				blocks = append(blocks, anthropicBlock{
+					Type: "tool_use", ID: tc.ID, Name: tc.Function.Name, Input: json.RawMessage(input),
+				})
+			}
+			appendBlocks("assistant", blocks...)
+		default:
+			appendBlocks(m.Role, anthropicBlock{Type: "text", Text: m.Content})
+		}
+	}
+	if len(system) > 0 {
+		// One breakpoint caches the whole prefix (tools are serialized before
+		// system): 5-minute ephemeral fits the chat/tool-round cadence.
+		system[len(system)-1].CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+	}
+	wireTools := make([]anthropicTool, len(tools))
+	for i, t := range tools {
+		wireTools[i] = anthropicTool{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			InputSchema: t.Function.Parameters,
+		}
+	}
+
+	body, err := json.Marshal(anthropicRequest{
 		Model:     settings.Model,
 		MaxTokens: maxTokens,
-		Messages:  messages,
-		Tools:     tools,
+		System:    system,
+		Messages:  wire,
+		Tools:     wireTools,
 	})
 	if err != nil {
 		return zero, err
 	}
 
-	url := strings.TrimRight(settings.GatewayURL, "/") + "/chat/completions"
+	url := strings.TrimRight(settings.GatewayURL, "/") + "/messages"
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return zero, err
@@ -780,7 +888,7 @@ func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, max
 		return zero, err
 	}
 
-	var result gatewayResponse
+	var result anthropicResponse
 	jsonErr := json.Unmarshal(respBytes, &result)
 	// Surface a structured gateway error message when present (these are the
 	// gateway's own words — safe to relay), otherwise a status-only message.
@@ -795,17 +903,40 @@ func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, max
 	if jsonErr != nil {
 		return zero, fmt.Errorf("gateway returned %s but the response was not valid JSON", resp.Status)
 	}
-	if len(result.Choices) == 0 {
-		return zero, errors.New("gateway returned no choices")
+
+	// Cost visibility in the server log: cache reads are the whole point of
+	// the native passthrough, so make hits (and misses) observable.
+	u := result.Usage
+	if u.InputTokens+u.OutputTokens > 0 {
+		log.Printf("gateway: in=%d out=%d cache_read=%d cache_write=%d credits=%.5f",
+			u.InputTokens, u.OutputTokens, u.CacheReadInput, u.CacheCreationInput, u.NexosCreditsCost)
 	}
-	msg := result.Choices[0].Message
+
+	var msg gatewayMessage
+	msg.Role = "assistant"
+	for _, b := range result.Content {
+		switch b.Type {
+		case "text":
+			msg.Content += b.Text
+		case "tool_use":
+			var tc gatewayToolCall
+			tc.ID = b.ID
+			tc.Type = "function"
+			tc.Function.Name = b.Name
+			tc.Function.Arguments = string(b.Input)
+			if strings.TrimSpace(tc.Function.Arguments) == "" {
+				tc.Function.Arguments = "{}"
+			}
+			msg.ToolCalls = append(msg.ToolCalls, tc)
+		}
+	}
 	if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
 		return zero, errors.New("gateway returned an empty reply — try again or raise the model's token limit")
 	}
-	// A "length" finish means the model hit the output cap mid-answer. Keep
-	// the partial text but say so — a silently cut answer reads as complete
-	// and wrong, which is worse than a visibly truncated one.
-	if result.Choices[0].FinishReason == "length" && strings.TrimSpace(msg.Content) != "" {
+	// max_tokens means the model hit the output cap mid-answer. Keep the
+	// partial text but say so — a silently cut answer reads as complete and
+	// wrong, which is worse than a visibly truncated one.
+	if result.StopReason == "max_tokens" && strings.TrimSpace(msg.Content) != "" {
 		msg.Content += "\n\n⚠ [answer truncated — the model hit its output token limit]"
 	}
 	return msg, nil

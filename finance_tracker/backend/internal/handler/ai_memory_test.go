@@ -33,7 +33,7 @@ func TestAIMemoryAcrossIntegrations(t *testing.T) {
 	assert.Contains(t, acts[0].Content, "Groceries doubled")
 
 	// 2. Chat sees the digest in its system message and logs its own.
-	final := `{"choices":[{"message":{"role":"assistant","content":"Yes — groceries are the outlier."},"finish_reason":"stop"}]}`
+	final := anthropicText("Yes — groceries are the outlier.")
 	srv2, requests := scriptedGateway(t, []string{final})
 	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
 		"gateway_url": srv2.URL, "model": "m"}) // empty api_key keeps the stored key
@@ -42,7 +42,7 @@ func TestAIMemoryAcrossIntegrations(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 
 	require.NotEmpty(t, *requests)
-	system := (*requests)[0]["messages"].([]any)[0].(map[string]any)["content"].(string)
+	system := systemText((*requests)[0])
 	assert.Contains(t, system, "RECENT AI ACTIVITY")
 	assert.Contains(t, system, "view_summary dashboard")
 	assert.Contains(t, system, "Groceries doubled")
@@ -67,7 +67,7 @@ func TestChatReplayTrimming(t *testing.T) {
 	require.NoError(t, db.Create(&domain.AIChatMessage{
 		Role: "user", Content: "short recent question", CreatedAt: time.Now().AddDate(0, 0, -1)}).Error)
 
-	final := `{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`
+	final := anthropicText("ok")
 	srv, requests := scriptedGateway(t, []string{final})
 	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
 		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
