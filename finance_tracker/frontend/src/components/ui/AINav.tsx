@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
 
-// Sub-navigation for the two AI pages: the full-screen chat and the
-// financial overview (analysis + gateway settings).
+// Sub-navigation for the AI pages: the full-screen chat, the financial
+// overview (analysis + gateway settings) and the About-me context briefing.
 const tabs = [
   { to: '/ai', label: '💬 Chat' },
   { to: '/ai/overview', label: '✦ Overview' },
+  { to: '/ai/about', label: '🧠 About me' },
 ]
 
 export default function AINav() {

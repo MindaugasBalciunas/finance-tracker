@@ -86,7 +86,7 @@ export default function AI() {
             {configured && settings?.model && <> · <span className="text-indigo-500">{settings.model}</span></>}
           </p>
         </div>
-        <span className="flex items-center gap-2">
+        <span className="flex flex-wrap items-center justify-end gap-2">
           {messages.length > 0 && (
             <button onClick={clearChat} className="text-xs text-gray-400 hover:text-red-500">
               Clear chat

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '../api/insights'
 import { useAISettings, useSaveAISettings } from '../hooks/useInsights'
 import AINav from '../components/ui/AINav'
@@ -33,7 +32,7 @@ export default function AIOverview() {
             {configured && settings?.model && <> · <span className="text-indigo-500">{settings.model}</span></>}
           </p>
         </div>
-        <span className="flex items-center gap-2">
+        <span className="flex flex-wrap items-center justify-end gap-2">
           <button
             onClick={() => setSettingsOpen((o) => !o)}
             className={`text-sm px-3 py-1.5 rounded-lg border ${settingsOpen ? 'bg-gray-100 border-gray-300 text-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -48,111 +47,11 @@ export default function AIOverview() {
 
       <AIInsightCard />
 
-      <AIContextCard />
 
       <p className="text-[11px] text-gray-400">
         Each analysis sends your aggregated financial summary (scoped to the app's date range) to the
         configured gateway. Conversations and analyses are stored in your own database.
       </p>
-    </div>
-  )
-}
-
-// AIContextCard edits the user's CFO-context briefing: who they are, their
-// investment framework, standing rules and communication style. It rides
-// along on EVERY AI call (chat, overview, view reviews) as a cached system
-// block, and MCP clients read it via get_user_context.
-function AIContextCard() {
-  const qc = useQueryClient()
-  const { data: ctx } = useQuery({ queryKey: ['ai-context'], queryFn: aiApi.getContext })
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-
-  const hasContext = !!ctx?.content?.trim()
-  const startEdit = () => {
-    setDraft(ctx?.content ?? '')
-    setStatus(null)
-    setEditing(true)
-  }
-  const save = async () => {
-    setSaving(true)
-    setStatus(null)
-    try {
-      const res = await aiApi.saveContext(draft)
-      qc.setQueryData(['ai-context'], res)
-      setEditing(false)
-      setStatus({ kind: 'ok', text: 'Saved — every AI feature now advises with this context.' })
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      setStatus({ kind: 'error', text: e.response?.data?.error ?? e.message ?? 'Save failed' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h2 className="font-semibold text-gray-900">🧠 AI context — about me</h2>
-        {!editing && (
-          <button
-            onClick={startEdit}
-            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            {hasContext ? '✎ Edit' : '+ Write it'}
-          </button>
-        )}
-      </div>
-      <p className="text-xs text-gray-400 mb-3">
-        Your standing brief for the AI: who you are, income structure, investment framework, rules it must
-        follow, open decisions and how you want to be spoken to (markdown, up to 32KB). It is included in every
-        chat, overview and view review — and MCP clients (Claude, Gemini) read it via the get_user_context tool.
-        Keep it current: stale facts here mislead every future answer.
-      </p>
-
-      {editing ? (
-        <>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={16}
-            placeholder={'# Who I am\n…\n\n## Income\n…\n\n## Investment framework\n…\n\n## Rules for the AI\n- Direct, no sugar-coating\n- Make a discipline point once, then drop it'}
-            className="w-full text-sm font-mono border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-          />
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            <button
-              onClick={save}
-              disabled={saving}
-              className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save context'}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <span className="text-xs text-gray-400 ml-auto">{new Blob([draft]).size.toLocaleString()} / 32,000 bytes</span>
-          </div>
-        </>
-      ) : hasContext ? (
-        <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/60 p-3 text-xs text-gray-600 whitespace-pre-wrap font-mono">
-          {ctx!.content}
-        </div>
-      ) : (
-        <p className="text-sm text-gray-400 italic">
-          Nothing written yet — paste your CFO briefing here and every AI answer starts advising like it knows you.
-        </p>
-      )}
-      {status && (
-        <p className={`mt-2 text-xs ${status.kind === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>{status.text}</p>
-      )}
-      {hasContext && !editing && ctx?.updated_at && (
-        <p className="mt-2 text-[11px] text-gray-400">Last updated {new Date(ctx.updated_at).toLocaleDateString()}</p>
-      )}
     </div>
   )
 }
