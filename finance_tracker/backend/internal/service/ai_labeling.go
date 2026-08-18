@@ -341,6 +341,11 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 			if len(newAdds) == 0 && len(removes) == 0 {
 				continue
 			}
+			// Removal-only suggestions must serialize add as [] — a null
+			// crashes clients that map over it.
+			if newAdds == nil {
+				newAdds = []string{}
+			}
 			reason := strings.TrimSpace(p.Reason)
 			if len(reason) > 200 {
 				reason = reason[:200]

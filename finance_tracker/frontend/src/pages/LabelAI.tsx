@@ -50,7 +50,7 @@ export default function LabelAI() {
     if (!result) return
     const items = result.suggestions
       .filter((s) => checked.has(s.id))
-      .map((s) => ({ id: s.id, add: s.add, remove: s.remove ?? [] }))
+      .map((s) => ({ id: s.id, add: s.add ?? [], remove: s.remove ?? [] }))
     if (items.length === 0) return
     setApplying(true)
     try {
@@ -147,7 +147,7 @@ export default function LabelAI() {
                       {(s.remove ?? []).map((l) => (
                         <span key={`rm-${l}`} className="text-[11px] font-medium bg-red-50 text-red-500 rounded px-1.5 py-0.5 line-through">−{l}</span>
                       ))}
-                      {s.add.map((l) => (
+                      {(s.add ?? []).map((l) => (
                         <span key={l} className="text-[11px] font-medium bg-emerald-50 text-emerald-600 rounded px-1.5 py-0.5">+{l}</span>
                       ))}
                     </span>

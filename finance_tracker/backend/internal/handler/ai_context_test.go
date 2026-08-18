@@ -200,3 +200,23 @@ func TestRecordUserDecision(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(ctx.Content, "## Decisions log"), "one log section")
 	assert.Contains(t, ctx.Content, "VWCE target raised")
 }
+
+// A removal-only review suggestion must serialize add as [] — a null there
+// blank-screened the AI-tagging page (s.add.map crash).
+func TestReviewRemovalOnlySerializesEmptyAdd(t *testing.T) {
+	r, db := aiTestRouter(t)
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now().AddDate(0, 0, -1), Type: "expense", Amount: 5,
+		Category: "Transport", Comment: "Bus ticket", Labels: "bar"}).Error)
+
+	reply := `[{"id":2,"remove":["bar"],"reason":"not a bar"}]`
+	srv, _ := scriptedGateway(t, []string{anthropicText(reply)})
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex", map[string]any{"mode": "review"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"add":[]`, "add must be an empty array, never null")
+	assert.NotContains(t, w.Body.String(), `"add":null`)
+}
