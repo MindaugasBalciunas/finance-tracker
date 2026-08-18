@@ -23,14 +23,30 @@ import (
 
 const aiReadme = `# Personal finance dataset
 
-Everything is EUR, dates are YYYY-MM-DD. One CSV per year keeps files small
-enough for AI chat uploads — concatenate a column's files for full history.
+Everything is EUR, dates are YYYY-MM-DD. The archive is deliberately compact
+(≤10 files — the Gemini web app rejects larger ZIPs), and long histories live
+in precomputed summaries so no single file is big enough to get silently
+truncated by a chat platform.
+
+## Using this archive in a web AI chat (Gemini, ChatGPT, Claude)
+
+Upload the ZIP directly, then paste:
+
+> Read README.md and cfo-context.md first, then act as my CFO-style
+> financial advisor using the CSV data. Check the DATA MANIFEST at the
+> bottom of the README and confirm you can access every file completely —
+> if anything is truncated, say so before analyzing.
 
 ## Files
 
-- transactions_<year>.csv — every money event of that year
-- balances_<year>.csv — point-in-time snapshots of all account balances
-- stocks_<year>.csv — individual brokerage trades
+- transactions_recent.csv — every money event of the last 24 months (or of
+  the whole selected period, for period-scoped exports)
+- transactions_archive.csv — older history (full exports only). Prefer the
+  precomputed summaries for long-horizon questions; open the archive only
+  for specific old transactions.
+- balances.csv — point-in-time snapshots of all account balances
+- stocks.csv — the complete brokerage trade ledger. ALWAYS full history,
+  even in period-scoped exports: cost basis needs every trade.
 - monthly_summary.csv — precomputed income / expenses / invested per month
 - category_year_totals.csv — precomputed totals per category, type and year
 - assets.csv — physical assets (real estate, vehicles…) with loans
@@ -97,19 +113,28 @@ portfolio activity from stocks; asset equity from assets (value − loan).
 `
 
 // ExportAIZip godoc
-// @Summary      Export an AI-analysis dataset as a ZIP of per-year CSVs
-// @Description  Small per-year CSV files (transactions, balances, stocks) plus precomputed summaries and a README describing the schema — sized for AI chat uploads.
+// @Summary      Export an AI-analysis dataset as a compact ZIP (≤10 files)
+// @Description  Recent + archive transaction CSVs, balances, the full trade ledger, precomputed summaries, the CFO context and a README with a data manifest — sized and shaped for web AI chat uploads (Gemini caps ZIPs at 10 files). Optional date_from/date_to scope the data.
 // @Tags         export
 // @Produce      application/zip
 // @Success      200  {string}  string  "ZIP archive"
 // @Router       /export/ai.zip [get]
 func (h *ExportHandler) ExportAIZip(c *gin.Context) {
+	// Optional ?date_from/?date_to scope transactions, balances and the
+	// summaries — a this-year or 12-month archive is lighter for chat
+	// uploads. Stocks stay full-history regardless (cost basis).
+	from, to, err := parseExportRange(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
 	transactions, err := h.txSvc.ListAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-	balances, err := h.balSvc.List(domain.BalanceFilter{}, 0)
+	transactions = filterTxRange(transactions, from, to)
+	balances, err := h.balSvc.List(domain.BalanceFilter{DateFrom: from, DateTo: to}, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -124,7 +149,7 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-	summary, err := h.txSvc.GetSummary(domain.TransactionFilter{})
+	summary, err := h.txSvc.GetSummary(domain.TransactionFilter{DateFrom: from, DateTo: to})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -149,10 +174,6 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		return w.Error()
 	}
 
-	if f, err := zw.Create("README.md"); err == nil {
-		_, _ = f.Write([]byte(aiReadme))
-	}
-
 	// The user's CFO briefing rides along, so an AI session started from
 	// this ZIP has the framework, not just the numbers.
 	if ctx := h.aiContextContent(); strings.TrimSpace(ctx) != "" {
@@ -161,29 +182,49 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		}
 	}
 
-	// Transactions, one file per year.
-	txByYear := map[int][][]string{}
-	for _, tx := range transactions {
-		y := tx.Date.Year()
-		txByYear[y] = append(txByYear[y], []string{
+	// Transactions in two tiers: the analytically hot last 24 months, and a
+	// cold archive. Web AI chats cap ZIPs at ~10 files (Gemini) and quietly
+	// truncate long files — the recent tier stays small enough to be read in
+	// full, and the precomputed summaries carry the long horizon.
+	manifest := &zipManifest{}
+	if from != nil || to != nil {
+		human := strings.ReplaceAll(strings.TrimPrefix(rangeSuffix(from, to), "_"), "_", " ")
+		manifest.note = fmt.Sprintf("This archive is period-scoped (%s) — export without a period for full history (stocks.csv is always complete).", human)
+	}
+	cutoff := time.Now().AddDate(-2, 0, 0)
+	txRow := func(tx domain.Transaction) []string {
+		return []string{
 			tx.Date.Format("2006-01-02"), string(tx.Type), string(tx.Category),
 			fmt.Sprintf("%.2f", tx.Amount), tx.Comment, tx.Labels,
 			tx.DebitAccount, tx.CreditAccount,
-		})
+		}
+	}
+	var txRecent, txArchive [][]string
+	for _, tx := range transactions {
+		if tx.Date.Before(cutoff) {
+			txArchive = append(txArchive, txRow(tx))
+		} else {
+			txRecent = append(txRecent, txRow(tx))
+		}
 	}
 	txHeader := []string{"date", "type", "category", "amount_eur", "comment", "labels", "debit_account", "credit_account"}
-	for _, y := range sortedYears(txByYear) {
-		if err := writeCSV(fmt.Sprintf("transactions_%d.csv", y), txHeader, txByYear[y]); err != nil {
+	if err := writeCSV("transactions_recent.csv", txHeader, txRecent); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	manifest.add("transactions_recent.csv", txRecent)
+	if len(txArchive) > 0 {
+		if err := writeCSV("transactions_archive.csv", txHeader, txArchive); err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return
 		}
+		manifest.add("transactions_archive.csv", txArchive)
 	}
 
-	// Balances, one file per year.
-	balByYear := map[int][][]string{}
+	// Balances, one file (snapshots are few hundred rows at most).
+	var balRows [][]string
 	for _, b := range balances {
-		y := b.Date.Year()
-		balByYear[y] = append(balByYear[y], []string{
+		balRows = append(balRows, []string{
 			b.Date.Format("2006-01-02"),
 			fmt.Sprintf("%.2f", b.Total), fmt.Sprintf("%.2f", b.Swed), fmt.Sprintf("%.2f", b.Seb),
 			fmt.Sprintf("%.2f", b.Cash), fmt.Sprintf("%.2f", b.RevM), fmt.Sprintf("%.2f", b.RevR),
@@ -197,30 +238,27 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		"swed_etf", "rev_stocks", "ibkr_stocks", "seb_pen", "art", "luminor",
 		"r_btc", "m_btc", "btc_price",
 	}
-	for _, y := range sortedYears(balByYear) {
-		if err := writeCSV(fmt.Sprintf("balances_%d.csv", y), balHeader, balByYear[y]); err != nil {
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
-			return
-		}
+	if err := writeCSV("balances.csv", balHeader, balRows); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
 	}
+	manifest.add("balances.csv", balRows)
 
-	// Stock trades, one file per year.
-	stockByYear := map[int][][]string{}
+	// Stock trades, one file.
+	var stockRows [][]string
 	for _, s := range stocks {
-		y := s.Date.Year()
-		stockByYear[y] = append(stockByYear[y], []string{
+		stockRows = append(stockRows, []string{
 			s.Date.Format("2006-01-02"), string(s.Action), s.Ticker,
 			fmt.Sprintf("%.6f", s.Shares), fmt.Sprintf("%.4f", s.PricePerShare),
 			s.Currency, string(s.Source), s.Notes,
 		})
 	}
 	stockHeader := []string{"date", "action", "ticker", "shares", "price_per_share", "currency", "source", "notes"}
-	for _, y := range sortedYears(stockByYear) {
-		if err := writeCSV(fmt.Sprintf("stocks_%d.csv", y), stockHeader, stockByYear[y]); err != nil {
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
-			return
-		}
+	if err := writeCSV("stocks.csv", stockHeader, stockRows); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
 	}
+	manifest.add("stocks.csv", stockRows)
 
 	// Precomputed monthly summary (Transfers already excluded server-side).
 	var monthRows [][]string
@@ -237,6 +275,7 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	manifest.add("monthly_summary.csv", monthRows)
 
 	// Per-year category totals (Transfers rows carried but flagged by name;
 	// the README tells readers to exclude them from spending analysis).
@@ -275,6 +314,7 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	manifest.add("category_year_totals.csv", catRows)
 
 	// Assets and the budget plan for household context.
 	var assetRows [][]string
@@ -302,21 +342,54 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	manifest.add("assets.csv", assetRows)
+	manifest.add("budgets.csv", planRows)
+
+	// README last, so it can carry the live data manifest.
+	if f, err := zw.Create("README.md"); err == nil {
+		_, _ = f.Write([]byte(aiReadme + manifest.render()))
+	}
 
 	if err := zw.Close(); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-	name := fmt.Sprintf("ai_finances_%s.zip", time.Now().Format("2006-01-02"))
+	name := fmt.Sprintf("ai_finances_%s%s.zip", time.Now().Format("2006-01-02"), rangeSuffix(from, to))
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	c.Data(http.StatusOK, "application/zip", buf.Bytes())
 }
 
-func sortedYears[T any](m map[int]T) []int {
-	years := make([]int, 0, len(m))
-	for y := range m {
-		years = append(years, y)
+// zipManifest records row counts and date coverage per CSV so a model can
+// verify it ingested each file completely — web AI chats quietly truncate
+// long files, and an unnoticed truncation is worse than an error.
+type zipManifest struct {
+	note  string
+	lines []string
+}
+
+func (m *zipManifest) add(name string, rows [][]string) {
+	line := fmt.Sprintf("- %s: %d data rows", name, len(rows))
+	// First column is the date on the row-level files (already chronological).
+	if len(rows) > 0 && len(rows[0]) > 0 && len(rows[0][0]) == 10 && rows[0][0][4] == '-' {
+		line += fmt.Sprintf(", %s → %s", rows[0][0], rows[len(rows)-1][0])
 	}
-	sort.Ints(years)
-	return years
+	m.lines = append(m.lines, line)
+}
+
+func (m *zipManifest) render() string {
+	head := ""
+	if m.note != "" {
+		head = m.note + "\n\n"
+	}
+	return `
+
+## DATA MANIFEST (integrity check — verify before analyzing)
+
+` + head + strings.Join(m.lines, "\n") + `
+
+If a file's rows you can actually access don't match the counts above, your
+platform truncated it — SAY SO before analyzing, and fall back to the
+precomputed summaries (monthly_summary, category_year_totals) plus
+transactions_recent.csv rather than silently working from partial data.
+`
 }

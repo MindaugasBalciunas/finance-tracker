@@ -331,27 +331,9 @@ export default function DataModal({ onClose, mode }: Props) {
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Export for AI</h3>
             <p className="text-[11px] text-gray-400 mb-2">
-              Files sized for AI chat uploads and analysis. Pick a period for the CSVs; the dataset ZIP always
-              covers full history.
+              Files shaped for AI chat uploads. The period below scopes the dataset ZIP and the CSVs —
+              "All time" for full history, "This year" or "Last 12 mo" for lighter uploads.
             </p>
-            <div className="grid sm:grid-cols-2 gap-2 mb-3">
-              <a href="/api/v1/export/ai.zip" download className={exportLinkCls}>
-                <span className="min-w-0">
-                  🤖 AI dataset (ZIP)
-                  <span className="block text-[11px] text-gray-400">
-                    Per-year CSVs + README — sized for AI chat uploads, full history
-                  </span>
-                </span>
-              </a>
-              <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>
-                <span className="min-w-0">
-                  ✨ New since last backup
-                  <span className="block text-[11px] text-gray-400">
-                    {status?.last_full_export ? `since ${status.last_full_export}` : 'make a full backup first'}
-                  </span>
-                </span>
-              </a>
-            </div>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {PRESETS.map(p => (
                 <button key={p.key} onClick={() => setPreset(p.key)}
@@ -370,6 +352,24 @@ export default function DataModal({ onClose, mode }: Props) {
                   className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-gray-200 rounded-lg" aria-label="To date" />
               </div>
             )}
+            <div className="grid sm:grid-cols-2 gap-2 mb-3">
+              <a href={`/api/v1/export/ai.zip${rangeQuery}`} download className={exportLinkCls}>
+                <span className="min-w-0">
+                  🤖 AI dataset (ZIP)
+                  <span className="block text-[11px] text-gray-400">
+                    Compact ≤10-file dataset (fits Gemini) + README & CFO context — follows the period; trade ledger always complete
+                  </span>
+                </span>
+              </a>
+              <a href="/api/v1/export/finances-partial.json" download onClick={() => setStatus(null)} className={exportLinkCls}>
+                <span className="min-w-0">
+                  ✨ New since last backup
+                  <span className="block text-[11px] text-gray-400">
+                    {status?.last_full_export ? `since ${status.last_full_export}` : 'make a full backup first'}
+                  </span>
+                </span>
+              </a>
+            </div>
             <div className="grid sm:grid-cols-2 gap-2">
               <a href={`/api/v1/export/transactions.csv${rangeQuery}`} download className={exportLinkCls}>
                 📄 Transactions CSV
