@@ -378,6 +378,9 @@ Savings Rate:     %.1f%%
 === TOP EXPENSE CATEGORIES (%s) ===
 %s
 
+=== CATEGORY DETAIL (per category: total, trend vs the previous equal-length period, top labels) ===
+%s
+
 === FIXED MONTHLY OBLIGATIONS (by label: loan, alimony, leasing, counterparty transfers) ===
 %s
 These are pre-committed, not spending decisions — when judging spending habits, also consider the discretionary picture with these excluded.
@@ -396,6 +399,7 @@ These are pre-committed, not spending decisions — when judging spending habits
 		period, summary.TotalIncome, summary.TotalExpenses, summary.TotalInvestments,
 		summary.TotalIncome-summary.TotalExpenses, savingsRate,
 		period, strings.Join(topExpenses, "\n"),
+		s.categoryDetailSection(allTxs, dateFrom, dateTo),
 		labelSections.fixedObligations,
 		labelSections.topSpendingLabels,
 		labelSections.incomeSources,
@@ -446,10 +450,13 @@ func (s *insightService) buildPrompt(dateFrom, dateTo *time.Time) (string, error
 
 ` + report + `
 
-Write a personal finance overview as EXACTLY these five sections, each introduced by its heading on its own line, in this order and with these exact headings:
+Write a personal finance overview as EXACTLY these six sections, each introduced by its heading on its own line, in this order and with these exact headings:
 
 ## Transactions
 2-4 sentences on spending in the reporting period: total spent, the biggest categories and labels, and any notable shift. Separate fixed obligations from discretionary choices.
+
+## Categories
+A detailed category review from the CATEGORY DETAIL data: one "- " bullet per category (up to 8), each naming the category with its EUR total, the trend vs the previous period (call out anything ±30%% or more), what drives it (top labels), and a verdict: fine / watch / act. Bold nothing; keep each bullet to one or two lines.
 
 ## Balances
 2-3 sentences on net worth and how it is composed (free cash vs investments vs pensions vs crypto), and what stands out.
@@ -463,7 +470,7 @@ Write a personal finance overview as EXACTLY these five sections, each introduce
 ## Reports
 The savings rate and trend, then 2-3 specific actionable opportunities as "- " bullet points, and end with one positive highlight.
 
-Rules: begin the whole response with a single line "Period: <the reporting period>". Use ONLY the five "## " headings above as markup — no other markdown, no bold. Address the person directly as "you". Keep the whole thing under 450 words. If a section genuinely has no data, still emit its heading with one short sentence saying so.`, nil
+Rules: begin the whole response with a single line "Period: <the reporting period>". Use ONLY the six "## " headings above as markup — no other markdown, no bold. Address the person directly as "you". Keep the whole thing under 600 words. If a section genuinely has no data, still emit its heading with one short sentence saying so.`, nil
 }
 
 // chatSystemMessage grounds the AI chat in the same data report the
@@ -474,7 +481,7 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Plain text with simple bullet points, no markdown headers.
+	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Answers render as GitHub-flavored markdown in the app — use bullets, **bold** for key figures, and compact tables when comparing numbers; avoid top-level headings.
 
 ` + report
 	if memo := s.recentAIContext(8, "chat"); memo != "" {

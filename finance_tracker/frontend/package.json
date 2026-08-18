@@ -21,8 +21,10 @@
     "react-datepicker": "^9.1.0",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.26.2",
-    "recharts": "^2.13.0"
+    "recharts": "^2.13.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.2",

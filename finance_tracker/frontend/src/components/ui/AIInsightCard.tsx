@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import Markdown from './Markdown'
 import { useLatestInsight, useGenerateInsight } from '../../hooks/useInsights'
 import { useDateRange } from '../../context/DateRangeContext'
 
@@ -6,6 +7,7 @@ import { useDateRange } from '../../context/DateRangeContext'
 // line — matched here so each renders as its own labelled card.
 const SECTIONS: { key: string; icon: string }[] = [
   { key: 'Transactions', icon: '💸' },
+  { key: 'Categories', icon: '🗂️' },
   { key: 'Balances', icon: '🏦' },
   { key: 'Stocks', icon: '📉' },
   { key: 'Budget', icon: '🎯' },
@@ -91,12 +93,12 @@ export default function AIInsightCard() {
       {!generate.isPending && parsed && parsed.sections.length > 0 && (
         <div className="grid gap-2.5 sm:grid-cols-2">
           {parsed.sections.map((sec) => (
-            <div key={sec.key} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+            <div key={sec.key} className={`rounded-xl border border-gray-100 bg-gray-50/60 p-3 ${sec.key === 'Categories' ? 'sm:col-span-2' : ''}`}>
               <div className="flex items-center gap-1.5 mb-1">
                 <span>{sec.icon}</span>
                 <h4 className="text-sm font-semibold text-gray-800">{sec.key}</h4>
               </div>
-              <p className="text-[13px] text-gray-600 leading-relaxed whitespace-pre-wrap">{sec.body}</p>
+              <div className="text-[13px] text-gray-600"><Markdown>{sec.body}</Markdown></div>
             </div>
           ))}
         </div>
@@ -111,8 +113,8 @@ export default function AIInsightCard() {
 
       {!generate.isPending && !insight && !isLoading && (
         <p className="text-sm text-gray-500 italic py-4">
-          Generate a per-section overview — Transactions, Balances, Stocks, Budget and Reports — scoped to the
-          date range selected in the header.
+          Generate a per-section overview — Transactions, a detailed Categories review, Balances, Stocks,
+          Budget and Reports — scoped to the date range selected in the header.
         </p>
       )}
 

@@ -1,26 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi, type ChatMessage } from '../api/insights'
-import { useAISettings, useSaveAISettings } from '../hooks/useInsights'
-import AIInsightCard from '../components/ui/AIInsightCard'
+import { useAISettings } from '../hooks/useInsights'
+import AINav from '../components/ui/AINav'
+import Markdown from '../components/ui/Markdown'
 
-// AI page: chat grounded in the full financial dataset, the one-shot
-// analysis card, and the nexos.ai gateway configuration. Chat history is
-// stored server-side, so it follows the user between phone and browser.
+// Full-screen AI chat grounded in the full financial dataset. History is
+// stored server-side (follows the user between phone and browser), and
+// assistant answers render as markdown — tables, lists, bold figures.
+// Analysis and gateway settings live on the Overview tab.
 export default function AI() {
   const { data: settings } = useAISettings()
   const configured = !!settings?.has_key && !!settings?.model
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [autoOpened, setAutoOpened] = useState(false)
-
-  // Open the settings panel once on first load when nothing is configured,
-  // then leave it under the user's control (so the ✕ actually closes it).
-  useEffect(() => {
-    if (settings && !configured && !autoOpened) {
-      setSettingsOpen(true)
-      setAutoOpened(true)
-    }
-  }, [settings, configured, autoOpened])
 
   const qc = useQueryClient()
   const { data: serverHistory } = useQuery({
@@ -82,51 +74,40 @@ export default function AI() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-4xl mx-auto">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">✦ AI</h1>
-          <p className="text-xs text-gray-400">
-            Chat and analysis grounded in your full financial history
+    // Full-screen: the column fills the viewport under the app header
+    // (mobile also reserves the bottom tab bar), the message list scrolls,
+    // the composer stays pinned.
+    <div className="mx-auto max-w-4xl flex flex-col h-[calc(100dvh-10.5rem)] md:h-[calc(100dvh-7.5rem)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-gray-900">💬 Chat</h1>
+          <p className="text-xs text-gray-400 truncate">
+            Queries your data live while answering
             {configured && settings?.model && <> · <span className="text-indigo-500">{settings.model}</span></>}
           </p>
         </div>
-        <button
-          onClick={() => setSettingsOpen((o) => !o)}
-          className={`text-sm px-3 py-1.5 rounded-lg border ${settingsOpen ? 'bg-gray-100 border-gray-300 text-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-        >
-          ⚙️ Gateway settings
-        </button>
-      </div>
-
-      {settingsOpen && <GatewaySettings onClose={() => setSettingsOpen(false)} />}
-
-      {/* ── Chat ── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col" style={{ minHeight: '24rem' }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div>
-            <h2 className="font-semibold text-gray-900">💬 Chat with your finances</h2>
-            <p className="text-xs text-gray-400">
-              The AI queries your data live as it answers — transactions, budgets, balances, stocks — the same tools the MCP server exposes.
-            </p>
-          </div>
+        <span className="flex items-center gap-2">
           {messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className="text-xs text-gray-400 hover:text-red-500"
-            >
+            <button onClick={clearChat} className="text-xs text-gray-400 hover:text-red-500">
               Clear chat
             </button>
           )}
-        </div>
+          <AINav />
+        </span>
+      </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{ maxHeight: '55vh' }}>
+      <div className="flex-1 min-h-0 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {messages.length === 0 && !thinking && (
-            <div className="text-sm text-gray-400 py-6 text-center space-y-2">
-              <p>{configured ? 'Ask anything — the AI can search your transactions and query budgets, balances and live stock prices while answering.' : 'Configure the nexos.ai gateway above to start chatting.'}</p>
+            <div className="text-sm text-gray-400 py-10 text-center space-y-3">
+              <p>
+                {configured
+                  ? 'Ask anything — the AI can search your transactions and query budgets, balances and live stock prices while answering.'
+                  : <>Configure the nexos.ai gateway on the <Link to="/ai/overview" className="text-indigo-500 hover:underline">Overview tab</Link> to start chatting.</>}
+              </p>
               {configured && (
                 <div className="flex flex-wrap justify-center gap-1.5">
-                  {['Give me my daily status update', 'How am I tracking against my budgets this month?', "How are my stock positions doing?", 'Where can I save €200/month?'].map((q) => (
+                  {['Give me my daily status update', 'How am I tracking against my budgets this month?', 'How are my stock positions doing?', 'Where can I save €200/month?'].map((q) => (
                     <button
                       key={q}
                       onClick={() => setDraft(q)}
@@ -142,13 +123,15 @@ export default function AI() {
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
+                className={`max-w-[90%] sm:max-w-[85%] rounded-2xl px-3.5 py-2 min-w-0 ${
                   m.role === 'user'
                     ? 'bg-indigo-600 text-white rounded-br-sm'
                     : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                 }`}
               >
-                {m.content}
+                {m.role === 'assistant'
+                  ? <Markdown>{m.content}</Markdown>
+                  : <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>}
               </div>
             </div>
           ))}
@@ -162,9 +145,7 @@ export default function AI() {
           <div ref={bottomRef} />
         </div>
 
-        {chatError && (
-          <p className="px-4 pb-1 text-xs text-red-600">{chatError}</p>
-        )}
+        {chatError && <p className="px-4 pb-1 text-xs text-red-600">{chatError}</p>}
         <div className="p-3 border-t border-gray-100 flex items-end gap-2">
           <textarea
             value={draft}
@@ -188,144 +169,6 @@ export default function AI() {
             Send
           </button>
         </div>
-      </div>
-
-      {/* ── One-shot analysis (moved from the dashboard) ── */}
-      <AIInsightCard />
-
-      <p className="text-[11px] text-gray-400">
-        Conversations are stored in your own database, so the chat follows you between phone and
-        browser. Each question sends your aggregated financial summary to the configured gateway.
-      </p>
-    </div>
-  )
-}
-
-function GatewaySettings({ onClose }: { onClose: () => void }) {
-  const { data: settings } = useAISettings()
-  const save = useSaveAISettings()
-  const [form, setForm] = useState({ gateway_url: '', model: '', api_key: '' })
-  const [loaded, setLoaded] = useState(false)
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [testing, setTesting] = useState(false)
-
-  useEffect(() => {
-    if (settings && !loaded) {
-      setForm({ gateway_url: settings.gateway_url, model: settings.model, api_key: '' })
-      setLoaded(true)
-    }
-  }, [settings, loaded])
-
-  const doSave = async () => {
-    try {
-      await save.mutateAsync({
-        gateway_url: form.gateway_url.trim(),
-        model: form.model.trim(),
-        ...(form.api_key.trim() ? { api_key: form.api_key.trim() } : {}),
-      })
-      setForm((f) => ({ ...f, api_key: '' }))
-      setStatus({ kind: 'ok', text: 'Saved.' })
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      setStatus({ kind: 'error', text: e.response?.data?.error ?? e.message ?? 'Save failed' })
-    }
-  }
-
-  const doTest = async () => {
-    setTesting(true)
-    setStatus(null)
-    try {
-      await aiApi.test()
-      setStatus({ kind: 'ok', text: 'Gateway reachable — model replied.' })
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      setStatus({ kind: 'error', text: e.response?.data?.error ?? e.message ?? 'Test failed' })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="font-semibold text-gray-900">⚙️ nexos.ai gateway</h2>
-        <button onClick={onClose} className="text-gray-300 hover:text-gray-600">✕</button>
-      </div>
-      <p className="text-xs text-gray-400 mb-3">
-        Any OpenAI-compatible endpoint works. Get a key and model list from your nexos.ai workspace.
-      </p>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <label className="text-xs text-gray-500 sm:col-span-2">
-          Gateway URL
-          <input
-            value={form.gateway_url}
-            onChange={(e) => setForm({ ...form, gateway_url: e.target.value })}
-            placeholder="https://api.nexos.ai/v1"
-            className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-3 py-2"
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Model
-          <input
-            value={form.model}
-            onChange={(e) => setForm({ ...form, model: e.target.value })}
-            placeholder="e.g. gpt-5 or a nexos model id"
-            className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-3 py-2"
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          API key {settings?.has_key && <span className="text-emerald-600">(saved — leave blank to keep)</span>}
-          <input
-            type="password"
-            value={form.api_key}
-            onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-            placeholder={settings?.has_key ? '••••••••' : 'nxs-…'}
-            autoComplete="new-password"
-            className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-3 py-2"
-          />
-        </label>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 mt-3">
-        <button
-          onClick={doSave}
-          disabled={save.isPending || !form.model.trim()}
-          className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {save.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={doTest}
-          disabled={testing || !settings?.has_key}
-          className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-        >
-          {testing ? 'Testing…' : 'Test connection'}
-        </button>
-        {settings?.has_key && (
-          <button
-            onClick={async () => {
-              // Only clear the key — keep the saved URL/model, not whatever
-              // half-typed values happen to be in the form right now.
-              try {
-                await save.mutateAsync({
-                  gateway_url: settings.gateway_url, model: settings.model, clear_key: true,
-                })
-                setForm((f) => ({ ...f, api_key: '' }))
-                setStatus({ kind: 'ok', text: 'Key removed.' })
-              } catch (err) {
-                const e = err as { response?: { data?: { error?: string } }; message?: string }
-                setStatus({ kind: 'error', text: e.response?.data?.error ?? e.message ?? 'Failed' })
-              }
-            }}
-            className="px-3 py-1.5 text-sm text-red-500 hover:text-red-700"
-          >
-            Remove key
-          </button>
-        )}
-        {status && (
-          <span className={`text-xs ${status.kind === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
-            {status.text}
-          </span>
-        )}
       </div>
     </div>
   )

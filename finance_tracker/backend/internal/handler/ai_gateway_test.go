@@ -234,7 +234,7 @@ func TestGenerateViaGateway(t *testing.T) {
 	prompt := cap.Req.Messages[0].Content[0].Text
 	assert.Contains(t, prompt, "personal finance advisor")
 	// The overview must be requested per section.
-	for _, h := range []string{"## Transactions", "## Balances", "## Stocks", "## Budget", "## Reports"} {
+	for _, h := range []string{"## Transactions", "## Categories", "## Balances", "## Stocks", "## Budget", "## Reports"} {
 		assert.Contains(t, prompt, h, "prompt asks for section %s", h)
 	}
 	// No period → all time.

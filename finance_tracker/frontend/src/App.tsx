@@ -19,6 +19,7 @@ const Labels = lazy(() => import('./pages/Labels'))
 const LabelRules = lazy(() => import('./pages/LabelRules'))
 const LabelAI = lazy(() => import('./pages/LabelAI'))
 const AI = lazy(() => import('./pages/AI'))
+const AIOverview = lazy(() => import('./pages/AIOverview'))
 const More = lazy(() => import('./pages/More'))
 
 const queryClient = new QueryClient({
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="labels/rules" element={<Suspense fallback={<LoadingSpinner />}><LabelRules /></Suspense>} />
               <Route path="labels/ai" element={<Suspense fallback={<LoadingSpinner />}><LabelAI /></Suspense>} />
               <Route path="ai" element={<Suspense fallback={<LoadingSpinner />}><AI /></Suspense>} />
+              <Route path="ai/overview" element={<Suspense fallback={<LoadingSpinner />}><AIOverview /></Suspense>} />
               <Route path="more" element={<Suspense fallback={<LoadingSpinner />}><More /></Suspense>} />
             </Route>
           </Routes>

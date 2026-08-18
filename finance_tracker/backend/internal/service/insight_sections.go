@@ -433,3 +433,100 @@ func ltNetSalary(gross, deductions float64) float64 {
 	}
 	return gross - sodra - gpm - deductions
 }
+
+// categoryDetailSection is the substance behind the overview's per-category
+// review: for each top expense category in the period — total, count, the
+// biggest labels inside it, and the previous equal-length window's total for
+// trend. Undated reports use the last 90 days so a trend window exists.
+func (s *insightService) categoryDetailSection(allTxs []domain.Transaction, dateFrom, dateTo *time.Time) string {
+	now := time.Now()
+	from, to := dateFrom, dateTo
+	if from == nil && to == nil {
+		f := now.AddDate(0, 0, -90)
+		from, to = &f, &now
+	}
+	if from == nil {
+		f := now.AddDate(-20, 0, 0)
+		from = &f
+	}
+	if to == nil {
+		to = &now
+	}
+	span := to.Sub(*from)
+	prevFrom := from.Add(-span - 24*time.Hour)
+	prevTo := from.Add(-24 * time.Hour)
+
+	inWindow := func(t time.Time, f, tt time.Time) bool {
+		return !t.Before(f) && !t.After(tt.Add(24*time.Hour-time.Nanosecond))
+	}
+	type catAgg struct {
+		total  float64
+		count  int
+		labels map[string]float64
+	}
+	cats := map[string]*catAgg{}
+	prev := map[string]float64{}
+	for _, tx := range allTxs {
+		if tx.Type != domain.TransactionTypeExpense || tx.Category == "Transfers" {
+			continue
+		}
+		cat := string(tx.Category)
+		if inWindow(tx.Date, *from, *to) {
+			if cats[cat] == nil {
+				cats[cat] = &catAgg{labels: map[string]float64{}}
+			}
+			cats[cat].total += tx.Amount
+			cats[cat].count++
+			for _, l := range splitLabels(tx.Labels) {
+				cats[cat].labels[l] += tx.Amount
+			}
+		} else if inWindow(tx.Date, prevFrom, prevTo) {
+			prev[cat] += tx.Amount
+		}
+	}
+	if len(cats) == 0 {
+		return ""
+	}
+	type row struct {
+		name string
+		agg  *catAgg
+	}
+	var rows []row
+	for name, agg := range cats {
+		rows = append(rows, row{name, agg})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].agg.total > rows[j].agg.total })
+	if len(rows) > 8 {
+		rows = rows[:8]
+	}
+	var lines []string
+	for _, r := range rows {
+		line := fmt.Sprintf("  - %s: €%.0f (%d tx)", r.name, r.agg.total, r.agg.count)
+		if p, ok := prev[r.name]; ok && p > 0 {
+			line += fmt.Sprintf(" | previous period €%.0f (%+.0f%%)", p, (r.agg.total-p)/p*100)
+		} else {
+			line += " | no spend in the previous period"
+		}
+		type ls struct {
+			label string
+			total float64
+		}
+		var labels []ls
+		for l, t := range r.agg.labels {
+			labels = append(labels, ls{l, t})
+		}
+		sort.Slice(labels, func(i, j int) bool { return labels[i].total > labels[j].total })
+		if len(labels) > 3 {
+			labels = labels[:3]
+		}
+		if len(labels) > 0 {
+			var parts []string
+			for _, l := range labels {
+				parts = append(parts, fmt.Sprintf("%s €%.0f", l.label, l.total))
+			}
+			line += " | top labels: " + strings.Join(parts, ", ")
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
