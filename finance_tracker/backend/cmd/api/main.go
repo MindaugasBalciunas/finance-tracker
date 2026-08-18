@@ -7,8 +7,14 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -20,6 +26,13 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "github.com/mindaugas/finance-tracker/docs"
+)
+
+// Request-body caps: nothing in the regular API sends more than a few KB,
+// while statement/backup uploads legitimately reach tens of MB.
+const (
+	maxBodyBytes       = 2 << 20  // 2 MiB
+	maxImportBodyBytes = 64 << 20 // 64 MiB
 )
 
 func main() {
@@ -75,7 +88,7 @@ func main() {
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
 	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, exportLogRepo).WithBudgets(budgetRepo).WithAI(insightRepo)
-	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).WithBudgets(budgetRepo).WithAI(insightRepo)
+	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).WithBudgets(budgetRepo).WithAI(insightRepo).WithDB(db)
 	stockHandler := handler.NewStockHandler(stockSvc)
 	assetHandler := handler.NewAssetHandler(assetSvc)
 
@@ -87,6 +100,17 @@ func main() {
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 	}))
+
+	// Cap request bodies so a stray or malicious client can't exhaust
+	// memory/disk; imports get a larger dedicated allowance.
+	r.Use(func(c *gin.Context) {
+		limit := int64(maxBodyBytes)
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/import/") {
+			limit = maxImportBodyBytes
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		c.Next()
+	})
 
 	// Swagger UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -110,10 +134,40 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	log.Printf("Server running on :%s — Swagger at http://localhost:%s/swagger/index.html", port, port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("server error: %v", err)
+	// Nightly on-disk backups (VACUUM INTO) with retention — the SQLite file
+	// is the only copy of the data, so it gets a standing safety net.
+	database.StartBackupLoop(db, dbPath)
+
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
+		// WriteTimeout must cover the AI gateway proxy (backend caps the
+		// gateway call at 120s; nginx allows 180s upstream read).
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      180 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	go func() {
+		log.Printf("Server running on :%s — Swagger at http://localhost:%s/swagger/index.html", port, port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown: finish in-flight writes (and let SQLite complete WAL
+	// checkpoints) instead of being killed mid-request on add-on restarts.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down…")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("forced shutdown: %v", err)
+	}
+	log.Println("Server stopped")
 }
 
 func getEnv(key, fallback string) string {

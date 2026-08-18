@@ -52,6 +52,7 @@ export function useCreateBalance() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [BALANCES_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_LATEST_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_TREND_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_ALLOCATION_KEY] })
     },
@@ -66,6 +67,7 @@ export function useUpdateBalance() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [BALANCES_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_LATEST_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_TREND_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_ALLOCATION_KEY] })
     },
@@ -79,6 +81,7 @@ export function useDeleteBalance() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [BALANCES_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_LATEST_KEY] })
+      qc.invalidateQueries({ queryKey: [BALANCE_PROJECTED_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_TREND_KEY] })
       qc.invalidateQueries({ queryKey: [BALANCE_ALLOCATION_KEY] })
     },

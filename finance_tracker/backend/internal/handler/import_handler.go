@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"gorm.io/gorm"
 )
 
 type ImportHandler struct {
@@ -20,6 +22,7 @@ type ImportHandler struct {
 	assetRepo   repository.AssetRepository
 	budgetRepo  repository.BudgetRepository
 	insightRepo repository.InsightRepository // optional: restores AI settings from backups
+	db          *gorm.DB                     // optional: enables atomic imports
 }
 
 func NewImportHandler(
@@ -42,6 +45,39 @@ func (h *ImportHandler) WithBudgets(repo repository.BudgetRepository) *ImportHan
 func (h *ImportHandler) WithAI(repo repository.InsightRepository) *ImportHandler {
 	h.insightRepo = repo
 	return h
+}
+
+// WithDB enables atomic imports: each import runs inside one DB transaction,
+// so a failure mid-way rolls the whole thing back instead of leaving a
+// half-imported ledger.
+func (h *ImportHandler) WithDB(db *gorm.DB) *ImportHandler {
+	h.db = db
+	return h
+}
+
+// txScope runs fn against repositories bound to a single DB transaction.
+// Without a DB handle (unit tests with mocks) fn runs non-atomically against
+// the handler's own repositories.
+func (h *ImportHandler) txScope(fn func(s *ImportHandler) error) error {
+	if h.db == nil {
+		return fn(h)
+	}
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		scoped := &ImportHandler{
+			txRepo:    repository.NewTransactionRepository(tx),
+			balRepo:   repository.NewBalanceRepository(tx),
+			stockRepo: repository.NewStockRepository(tx),
+			assetRepo: repository.NewAssetRepository(tx),
+			db:        tx,
+		}
+		if h.budgetRepo != nil {
+			scoped.budgetRepo = repository.NewBudgetRepository(tx)
+		}
+		if h.insightRepo != nil {
+			scoped.insightRepo = repository.NewInsightRepository(tx)
+		}
+		return fn(scoped)
+	})
 }
 
 func (h *ImportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -92,12 +128,36 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 		return
 	}
 
+	// Atomic: any hard failure below rolls the whole statement back — a
+	// half-imported statement is worse than a failed one.
+	enrich := c.Query("mode") == "enrich"
+	var result swedbankImportResult
+	if err := h.txScope(func(s *ImportHandler) error {
+		var ierr error
+		result, ierr = s.runSwedbankImport(rows, stmtBalances, internal, enrich)
+		return ierr
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "import failed and was rolled back: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBalance, internal int, enrich bool) (swedbankImportResult, error) {
+	result := swedbankImportResult{Internal: internal}
+
 	// Dedup by date|type|amount|comment as a MULTISET: each existing row
 	// absorbs one matching statement row, so re-imports are no-ops while
 	// genuine repeats (two identical rounds at the same bar) still import.
 	// Category is deliberately excluded from the key: the same bank row may
 	// have been categorised differently by an earlier import.
-	existing, _ := h.txRepo.ListAll()
+	// The baseline read MUST succeed: proceeding with an empty dedup set
+	// would re-import the entire statement as duplicates.
+	existing, err := h.txRepo.ListAll()
+	if err != nil {
+		return result, fmt.Errorf("reading existing transactions for dedup: %w", err)
+	}
 	remaining := make(map[string]int, len(existing))
 	key := func(date time.Time, typ domain.TransactionType, amount float64, comment string) string {
 		return fmt.Sprintf("%s|%s|%.2f|%s", date.Format("2006-01-02"), typ, amount, strings.ToLower(strings.TrimSpace(comment)))
@@ -111,7 +171,6 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 	// diacritic-insensitive prefix — "EVELINA PLYTNIKAITĖ" → "EVELINA
 	// PLYTNIKAITĖ (Būsto paskola)") upgrades that row's comment and merges
 	// labels. Curated comments that aren't a prefix are left alone.
-	enrich := c.Query("mode") == "enrich"
 	candidates := map[string][]*domain.Transaction{}
 	if enrich {
 		for i := range existing {
@@ -121,7 +180,6 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 		}
 	}
 
-	result := swedbankImportResult{Internal: internal}
 	for _, row := range rows {
 		k := key(row.Date, row.Type, row.Amount, row.Comment)
 		if remaining[k] > 0 {
@@ -143,11 +201,12 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 							cand.AddLabel(l)
 						}
 					}
-					if err := h.txRepo.Update(cand); err == nil {
-						result.Enriched++
-						candidates[ck][i] = nil // consumed
-						matched = true
+					if err := h.txRepo.Update(cand); err != nil {
+						return result, fmt.Errorf("enriching transaction %d: %w", cand.ID, err)
 					}
+					result.Enriched++
+					candidates[ck][i] = nil // consumed
+					matched = true
 					break
 				}
 			}
@@ -167,8 +226,10 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 			CreditAccount: row.Credit,
 		}
 		if err := h.txRepo.Create(tx); err != nil {
-			result.Duplicate++
-			continue
+			// A Create failure is a REAL error (there is no unique constraint
+			// on transactions) — counting it as "duplicate" hid disk-full and
+			// constraint failures behind a 200 OK.
+			return result, fmt.Errorf("creating transaction (%s, %.2f): %w", row.Date.Format("2006-01-02"), row.Amount, err)
 		}
 		result.Imported++
 		d := row.Date.Format("2006-01-02")
@@ -182,12 +243,16 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 
 	// Deterministic labeling over the new rows (groceries, fuel, security…).
 	if h.budgetRepo != nil {
-		if rules, err := h.budgetRepo.ListRules(); err == nil {
-			for _, rule := range rules {
-				if n, err := h.budgetRepo.ApplyLabel(rule); err == nil {
-					result.Relabeled += n
-				}
+		rules, err := h.budgetRepo.ListRules()
+		if err != nil {
+			return result, fmt.Errorf("listing label rules: %w", err)
+		}
+		for _, rule := range rules {
+			n, err := h.budgetRepo.ApplyLabel(rule)
+			if err != nil {
+				return result, fmt.Errorf("applying label rule %q: %w", rule.Label, err)
 			}
+			result.Relabeled += n
 		}
 	}
 
@@ -196,7 +261,10 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 	// multi-account snapshots exist, injecting a swed-only row would show a
 	// misleading dip in total net worth.
 	if len(stmtBalances) > 0 {
-		existingBals, _ := h.balRepo.List(domain.BalanceFilter{})
+		existingBals, err := h.balRepo.List(domain.BalanceFilter{})
+		if err != nil {
+			return result, fmt.Errorf("reading existing balances: %w", err)
+		}
 		taken := make(map[string]bool, len(existingBals))
 		// Statement-restored snapshots carry only swed — possibly enriched
 		// with art (INVL import) and cash/seb_pen (startup backfills) — so
@@ -216,14 +284,15 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 			if taken[day] || (!earliestFull.IsZero() && !sb.Date.Before(earliestFull)) {
 				continue
 			}
-			if err := h.balRepo.Create(&domain.Balance{Date: sb.Date, Swed: sb.Amount, Total: sb.Amount}); err == nil {
-				taken[day] = true
-				result.Balances++
+			if err := h.balRepo.Create(&domain.Balance{Date: sb.Date, Swed: sb.Amount, Total: sb.Amount}); err != nil {
+				return result, fmt.Errorf("restoring balance snapshot for %s: %w", day, err)
 			}
+			taken[day] = true
+			result.Balances++
 		}
 	}
 
-	c.JSON(http.StatusOK, result)
+	return result, nil
 }
 
 type importResult struct {
@@ -270,6 +339,38 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		return
 	}
 
+	// A backup from a NEWER app version may carry sections this build can't
+	// restore — importing it would silently drop data. And any JSON object
+	// parses into an all-empty payload, so a wrong file must be rejected
+	// instead of reporting a successful zero-row restore.
+	if payload.SchemaVersion > exportSchemaVersion {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf(
+			"backup is schema v%d but this version understands up to v%d — update the add-on before restoring", payload.SchemaVersion, exportSchemaVersion)})
+		return
+	}
+	if payload.SchemaVersion == 0 && len(payload.Transactions) == 0 && len(payload.Balances) == 0 &&
+		len(payload.StockTrades) == 0 && len(payload.Assets) == 0 &&
+		len(payload.Budgets) == 0 && len(payload.LabelRules) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "not a finances.json backup — no recognized sections found"})
+		return
+	}
+
+	// Atomic: a failed restore rolls back to the pre-restore state instead of
+	// leaving the database half-overwritten.
+	var result importResult
+	if err := h.txScope(func(s *ImportHandler) error {
+		var ierr error
+		result, ierr = s.runJSONImport(payload)
+		return ierr
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "restore failed and was rolled back: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, error) {
 	result := importResult{}
 
 	// --- Transactions ---
@@ -278,7 +379,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	// duplicates from manual/ID-less imports. Never applied to rows with IDs —
 	// legitimate transactions can share the same date/amount/category/comment
 	// (e.g. three rounds at the same bar on the same night).
-	existingTxs, _ := h.txRepo.ListAll()
+	existingTxs, err := h.txRepo.ListAll()
+	if err != nil {
+		return result, fmt.Errorf("reading existing transactions for dedup: %w", err)
+	}
 	contentSeen := make(map[string]bool, len(existingTxs))
 	for _, t := range existingTxs {
 		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category, t.Comment)] = true
@@ -287,6 +391,14 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	for _, row := range payload.Transactions {
 		date, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {
+			result.Skipped.Transactions++
+			continue
+		}
+		// Imported rows obey the same rules the create endpoint enforces —
+		// a hand-edited backup must not inject rows the API would reject.
+		typ := domain.TransactionType(row.Type)
+		if row.Amount <= 0 || (typ != domain.TransactionTypeExpense &&
+			typ != domain.TransactionTypeIncome && typ != domain.TransactionTypeInvestment) {
 			result.Skipped.Transactions++
 			continue
 		}
@@ -327,8 +439,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			tx.ID = row.ID // preserve original ID so re-imports are idempotent
 		}
 		if err := h.txRepo.Create(tx); err != nil {
-			result.Skipped.Transactions++
-			continue
+			return result, fmt.Errorf("restoring transaction (%s, %.2f): %w", row.Date, row.Amount, err)
 		}
 		result.ImportedTxIDs = append(result.ImportedTxIDs, tx.ID)
 		result.Imported.Transactions++
@@ -359,7 +470,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 		} else {
 			dayStart := date.Truncate(24 * time.Hour)
 			dayEnd := dayStart.Add(24*time.Hour - time.Nanosecond)
-			existing, _ := h.balRepo.List(domain.BalanceFilter{DateFrom: &dayStart, DateTo: &dayEnd})
+			existing, lerr := h.balRepo.List(domain.BalanceFilter{DateFrom: &dayStart, DateTo: &dayEnd})
+			if lerr != nil {
+				return result, fmt.Errorf("checking existing balances for %s: %w", row.Date, lerr)
+			}
 			if len(existing) > 0 {
 				result.Skipped.Balances++
 				continue
@@ -385,8 +499,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			IBKRStocks: row.IBKRStocks,
 		}
 		if err := h.balRepo.Create(b); err != nil {
-			result.Skipped.Balances++
-			continue
+			return result, fmt.Errorf("restoring balance snapshot (%s): %w", row.Date, err)
 		}
 		result.Imported.Balances++
 	}
@@ -394,7 +507,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	// --- Stock trades — deduplicate by date+ticker+action+shares ---
 	// Shares are included because the same ticker can be bought/sold multiple
 	// times on the same day in separate transactions at different quantities.
-	existingStocks, _ := h.stockRepo.ListAll()
+	existingStocks, err := h.stockRepo.ListAll()
+	if err != nil {
+		return result, fmt.Errorf("reading existing stock trades for dedup: %w", err)
+	}
 	seen := make(map[string]bool, len(existingStocks))
 	for _, s := range existingStocks {
 		seen[fmt.Sprintf("%s|%s|%s|%.4f", s.Date.Format("2006-01-02"), s.Ticker, string(s.Action), s.Shares)] = true
@@ -426,8 +542,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			Notes:         row.Notes,
 		}
 		if err := h.stockRepo.Create(trade); err != nil {
-			result.Skipped.StockTrades++
-			continue
+			return result, fmt.Errorf("restoring stock trade (%s %s): %w", row.Date, row.Ticker, err)
 		}
 		seen[key] = true
 		result.Imported.StockTrades++
@@ -436,7 +551,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 	// --- Assets — deduplicate by name+type+purchase_date ---
 	// Assets have no export ID; name plus type plus purchase date uniquely
 	// identifies a physical asset for re-import purposes.
-	existingAssets, _ := h.assetRepo.ListAll()
+	existingAssets, err := h.assetRepo.ListAll()
+	if err != nil {
+		return result, fmt.Errorf("reading existing assets for dedup: %w", err)
+	}
 	assetSeen := make(map[string]bool, len(existingAssets))
 	assetKey := func(name, typ, purchaseDate string) string {
 		return fmt.Sprintf("%s|%s|%s", name, typ, purchaseDate)
@@ -496,8 +614,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			LoanMonthlyPayment: row.LoanMonthlyPayment,
 		}
 		if err := h.assetRepo.Create(asset); err != nil {
-			result.Skipped.Assets++
-			continue
+			return result, fmt.Errorf("restoring asset %q: %w", row.Name, err)
 		}
 		assetSeen[key] = true
 		result.Imported.Assets++
@@ -505,7 +622,10 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 
 	// --- Budgets & label rules (when present in the export) ---
 	if h.budgetRepo != nil {
-		existingBudgets, _ := h.budgetRepo.ListBudgets()
+		existingBudgets, err := h.budgetRepo.ListBudgets()
+		if err != nil {
+			return result, fmt.Errorf("reading existing budgets for dedup: %w", err)
+		}
 		budgetSeen := make(map[string]bool, len(existingBudgets))
 		for _, b := range existingBudgets {
 			budgetSeen[b.Name+"|"+b.Kind] = true
@@ -519,14 +639,16 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			cat, _ := domain.CanonicalCategory("", domain.Category(row.Category))
 			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: string(cat), Amount: row.Amount}
 			if err := h.budgetRepo.SaveBudget(&b); err != nil {
-				result.Skipped.Budgets++
-				continue
+				return result, fmt.Errorf("restoring budget %q: %w", row.Name, err)
 			}
 			budgetSeen[b.Name+"|"+b.Kind] = true
 			result.Imported.Budgets++
 		}
 
-		existingRules, _ := h.budgetRepo.ListRules()
+		existingRules, err := h.budgetRepo.ListRules()
+		if err != nil {
+			return result, fmt.Errorf("reading existing label rules for dedup: %w", err)
+		}
 		ruleSeen := make(map[string]bool, len(existingRules))
 		for _, r := range existingRules {
 			ruleSeen[r.Label+"|"+r.Category+"|"+r.CommentMatch] = true
@@ -547,8 +669,7 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 			}
 			rule := domain.LabelRule{Label: row.Label, Category: ruleCat, CommentMatch: row.CommentMatch}
 			if err := h.budgetRepo.SaveRule(&rule); err != nil {
-				result.Skipped.LabelRules++
-				continue
+				return result, fmt.Errorf("restoring label rule %q: %w", row.Label, err)
 			}
 			ruleSeen[key] = true
 			result.Imported.LabelRules++
@@ -566,10 +687,12 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 
 		// AI gateway settings (v3 backups): restore URL/model, and the key
 		// when the backup carries one — an older backup without a key must
-		// not clobber a key that's already configured.
+		// not clobber a key that's already configured. The gateway URL is
+		// where the API key gets POSTed as a Bearer token, so only a URL
+		// that parses as http(s) is accepted from a backup file.
 		if payload.AISettings != nil && h.insightRepo != nil {
 			if cur, err := h.insightRepo.GetAISettings(); err == nil {
-				if payload.AISettings.GatewayURL != "" {
+				if payload.AISettings.GatewayURL != "" && isSaneGatewayURL(payload.AISettings.GatewayURL) {
 					cur.GatewayURL = payload.AISettings.GatewayURL
 				}
 				if payload.AISettings.Model != "" {
@@ -578,7 +701,9 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 				if payload.AISettings.APIKey != "" {
 					cur.APIKey = payload.AISettings.APIKey
 				}
-				_ = h.insightRepo.SaveAISettings(cur)
+				if err := h.insightRepo.SaveAISettings(cur); err != nil {
+					return result, fmt.Errorf("restoring AI settings: %w", err)
+				}
 			}
 		}
 
@@ -592,13 +717,26 @@ func (h *ImportHandler) ImportJSON(c *gin.Context) {
 
 		// Deterministic migration: re-apply every rule across the whole table so
 		// imported historical records (and pre-label rows) get their labels.
-		allRules, _ := h.budgetRepo.ListRules()
+		allRules, err := h.budgetRepo.ListRules()
+		if err != nil {
+			return result, fmt.Errorf("listing label rules for relabel: %w", err)
+		}
 		for _, rule := range allRules {
-			if n, err := h.budgetRepo.ApplyLabel(rule); err == nil {
-				result.Relabeled += n
+			n, err := h.budgetRepo.ApplyLabel(rule)
+			if err != nil {
+				return result, fmt.Errorf("applying label rule %q: %w", rule.Label, err)
 			}
+			result.Relabeled += n
 		}
 	}
 
-	c.JSON(http.StatusOK, result)
+	return result, nil
+}
+
+// isSaneGatewayURL accepts only an absolute http(s) URL with a host — the
+// bar a gateway address restored from an untrusted backup file must clear
+// before the app will POST the API key to it.
+func isSaneGatewayURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }

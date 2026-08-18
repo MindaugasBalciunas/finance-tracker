@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func newSvc(balRepo *mock.BalanceRepository) service.BalanceService {
@@ -477,13 +478,40 @@ func TestBalanceService_SnapshotFromTransaction(t *testing.T) {
 		repo := &mock.BalanceRepository{}
 		svc := newSvc(repo)
 
-		repo.On("GetLatest").Return(nil, errors.New("record not found"))
+		repo.On("GetLatest").Return(nil, gorm.ErrRecordNotFound)
 
 		require.NoError(t, svc.SnapshotFromTransaction(&domain.Transaction{
 			Date: snapDate(2026, 6, 14), Type: domain.TransactionTypeExpense, Amount: 50, DebitAccount: "swed",
 		}))
 		repo.AssertNotCalled(t, "Create")
 		repo.AssertExpectations(t)
+	})
+
+	t.Run("repository error — surfaced, not swallowed", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		repo.On("GetLatest").Return(nil, errors.New("disk I/O error"))
+
+		require.Error(t, svc.SnapshotFromTransaction(&domain.Transaction{
+			Date: snapDate(2026, 6, 14), Type: domain.TransactionTypeExpense, Amount: 50, DebitAccount: "swed",
+		}))
+		repo.AssertNotCalled(t, "Create")
+	})
+
+	t.Run("backdated transaction — no snapshot written", func(t *testing.T) {
+		repo := &mock.BalanceRepository{}
+		svc := newSvc(repo)
+
+		latest := &domain.Balance{ID: 9, Swed: 5000, Total: 5000, Date: snapDate(2026, 6, 14)}
+		repo.On("GetLatest").Return(latest, nil)
+
+		// Dated three months before the latest snapshot: cloning today's
+		// balances under a past date would corrupt the net-worth trend.
+		require.NoError(t, svc.SnapshotFromTransaction(&domain.Transaction{
+			Date: snapDate(2026, 3, 1), Type: domain.TransactionTypeExpense, Amount: 50, DebitAccount: "swed",
+		}))
+		repo.AssertNotCalled(t, "Create")
 	})
 
 	t.Run("transaction with no account info — skipped", func(t *testing.T) {

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { budgetsApi } from '../api/budgets'
-import { TRANSACTIONS_KEY } from './useTransactions'
+import { TRANSACTIONS_KEY, SUMMARY_KEY } from './useTransactions'
 import type { BudgetInput, BudgetSettingsInput } from '../types'
 
 export const BUDGETS_KEY = 'budgets'
@@ -85,6 +85,7 @@ export function useApplyLabel() {
       budgetsApi.applyLabel(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
+      qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
       qc.invalidateQueries({ queryKey: ['label-rules'] })
       qc.invalidateQueries({ queryKey: ['labels'] })
     },
@@ -117,6 +118,7 @@ export function useLabelSuggestions() {
 // label-derived caches so every page reflects the new vocabulary.
 function invalidateLabelWorld(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: [TRANSACTIONS_KEY] })
+  qc.invalidateQueries({ queryKey: [SUMMARY_KEY] })
   qc.invalidateQueries({ queryKey: [BUDGETS_KEY] })
   qc.invalidateQueries({ queryKey: ['labels'] })
   qc.invalidateQueries({ queryKey: ['label-rules'] })

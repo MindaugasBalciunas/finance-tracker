@@ -116,13 +116,40 @@ func TestAuthFlow_PinLock(t *testing.T) {
 	w = doJSON(r, "GET", "/api/v1/transactions", nil, newCookie)
 	assert.Equal(t, 401, w.Code)
 
-	// Disable with wrong PIN fails; with right PIN the API opens again.
-	w = doJSON(r, "POST", "/api/v1/auth/pin/disable", map[string]string{"pin": "111111"}, "")
-	assert.Equal(t, 400, w.Code)
+	// Disabling the lock requires an UNLOCKED SESSION on top of the PIN —
+	// an anonymous caller must not be able to turn the lock off by guessing
+	// the PIN alone.
 	w = doJSON(r, "POST", "/api/v1/auth/pin/disable", map[string]string{"pin": "654321"}, "")
+	assert.Equal(t, 401, w.Code, "disable without a session must be rejected")
+
+	w = doJSON(r, "POST", "/api/v1/auth/pin/login", map[string]string{"pin": "654321"}, "")
+	require.Equal(t, 200, w.Code)
+	unlockCookie := sessionCookieFrom(w)
+	require.NotEmpty(t, unlockCookie)
+
+	// With a session: wrong PIN still fails, right PIN opens the API again.
+	w = doJSON(r, "POST", "/api/v1/auth/pin/disable", map[string]string{"pin": "111111"}, unlockCookie)
+	assert.Equal(t, 400, w.Code)
+	w = doJSON(r, "POST", "/api/v1/auth/pin/disable", map[string]string{"pin": "654321"}, unlockCookie)
 	assert.Equal(t, 200, w.Code)
 	w = doJSON(r, "GET", "/api/v1/transactions", nil, "")
 	assert.Equal(t, 200, w.Code)
+}
+
+func TestAuthFlow_PinBruteForceThrottle(t *testing.T) {
+	r := authTestRouter(t)
+
+	w := doJSON(r, "POST", "/api/v1/auth/pin/setup", map[string]string{"pin": "123456"}, "")
+	require.Equal(t, 200, w.Code)
+
+	// Hammer wrong PINs: after the attempt limit the throttle kicks in with
+	// 429 even for the CORRECT pin, so guessing can't continue.
+	for i := 0; i < 5; i++ {
+		w = doJSON(r, "POST", "/api/v1/auth/pin/login", map[string]string{"pin": "000000"}, "")
+		require.Equal(t, 401, w.Code)
+	}
+	w = doJSON(r, "POST", "/api/v1/auth/pin/login", map[string]string{"pin": "123456"}, "")
+	assert.Equal(t, 429, w.Code, "lockout must apply after repeated failures")
 }
 
 func TestAuthFlow_PinValidation(t *testing.T) {

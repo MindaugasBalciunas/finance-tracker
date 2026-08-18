@@ -24,13 +24,23 @@ import (
 
 const sessionTTL = 7 * 24 * time.Hour
 
+// PIN brute-force throttle: after pinAttemptLimit consecutive failures every
+// further failure extends a lockout window, doubling from pinLockoutBase up
+// to pinLockoutMax. A 4-digit PIN is only 10,000 guesses without this.
+const (
+	pinAttemptLimit = 5
+	pinLockoutBase  = 30 * time.Second
+	pinLockoutMax   = 15 * time.Minute
+)
+
 var pinPattern = regexp.MustCompile(`^\d{4,8}$`)
 
 var (
-	ErrInvalidPin   = errors.New("invalid PIN")
-	ErrWrongPin     = errors.New("wrong PIN")
-	ErrLockDisabled = errors.New("app lock is not enabled")
-	ErrNoCeremony   = errors.New("no pending WebAuthn ceremony — call begin first")
+	ErrInvalidPin      = errors.New("invalid PIN")
+	ErrWrongPin        = errors.New("wrong PIN")
+	ErrLockDisabled    = errors.New("app lock is not enabled")
+	ErrNoCeremony      = errors.New("no pending WebAuthn ceremony — call begin first")
+	ErrTooManyAttempts = errors.New("too many failed attempts — try again later")
 )
 
 // webauthnUser adapts the single app owner to the go-webauthn User interface.
@@ -60,6 +70,9 @@ type AuthService struct {
 	// Single-user app: one pending ceremony of each kind is enough.
 	pendingRegistration *webauthn.SessionData
 	pendingLogin        *webauthn.SessionData
+
+	pinFailures    int
+	pinLockedUntil time.Time
 }
 
 func NewAuthService(repo repository.AuthRepository) *AuthService {
@@ -84,9 +97,15 @@ func (s *AuthService) rp(host, origin string) (*webauthn.WebAuthn, error) {
 	})
 }
 
+// Enabled fails CLOSED: if the lock state cannot be read (locked WAL,
+// corrupt row), the app is treated as locked rather than exposing every
+// route on a DB hiccup. Valid in-memory sessions keep working either way.
 func (s *AuthService) Enabled() bool {
 	settings, err := s.repo.GetSettings()
-	return err == nil && settings.Enabled
+	if err != nil {
+		return true
+	}
+	return settings.Enabled
 }
 
 func (s *AuthService) Status(sessionToken string) AuthStatus {
@@ -104,14 +123,55 @@ func (s *AuthService) Status(sessionToken string) AuthStatus {
 
 // ── Sessions ────────────────────────────────────────────────────────
 
-func (s *AuthService) newSession() string {
+func (s *AuthService) newSession() (string, error) {
 	buf := make([]byte, 32)
-	_, _ = rand.Read(buf)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
 	token := base64.RawURLEncoding.EncodeToString(buf)
 	s.mu.Lock()
-	s.sessions[token] = time.Now().Add(sessionTTL)
+	// Opportunistic sweep — the map is tiny (single user), but without this
+	// expired tokens only ever left the map when re-presented.
+	now := time.Now()
+	for t, expiry := range s.sessions {
+		if now.After(expiry) {
+			delete(s.sessions, t)
+		}
+	}
+	s.sessions[token] = now.Add(sessionTTL)
 	s.mu.Unlock()
-	return token
+	return token, nil
+}
+
+// ── PIN throttle ────────────────────────────────────────────────────
+
+func (s *AuthService) pinThrottled() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if time.Now().Before(s.pinLockedUntil) {
+		return ErrTooManyAttempts
+	}
+	return nil
+}
+
+func (s *AuthService) recordPinFailure() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pinFailures++
+	if s.pinFailures >= pinAttemptLimit {
+		lockout := pinLockoutBase << (s.pinFailures - pinAttemptLimit)
+		if lockout <= 0 || lockout > pinLockoutMax {
+			lockout = pinLockoutMax
+		}
+		s.pinLockedUntil = time.Now().Add(lockout)
+	}
+}
+
+func (s *AuthService) resetPinFailures() {
+	s.mu.Lock()
+	s.pinFailures = 0
+	s.pinLockedUntil = time.Time{}
+	s.mu.Unlock()
 }
 
 func (s *AuthService) ValidSession(token string) bool {
@@ -156,9 +216,14 @@ func (s *AuthService) SetupPin(currentPin, newPin string) error {
 		return err
 	}
 	if settings.Enabled {
+		if err := s.pinThrottled(); err != nil {
+			return err
+		}
 		if bcrypt.CompareHashAndPassword([]byte(settings.PinHash), []byte(currentPin)) != nil {
+			s.recordPinFailure()
 			return ErrWrongPin
 		}
+		s.resetPinFailures()
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPin), bcrypt.DefaultCost)
 	if err != nil {
@@ -182,10 +247,15 @@ func (s *AuthService) VerifyPin(pin string) (string, error) {
 	if !settings.Enabled {
 		return "", ErrLockDisabled
 	}
+	if err := s.pinThrottled(); err != nil {
+		return "", err
+	}
 	if bcrypt.CompareHashAndPassword([]byte(settings.PinHash), []byte(pin)) != nil {
+		s.recordPinFailure()
 		return "", ErrWrongPin
 	}
-	return s.newSession(), nil
+	s.resetPinFailures()
+	return s.newSession()
 }
 
 // DisableLock turns the lock off after verifying the PIN.
@@ -197,9 +267,14 @@ func (s *AuthService) DisableLock(pin string) error {
 	if !settings.Enabled {
 		return ErrLockDisabled
 	}
+	if err := s.pinThrottled(); err != nil {
+		return err
+	}
 	if bcrypt.CompareHashAndPassword([]byte(settings.PinHash), []byte(pin)) != nil {
+		s.recordPinFailure()
 		return ErrWrongPin
 	}
+	s.resetPinFailures()
 	settings.Enabled = false
 	settings.PinHash = ""
 	if err := s.repo.SaveSettings(settings); err != nil {
@@ -335,7 +410,7 @@ func (s *AuthService) FinishLogin(host, origin string, r *http.Request) (string,
 			break
 		}
 	}
-	return s.newSession(), nil
+	return s.newSession()
 }
 
 func (s *AuthService) ListCredentials() ([]domain.WebauthnCredential, error) {

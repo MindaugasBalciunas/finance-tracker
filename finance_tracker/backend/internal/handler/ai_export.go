@@ -195,7 +195,7 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 	txRow := func(tx domain.Transaction) []string {
 		return []string{
 			tx.Date.Format("2006-01-02"), string(tx.Type), string(tx.Category),
-			fmt.Sprintf("%.2f", tx.Amount), tx.Comment, tx.Labels,
+			fmt.Sprintf("%.2f", tx.Amount), csvSafe(tx.Comment), csvSafe(tx.Labels),
 			tx.DebitAccount, tx.CreditAccount,
 		}
 	}
@@ -320,11 +320,11 @@ func (h *ExportHandler) ExportAIZip(c *gin.Context) {
 	var assetRows [][]string
 	for _, a := range toAssetExportRows(assets) {
 		assetRows = append(assetRows, []string{
-			a.Name, a.Type, a.PurchaseDate, fmt.Sprintf("%.2f", a.PurchasePrice),
+			csvSafe(a.Name), a.Type, a.PurchaseDate, fmt.Sprintf("%.2f", a.PurchasePrice),
 			fmt.Sprintf("%.2f", a.CurrentValue), a.ValuationDate,
 			fmt.Sprintf("%.2f", a.LoanRemaining), a.LoanRate,
 			fmt.Sprintf("%.2f", a.LoanMargin), fmt.Sprintf("%.2f", a.LoanBaseRate),
-			a.LoanRateResetDate, fmt.Sprintf("%.2f", a.LoanMonthlyPayment), a.Notes,
+			a.LoanRateResetDate, fmt.Sprintf("%.2f", a.LoanMonthlyPayment), csvSafe(a.Notes),
 		})
 	}
 	if err := writeCSV("assets.csv",

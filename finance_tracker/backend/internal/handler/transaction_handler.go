@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -201,7 +203,11 @@ func (h *TransactionHandler) DeleteAll(c *gin.Context) {
 // @Failure      500        {object}  ErrorResponse
 // @Router       /transactions [get]
 func (h *TransactionHandler) List(c *gin.Context) {
-	filter := buildTransactionFilter(c)
+	filter, ferr := buildTransactionFilter(c)
+	if ferr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: ferr.Error()})
+		return
+	}
 	result, err := h.svc.List(filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -221,7 +227,11 @@ func (h *TransactionHandler) List(c *gin.Context) {
 // @Failure      500        {object}  ErrorResponse
 // @Router       /transactions/summary [get]
 func (h *TransactionHandler) GetSummary(c *gin.Context) {
-	filter := buildTransactionFilter(c)
+	filter, ferr := buildTransactionFilter(c)
+	if ferr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: ferr.Error()})
+		return
+	}
 	summary, err := h.svc.GetSummary(filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -230,30 +240,50 @@ func (h *TransactionHandler) GetSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
-func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
+// maxPageSize caps list responses — an unbounded page_size streamed the
+// entire table in one response.
+const maxPageSize = 500
+
+func buildTransactionFilter(c *gin.Context) (domain.TransactionFilter, error) {
 	filter := domain.TransactionFilter{
 		Page:     1,
 		PageSize: 20,
 	}
+	// Malformed filters are rejected, not ignored: silently dropping a
+	// mistyped date_from would return all-time totals that look plausible.
 	if v := c.Query("date_from"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.DateFrom = &t
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return filter, fmt.Errorf("invalid date_from %q — use YYYY-MM-DD", v)
 		}
+		filter.DateFrom = &t
 	}
 	if v := c.Query("date_to"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.DateTo = &t
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return filter, fmt.Errorf("invalid date_to %q — use YYYY-MM-DD", v)
 		}
+		// Inclusive end of day, so same-day records carrying a time-of-day
+		// aren't excluded (matches the export path's behavior).
+		end := t.Add(24*time.Hour - time.Nanosecond)
+		filter.DateTo = &end
 	}
 	if v := c.Query("amount_min"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			filter.AmountMin = &f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return filter, fmt.Errorf("invalid amount_min %q", v)
 		}
+		filter.AmountMin = &f
 	}
 	if v := c.Query("amount_max"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			filter.AmountMax = &f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return filter, fmt.Errorf("invalid amount_max %q", v)
 		}
+		filter.AmountMax = &f
+	}
+	if filter.AmountMin != nil && filter.AmountMax != nil && *filter.AmountMin > *filter.AmountMax {
+		return filter, fmt.Errorf("amount_min is greater than amount_max")
 	}
 	if v := c.Query("type"); v != "" {
 		t := domain.TransactionType(v)
@@ -288,10 +318,10 @@ func buildTransactionFilter(c *gin.Context) domain.TransactionFilter {
 	}
 	if v := c.Query("page_size"); v != "" {
 		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			filter.PageSize = ps
+			filter.PageSize = min(ps, maxPageSize)
 		}
 	}
-	return filter
+	return filter, nil
 }
 
 func parseID(c *gin.Context) (uint, error) {

@@ -5,17 +5,26 @@ export interface DateRange {
 
 export type Preset = 'all' | 'this-month' | 'last-month' | '3m' | '6m' | '1y' | 'ytd' | 'custom'
 
+// Format from local date parts — toISOString() converts to UTC first, which
+// shifts the date by a day around midnight in non-UTC zones (e.g. UTC+2/+3).
+function toLocalIso(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function startOfMonth(monthsAgo: number): string {
   const d = new Date()
   d.setDate(1)
   d.setMonth(d.getMonth() - monthsAgo)
-  return d.toISOString().slice(0, 10)
+  return toLocalIso(d)
 }
 
 function endOfPreviousMonth(): string {
   const d = new Date()
   d.setDate(0)
-  return d.toISOString().slice(0, 10)
+  return toLocalIso(d)
 }
 
 export function presetRange(preset: Preset): DateRange {

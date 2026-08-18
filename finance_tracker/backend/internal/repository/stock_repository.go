@@ -59,8 +59,10 @@ func (r *stockRepository) ListAll() ([]domain.StockTrade, error) {
 }
 
 func (r *stockRepository) ListSince(since time.Time) ([]domain.StockTrade, error) {
+	// created_at, not date: a backdated trade must still land in the next
+	// partial export (matches asset_repository).
 	var trades []domain.StockTrade
-	if err := r.db.Where("date >= ?", since).Order("date ASC, id ASC").Find(&trades).Error; err != nil {
+	if err := r.db.Where("created_at >= ?", since).Order("date ASC, id ASC").Find(&trades).Error; err != nil {
 		return nil, err
 	}
 	return trades, nil

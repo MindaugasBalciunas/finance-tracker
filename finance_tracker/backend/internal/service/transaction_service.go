@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -122,7 +123,12 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 	}
 	populateTx(tx)
 	if s.balSvc != nil {
-		_ = s.balSvc.SnapshotFromTransaction(tx)
+		// The transaction itself is already committed — a snapshot failure
+		// must not fail the create, but it must not vanish either: balance
+		// history silently stopping is exactly how trends go quietly wrong.
+		if err := s.balSvc.SnapshotFromTransaction(tx); err != nil {
+			log.Printf("balance auto-snapshot failed for transaction %d: %v", tx.ID, err)
+		}
 	}
 	return tx, nil
 }

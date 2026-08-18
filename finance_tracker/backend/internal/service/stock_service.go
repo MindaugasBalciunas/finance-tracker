@@ -214,12 +214,24 @@ func (s *stockService) GetPortfolio() (*domain.StockPortfolio, error) {
 			pos.shares += t.Shares
 
 		case domain.StockActionSell:
-			if pos.shares > 0 {
-				avgCost := pos.totalCost / pos.shares
-				pos.realizedGain += t.Shares * (t.PricePerShare - avgCost)
-				pos.totalCost -= t.Shares * avgCost
+			// Clamp to the held quantity: an oversell (bad import, duplicate
+			// row) must not drive shares negative with a stale cost basis.
+			sold := t.Shares
+			if sold > pos.shares {
+				sold = pos.shares
 			}
-			pos.shares -= t.Shares
+			if sold > 0 {
+				avgCost := pos.totalCost / pos.shares
+				pos.realizedGain += sold * (t.PricePerShare - avgCost)
+				pos.totalCost -= sold * avgCost
+				pos.shares -= sold
+			}
+			// Float residue after a full sell (~1e-15 shares) would make the
+			// next buy's avgCost astronomical — snap to exactly flat.
+			if pos.shares < 1e-6 {
+				pos.shares = 0
+				pos.totalCost = 0
+			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -141,9 +142,16 @@ func (h *AuthHandler) hostAndOrigin(c *gin.Context) (string, string) {
 	return host, scheme + "://" + host
 }
 
+// isHTTPS reports whether the request reached the user over TLS (directly or
+// via a reverse proxy that sets X-Forwarded-Proto, e.g. Tailscale serve).
+func isHTTPS(c *gin.Context) bool {
+	return c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+}
+
 func (h *AuthHandler) setSessionCookie(c *gin.Context, token string) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, token, sessionMaxAge, "/", "", false, true)
+	// Secure when served over HTTPS; plain-HTTP LAN access still works.
+	c.SetCookie(sessionCookie, token, sessionMaxAge, "/", "", isHTTPS(c), true)
 }
 
 func (h *AuthHandler) Status(c *gin.Context) {
@@ -164,7 +172,11 @@ func (h *AuthHandler) PinLogin(c *gin.Context) {
 	}
 	token, err := h.svc.VerifyPin(req.Pin)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+		status := http.StatusUnauthorized
+		if errors.Is(err, service.ErrTooManyAttempts) {
+			status = http.StatusTooManyRequests
+		}
+		c.JSON(status, ErrorResponse{Error: err.Error()})
 		return
 	}
 	h.setSessionCookie(c, token)
@@ -193,13 +205,23 @@ func (h *AuthHandler) PinSetup(c *gin.Context) {
 }
 
 func (h *AuthHandler) PinDisable(c *gin.Context) {
+	// Disabling the lock is as sensitive as changing the PIN: require an
+	// unlocked session on top of the PIN itself, so an anonymous caller
+	// can't turn the lock off by guessing the PIN alone.
+	if !h.requireUnlocked(c) {
+		return
+	}
 	var req pinRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request"})
 		return
 	}
 	if err := h.svc.DisableLock(req.Pin); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrTooManyAttempts) {
+			status = http.StatusTooManyRequests
+		}
+		c.JSON(status, ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"enabled": false})
@@ -209,7 +231,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	token, _ := c.Cookie(sessionCookie)
 	h.svc.DestroySession(token)
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, "", -1, "/", "", false, true)
+	c.SetCookie(sessionCookie, "", -1, "/", "", isHTTPS(c), true)
 	c.JSON(http.StatusOK, gin.H{"unlocked": false})
 }
 

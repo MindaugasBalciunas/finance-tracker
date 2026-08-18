@@ -238,7 +238,7 @@ function AIRuleReviewCard({ onBanner }: { onBanner: (b: Banner) => void }) {
       ].filter(Boolean).join(', ')
       onBanner({ kind: 'ok', text: `Rules applied — ${parts || 'no changes needed'}.` })
       setResult(null)
-      for (const key of ['label-rules', 'label-stats', 'label-suggestions', 'labels', 'transactions']) {
+      for (const key of ['label-rules', 'label-stats', 'label-suggestions', 'labels', 'transactions', 'transactions-summary']) {
         qc.invalidateQueries({ queryKey: [key] })
       }
     } catch (err) {

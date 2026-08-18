@@ -1,12 +1,15 @@
 export function formatEuro(amount: number): string {
+  if (!Number.isFinite(amount)) return '—'
   return new Intl.NumberFormat('lt-LT', { style: 'currency', currency: 'EUR' }).format(amount)
 }
 
 export function formatUsd(amount: number): string {
+  if (!Number.isFinite(amount)) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
 export function formatPercent(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return '—'
   return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`
 }
 

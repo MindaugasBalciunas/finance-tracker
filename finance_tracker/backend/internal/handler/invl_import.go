@@ -225,7 +225,25 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 		return
 	}
 
-	existing, _ := h.balRepo.List(domain.BalanceFilter{})
+	// Atomic: any hard failure below rolls the whole statement back.
+	var result invlImportResult
+	if err := h.txScope(func(s *ImportHandler) error {
+		var ierr error
+		result, ierr = s.runINVLImport(points, entries)
+		return ierr
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "import failed and was rolled back: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *ImportHandler) runINVLImport(points []invlPoint, entries []invlEntry) (invlImportResult, error) {
+	existing, err := h.balRepo.List(domain.BalanceFilter{})
+	if err != nil {
+		return invlImportResult{}, fmt.Errorf("reading existing balances: %w", err)
+	}
 	// The fully-tracked era starts at the first snapshot holding accounts
 	// beyond the statement-restorable/backfillable ones (swed, art, cash,
 	// seb_pen) — past that point a new single-account snapshot would show
@@ -278,10 +296,11 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 		}
 		b.Art = v
 		b.Total = math.Round((b.Total+v)*100) / 100
-		if err := h.balRepo.Update(b); err == nil {
-			monthEnriched[b.Date.Format("2006-01")] = true
-			result.Enriched++
+		if err := h.balRepo.Update(b); err != nil {
+			return result, fmt.Errorf("enriching balance snapshot %s: %w", b.Date.Format("2006-01-02"), err)
 		}
+		monthEnriched[b.Date.Format("2006-01")] = true
+		result.Enriched++
 	}
 
 	// Months with no snapshot at all get an art-only one — but only before
@@ -300,17 +319,18 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 			continue
 		}
 		nb := &domain.Balance{Date: p.Date, Art: p.Value, Total: p.Value}
-		if err := h.balRepo.Create(nb); err == nil {
-			byMonth[month] = append(byMonth[month], nb)
-			result.Created++
-		} else {
-			result.Skipped++
+		if err := h.balRepo.Create(nb); err != nil {
+			return result, fmt.Errorf("creating art-only snapshot %s: %w", p.Date.Format("2006-01-02"), err)
 		}
+		byMonth[month] = append(byMonth[month], nb)
+		result.Created++
 	}
 
-	h.createINVLTransactions(entries, &result)
+	if err := h.createINVLTransactions(entries, &result); err != nil {
+		return result, err
+	}
 
-	c.JSON(http.StatusOK, result)
+	return result, nil
 }
 
 // createINVLTransactions turns statement entries into the transactions the
@@ -319,8 +339,11 @@ func (h *ImportHandler) ImportINVLCSV(c *gin.Context) {
 // that went straight into the fund, so income and invested stay consistent.
 // Direct client contributions and payouts usually exist already from the
 // bank side and dedup fuzzily (dates differ between bank and fund by days).
-func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invlImportResult) {
-	existing, _ := h.txRepo.ListAll()
+func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invlImportResult) error {
+	existing, err := h.txRepo.ListAll()
+	if err != nil {
+		return fmt.Errorf("reading existing transactions for dedup: %w", err)
+	}
 	fp := make(map[string]bool, len(existing))
 	type ref struct {
 		date   time.Time
@@ -345,18 +368,18 @@ func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invl
 		}
 		return false
 	}
-	create := func(tx domain.Transaction) {
+	create := func(tx domain.Transaction) error {
 		key := fmt.Sprintf("%s|%s|%.2f|%s", tx.Date.Format("2006-01-02"), tx.Type, tx.Amount, tx.Comment)
 		if fp[key] {
 			result.TxSkipped++
-			return
+			return nil
 		}
-		if err := h.txRepo.Create(&tx); err == nil {
-			fp[key] = true
-			result.TxCreated++
-		} else {
-			result.TxSkipped++
+		if err := h.txRepo.Create(&tx); err != nil {
+			return fmt.Errorf("creating pension transaction (%s, %.2f): %w", tx.Date.Format("2006-01-02"), tx.Amount, err)
 		}
+		fp[key] = true
+		result.TxCreated++
+		return nil
 	}
 
 	for _, e := range entries {
@@ -368,29 +391,35 @@ func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invl
 				result.TxSkipped++
 				continue
 			}
-			create(domain.Transaction{
+			if err := create(domain.Transaction{
 				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
 				Category: domain.CategoryTransfers, Labels: "artea",
 				Comment:      "Artea (INVL) partial withdrawal (gross, before tax)",
 				DebitAccount: "art", CreditAccount: "swed",
-			})
+			}); err != nil {
+				return err
+			}
 		case e.Kind == invlEmployer || e.Payroll:
 			who, side := "employer", " ("+strings.TrimSpace(e.Payer)+")"
 			if e.Kind == invlClient {
 				who, side = "own share", ", deducted from gross salary"
 			}
 			labels := domain.NormalizeLabels("artea,payroll," + invlEmployerLabel(e.Payer))
-			create(domain.Transaction{
+			if err := create(domain.Transaction{
 				Date: e.Date, Type: domain.TransactionTypeIncome, Amount: e.Amount,
 				Category: domain.CategorySalary, Labels: labels,
 				Comment: "Artea (INVL) pension contribution via payroll — " + who + side,
-			})
-			create(domain.Transaction{
+			}); err != nil {
+				return err
+			}
+			if err := create(domain.Transaction{
 				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
 				Category: domain.CategoryPension, Labels: labels,
 				Comment:       "Artea (INVL) 3rd pillar pension (payroll — " + who + ")",
 				CreditAccount: "art",
-			})
+			}); err != nil {
+				return err
+			}
 		default:
 			// Direct client contribution — paid from the bank, so it is
 			// normally already here from the statement import or by hand.
@@ -398,12 +427,15 @@ func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invl
 				result.TxSkipped++
 				continue
 			}
-			create(domain.Transaction{
+			if err := create(domain.Transaction{
 				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
 				Category: domain.CategoryPension, Labels: "artea",
 				Comment:      "Artea (INVL) 3rd pillar pension",
 				DebitAccount: "swed", CreditAccount: "art",
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }

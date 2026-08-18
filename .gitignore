@@ -3,6 +3,9 @@ finance_tracker/backend/bin/
 finance_tracker/backend/tmp/
 finance_tracker/backend/finance.db
 finance_tracker/backend/finance_tracker.db
+finance_tracker/backend/backups/
+finance_tracker/backend/finance.db-shm
+finance_tracker/backend/finance.db-wal
 finance_tracker/backend/docs/swagger.json
 finance_tracker/backend/docs/swagger.yaml
 

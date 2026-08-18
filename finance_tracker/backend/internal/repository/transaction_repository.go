@@ -131,8 +131,12 @@ func (r *transactionRepository) ListAll() ([]domain.Transaction, error) {
 }
 
 func (r *transactionRepository) ListSince(since time.Time) ([]domain.Transaction, error) {
+	// Incremental exports ask "what was ADDED since the last full export" —
+	// that's created_at. Filtering on the transaction date silently dropped
+	// backdated entries (entered today, dated last month) from every
+	// partial backup.
 	var transactions []domain.Transaction
-	if err := r.db.Where("date >= ?", since).Order("date ASC").Find(&transactions).Error; err != nil {
+	if err := r.db.Where("created_at >= ?", since).Order("date ASC").Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 	return transactions, nil

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -154,7 +155,11 @@ func (h *BalanceHandler) Delete(c *gin.Context) {
 // @Failure      500        {object}  ErrorResponse
 // @Router       /balances [get]
 func (h *BalanceHandler) List(c *gin.Context) {
-	filter := buildBalanceFilter(c)
+	filter, ferr := buildBalanceFilter(c)
+	if ferr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: ferr.Error()})
+		return
+	}
 	balances, err := h.svc.List(filter, parseBtcPrice(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -208,7 +213,11 @@ func parseBtcPrice(c *gin.Context) float64 {
 // @Failure      500        {object}  ErrorResponse
 // @Router       /balances/trend [get]
 func (h *BalanceHandler) GetTrend(c *gin.Context) {
-	filter := buildBalanceFilter(c)
+	filter, ferr := buildBalanceFilter(c)
+	if ferr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: ferr.Error()})
+		return
+	}
 	trend, err := h.svc.GetTrend(filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -234,17 +243,26 @@ func (h *BalanceHandler) GetAllocation(c *gin.Context) {
 	c.JSON(http.StatusOK, allocations)
 }
 
-func buildBalanceFilter(c *gin.Context) domain.BalanceFilter {
+func buildBalanceFilter(c *gin.Context) (domain.BalanceFilter, error) {
 	filter := domain.BalanceFilter{}
+	// Malformed dates are rejected, not ignored — a typo silently widening
+	// the query to all time produces plausible-looking wrong charts.
 	if v := c.Query("date_from"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.DateFrom = &t
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return filter, fmt.Errorf("invalid date_from %q — use YYYY-MM-DD", v)
 		}
+		filter.DateFrom = &t
 	}
 	if v := c.Query("date_to"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.DateTo = &t
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return filter, fmt.Errorf("invalid date_to %q — use YYYY-MM-DD", v)
 		}
+		// Inclusive end of day: balance snapshots carry a time-of-day, and a
+		// bare date_to at midnight silently excluded that day's snapshots.
+		end := t.Add(24*time.Hour - time.Nanosecond)
+		filter.DateTo = &end
 	}
-	return filter
+	return filter, nil
 }

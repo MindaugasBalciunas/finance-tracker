@@ -3,11 +3,13 @@ package service
 import (
 	"errors"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/mindaugas/finance-tracker/pkg/timeutil"
+	"gorm.io/gorm"
 )
 
 // CreateBalanceInput is the input DTO for creating a balance snapshot
@@ -103,7 +105,8 @@ type BalanceService interface {
 }
 
 type balanceService struct {
-	repo repository.BalanceRepository
+	repo   repository.BalanceRepository
+	snapMu sync.Mutex
 }
 
 func NewBalanceService(repo repository.BalanceRepository, _ repository.TransactionRepository) BalanceService {
@@ -179,11 +182,16 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	b.RevStocks = input.RevStocks
 	b.IBKRStocks = input.IBKRStocks
 
-	if input.Total != 0 {
+	// Always recompute the total from the components at the SNAPSHOT's BTC
+	// price ("Total is auto-calculated" in the UI). Trusting input.Total let
+	// a GET→PUT edit cycle persist the live-priced total the read path
+	// computes (applyBtcEur), silently rewriting a historical snapshot with
+	// the market price of the moment. The one exception: a legacy total-only
+	// row (no component breakdown) keeps its explicit total.
+	btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
+	b.Total = roundCents(b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks)
+	if b.Total == 0 && input.Total != 0 {
 		b.Total = input.Total
-	} else {
-		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = roundCents(b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks)
 	}
 
 	if err := s.repo.Update(b); err != nil {
@@ -240,9 +248,24 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 // transaction's debit/credit to the current latest snapshot values.
 // Called only on transaction Create — Update and Delete leave balances untouched.
 func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
+	// Serialize the read-modify-write: two concurrent creates would otherwise
+	// both clone the same "latest" and each lose the other's delta.
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
+
 	latest, err := s.repo.GetLatest()
 	if err != nil {
-		return nil // no snapshot to base on — skip silently
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // no snapshot to base on — legitimate skip
+		}
+		return err
+	}
+
+	// A backdated transaction must not clone TODAY's balances under a past
+	// date — that cuts a wrong point into the net-worth trend. Balances only
+	// move forward; past entries are already reflected in later snapshots.
+	if tx.Date.Before(latest.Date.Truncate(24 * time.Hour)) {
+		return nil
 	}
 
 	debit, credit := resolveAccounts(tx)

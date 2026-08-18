@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -20,17 +21,42 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 	if os.Getenv("DB_LOG") == "info" {
 		logLevel = logger.Info
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+	// Decide freshness BEFORE opening: gorm.Open itself writes the file
+	// header, so an after-the-fact size check would see every install as
+	// pre-existing.
+	preExisting := false
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		preExisting = true
+	}
+
+	// Pragmas ride the DSN so they apply to EVERY pooled connection — a bare
+	// `PRAGMA busy_timeout` Exec only configures whichever single connection
+	// the pool happens to hand out, leaving the rest failing SQLITE_BUSY
+	// instantly. WAL allows concurrent reads during writes.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logLevel),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// WAL allows concurrent reads during writes; busy_timeout retries instead
-	// of failing with SQLITE_BUSY when a write overlaps another statement.
-	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
+	// Single writer connection: serializes all access at the pool level,
+	// which a single-user app never notices and SQLITE_BUSY never happens.
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
+	}
+
+	// Snapshot the database before the migration passes below mutate it —
+	// they run ALTER/UPDATE/DELETE on the only copy of the data. Aborting
+	// startup on failure is deliberate: migrating without a safety net is
+	// the one thing this function must never do. Fresh installs have
+	// nothing to protect yet.
+	if preExisting {
+		if err := PreMigrationBackup(db, path); err != nil {
+			return nil, fmt.Errorf("pre-migration backup failed: %w", err)
+		}
+	}
 
 	// Migrate swed_pen → seb_pen
 	var swedPenExists, sebPenExists int

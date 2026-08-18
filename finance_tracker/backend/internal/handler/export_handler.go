@@ -157,11 +157,27 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 			string(tx.Type),
 			fmt.Sprintf("%.2f", tx.Amount),
 			string(tx.Category),
-			tx.Comment,
-			tx.Labels,
+			csvSafe(tx.Comment),
+			csvSafe(tx.Labels),
 		})
 	}
 	w.Flush()
+}
+
+// csvSafe neutralizes spreadsheet formula injection: a free-text field
+// starting with = + - @ (or tab/CR) executes as a formula when the CSV opens
+// in Excel/Sheets — and comments arrive from imported bank statements, so
+// they are attacker-reachable. A leading apostrophe marks the cell as
+// literal text. Only applied to free-text fields, never numeric ones.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 // ExportBalances godoc

@@ -59,7 +59,7 @@ export default function LabelAI() {
         ? `Tagged ${applied} transaction${applied === 1 ? '' : 's'} with AI suggestions.`
         : `Remapped labels on ${applied} transaction${applied === 1 ? '' : 's'}.` })
       setResult(null)
-      for (const key of ['transactions', 'labels', 'label-stats', 'label-suggestions']) {
+      for (const key of ['transactions', 'transactions-summary', 'labels', 'label-stats', 'label-suggestions']) {
         qc.invalidateQueries({ queryKey: [key] })
       }
     } catch (err) {

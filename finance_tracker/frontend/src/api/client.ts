@@ -3,6 +3,9 @@ import axios from 'axios'
 const client = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  // Just above the backend's 180s AI proxy window, so slow AI calls surface
+  // the server's answer instead of a client-side abort.
+  timeout: 190_000,
 })
 
 client.interceptors.response.use(
@@ -14,7 +17,8 @@ client.interceptors.response.use(
       window.dispatchEvent(new Event('ft-locked'))
     }
     const message = err.response?.data?.error ?? err.message
-    return Promise.reject(new Error(message))
+    // Keep the HTTP status on the error so callers can tell a 429 from a 500.
+    return Promise.reject(Object.assign(new Error(message), { status: err.response?.status }))
   }
 )
 

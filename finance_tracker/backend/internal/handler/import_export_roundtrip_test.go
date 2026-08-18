@@ -781,13 +781,11 @@ func TestImportJSON_EmptyPayload_ImportsNothing(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
-	var result rtImportResult
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
-	assert.Equal(t, 0, result.Imported.Transactions)
-	assert.Equal(t, 0, result.Imported.Balances)
-	assert.Equal(t, 0, result.Imported.StockTrades)
-	assert.Equal(t, 0, result.Imported.Assets)
+	// An empty payload with no schema version is indistinguishable from a
+	// wrong file (any JSON object parses into an all-empty financeExport) —
+	// it must be REJECTED, not reported as a successful zero-row restore.
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "no recognized sections")
 }
 
 // ---- purpose=export: an AI/analysis download must never masquerade as a backup ----

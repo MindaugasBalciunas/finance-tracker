@@ -39,10 +39,38 @@ export PORT="8080"
 
 echo "[finance-tracker] Starting backend on port $PORT, DB at $DB_PATH"
 /app/finance-tracker &
+BACKEND_PID=$!
 
-# Give backend a moment to initialize before nginx starts accepting requests
-sleep 1
+# Wait for the backend to actually answer (startup runs migrations, which can
+# take a while) instead of hoping one second is enough.
+i=0
+until wget -q -O /dev/null "http://127.0.0.1:8080/api/v1/health" 2>/dev/null; do
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        echo "[finance-tracker] Backend exited during startup — aborting"
+        exit 1
+    fi
+    i=$((i + 1))
+    if [ "$i" -gt 120 ]; then
+        echo "[finance-tracker] Backend did not become healthy in 60s — aborting"
+        exit 1
+    fi
+    sleep 0.5
+done
 
 echo "[finance-tracker] Starting nginx"
-# Run nginx in foreground so the container stays alive
-nginx -g "daemon off;"
+nginx -g "daemon off;" &
+NGINX_PID=$!
+
+# Supervise BOTH processes: if either dies, stop the container so the
+# supervisor restarts it. Previously a crashed backend left nginx serving
+# 502s while the container looked healthy.
+trap 'kill -TERM "$BACKEND_PID" "$NGINX_PID" 2>/dev/null' TERM INT
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$NGINX_PID" 2>/dev/null; do
+    sleep 5 &
+    wait $!
+done
+
+echo "[finance-tracker] A process exited — shutting down container"
+kill -TERM "$BACKEND_PID" "$NGINX_PID" 2>/dev/null
+wait
+exit 1
