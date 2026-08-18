@@ -50,6 +50,68 @@ or in Claude Desktop's `claude_desktop_config.json`:
 Port 8098 is the add-on's LAN-exposed API port (see `config.yaml` ports);
 for local development use `http://localhost:8080/api/v1`.
 
+## Connecting to Google Gemini
+
+The server is a standard stdio MCP server, so Gemini's tooling attaches to it
+the same way Claude's does.
+
+**Gemini CLI** — either register it with one command:
+
+```bash
+gemini mcp add finance-tracker /Users/you/bin/finance-tracker-mcp \
+  -e FT_API_URL=http://homeassistant.local:8098/api/v1 \
+  -e FT_API_TOKEN=ftk_...
+```
+
+or add it to `~/.gemini/settings.json` (same shape as the Claude config):
+
+```json
+{
+  "mcpServers": {
+    "finance-tracker": {
+      "command": "/Users/you/bin/finance-tracker-mcp",
+      "env": {
+        "FT_API_URL": "http://homeassistant.local:8098/api/v1",
+        "FT_API_TOKEN": "ftk_..."
+      },
+      "timeout": 30000,
+      "trust": false
+    }
+  }
+}
+```
+
+Check it with `/mcp` inside the CLI — the twelve tools should list. Keep
+`trust: false` so tool calls stay confirm-first; everything is read-only
+regardless, enforced server-side by the token scope.
+
+**Gemini API (google-genai SDK)** — the SDK accepts a live MCP client
+session as a tool, so Gemini models can call this server from your own code:
+
+```python
+from google import genai
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+params = StdioServerParameters(
+    command="/Users/you/bin/finance-tracker-mcp",
+    env={"FT_API_URL": "http://homeassistant.local:8098/api/v1",
+         "FT_API_TOKEN": "ftk_..."})
+
+async with stdio_client(params) as (r, w):
+    async with ClientSession(r, w) as session:
+        await session.initialize()
+        client = genai.Client()
+        resp = await client.aio.models.generate_content(
+            model="gemini-2.5-pro",
+            contents="How am I tracking against my budgets this month?",
+            config=genai.types.GenerateContentConfig(tools=[session]))
+        print(resp.text)
+```
+
+The same safeguards apply to any client: GET-only allowlisted routes, capped
+row counts, and a revocable token — nothing a model can call mutates data.
+
 ## Tools
 
 | Tool | What it returns |

@@ -48,7 +48,7 @@ const bottomBarItems = [
 
 export default function Layout() {
   const [securityOpen, setSecurityOpen] = useState(false)
-  const [dataOpen, setDataOpen] = useState(false)
+  const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [dateMenuOpen, setDateMenuOpen] = useState(false)
   // Navigating away closes the date menu so it never lingers over content.
   const location = useLocation()
@@ -78,9 +78,13 @@ export default function Layout() {
             <DateRangeFilter />
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <button onClick={() => setDataOpen(true)}
+            <button onClick={() => setDataMode('backup')}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
-              💾 Data
+              💾 Backup
+            </button>
+            <button onClick={() => setDataMode('export')}
+              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
+              🤖 Export to AI
             </button>
             <button onClick={() => setSecurityOpen(true)}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
@@ -116,8 +120,12 @@ export default function Layout() {
             <div className="border-t border-gray-100 pt-2 grid grid-cols-2 gap-1.5">
               <NavLink to="/assets" onClick={() => setDateMenuOpen(false)}
                 className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏠 Assets</NavLink>
-              <button onClick={() => { setDataOpen(true); setDateMenuOpen(false) }}
-                className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">💾 Data</button>
+              <NavLink to="/labels" onClick={() => setDateMenuOpen(false)}
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏷️ Labels</NavLink>
+              <button onClick={() => { setDataMode('backup'); setDateMenuOpen(false) }}
+                className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">💾 Backup &amp; restore</button>
+              <button onClick={() => { setDataMode('export'); setDateMenuOpen(false) }}
+                className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🤖 Export to AI</button>
               <button onClick={() => { setSecurityOpen(true); setDateMenuOpen(false) }}
                 className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔒 Security</button>
               <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
@@ -127,8 +135,8 @@ export default function Layout() {
         )}
       </header>
 
-      {/* ── Data (backup / export / restore) ── */}
-      {dataOpen && <DataModal onClose={() => setDataOpen(false)} />}
+      {/* ── Backup & restore / Export to AI ── */}
+      {dataMode && <DataModal mode={dataMode} onClose={() => setDataMode(null)} />}
 
       {/* ── Security settings ── */}
       {securityOpen && <SecurityModal onClose={() => setSecurityOpen(false)} />}

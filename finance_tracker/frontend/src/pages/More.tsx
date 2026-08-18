@@ -6,13 +6,12 @@ import SecurityModal from '../components/ui/SecurityModal'
 // "More" collects the pages and tools that don't earn a bottom-bar tab on
 // mobile: secondary pages, backup/import, security and the API docs.
 export default function More() {
-  const [dataOpen, setDataOpen] = useState(false)
+  const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [securityOpen, setSecurityOpen] = useState(false)
 
-  // Labels is intentionally omitted on mobile to keep the surface lean — it
-  // stays available on desktop. Stocks moved to the bottom tab bar.
   const pageLinks = [
     { to: '/assets', icon: '🏠', title: 'Assets', hint: 'Property, vehicles and loans' },
+    { to: '/labels', icon: '🏷️', title: 'Labels', hint: 'Label management, rules and AI tagging' },
   ]
 
   return (
@@ -37,13 +36,24 @@ export default function More() {
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
         <button
-          onClick={() => setDataOpen(true)}
+          onClick={() => setDataMode('backup')}
           className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 text-left"
         >
           <span className="text-xl">💾</span>
           <span className="flex-1 min-w-0">
-            <span className="block text-sm font-medium text-gray-800">Data</span>
-            <span className="block text-xs text-gray-400">Backup, export, statement imports & restore</span>
+            <span className="block text-sm font-medium text-gray-800">Backup &amp; restore</span>
+            <span className="block text-xs text-gray-400">Full backup, restore and statement imports</span>
+          </span>
+          <span className="text-gray-300">›</span>
+        </button>
+        <button
+          onClick={() => setDataMode('export')}
+          className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 text-left"
+        >
+          <span className="text-xl">🤖</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-medium text-gray-800">Export to AI</span>
+            <span className="block text-xs text-gray-400">AI dataset ZIP, incremental JSON and period CSVs</span>
           </span>
           <span className="text-gray-300">›</span>
         </button>
@@ -81,7 +91,7 @@ export default function More() {
         </a>
       </div>
 
-      {dataOpen && <DataModal onClose={() => setDataOpen(false)} />}
+      {dataMode && <DataModal mode={dataMode} onClose={() => setDataMode(null)} />}
       {securityOpen && <SecurityModal onClose={() => setSecurityOpen(false)} />}
     </div>
   )

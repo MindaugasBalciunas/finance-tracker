@@ -4,6 +4,8 @@ import clsx from 'clsx'
 
 interface Props {
   onClose: () => void
+  // 'backup' = backup/restore/imports + danger zone; 'export' = AI exports.
+  mode: 'backup' | 'export'
 }
 
 type ExportStatusData = {
@@ -32,7 +34,7 @@ function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-export default function DataModal({ onClose }: Props) {
+export default function DataModal({ onClose, mode }: Props) {
   const qc = useQueryClient()
   const [status, setStatus] = useState<ExportStatusData | null>(null)
   const [preset, setPreset] = useState<PeriodPreset>('all')
@@ -188,12 +190,13 @@ export default function DataModal({ onClose }: Props) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
-          <h2 className="font-semibold text-gray-900">💾 Data — backup &amp; restore · export for AI</h2>
+          <h2 className="font-semibold text-gray-900">{mode === 'backup' ? <>💾 Backup &amp; restore</> : <>🤖 Export to AI</>}</h2>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700">✕</button>
         </div>
 
         <div className="p-4 sm:p-5 space-y-6">
           {/* ── Backup & restore ── */}
+          {mode === 'backup' && (
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Backup &amp; restore</h3>
             <div className="space-y-2">
@@ -320,10 +323,12 @@ export default function DataModal({ onClose }: Props) {
               </div>
             )}
           </section>
+          )}
 
           {/* ── Export for AI — everything meant to leave the app for
                  analysis: the AI dataset, incremental JSON and period CSVs. ── */}
-          <section className="border-t border-gray-100 pt-4">
+          {mode === 'export' && (
+          <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Export for AI</h3>
             <p className="text-[11px] text-gray-400 mb-2">
               Files sized for AI chat uploads and analysis. Pick a period for the CSVs; the dataset ZIP always
@@ -373,9 +378,17 @@ export default function DataModal({ onClose }: Props) {
                 📄 Balances CSV
               </a>
             </div>
+            {error && (
+              <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start justify-between gap-2">
+                <span>{error}</span>
+                <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+              </div>
+            )}
           </section>
+          )}
 
           {/* ── Danger zone ── */}
+          {mode === 'backup' && (
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Danger zone</h3>
             <button onClick={handleDeleteAll} disabled={deleting}
@@ -386,6 +399,7 @@ export default function DataModal({ onClose }: Props) {
               Removes every transaction, snapshot, trade and asset. To move to a fresh device: full backup → delete → restore.
             </p>
           </section>
+          )}
         </div>
       </div>
     </div>
