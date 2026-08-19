@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -58,7 +59,7 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		}
 	}
 
-	context, err := s.viewContext(view, from, to)
+	dataCtx, err := s.viewContext(view, from, to)
 	if err != nil {
 		return "", fmt.Errorf("building view context: %w", err)
 	}
@@ -68,18 +69,18 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		extra = " Relate the live market sentiment, news and social chatter to the user's actual positions."
 	}
 	if memo := s.recentAIContext(6); memo != "" {
-		context += "\n\n" + memo
+		dataCtx += "\n\n" + memo
 	}
 	prompt := fmt.Sprintf(`You are a personal finance assistant. Below is the data behind the "%s" view the user has open right now (period: %s). In 2-4 short sentences, point out the most interesting, unusual or actionable things in THIS view.%s Quote concrete EUR figures. Plain text only — no headers, no bullet points, no preamble, no restating what the view is.
 
-%s`, view, periodLabel(from, to), extra, context)
+%s`, view, periodLabel(from, to), extra, dataCtx)
 
 	msgs := []domain.ChatMessage{}
 	if ctx := s.userContextBlock(); ctx != "" {
 		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
 	}
 	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-	text, err := callGateway(settings, msgs, 2048)
+	text, err := callGateway(context.Background(), settings, msgs, 2048)
 	if err != nil {
 		return "", err
 	}

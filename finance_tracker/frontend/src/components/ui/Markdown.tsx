@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import ChatChart, { parseChartSpec } from './ChatChart'
 
 // Markdown renders AI output (GitHub-flavored: tables, lists, bold, code)
 // with compact, chat-friendly styling. Wide tables scroll inside their own
@@ -26,8 +27,16 @@ export default function Markdown({ children, invert = false }: { children: strin
               {children}
             </a>
           ),
-          code: ({ children, className }) =>
-            className ? (
+          code: ({ children, className }) => {
+            // A ```chart fenced block carries one JSON chart spec — render it as
+            // an interactive Recharts chart. Fall back to the raw code block if
+            // the JSON is malformed, so a bad chart shows its source, not nothing.
+            if (className?.includes('language-chart')) {
+              const text = Array.isArray(children) ? children.join('') : String(children ?? '')
+              const spec = parseChartSpec(text)
+              if (spec) return <ChatChart spec={spec} />
+            }
+            return className ? (
               <code className={`block overflow-x-auto rounded-lg p-2 text-xs font-mono ${invert ? 'bg-indigo-700/60' : 'bg-gray-800 text-gray-100'}`}>
                 {children}
               </code>
@@ -35,7 +44,8 @@ export default function Markdown({ children, invert = false }: { children: strin
               <code className={`px-1 py-0.5 rounded text-[0.85em] font-mono ${invert ? 'bg-indigo-700/60' : 'bg-gray-200/80'}`}>
                 {children}
               </code>
-            ),
+            )
+          },
           pre: ({ children }) => <pre className="my-1">{children}</pre>,
           table: ({ children }) => (
             <div className="overflow-x-auto -mx-1 px-1">

@@ -3,9 +3,9 @@ import axios from 'axios'
 const client = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
-  // Just above the backend's 180s AI proxy window, so slow AI calls surface
-  // the server's answer instead of a client-side abort.
-  timeout: 190_000,
+  // Above nginx's 300s AI window (backend bounds a chat to 240s), so a slow
+  // AI answer surfaces the server's message instead of a client-side abort.
+  timeout: 310_000,
 })
 
 client.interceptors.response.use(

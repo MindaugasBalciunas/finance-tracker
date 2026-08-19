@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -264,7 +265,7 @@ Reply as ONE JSON array, nothing else:
  {"action":"delete","rule_id":7,"reason":"..."}]`,
 		strings.Join(ruleLines, "\n"), strings.Join(gapLines, "\n"), strings.Join(vocab, ", "), ruleSuggestionCap)
 
-	reply, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 8192)
+	reply, err := callGateway(context.Background(), settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 8192)
 	if err != nil {
 		return nil, err
 	}

@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -21,7 +23,7 @@ func TestMaxTokensStopSurfacesTruncation(t *testing.T) {
 	}))
 	defer srv.Close()
 	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "m"}
-	msg, err := callGatewayFull(settings, []gatewayMessage{{Role: "user", Content: "x"}}, 10, nil)
+	msg, err := callGatewayFull(context.Background(), settings, []gatewayMessage{{Role: "user", Content: "x"}}, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +32,33 @@ func TestMaxTokensStopSurfacesTruncation(t *testing.T) {
 	}
 	if gotPath != "/messages" {
 		t.Fatalf("expected the Anthropic-native /messages endpoint, got %q", gotPath)
+	}
+}
+
+// The chat budget is enforced by the caller's context: once it is cancelled
+// (the overall chat deadline hit, or the client went away) the gateway call
+// must abort instead of running out its per-call timeout — this is what stops
+// a long agentic chat from hanging until nginx returns a bare 504. A
+// cancelled context must abort before the request is even sent.
+func TestGatewayCallHonorsContextCancellation(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content":     []map[string]any{{"type": "text", "text": "ok"}},
+			"stop_reason": "end_turn",
+		})
+	}))
+	defer srv.Close()
+	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "m"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled before the call
+	if _, err := callGatewayFull(ctx, settings, []gatewayMessage{{Role: "user", Content: "x"}}, 10, nil); err == nil {
+		t.Fatal("expected an error from a cancelled context")
+	}
+	if n := atomic.LoadInt32(&hits); n != 0 {
+		t.Fatalf("request should not have been sent on a cancelled context, got %d hits", n)
 	}
 }
 
@@ -58,7 +87,7 @@ func TestAnthropicWireTranslation(t *testing.T) {
 		{Role: "assistant", ToolCalls: []gatewayToolCall{call}},
 		{Role: "tool", ToolCallID: "t1", Content: `[{"name":"Loan"}]`},
 	}
-	if _, err := callGatewayFull(settings, msgs, 100, chatTools()); err != nil {
+	if _, err := callGatewayFull(context.Background(), settings, msgs, 100, chatTools()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,7 +134,7 @@ func TestAnthropicToolUseResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "m"}
-	msg, err := callGatewayFull(settings, []gatewayMessage{{Role: "user", Content: "x"}}, 100, chatTools())
+	msg, err := callGatewayFull(context.Background(), settings, []gatewayMessage{{Role: "user", Content: "x"}}, 100, chatTools())
 	if err != nil {
 		t.Fatal(err)
 	}

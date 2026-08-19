@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,7 +133,7 @@ Reply as ONE JSON object, nothing else:
 		strings.Join(examples, "\n"),
 		input.Date, input.Type, input.Amount, input.Category, input.Labels, input.Comment)
 
-	reply, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 2048)
+	reply, err := callGateway(context.Background(), settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 2048)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +308,7 @@ Reply as ONE JSON array, nothing else: [{"id":123,"remove":["x"],"add":["y"],"re
 				strings.Join(vocab, ", "), strings.Join(exampleLines, "\n"), strings.Join(txLines, "\n"))
 		}
 
-		reply, err := callGateway(settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
+		reply, err := callGateway(context.Background(), settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 4096)
 		if err != nil {
 			// Chunks already processed are paid-for work — return them with
 			// Scanned = rows actually covered, so the client's offset advance

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,7 +30,7 @@ type InsightService interface {
 	// new user message, grounded in a system message carrying the same data
 	// report the analysis uses. Both turns are persisted so the conversation
 	// follows the user across devices.
-	Chat(message string) (string, error)
+	Chat(ctx context.Context, message string) (string, error)
 	ChatHistory() ([]domain.AIChatMessage, error)
 	ClearChat() error
 	AISettings() (*domain.AISettings, error)
@@ -116,7 +117,7 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 			msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
 		}
 		msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-		content, err = callGateway(settings, msgs, 4096)
+		content, err = callGateway(context.Background(), settings, msgs, 4096)
 		if err != nil {
 			return nil, fmt.Errorf("calling AI gateway: %w", err)
 		}
@@ -146,7 +147,10 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 const maxChatTurns = 24
 const maxReplayChars = 1600
 
-func (s *insightService) Chat(message string) (string, error) {
+func (s *insightService) Chat(ctx context.Context, message string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
 		return "", err
@@ -187,8 +191,17 @@ func (s *insightService) Chat(message string) (string, error) {
 		if round >= maxToolRounds {
 			return "", fmt.Errorf("the model exceeded %d tool rounds without answering — try a narrower question", maxToolRounds)
 		}
-		msg, err := callGatewayFull(settings, messages, 8192, tools)
+		// Stop before starting another round once the overall budget is spent,
+		// with a message the user can act on — better than the request hanging
+		// until nginx returns a bare 504.
+		if err := ctx.Err(); err != nil {
+			return "", errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
+		}
+		msg, err := callGatewayFull(ctx, settings, messages, 8192, tools)
 		if err != nil {
+			if ctx.Err() != nil {
+				return "", errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
+			}
 			return "", fmt.Errorf("calling AI gateway: %w", err)
 		}
 		if len(msg.ToolCalls) == 0 {
@@ -298,7 +311,7 @@ func (s *insightService) TestGateway() error {
 	if !settings.Configured() {
 		return errors.New("AI gateway not configured — set an API key and model first")
 	}
-	reply, err := callGateway(settings, []domain.ChatMessage{
+	reply, err := callGateway(context.Background(), settings, []domain.ChatMessage{
 		{Role: "user", Content: "Reply with the single word: ok"},
 	}, 256)
 	if err != nil {
@@ -519,6 +532,12 @@ func (s *insightService) chatSystemMessage() (string, error) {
 		return "", err
 	}
 	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Answers render as GitHub-flavored markdown in the app — use bullets, **bold** for key figures, and compact tables when comparing numbers; avoid top-level headings.
+
+CHARTS: when a trend, breakdown or comparison is clearer as a picture — or whenever the user asks to "show", "chart", "graph", "plot" or "visualize" — emit a fenced code block tagged ` + "`chart`" + ` containing ONE JSON object, in addition to a short sentence of text. The app renders it as an interactive chart. Schema:
+` + "```chart" + `
+{"type":"bar","title":"Spending by category","x":"label","unit":"€","series":[{"name":"Spent","key":"value"}],"data":[{"label":"Food","value":420.5},{"label":"Housing","value":1200}]}
+` + "```" + `
+Rules: type is one of line|bar|area|pie. "x" names the category/label field in each data row; each series "key" names a numeric field in each data row (pie uses exactly one series). Use real figures from the data or tools — never invent numbers. Keep it to at most ~24 data points and 4 series. Charts are optional: prefer a table for a handful of exact numbers, a chart for trends over time or many categories. Emit at most 2 charts per answer.
 
 ` + report
 	if ctx := s.userContextBlock(); ctx != "" {
@@ -829,8 +848,8 @@ func toGatewayMessages(messages []domain.ChatMessage) []gatewayMessage {
 // callGateway posts one exchange to the configured gateway's Anthropic-native
 // Messages endpoint and returns the assistant's reply text — the plain,
 // tool-free path used by Generate and TestGateway.
-func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, maxTokens int) (string, error) {
-	msg, err := callGatewayFull(settings, toGatewayMessages(messages), maxTokens, nil)
+func callGateway(ctx context.Context, settings *domain.AISettings, messages []domain.ChatMessage, maxTokens int) (string, error) {
+	msg, err := callGatewayFull(ctx, settings, toGatewayMessages(messages), maxTokens, nil)
 	if err != nil {
 		return "", err
 	}
@@ -848,8 +867,11 @@ func callGateway(settings *domain.AISettings, messages []domain.ChatMessage, max
 // tool_calls instead of content. The last system block gets a cache_control
 // breakpoint, so tools + system (the expensive, stable prefix) are read from
 // the prompt cache on tool rounds and follow-up turns.
-func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, maxTokens int, tools []gatewayTool) (gatewayMessage, error) {
+func callGatewayFull(ctx context.Context, settings *domain.AISettings, messages []gatewayMessage, maxTokens int, tools []gatewayTool) (gatewayMessage, error) {
 	var zero gatewayMessage
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// Translate the internal transcript to Anthropic wire form: system turns
 	// become top-level system blocks; tool results become tool_result blocks
@@ -927,7 +949,10 @@ func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, max
 	const maxGatewayAttempts = 3
 	var resp *http.Response
 	for attempt := 1; ; attempt++ {
-		req, rerr := http.NewRequest("POST", url, bytes.NewReader(body))
+		// Bind each request to the caller's context: when the chat's overall
+		// budget expires (or the client disconnects) the in-flight gateway
+		// call is cancelled instead of running out its own 120s timeout.
+		req, rerr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 		if rerr != nil {
 			return zero, rerr
 		}
@@ -950,7 +975,12 @@ func callGatewayFull(settings *domain.AISettings, messages []gatewayMessage, max
 		}
 		resp.Body.Close()
 		log.Printf("gateway: %s (attempt %d/%d), retrying in %s", resp.Status, attempt, maxGatewayAttempts, delay)
-		time.Sleep(delay)
+		// A plain sleep would ignore a cancelled context — wait, but wake early.
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(delay):
+		}
 	}
 	defer resp.Body.Close()
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,11 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/service"
 )
+
+// chatBudget bounds a single chat request end-to-end (all tool rounds). It
+// sits below nginx's proxy_read_timeout (300s) and the axios client timeout
+// so the backend, not the proxy, owns the failure message.
+const chatBudget = 240 * time.Second
 
 type InsightHandler struct {
 	svc service.InsightService
@@ -289,7 +295,12 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message must not be blank"})
 		return
 	}
-	reply, err := h.svc.Chat(message)
+	// Bound the whole agentic chat (tool rounds included) to a budget that
+	// fits inside nginx's proxy_read_timeout, so a slow multi-round answer
+	// returns a clean, actionable error instead of nginx's bare 504.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), chatBudget)
+	defer cancel()
+	reply, err := h.svc.Chat(ctx, message)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
