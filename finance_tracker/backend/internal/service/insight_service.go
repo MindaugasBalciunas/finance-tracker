@@ -56,7 +56,7 @@ type InsightService interface {
 	DataReport() (string, error)
 	// ViewSummary returns a short AI review of one app view for the period;
 	// cached server-side for 15 minutes per view+period.
-	ViewSummary(view string, from, to *time.Time, refresh bool) (string, error)
+	ViewSummary(view string, from, to *time.Time, refresh bool) (ViewSummaryResult, error)
 	// AssistTransaction suggests labels + a cleaner description for one
 	// transaction, learned from the user's own history.
 	AssistTransaction(input TransactionAssistInput) (*TransactionAssist, error)
@@ -583,6 +583,8 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	}
 	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Answers render as GitHub-flavored markdown in the app — use bullets, **bold** for key figures, and compact tables when comparing numbers; avoid top-level headings.
 
+LIVE INTERNET & SOCIAL SIGNAL: you have web_search (provider-executed live web search — use it for current exchange rates, market/economic news, product prices, tax rules, anything the database can't answer; results are already woven into your reply) and get_market_buzz (news headlines + public Stocktwits/Bluesky chatter + Fear & Greed for one ticker — use it when discussing the user's positions or market sentiment). Treat social chatter as unverified crowd sentiment, never as fact, and say so when you lean on it.
+
 IMAGES & NEW TRANSACTIONS: the user can attach an image (a receipt, invoice or bank/payment-app screenshot). Read it, extract the transaction(s) — type, date (YYYY-MM-DD), amount (EUR, positive), a short merchant/description comment, the best-fit category and 0-3 labels — and show them what you found. To actually add it, call create_transaction, but ONLY after the user confirms the details (one call per transaction). If the image is unreadable or ambiguous, say so and ask, rather than guessing an amount.
 
 LABEL & RULE MAINTENANCE: you can fix the labeling system, not just describe it. When the user asks to audit, review, clean up or fix their labels or rules, investigate with the read tools (get_label_rules, get_label_stats, get_summary, search_transactions) and present a FIX LIST ranked by damage per minute of work — a compact markdown table with columns: #, Action, Recovers (the concrete impact, quantified in EUR or category count where you can, e.g. "kills a fake €28.8k income source", "fixes a 4× category"). Look for: over-broad rules matching unrelated rows, duplicate rules (same pattern/label), rules that mislabel a whole vendor, and brand-vs-category label mixing that makes totals non-summable. Quote real figures from the tools — never invent them.
@@ -843,6 +845,12 @@ type gatewayTool struct {
 		Description string         `json:"description"`
 		Parameters  map[string]any `json:"parameters"`
 	} `json:"function"`
+	// ServerType marks a provider-executed tool (e.g. Anthropic's
+	// "web_search_20250305"): it is sent as {type, name, max_uses} with no
+	// schema, runs entirely server-side (passes through the nexos gateway),
+	// and never reaches runChatTool.
+	ServerType string `json:"-"`
+	MaxUses    int    `json:"-"`
 }
 
 // ── Anthropic Messages API wire types ─────────────────────────────────
@@ -890,9 +898,13 @@ type anthropicMessage struct {
 }
 
 type anthropicTool struct {
+	// Type is set only for provider-executed server tools (e.g.
+	// "web_search_20250305"); custom function tools omit it.
+	Type        string         `json:"type,omitempty"`
 	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"input_schema"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
+	MaxUses     int            `json:"max_uses,omitempty"`
 }
 
 type anthropicRequest struct {
@@ -903,9 +915,21 @@ type anthropicRequest struct {
 	Tools     []anthropicTool    `json:"tools,omitempty"`
 }
 
+// anthropicRespBlock is the response-side content block. Deliberately
+// narrower than anthropicBlock: server-tool blocks (web_search_tool_result)
+// carry "content" as an ARRAY, which would fail to unmarshal into the
+// request block's string Content — and responses never need that field.
+type anthropicRespBlock struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
 type anthropicResponse struct {
-	Content    []anthropicBlock `json:"content"`
-	StopReason string           `json:"stop_reason"`
+	Content    []anthropicRespBlock `json:"content"`
+	StopReason string               `json:"stop_reason"`
 	Usage      struct {
 		InputTokens        int     `json:"input_tokens"`
 		OutputTokens       int     `json:"output_tokens"`
@@ -1004,6 +1028,11 @@ func callGatewayFull(ctx context.Context, settings *domain.AISettings, messages 
 	}
 	wireTools := make([]anthropicTool, len(tools))
 	for i, t := range tools {
+		if t.ServerType != "" {
+			// Provider-executed tool: {type, name, max_uses}, no schema.
+			wireTools[i] = anthropicTool{Type: t.ServerType, Name: t.Function.Name, MaxUses: t.MaxUses}
+			continue
+		}
 		wireTools[i] = anthropicTool{
 			Name:        t.Function.Name,
 			Description: t.Function.Description,

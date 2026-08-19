@@ -219,11 +219,16 @@ func (h *InsightHandler) ViewSummary(c *gin.Context) {
 	to := parseInsightDate(c.Query("date_to"))
 	refresh := c.Query("refresh") == "1"
 	streamJSONResult(c, func() (any, error) {
-		summary, err := h.svc.ViewSummary(view, from, to, refresh)
+		r, err := h.svc.ViewSummary(view, from, to, refresh)
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"summary": summary}, nil
+		return gin.H{
+			"summary":       r.Text,
+			"cost_usd":      r.CostUSD,
+			"input_tokens":  r.InputTokens,
+			"output_tokens": r.OutputTokens,
+		}, nil
 	})
 }
 

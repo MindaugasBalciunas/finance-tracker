@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/marketdata"
 )
 
 // AI chat tools: the same read-only surface the MCP server exposes, executed
@@ -47,6 +48,17 @@ func mkTool(name, description string, params map[string]any) gatewayTool {
 	t.Function.Name = name
 	t.Function.Description = description
 	t.Function.Parameters = params
+	return t
+}
+
+// webSearchTool declares Anthropic's provider-executed web search, which the
+// nexos gateway passes through (verified live). The search runs entirely
+// server-side — results come back already woven into the reply.
+func webSearchTool() gatewayTool {
+	var t gatewayTool
+	t.ServerType = "web_search_20250305"
+	t.Function.Name = "web_search"
+	t.MaxUses = 3
 	return t
 }
 
@@ -115,6 +127,15 @@ func chatTools() []gatewayTool {
 		mkTool("get_assets",
 			"Physical assets (real estate, vehicles, solar): valuations, loan balances, interest structure and net equity.",
 			obj(map[string]any{})),
+		// ── Internet & social signal ──────────────────────────────────────
+		// Provider-executed live web search (runs server-side through the
+		// gateway): current rates, market news, product prices, anything not
+		// in the database. Capped per answer to bound cost.
+		webSearchTool(),
+		mkTool("get_market_buzz",
+			"Live news headlines and social-network chatter (Stocktwits, Bluesky) for one stock/ETF ticker, plus the market Fear & Greed reading. Use for sentiment around the user's positions.",
+			obj(map[string]any{"ticker": str("ticker symbol, e.g. VWCE, OKLO")}, "ticker")),
+
 		mkTool("record_user_decision",
 			"PERSISTENTLY record a decision the user just stated in this conversation — e.g. answering an [OPEN] question from their CFO context, or changing a standing rule. Appends a dated entry to the Decisions log in their context document, which every future AI call reads. Use ONLY when the user explicitly states a decision; NEVER to record your own suggestions or tentative leanings. Confirm to the user what was recorded.",
 			obj(map[string]any{
@@ -419,6 +440,19 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			return "", err
 		}
 		return marshalToolResult(map[string]any{"assets": assets, "summary": summary})
+
+	case "get_market_buzz":
+		ticker := strings.ToUpper(strings.TrimSpace(args.Ticker))
+		if ticker == "" {
+			return "", fmt.Errorf("ticker is required")
+		}
+		return marshalToolResult(map[string]any{
+			"ticker":      ticker,
+			"headlines":   marketdata.Headlines(ticker, 6),
+			"social_buzz": marketdata.SocialBuzz(ticker, 6),
+			"fear_greed":  marketdata.FearGreed(),
+			"note":        "headlines are news-feed titles; social_buzz is public Stocktwits/Bluesky chatter — unverified crowd sentiment, treat as signal, not fact",
+		})
 
 	case "record_user_decision":
 		// The ONLY writing tool in the chat loop, and deliberately narrow:

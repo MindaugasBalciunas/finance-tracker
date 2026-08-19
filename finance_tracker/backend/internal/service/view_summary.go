@@ -22,7 +22,17 @@ const viewSummaryTTL = 15 * time.Minute
 
 type viewCacheEntry struct {
 	text    string
+	usage   gatewayUsage // what generating this blurb cost (shown on hits too)
 	expires time.Time
+}
+
+// ViewSummaryResult is a view blurb plus what the model spent producing it,
+// for the cost badge on the AI review bar.
+type ViewSummaryResult struct {
+	Text         string
+	CostUSD      float64
+	InputTokens  int
+	OutputTokens int
 }
 
 var viewCache = struct {
@@ -37,16 +47,17 @@ var validViews = map[string]bool{
 
 // ViewSummary returns a 2-4 sentence AI review of one app view for the
 // selected period. refresh busts the cache.
-func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh bool) (string, error) {
+func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh bool) (ViewSummaryResult, error) {
+	var zero ViewSummaryResult
 	if !validViews[view] {
-		return "", fmt.Errorf("unknown view %q", view)
+		return zero, fmt.Errorf("unknown view %q", view)
 	}
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 	if !settings.Configured() {
-		return "", errors.New("AI gateway not configured")
+		return zero, errors.New("AI gateway not configured")
 	}
 
 	key := view + "|" + periodLabel(from, to)
@@ -55,13 +66,14 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		e, ok := viewCache.m[key]
 		viewCache.Unlock()
 		if ok && time.Now().Before(e.expires) {
-			return e.text, nil
+			return ViewSummaryResult{Text: e.text, CostUSD: e.usage.CostUSD,
+				InputTokens: e.usage.InputTokens, OutputTokens: e.usage.OutputTokens}, nil
 		}
 	}
 
 	dataCtx, err := s.viewContext(view, from, to)
 	if err != nil {
-		return "", fmt.Errorf("building view context: %w", err)
+		return zero, fmt.Errorf("building view context: %w", err)
 	}
 
 	extra := ""
@@ -80,16 +92,23 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
 	}
 	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-	text, err := callGateway(context.Background(), settings, msgs, 2048)
+	// callGatewayFull rather than callGateway: the blurb's cost badge needs
+	// the usage that rides on the message.
+	msg, err := callGatewayFull(context.Background(), settings, toGatewayMessages(msgs), 2048, nil)
 	if err != nil {
-		return "", err
+		return zero, err
+	}
+	text := msg.Content
+	if strings.TrimSpace(text) == "" {
+		return zero, errors.New("gateway returned an empty reply — try again or raise the model's token limit")
 	}
 
 	viewCache.Lock()
-	viewCache.m[key] = viewCacheEntry{text: text, expires: time.Now().Add(viewSummaryTTL)}
+	viewCache.m[key] = viewCacheEntry{text: text, usage: msg.Usage, expires: time.Now().Add(viewSummaryTTL)}
 	viewCache.Unlock()
 	s.logAIActivity("view_summary", view+" "+periodLabel(from, to), text)
-	return text, nil
+	return ViewSummaryResult{Text: text, CostUSD: msg.Usage.CostUSD,
+		InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens}, nil
 }
 
 // viewContext assembles the compact data slice for one view — targeted, so

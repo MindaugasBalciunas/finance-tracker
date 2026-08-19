@@ -234,11 +234,21 @@ export const aiApi = {
     view: string,
     range: { date_from?: string; date_to?: string },
     refresh = false,
-  ): Promise<string> => {
-    const { data } = await client.get<{ summary: string }>('/ai/view-summary', {
+  ): Promise<{ summary: string; costUsd: number; inputTokens: number; outputTokens: number }> => {
+    const { data } = await client.get<{
+      summary: string
+      cost_usd?: number
+      input_tokens?: number
+      output_tokens?: number
+    }>('/ai/view-summary', {
       params: { view, ...range, ...(refresh ? { refresh: '1' } : {}) },
     })
     if (data && (data as any).error) throw new Error((data as any).error)
-    return data.summary
+    return {
+      summary: data.summary,
+      costUsd: data.cost_usd ?? 0,
+      inputTokens: data.input_tokens ?? 0,
+      outputTokens: data.output_tokens ?? 0,
+    }
   },
 }

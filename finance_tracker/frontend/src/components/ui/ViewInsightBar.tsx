@@ -17,7 +17,7 @@ export default function ViewInsightBar({ view }: { view: string }) {
   const [refreshing, setRefreshing] = useState(false)
 
   const queryKey = ['view-summary', view, dateRange.date_from ?? '', dateRange.date_to ?? '']
-  const { data: summary, isFetching, isError, refetch } = useQuery({
+  const { data: review, isFetching, isError, refetch } = useQuery({
     queryKey,
     queryFn: () => aiApi.viewSummary(view, dateRange),
     enabled: false, // manual only — the ✦ button below triggers it
@@ -40,7 +40,7 @@ export default function ViewInsightBar({ view }: { view: string }) {
   }
 
   // Idle: a tiny prompt instead of a bar — nothing has been requested yet.
-  if (summary === undefined && !isFetching) {
+  if (review === undefined && !isFetching) {
     return (
       <button
         onClick={() => refetch()}
@@ -55,11 +55,24 @@ export default function ViewInsightBar({ view }: { view: string }) {
   return (
     <div className="mb-3 flex items-start gap-2 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 px-3 py-2">
       <span className="text-indigo-500 mt-0.5">✦</span>
-      <p className="flex-1 min-w-0 text-[13px] leading-snug text-gray-700">
-        {isFetching || refreshing
-          ? <span className="text-gray-400 animate-pulse">Reviewing this view…</span>
-          : summary}
-      </p>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] leading-snug text-gray-700">
+          {isFetching || refreshing
+            ? <span className="text-gray-400 animate-pulse">Reviewing this view…</span>
+            : review?.summary}
+        </p>
+        {/* What this review cost — mirrors the chat's per-answer badge. */}
+        {!isFetching && !refreshing && review && ((review.costUsd ?? 0) > 0 || (review.inputTokens ?? 0) + (review.outputTokens ?? 0) > 0) && (
+          <p className="mt-0.5 text-[11px] text-gray-400">
+            {[
+              (review.costUsd ?? 0) > 0 ? `$${parseFloat(review.costUsd.toFixed(4))}` : null,
+              (review.inputTokens ?? 0) + (review.outputTokens ?? 0) > 0
+                ? `${(() => { const n = (review.inputTokens ?? 0) + (review.outputTokens ?? 0); return n >= 1_000_000 ? `${parseFloat((n / 1_000_000).toFixed(1))}M` : n >= 1_000 ? `${parseFloat((n / 1_000).toFixed(1))}k` : `${n}` })()} tokens`
+                : null,
+            ].filter(Boolean).join(' · ')}
+          </p>
+        )}
+      </div>
       <span className="flex items-center gap-0.5 shrink-0">
         <button
           onClick={refresh}
