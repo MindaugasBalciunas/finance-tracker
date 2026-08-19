@@ -169,7 +169,6 @@ export default function AI() {
           <h1 className="text-xl font-bold text-gray-900">💬 Chat</h1>
           <p className="text-xs text-gray-400 truncate">
             Queries your data live while answering
-            {configured && settings?.model && <> · <span className="text-indigo-500">{settings.model}</span></>}
           </p>
         </div>
         <span className="flex flex-wrap items-center justify-end gap-2">

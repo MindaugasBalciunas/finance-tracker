@@ -50,6 +50,16 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // A native <select> never triggers Firefox's password manager (unlike a
+  // text <input> sharing this form with the API-key field). Use it whenever
+  // the gateway returned a catalogue; otherwise fall back to a free-text input
+  // with autofill explicitly suppressed.
+  const useModelSelect = models.ok && models.list.length > 0
+  // Always keep the current value selectable, even a custom/legacy model the
+  // gateway no longer lists.
+  const modelOptions =
+    form.model && !models.list.includes(form.model) ? [form.model, ...models.list] : models.list
+
   const doTest = async () => {
     setTesting(true)
     setStatus(null)
@@ -81,24 +91,44 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
             value={form.gateway_url}
             onChange={(e) => setForm({ ...form, gateway_url: e.target.value })}
             placeholder="https://api.nexos.ai/v1"
+            autoComplete="off"
             className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-3 py-2"
           />
         </label>
         <label className="text-xs text-gray-500">
           Model
           <div className="flex items-center gap-1.5 mt-1">
-            <input
-              list="ai-models"
-              value={form.model}
-              onChange={(e) => setForm({ ...form, model: e.target.value })}
-              placeholder="e.g. Claude Opus 5"
-              className="block w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
-            />
-            <datalist id="ai-models">
-              {models.list.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
+            {useModelSelect ? (
+              <select
+                value={form.model}
+                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                className="block w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
+              >
+                {!form.model && (
+                  <option value="" disabled>
+                    Select a model…
+                  </option>
+                )}
+                {modelOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={form.model}
+                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                placeholder="e.g. Claude Opus 5"
+                // Suppress Firefox/1Password/LastPass autofill on this free-text
+                // model field — it shares the form with the API-key password.
+                autoComplete="off"
+                name="ai-model"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                className="block w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+              />
+            )}
             <button
               type="button"
               onClick={loadModels}

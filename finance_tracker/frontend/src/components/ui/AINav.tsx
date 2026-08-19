@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
 import GatewaySettings from './GatewaySettings'
+import ModelSelect from './ModelSelect'
 
 // Sub-navigation for the AI pages: the full-screen chat, the financial
 // overview (analysis) and the About-me context briefing. Rendered
@@ -33,14 +34,17 @@ export default function AINav() {
           </NavLink>
         ))}
       </div>
-      <button
-        onClick={() => setSettingsOpen(true)}
-        title="AI gateway settings"
-        aria-label="AI gateway settings"
-        className="shrink-0 bg-gray-100 rounded-xl px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-800"
-      >
-        ⚙️
-      </button>
+      <div className="flex items-center gap-2 min-w-0">
+        <ModelSelect />
+        <button
+          onClick={() => setSettingsOpen(true)}
+          title="AI gateway settings"
+          aria-label="AI gateway settings"
+          className="shrink-0 bg-gray-100 rounded-xl px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-800"
+        >
+          ⚙️
+        </button>
+      </div>
 
       {settingsOpen && (
         <div
