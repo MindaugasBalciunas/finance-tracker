@@ -207,10 +207,11 @@ func TestAIChatValidation(t *testing.T) {
 		"messages": []map[string]string{{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}}})
 	assert.Equal(t, 400, w.Code, "last message must be from the user")
 
-	// Unconfigured gateway is a clear 502, not a crash.
+	// Unconfigured gateway surfaces cleanly (chat commits 200 up front and
+	// carries the failure in the body's "error" field).
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
 		"messages": []map[string]string{{"role": "user", "content": "hi"}}})
-	assert.Equal(t, 502, w.Code)
+	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "not configured")
 }
 
@@ -274,7 +275,7 @@ func TestEmptyGatewayReplyRejected(t *testing.T) {
 
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
 		"messages": []map[string]string{{"role": "user", "content": "hi"}}})
-	assert.Equal(t, 502, w.Code)
+	assert.Equal(t, 200, w.Code) // chat commits 200 up front; failure is in the body
 	assert.Contains(t, w.Body.String(), "empty reply")
 
 	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", nil)
@@ -300,7 +301,11 @@ func TestGatewayErrorDoesNotReflectBody(t *testing.T) {
 
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{
 		"messages": []map[string]string{{"role": "user", "content": "hi"}}})
-	assert.Equal(t, 502, w.Code)
+	// Chat commits 200 up front (heartbeat streaming); the gateway failure
+	// rides in the body's "error" field. The raw upstream body must still
+	// never be reflected.
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "error")
 	assert.NotContains(t, w.Body.String(), "SECRET-INTERNAL-BODY")
 	assert.NotContains(t, w.Body.String(), "postgres://")
 }
@@ -441,7 +446,9 @@ func TestAIChatToolLoop(t *testing.T) {
 		"gateway_url": srv3.URL, "model": "m", "api_key": "k"})
 	require.Equal(t, 200, w.Code)
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "loop forever"})
-	assert.Equal(t, 502, w.Code)
+	// The chat streams heartbeats and commits 200 up front, so a failure like
+	// exceeding the tool-round cap rides in the body's "error" field.
+	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "tool rounds")
 	assert.LessOrEqual(t, len(*requests3), 13, "loop is bounded (maxToolRounds + 1)")
 }

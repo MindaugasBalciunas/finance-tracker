@@ -89,17 +89,22 @@ export const aiApi = {
   // (receipt/screenshot) switches the request to multipart so the AI can read
   // it; message may be empty when a file is attached.
   chat: async (message: string, file?: File): Promise<string> => {
+    // The server streams whitespace heartbeats during the long agentic call
+    // and commits a 200 up front, so failures arrive as {error} in the body
+    // (not a status) — check for it. Leading heartbeat whitespace parses away.
+    let data: { reply?: string; error?: string }
     if (file) {
       const form = new FormData()
       form.append('message', message)
       form.append('file', file)
-      const { data } = await client.post<{ reply: string }>('/ai/chat', form, {
+      ;({ data } = await client.post<{ reply?: string; error?: string }>('/ai/chat', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      return data.reply
+      }))
+    } else {
+      ;({ data } = await client.post<{ reply?: string; error?: string }>('/ai/chat', { message }))
     }
-    const { data } = await client.post<{ reply: string }>('/ai/chat', { message })
-    return data.reply
+    if (data?.error) throw new Error(data.error)
+    return data?.reply ?? ''
   },
 
   chatHistory: async (): Promise<ChatMessage[]> => {

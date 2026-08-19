@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -365,17 +366,58 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message must not be blank"})
 		return
 	}
-	// Bound the whole agentic chat (tool rounds included) to a budget that
-	// fits inside nginx's proxy_read_timeout, so a slow multi-round answer
-	// returns a clean, actionable error instead of nginx's bare 504.
+	// Bound the whole agentic chat (tool rounds included) to a budget.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), chatBudget)
 	defer cancel()
-	reply, err := h.svc.Chat(ctx, message, image)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
+
+	// The agentic label-audit chat can run a minute or more. A reverse proxy
+	// in front of the app (e.g. the one terminating TLS on the public port)
+	// applies its own read timeout — often ~60s — and returns a bare 504 while
+	// the backend is still working (and still billing). To survive that, we
+	// stream whitespace heartbeats while the loop runs so bytes keep flowing
+	// and no proxy idles out. Leading whitespace is ignored by JSON parsers,
+	// so the final buffered body still parses as {"reply"|"error": …}. Because
+	// the 200 is committed before the result is known, chat errors ride in the
+	// body's "error" field (the client checks for it) rather than a status.
+	type chatResult struct {
+		reply string
+		err   error
 	}
-	c.JSON(http.StatusOK, gin.H{"reply": reply})
+	done := make(chan chatResult, 1)
+	go func() {
+		reply, err := h.svc.Chat(ctx, message, image)
+		done <- chatResult{reply: reply, err: err}
+	}()
+
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	c.Writer.WriteHeader(http.StatusOK)
+	flusher, _ := c.Writer.(http.Flusher)
+	if flusher != nil {
+		flusher.Flush()
+	}
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case r := <-done:
+			payload := gin.H{"reply": r.reply}
+			if r.err != nil {
+				payload = gin.H{"error": r.err.Error()}
+			}
+			b, _ := json.Marshal(payload)
+			_, _ = c.Writer.Write(b)
+			return
+		case <-ticker.C:
+			// One space — ignored leading JSON whitespace — keeps the
+			// connection active so proxy read-timeouts never fire.
+			if _, err := c.Writer.Write([]byte(" ")); err != nil {
+				return // client/proxy went away; stop heartbeating
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func (h *InsightHandler) ChatHistory(c *gin.Context) {
