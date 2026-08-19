@@ -85,8 +85,19 @@ export const aiApi = {
   },
 
   // History lives server-side so the conversation follows the user across
-  // phone and browser — only the new message travels up.
-  chat: async (message: string): Promise<string> => {
+  // phone and browser — only the new message travels up. An optional image
+  // (receipt/screenshot) switches the request to multipart so the AI can read
+  // it; message may be empty when a file is attached.
+  chat: async (message: string, file?: File): Promise<string> => {
+    if (file) {
+      const form = new FormData()
+      form.append('message', message)
+      form.append('file', file)
+      const { data } = await client.post<{ reply: string }>('/ai/chat', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return data.reply
+    }
     const { data } = await client.post<{ reply: string }>('/ai/chat', { message })
     return data.reply
   },

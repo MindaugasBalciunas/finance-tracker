@@ -93,8 +93,8 @@ or add it to `~/.gemini/settings.json` (same shape as the Claude config):
 }
 ```
 
-Check it with `/mcp` inside the CLI — eighteen tools should list (thirteen
-read, five write). Keep `trust: false` so tool calls stay confirm-first; with
+Check it with `/mcp` inside the CLI — nineteen tools should list (thirteen
+read, six write). Keep `trust: false` so tool calls stay confirm-first; with
 a read-only token everything is read-only regardless, enforced server-side by
 the token scope.
 
@@ -153,7 +153,7 @@ token** (`ftkw_…`, minted in **Security → read-write API token**). With the
 read-only token the backend answers `403` and the tool returns a clear "mint
 a read-write token" message. The read-only token stays the default and safe
 choice — generate a read-write token only when you want the model to edit
-labels and rules.
+labels and rules or add transactions.
 
 | Tool | What it does |
 |---|---|
@@ -162,6 +162,7 @@ labels and rules.
 | `delete_rule` | Deletes one auto-labeling rule by id |
 | `rename_label` | Renames a label everywhere (transactions, rules, budgets); merges if the target exists |
 | `retag_transactions` | Adds/removes labels on specific transactions by id |
+| `create_transaction` | Creates a REAL new transaction (`type`, `date`, `amount`, `category`, optional `comment`/`labels`) |
 
 The read tools are also available to the in-app AI chat (executed
 in-process), so the web chat and any MCP client answer with identical

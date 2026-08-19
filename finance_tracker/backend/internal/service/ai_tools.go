@@ -161,6 +161,16 @@ func chatTools() []gatewayTool {
 				"from": str("the current label"),
 				"to":   str("the new label (existing label = merge)"),
 			}, "from", "to")),
+		mkTool("create_transaction",
+			"Create a REAL new transaction — e.g. from a receipt/screenshot the user attached, or a spending they described. Amounts are EUR and positive. ONLY after the user confirms the details you extracted; show them the fields first. One call per transaction.",
+			obj(map[string]any{
+				"type":     str("expense | income | investment"),
+				"date":     str("YYYY-MM-DD"),
+				"amount":   flt("positive amount in EUR"),
+				"comment":  str("merchant / description"),
+				"category": str("one of the app's categories"),
+				"labels":   str("optional comma-separated lowercase labels"),
+			}, "type", "date", "amount", "category")),
 	}
 }
 
@@ -193,6 +203,12 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			Add    []string `json:"add"`
 			Remove []string `json:"remove"`
 		} `json:"retag"`
+		// create_transaction args (Date/Type/Category/Comment reuse the fields
+		// above where names collide; Amount here is a value, not a filter).
+		Date    string  `json:"date"`
+		Comment string  `json:"comment"`
+		Amount  float64 `json:"amount"`
+		Labels  string  `json:"labels"`
 	}
 	if rawArgs != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -509,6 +525,35 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		}
 		s.logAIActivity("tagging", "applied", fmt.Sprintf("renamed label %q → %q (%d transactions)", from, to, res.Transactions))
 		return marshalToolResult(map[string]any{"renamed": res.Transactions, "from": from, "to": to})
+
+	case "create_transaction":
+		typ := domain.TransactionType(strings.ToLower(strings.TrimSpace(args.Type)))
+		if typ != domain.TransactionTypeExpense && typ != domain.TransactionTypeIncome && typ != domain.TransactionTypeInvestment {
+			return "", fmt.Errorf("type must be expense, income or investment")
+		}
+		if args.Amount <= 0 {
+			return "", fmt.Errorf("amount must be a positive EUR value")
+		}
+		cat, ok := normalizeScanCategory(args.Category)
+		if !ok {
+			return "", fmt.Errorf("unknown category %q — use one of the app's categories", args.Category)
+		}
+		if _, derr := time.Parse("2006-01-02", strings.TrimSpace(args.Date)); derr != nil {
+			return "", fmt.Errorf("date must be YYYY-MM-DD")
+		}
+		tx, err := s.txSvc.Create(CreateTransactionInput{
+			Date:     strings.TrimSpace(args.Date),
+			Type:     typ,
+			Amount:   args.Amount,
+			Comment:  strings.TrimSpace(args.Comment),
+			Category: domain.Category(cat),
+			Labels:   domain.NormalizeLabels(args.Labels),
+		})
+		if err != nil {
+			return "", fmt.Errorf("creating transaction: %w", err)
+		}
+		s.logAIActivity("transaction", "created", fmt.Sprintf("created %s €%.2f %q (%s) id=%d", typ, args.Amount, tx.Comment, cat, tx.ID))
+		return marshalToolResult(map[string]any{"created_id": tx.ID, "type": string(typ), "amount": args.Amount, "category": cat, "comment": tx.Comment})
 
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)

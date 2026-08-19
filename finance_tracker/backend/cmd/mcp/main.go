@@ -229,6 +229,15 @@ type renameLabelArgs struct {
 	To   string `json:"to" jsonschema:"new label name; merges into it if it already exists"`
 }
 
+type createTransactionArgs struct {
+	Type     string  `json:"type" jsonschema:"expense | income | investment"`
+	Date     string  `json:"date" jsonschema:"YYYY-MM-DD"`
+	Amount   float64 `json:"amount" jsonschema:"positive amount in EUR"`
+	Comment  string  `json:"comment" jsonschema:"merchant / short description"`
+	Category string  `json:"category" jsonschema:"one of the app's categories (see get_label_stats / the overview for valid names)"`
+	Labels   string  `json:"labels" jsonschema:"optional comma-separated lowercase labels"`
+}
+
 // ── Tool handlers ────────────────────────────────────────────────────
 
 func handleOverview(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
@@ -517,6 +526,23 @@ func handleRenameLabel(ctx context.Context, req *mcp.CallToolRequest, a renameLa
 	return textResult(body), nil, nil
 }
 
+func handleCreateTransaction(ctx context.Context, req *mcp.CallToolRequest, a createTransactionArgs) (*mcp.CallToolResult, any, error) {
+	if a.Amount <= 0 {
+		return nil, nil, fmt.Errorf("amount must be a positive EUR value")
+	}
+	if strings.TrimSpace(a.Type) == "" || strings.TrimSpace(a.Date) == "" || strings.TrimSpace(a.Category) == "" {
+		return nil, nil, fmt.Errorf("type, date (YYYY-MM-DD) and category are required")
+	}
+	body, err := apiWrite(http.MethodPost, "/transactions", map[string]any{
+		"type": a.Type, "date": a.Date, "amount": a.Amount,
+		"comment": a.Comment, "category": a.Category, "labels": a.Labels,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
 // dataNotes is prepended guidance so models interpret the data correctly.
 const dataNotes = ` Data semantics: amounts are EUR; 'labels' is a comma-separated multiset of lowercase tags; category 'Transfers' rows are moves between the user's own accounts (NOT income or spending); fixed-obligation labels (loan, alimony, leasing, evelina) mark pre-committed money, not discretionary choices.`
 
@@ -623,6 +649,11 @@ func main() {
 		Name:        "retag_transactions",
 		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Adds and/or removes labels on specific transactions by id (ids from search_transactions), one entry per transaction.",
 	}, handleRetagTransactions)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_transaction",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Creates a REAL new transaction (e.g. from a receipt the user describes). Amount is positive EUR; type is expense|income|investment; category must be a valid app category. Confirm the details with the user before calling.",
+	}, handleCreateTransaction)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)

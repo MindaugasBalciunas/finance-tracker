@@ -107,7 +107,7 @@ func main() {
 	r.Use(func(c *gin.Context) {
 		limit := int64(maxBodyBytes)
 		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/api/v1/import/") || p == "/api/v1/ai/scan-transaction" {
+		if strings.HasPrefix(p, "/api/v1/import/") || p == "/api/v1/ai/scan-transaction" || p == "/api/v1/ai/chat" {
 			limit = maxImportBodyBytes
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)

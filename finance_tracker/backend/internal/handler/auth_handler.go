@@ -53,6 +53,9 @@ var apiTokenWriteRoutes = []struct{ method, prefix string }{
 	{"POST", "/api/v1/labels/rename"},
 	{"POST", "/api/v1/labels/delete"},
 	{"DELETE", "/api/v1/labels/rules"},
+	// Create a new transaction (the only transaction write the RW token gets
+	// — never update/delete/delete-all). POST /transactions exactly.
+	{"POST", "/api/v1/transactions"},
 }
 
 func apiTokenWriteAllowed(method, path string) bool {

@@ -323,18 +323,45 @@ type chatInput struct {
 }
 
 func (h *InsightHandler) Chat(c *gin.Context) {
-	var input chatInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	message := strings.TrimSpace(input.Message)
-	if message == "" && len(input.Messages) > 0 {
-		if last := input.Messages[len(input.Messages)-1]; last.Role == "user" {
-			message = strings.TrimSpace(last.Content)
+	var message string
+	var image *service.ChatImage
+
+	// Two content types: multipart (a receipt/screenshot attached, field
+	// 'file', plus a 'message' form value) or the plain JSON turn.
+	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
+		message = strings.TrimSpace(c.PostForm("message"))
+		if fh, err := c.FormFile("file"); err == nil && fh != nil {
+			if fh.Size > maxScanImageBytes {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "image too large — keep it under 10 MB"})
+				return
+			}
+			f, oerr := fh.Open()
+			if oerr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the attached image"})
+				return
+			}
+			defer f.Close()
+			data, rerr := io.ReadAll(io.LimitReader(f, maxScanImageBytes+1))
+			if rerr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the attached image"})
+				return
+			}
+			image = &service.ChatImage{Data: data, MediaType: http.DetectContentType(data)}
+		}
+	} else {
+		var input chatInput
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		message = strings.TrimSpace(input.Message)
+		if message == "" && len(input.Messages) > 0 {
+			if last := input.Messages[len(input.Messages)-1]; last.Role == "user" {
+				message = strings.TrimSpace(last.Content)
+			}
 		}
 	}
-	if message == "" {
+	if message == "" && image == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message must not be blank"})
 		return
 	}
@@ -343,7 +370,7 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 	// returns a clean, actionable error instead of nginx's bare 504.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), chatBudget)
 	defer cancel()
-	reply, err := h.svc.Chat(ctx, message)
+	reply, err := h.svc.Chat(ctx, message, image)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,9 @@ type InsightService interface {
 	// new user message, grounded in a system message carrying the same data
 	// report the analysis uses. Both turns are persisted so the conversation
 	// follows the user across devices.
-	Chat(ctx context.Context, message string) (string, error)
+	// Chat answers a message; image (optional) is a receipt/screenshot the
+	// user attached, sent to the vision model for this turn only.
+	Chat(ctx context.Context, message string, image *ChatImage) (string, error)
 	// ScanTransaction extracts transaction fields from an uploaded image
 	// (receipt / bank-app screenshot) to prefill the form. Read-only.
 	ScanTransaction(ctx context.Context, imageData []byte, mediaType string) (*TransactionScan, error)
@@ -150,7 +153,13 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 const maxChatTurns = 24
 const maxReplayChars = 1600
 
-func (s *insightService) Chat(ctx context.Context, message string) (string, error) {
+// ChatImage is an image attached to a chat turn (receipt/screenshot).
+type ChatImage struct {
+	Data      []byte
+	MediaType string
+}
+
+func (s *insightService) Chat(ctx context.Context, message string, image *ChatImage) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -182,7 +191,21 @@ func (s *insightService) Chat(ctx context.Context, message string) (string, erro
 		}
 		messages = append(messages, gatewayMessage{Role: m.Role, Content: content})
 	}
-	messages = append(messages, gatewayMessage{Role: "user", Content: message})
+	userTurn := gatewayMessage{Role: "user", Content: message}
+	if image != nil {
+		if !visionMediaTypes[image.MediaType] {
+			return "", fmt.Errorf("unsupported image type %q — use JPEG, PNG, WebP or GIF", image.MediaType)
+		}
+		userTurn.Image = &messageImage{
+			MediaType: image.MediaType,
+			Data:      base64.StdEncoding.EncodeToString(image.Data),
+		}
+		if strings.TrimSpace(message) == "" {
+			// A bare image with no words still needs an instruction.
+			userTurn.Content = "Here is an image (receipt / screenshot). Read it and help me with the transaction(s) it shows."
+		}
+	}
+	messages = append(messages, userTurn)
 
 	// Agentic loop: the model may call read-only tools (the same surface the
 	// MCP server exposes) to query the database live before answering. Tool
@@ -536,6 +559,8 @@ func (s *insightService) chatSystemMessage() (string, error) {
 	}
 	system := `You are a personal finance assistant for a private individual in Lithuania. You have their real financial data below — ground every answer in it and quote concrete numbers. You also have read-only tools to query the live database (search_transactions, get_summary, get_balances, …): USE THEM whenever the report below doesn't already contain the exact figures a question needs, instead of estimating. Currency is EUR. Be concise and direct; address the person as "you". Answers render as GitHub-flavored markdown in the app — use bullets, **bold** for key figures, and compact tables when comparing numbers; avoid top-level headings.
 
+IMAGES & NEW TRANSACTIONS: the user can attach an image (a receipt, invoice or bank/payment-app screenshot). Read it, extract the transaction(s) — type, date (YYYY-MM-DD), amount (EUR, positive), a short merchant/description comment, the best-fit category and 0-3 labels — and show them what you found. To actually add it, call create_transaction, but ONLY after the user confirms the details (one call per transaction). If the image is unreadable or ambiguous, say so and ask, rather than guessing an amount.
+
 LABEL & RULE MAINTENANCE: you can fix the labeling system, not just describe it. When the user asks to audit, review, clean up or fix their labels or rules, investigate with the read tools (get_label_rules, get_label_stats, get_summary, search_transactions) and present a FIX LIST ranked by damage per minute of work — a compact markdown table with columns: #, Action, Recovers (the concrete impact, quantified in EUR or category count where you can, e.g. "kills a fake €28.8k income source", "fixes a 4× category"). Look for: over-broad rules matching unrelated rows, duplicate rules (same pattern/label), rules that mislabel a whole vendor, and brand-vs-category label mixing that makes totals non-summable. Quote real figures from the tools — never invent them.
 Then, to actually make a change, use the write tools (delete_rule, add_rule, update_rule, retag_transactions, rename_label) — but ONLY after the user explicitly approves that specific change in the conversation. Never apply changes pre-emptively: present the ranked list, ask which to apply (or wait for "do them all"), then call the tools and report exactly what changed. Every write is logged.
 
@@ -758,6 +783,15 @@ type gatewayMessage struct {
 	Content    string            `json:"content"`
 	ToolCalls  []gatewayToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string            `json:"tool_call_id,omitempty"`
+	// Image, when set on a user turn, is sent as a vision block alongside the
+	// text (a receipt/screenshot dropped into the chat). Never persisted to
+	// history — it rides only the live request.
+	Image *messageImage `json:"-"`
+}
+
+type messageImage struct {
+	MediaType string // image/jpeg, image/png, image/webp, image/gif
+	Data      string // base64, no data: prefix
 }
 
 type gatewayToolCall struct {
@@ -918,6 +952,14 @@ func callGatewayFull(ctx context.Context, settings *domain.AISettings, messages 
 				})
 			}
 			appendBlocks("assistant", blocks...)
+		case m.Image != nil:
+			// Vision turn: image block first, then the text prompt.
+			appendBlocks(m.Role,
+				anthropicBlock{Type: "image", Source: &anthropicImageSource{
+					Type: "base64", MediaType: m.Image.MediaType, Data: m.Image.Data,
+				}},
+				anthropicBlock{Type: "text", Text: m.Content},
+			)
 		default:
 			appendBlocks(m.Role, anthropicBlock{Type: "text", Text: m.Content})
 		}

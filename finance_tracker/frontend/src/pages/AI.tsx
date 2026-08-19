@@ -5,6 +5,11 @@ import { useAISettings } from '../hooks/useInsights'
 import AINav from '../components/ui/AINav'
 import Markdown from '../components/ui/Markdown'
 
+// A rendered chat turn. Server history is plain {role, content}; the local
+// optimistic echo may also carry an object-URL preview of an image the user
+// attached (the image itself is never stored server-side).
+type ChatEntry = ChatMessage & { imageUrl?: string }
+
 // Full-screen AI chat grounded in the full financial dataset. History is
 // stored server-side (follows the user between phone and browser), and
 // assistant answers render as markdown — tables, lists, bold figures.
@@ -20,15 +25,47 @@ export default function AI() {
   })
   // Local copy so an in-flight turn renders immediately; re-synced whenever
   // the server history lands (initial load or another device's turns).
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatEntry[]>([])
   useEffect(() => {
-    if (serverHistory) setMessages(serverHistory)
+    if (!serverHistory) return
+    // The authoritative history is text-only — free any preview URLs the
+    // optimistic echoes were holding before they're replaced.
+    setMessages((prev) => {
+      prev.forEach((m) => m.imageUrl && URL.revokeObjectURL(m.imageUrl))
+      return serverHistory
+    })
   }, [serverHistory])
 
   const [draft, setDraft] = useState('')
   const [thinking, setThinking] = useState(false)
   const [chatError, setChatError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Pending image attachment: the File plus an object URL for its preview.
+  const [image, setImage] = useState<File | null>(null)
+  const [imageUrl, setImageUrl] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // Release any live preview URL on unmount (covers a pending attachment or an
+  // echo whose server resync hasn't landed yet).
+  const imageUrlRef = useRef('')
+  imageUrlRef.current = imageUrl
+  useEffect(() => () => { if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current) }, [])
+
+  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-picked after removal
+    if (!f) return
+    if (imageUrl) URL.revokeObjectURL(imageUrl)
+    setImage(f)
+    setImageUrl(URL.createObjectURL(f))
+  }
+
+  const clearImage = () => {
+    if (imageUrl) URL.revokeObjectURL(imageUrl)
+    setImage(null)
+    setImageUrl('')
+  }
 
   useEffect(() => {
     // Don't yank the page down on mount — only follow along once the
@@ -39,22 +76,31 @@ export default function AI() {
 
   const send = async () => {
     const text = draft.trim()
-    if (!text || thinking || !configured) return
-    setMessages((m) => [...m, { role: 'user', content: text }])
+    // An attached image alone is enough — text may be empty in that case.
+    if ((!text && !image) || thinking || !configured) return
+    const attached = image
+    const attachedUrl = imageUrl
+    setMessages((m) => [...m, { role: 'user', content: text, imageUrl: attachedUrl || undefined }])
     setDraft('')
+    // Detach without revoking — the echo above still renders this preview until
+    // the server resync (or a failure restore) takes over.
+    setImage(null)
+    setImageUrl('')
     setChatError('')
     setThinking(true)
     try {
-      const reply = await aiApi.chat(text)
+      const reply = await aiApi.chat(text, attached ?? undefined)
       setMessages((m) => [...m, { role: 'assistant', content: reply }])
       qc.invalidateQueries({ queryKey: ['ai-chat-history'] })
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       setChatError(e.response?.data?.error ?? e.message ?? 'Chat failed')
       // The failed turn was not persisted server-side — drop the local echo
-      // so the view matches the stored history.
+      // so the view matches the stored history, and restore the draft + image.
       setMessages((m) => (m.length > 0 && m[m.length - 1].role === 'user' ? m.slice(0, -1) : m))
       setDraft(text)
+      setImage(attached)
+      setImageUrl(attachedUrl)
     } finally {
       setThinking(false)
     }
@@ -130,9 +176,22 @@ export default function AI() {
                     : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                 }`}
               >
-                {m.role === 'assistant'
-                  ? <Markdown>{m.content}</Markdown>
-                  : <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>}
+                {m.role === 'assistant' ? (
+                  <Markdown>{m.content}</Markdown>
+                ) : (
+                  <div className="space-y-1.5">
+                    {m.imageUrl && (
+                      <img
+                        src={m.imageUrl}
+                        alt="attachment"
+                        className="max-h-40 rounded-lg"
+                      />
+                    )}
+                    {m.content
+                      ? <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                      : !m.imageUrl && <p className="text-sm text-indigo-100">📷 image</p>}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -147,28 +206,66 @@ export default function AI() {
         </div>
 
         {chatError && <p className="px-4 pb-1 text-xs text-red-600">{chatError}</p>}
-        <div className="p-3 border-t border-gray-100 flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-            rows={draft.includes('\n') ? 3 : 1}
-            placeholder={configured ? 'Ask about your finances… (Enter to send)' : 'Set up the gateway first'}
-            disabled={!configured || thinking}
-            className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
-          />
-          <button
-            onClick={send}
-            disabled={!configured || thinking || !draft.trim()}
-            className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40"
-          >
-            Send
-          </button>
+        <div className="border-t border-gray-100">
+          {imageUrl && (
+            <div className="px-3 pt-3">
+              <div className="relative inline-block">
+                <img
+                  src={imageUrl}
+                  alt="attachment preview"
+                  className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={clearImage}
+                  aria-label="Remove image"
+                  className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-gray-700 text-white text-[11px] leading-none flex items-center justify-center shadow"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="p-3 flex items-end gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={onPickImage}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={!configured || thinking}
+              aria-label="Attach image"
+              className="shrink-0 px-3 py-2.5 rounded-xl border border-gray-200 text-lg leading-none text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+            >
+              📎
+            </button>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              rows={draft.includes('\n') ? 3 : 1}
+              placeholder={configured ? 'Ask about your finances… (Enter to send)' : 'Set up the gateway first'}
+              disabled={!configured || thinking}
+              className="flex-1 min-w-0 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
+            />
+            <button
+              onClick={send}
+              disabled={!configured || thinking || (!draft.trim() && !image)}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40"
+            >
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -131,6 +131,9 @@ func TestAPITokenRWScope(t *testing.T) {
 	assert.NotEqual(t, 403, w.Code, "rule-review/apply is in the write allowlist")
 	w = doBearerBody(r, "POST", "/api/v1/labels/rename", rw.Token, map[string]any{"from": "zzznope", "to": "zzznope2"})
 	assert.NotEqual(t, 403, w.Code, "labels/rename is in the write allowlist")
+	w = doBearerBody(r, "POST", "/api/v1/transactions", rw.Token, map[string]any{})
+	assert.NotEqual(t, 401, w.Code)
+	assert.NotEqual(t, 403, w.Code, "creating a transaction is in the write allowlist")
 
 	// Out-of-scope mutations are forbidden even for the RW token.
 	assert.Equal(t, 403, doBearer(r, "DELETE", "/api/v1/transactions?confirm=all", rw.Token).Code, "delete-all is never token-writable")
