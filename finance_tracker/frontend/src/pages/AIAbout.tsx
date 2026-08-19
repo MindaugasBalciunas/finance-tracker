@@ -42,6 +42,8 @@ export default function AIAbout() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-4xl mx-auto">
+      <AINav />
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold text-gray-900">🧠 About me</h1>
@@ -66,7 +68,6 @@ export default function AIAbout() {
               {hasContext ? '✎ Edit' : '+ Write it'}
             </button>
           )}
-          <AINav />
         </span>
       </div>
 

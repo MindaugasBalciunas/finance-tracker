@@ -102,10 +102,12 @@ func main() {
 	}))
 
 	// Cap request bodies so a stray or malicious client can't exhaust
-	// memory/disk; imports get a larger dedicated allowance.
+	// memory/disk; imports and the image-scan upload get a larger allowance
+	// (the scan handler enforces its own tighter 10 MiB image cap on top).
 	r.Use(func(c *gin.Context) {
 		limit := int64(maxBodyBytes)
-		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/import/") {
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/api/v1/import/") || p == "/api/v1/ai/scan-transaction" {
 			limit = maxImportBodyBytes
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)

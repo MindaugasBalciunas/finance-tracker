@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -46,6 +47,7 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// AI labeling: single-transaction assist, bulk reindex suggestions and
 	// user-approved apply. All session-only POSTs.
 	ai.POST("/assist-transaction", h.AssistTransaction)
+	ai.POST("/scan-transaction", h.ScanTransaction)
 	ai.POST("/label-reindex", h.LabelReindex)
 	ai.POST("/label-reindex/apply", h.ApplyLabelSuggestions)
 	// AI audit of the auto-labeling rule set, and user-approved apply.
@@ -114,6 +116,47 @@ func (h *InsightHandler) AssistTransaction(c *gin.Context) {
 		return
 	}
 	out, err := h.svc.AssistTransaction(input)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// maxScanImageBytes caps the uploaded image; a phone photo is a few MB. The
+// global import-body limit is larger, but the scan route has its own tighter
+// ceiling since it isn't a bulk import.
+const maxScanImageBytes = 10 << 20 // 10 MiB
+
+// ScanTransaction accepts an uploaded image (multipart 'file') and returns
+// the transaction fields the vision model extracted, for the form to prefill.
+func (h *InsightHandler) ScanTransaction(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "attach an image in the 'file' field"})
+		return
+	}
+	if fileHeader.Size > maxScanImageBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "image too large — keep it under 10 MB"})
+		return
+	}
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded image"})
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxScanImageBytes+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded image"})
+		return
+	}
+	mediaType := http.DetectContentType(data)
+
+	// Vision calls are slower than text; give it a bounded budget below nginx.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
+	defer cancel()
+	out, err := h.svc.ScanTransaction(ctx, data, mediaType)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

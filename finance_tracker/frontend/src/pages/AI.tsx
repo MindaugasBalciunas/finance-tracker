@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi, type ChatMessage } from '../api/insights'
 import { useAISettings } from '../hooks/useInsights'
@@ -77,7 +76,10 @@ export default function AI() {
     // Full-screen: the column fills the viewport under the app header
     // (mobile also reserves the bottom tab bar), the message list scrolls,
     // the composer stays pinned.
-    <div className="mx-auto max-w-4xl flex flex-col h-[calc(100dvh-10.5rem)] md:h-[calc(100dvh-7.5rem)]">
+    <div className="mx-auto max-w-4xl flex flex-col h-[calc(100dvh-13.25rem)] md:h-[calc(100dvh-10.25rem)]">
+      <div className="shrink-0 pb-3">
+        <AINav />
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-gray-900">💬 Chat</h1>
@@ -92,7 +94,6 @@ export default function AI() {
               Clear chat
             </button>
           )}
-          <AINav />
         </span>
       </div>
 
@@ -103,7 +104,7 @@ export default function AI() {
               <p>
                 {configured
                   ? 'Ask anything — the AI can search your transactions and query budgets, balances and live stock prices while answering.'
-                  : <>Configure the nexos.ai gateway on the <Link to="/ai/overview" className="text-indigo-500 hover:underline">Overview tab</Link> to start chatting.</>}
+                  : <>Configure the nexos.ai gateway with the ⚙️ button above to start chatting.</>}
               </p>
               {configured && (
                 <div className="flex flex-wrap justify-center gap-1.5">

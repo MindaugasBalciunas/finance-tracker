@@ -94,6 +94,39 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   const [assistComment, setAssistComment] = useState('')
   const [assistError, setAssistError] = useState('')
 
+  // Scan a photo to prefill the whole draft. Reuses the assist note/error
+  // display so results surface in the same spot beside the labels.
+  const scanInputRef = useRef<HTMLInputElement>(null)
+  const [scanBusy, setScanBusy] = useState(false)
+
+  const runScan = async (file: File) => {
+    setScanBusy(true)
+    setAssistError('')
+    setAssistNote('')
+    setAssistComment('')
+    try {
+      const res = await aiApi.scanTransaction(file)
+      // Prefill only fields the scan could actually read; a blank / non-positive
+      // value keeps the form's own default rather than clobbering it.
+      if (res.type) setValue('type', res.type)
+      if (res.amount > 0) setValue('amount', res.amount)
+      if (res.comment) setValue('comment', res.comment)
+      if (res.category) setValue('category', res.category as any)
+      if (res.date) setValue('date', res.date)
+      if (res.labels?.length) {
+        const existing = (watch('labels') ?? '').split(',').map((l) => l.trim()).filter(Boolean)
+        const merged = [...existing, ...res.labels.filter((l) => !existing.includes(l))]
+        setValue('labels', merged.join(','))
+      }
+      if (res.note) setAssistNote(res.note)
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string }
+      setAssistError(e.response?.data?.error ?? e.message ?? 'Scan failed')
+    } finally {
+      setScanBusy(false)
+    }
+  }
+
   const runAssist = async () => {
     setAssistBusy(true)
     setAssistError('')
@@ -198,6 +231,36 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
       )}
       className="space-y-4"
     >
+      {aiConfigured && (
+        <div className="flex justify-end -mb-1">
+          {/* capture=environment hints the phone camera; accept keeps the
+              desktop file picker working. */}
+          <input
+            ref={scanInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) runScan(file)
+              // Clear so picking the same file again re-triggers onChange.
+              e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => scanInputRef.current?.click()}
+            disabled={scanBusy}
+            title="Scan a receipt or invoice photo to prefill this transaction"
+            className="inline-flex items-center gap-1.5 text-sm font-medium border border-indigo-200 text-indigo-600 bg-indigo-50 rounded-lg px-3 py-1.5 hover:bg-indigo-100 disabled:opacity-40"
+          >
+            <span>📷</span>
+            {scanBusy ? 'Scanning…' : 'Scan photo'}
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -304,9 +367,10 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
               onClick={runAssist}
               disabled={assistBusy || commentValue.trim().length < 3}
               title="Suggest labels and a cleaner description from your history"
-              className="text-xs font-medium text-indigo-500 hover:text-indigo-700 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 text-sm font-medium border border-indigo-200 text-indigo-600 bg-indigo-50 rounded-lg px-3 py-1.5 hover:bg-indigo-100 disabled:opacity-40"
             >
-              {assistBusy ? '✦ thinking…' : '✦ AI suggest'}
+              <span>✦</span>
+              {assistBusy ? 'Thinking…' : 'AI suggest'}
             </button>
           )}
         </div>

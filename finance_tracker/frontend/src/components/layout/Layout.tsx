@@ -59,39 +59,39 @@ export default function Layout() {
 
       {/* ── Desktop header ── */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 hidden md:block">
-        <div className="w-full px-6 flex items-center gap-4 h-14 overflow-visible">
-          <div className="flex items-center gap-2 shrink-0">
-            <h1 className="text-base font-bold text-gray-900">Finance Tracker</h1>
-          </div>
-          <nav className="flex items-center gap-1 shrink-0">
+        <div className="w-full px-6 flex items-center gap-3 h-14">
+          <h1 className="text-base font-bold text-gray-900 shrink-0">Finance Tracker</h1>
+          {/* Nav is the flexible middle: it scrolls horizontally on a narrow
+              desktop rather than crushing the date filter or tools. */}
+          <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar">
             {navItems.map((item) => (
               <NavLink key={item.to} to={item.to} end={item.to === '/'}
                 className={({ isActive }) => clsx(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
                   isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 )}>
-                <span>{item.icon}</span>{item.label}
+                <span aria-hidden>{item.icon}</span>{item.label}
               </NavLink>
             ))}
           </nav>
-          <div className="flex-1 flex justify-center min-w-0">
-            <DateRangeFilter />
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Right cluster: compact date filter + tools, never shrinks. */}
+          <div className="flex items-center gap-2 shrink-0">
+            <DateRangeFilter compact />
+            <span className="h-5 w-px bg-gray-200" aria-hidden />
             <button onClick={() => setDataMode('backup')}
-              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
+              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap">
               💾 Backup
             </button>
             <button onClick={() => setDataMode('export')}
-              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
-              🤖 Export to AI
+              className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap">
+              🤖 Export
             </button>
             <button onClick={() => setSecurityOpen(true)}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
               Security
             </button>
             <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline">API Docs</a>
+              className="text-xs text-blue-600 hover:underline whitespace-nowrap">API Docs</a>
           </div>
         </div>
       </header>

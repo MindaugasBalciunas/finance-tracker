@@ -31,6 +31,9 @@ type InsightService interface {
 	// report the analysis uses. Both turns are persisted so the conversation
 	// follows the user across devices.
 	Chat(ctx context.Context, message string) (string, error)
+	// ScanTransaction extracts transaction fields from an uploaded image
+	// (receipt / bank-app screenshot) to prefill the form. Read-only.
+	ScanTransaction(ctx context.Context, imageData []byte, mediaType string) (*TransactionScan, error)
 	ChatHistory() ([]domain.AIChatMessage, error)
 	ClearChat() error
 	AISettings() (*domain.AISettings, error)
@@ -801,8 +804,17 @@ type anthropicBlock struct {
 	// tool_result blocks
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
+	// image blocks (vision): base64-encoded source
+	Source *anthropicImageSource `json:"source,omitempty"`
 
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+// anthropicImageSource carries a base64 image for a vision content block.
+type anthropicImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // image/jpeg, image/png, image/webp, image/gif
+	Data      string `json:"data"`       // base64 (no data: prefix)
 }
 
 type anthropicMessage struct {
@@ -871,11 +883,6 @@ func callGateway(ctx context.Context, settings *domain.AISettings, messages []do
 // breakpoint, so tools + system (the expensive, stable prefix) are read from
 // the prompt cache on tool rounds and follow-up turns.
 func callGatewayFull(ctx context.Context, settings *domain.AISettings, messages []gatewayMessage, maxTokens int, tools []gatewayTool) (gatewayMessage, error) {
-	var zero gatewayMessage
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	// Translate the internal transcript to Anthropic wire form: system turns
 	// become top-level system blocks; tool results become tool_result blocks
 	// inside a user message (consecutive results share one message, as the
@@ -929,13 +936,25 @@ func callGatewayFull(ctx context.Context, settings *domain.AISettings, messages 
 		}
 	}
 
-	body, err := json.Marshal(anthropicRequest{
+	return postAnthropic(ctx, settings, anthropicRequest{
 		Model:     settings.Model,
 		MaxTokens: maxTokens,
 		System:    system,
 		Messages:  wire,
 		Tools:     wireTools,
 	})
+}
+
+// postAnthropic marshals a prepared request, POSTs it to the gateway's
+// Messages endpoint (with the shared retry/backoff and context binding), and
+// decodes the assistant message. Shared by the text/tool path and the vision
+// (image) path so both get the same transport behavior.
+func postAnthropic(ctx context.Context, settings *domain.AISettings, request anthropicRequest) (gatewayMessage, error) {
+	var zero gatewayMessage
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return zero, err
 	}

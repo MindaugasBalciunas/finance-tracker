@@ -49,6 +49,19 @@ export interface RuleSuggestion {
   would_label: number
 }
 
+// A draft transaction extracted from a scanned photo. Empty strings / a
+// non-positive amount mean the scan couldn't read that field — the form
+// keeps its own default rather than overwriting with a blank.
+export interface TransactionScan {
+  type: 'expense' | 'income' | 'investment'
+  date: string
+  amount: number
+  comment: string
+  category: string
+  labels: string[]
+  note: string
+}
+
 // LLM gateway (nexos.ai by default): settings, connectivity test, chat.
 export const aiApi = {
   getSettings: async (): Promise<AISettings> => {
@@ -87,6 +100,17 @@ export const aiApi = {
 
   clearChat: async (): Promise<void> => {
     await client.delete('/ai/chat/history')
+  },
+
+  // Scan a photo (receipt/invoice/screenshot) into a draft transaction.
+  // Suggestion only — the returned fields prefill the form, nothing is saved.
+  scanTransaction: async (file: File): Promise<TransactionScan> => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await client.post<TransactionScan>('/ai/scan-transaction', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
   },
 
   // Single-transaction AI assist: labels + a cleaner description learned
