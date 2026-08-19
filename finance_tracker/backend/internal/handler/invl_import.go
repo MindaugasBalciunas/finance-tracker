@@ -400,18 +400,15 @@ func (h *ImportHandler) createINVLTransactions(entries []invlEntry, result *invl
 				return err
 			}
 		case e.Kind == invlEmployer || e.Payroll:
-			who, side := "employer", " ("+strings.TrimSpace(e.Payer)+")"
+			// Payroll-deducted contributions go straight into the fund and
+			// never touch a bank account. Book ONLY the investment leg — the
+			// old paired income (Salary) leg double-counted compensation and
+			// inflated income (see applyArteaPayrollFix).
+			who := "employer"
 			if e.Kind == invlClient {
-				who, side = "own share", ", deducted from gross salary"
+				who = "own share"
 			}
 			labels := domain.NormalizeLabels("artea,payroll," + invlEmployerLabel(e.Payer))
-			if err := create(domain.Transaction{
-				Date: e.Date, Type: domain.TransactionTypeIncome, Amount: e.Amount,
-				Category: domain.CategorySalary, Labels: labels,
-				Comment: "Artea (INVL) pension contribution via payroll — " + who + side,
-			}); err != nil {
-				return err
-			}
 			if err := create(domain.Transaction{
 				Date: e.Date, Type: domain.TransactionTypeInvestment, Amount: e.Amount,
 				Category: domain.CategoryPension, Labels: labels,

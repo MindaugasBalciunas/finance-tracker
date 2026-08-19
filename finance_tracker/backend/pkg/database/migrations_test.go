@@ -760,3 +760,35 @@ func TestLabelCleanupsConvergeWithCategoryMigrations(t *testing.T) {
 		assert.Contains(t, f.Labels, "bank fee", "run %d", run)
 	}
 }
+
+func TestApplyArteaPayrollFix(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}))
+
+	// Two phantom income legs + their kept investment legs, plus a normal
+	// salary row that must survive.
+	rows := []domain.Transaction{
+		{Date: time.Now(), Type: "income", Amount: 100, Category: "Salary", Comment: "Artea (INVL) pension contribution via payroll — own share, deducted from gross salary"},
+		{Date: time.Now(), Type: "income", Amount: 80, Category: "Salary", Comment: "Artea (INVL) pension contribution via payroll — employer (Danske Bank A/S)"},
+		{Date: time.Now(), Type: "investment", Amount: 100, Category: "Pension", Comment: "Artea (INVL) 3rd pillar pension (payroll — own share)"},
+		{Date: time.Now(), Type: "investment", Amount: 80, Category: "Pension", Comment: "Artea (INVL) 3rd pillar pension (payroll — employer)"},
+		{Date: time.Now(), Type: "income", Amount: 3000, Category: "Salary", Comment: "Nexos.ai salary"},
+	}
+	for i := range rows {
+		require.NoError(t, db.Create(&rows[i]).Error)
+	}
+
+	applyArteaPayrollFix(db)
+
+	var income, pension int64
+	db.Model(&domain.Transaction{}).Where("type = 'income'").Count(&income)
+	db.Model(&domain.Transaction{}).Where("type = 'investment' AND category = 'Pension'").Count(&pension)
+	assert.EqualValues(t, 1, income, "only the real salary income survives")
+	assert.EqualValues(t, 2, pension, "the investment legs are kept")
+
+	// Idempotent: re-running changes nothing.
+	applyArteaPayrollFix(db)
+	db.Model(&domain.Transaction{}).Where("type = 'income'").Count(&income)
+	assert.EqualValues(t, 1, income)
+}

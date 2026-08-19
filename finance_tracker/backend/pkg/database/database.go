@@ -100,10 +100,24 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 
 	applyDataCleanups(db)
 	applyCategoryMigrations(db)
+	applyArteaPayrollFix(db)
 	applyLabelCleanups(db)
 	applyBalanceBackfills(db)
 
 	return db, nil
+}
+
+// applyArteaPayrollFix removes the phantom income legs the INVL pension
+// importer used to create for payroll-deducted contributions: each was
+// booked as BOTH income (Salary) AND an investment (Pension), double-counting
+// compensation that never touched a bank account and inflating income by
+// ~€24k. Only the investment leg is kept; the income leg is deleted here and
+// the importer no longer creates it. Idempotent — a no-op once the legs are
+// gone.
+func applyArteaPayrollFix(db *gorm.DB) {
+	db.Exec(`DELETE FROM transactions
+		WHERE type = 'income'
+		AND comment LIKE 'Artea (INVL) pension contribution via payroll%'`)
 }
 
 // applyDataCleanups repairs comment text before category/label passes run:

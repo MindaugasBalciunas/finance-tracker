@@ -145,23 +145,25 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	assert.Equal(t, "2021-01-29", created.Date.Format("2006-01-02"))
 	assert.InDelta(t, created.Art, created.Total, 0.001)
 
-	// Transactions: two payroll pairs (client+employer × income+Pension),
-	// one withdrawal transfer, one direct contribution with no bank row.
+	// Transactions: two payroll pairs (client+employer) each book ONLY the
+	// investment (Pension) leg — no income double-count — plus one withdrawal
+	// transfer and one direct contribution with no bank row.
 	var txCount int64
 	db.Model(&domain.Transaction{}).Count(&txCount)
-	assert.EqualValues(t, 10, txCount, rec.Body.String())
-	assert.Contains(t, body, `"tx_created":10`, body)
+	assert.EqualValues(t, 6, txCount, rec.Body.String())
+	assert.Contains(t, body, `"tx_created":6`, body)
 	var payrollIncome, payrollPension, withdrawals int64
 	db.Model(&domain.Transaction{}).Where("type = 'income' AND (','||labels||',') LIKE '%,payroll,%'").Count(&payrollIncome)
 	db.Model(&domain.Transaction{}).Where("type = 'investment' AND category = 'Pension' AND (','||labels||',') LIKE '%,payroll,%'").Count(&payrollPension)
 	db.Model(&domain.Transaction{}).Where("category = 'Transfers' AND debit_account = 'art'").Count(&withdrawals)
-	assert.EqualValues(t, 4, payrollIncome)
+	assert.EqualValues(t, 0, payrollIncome, "payroll contributions no longer create phantom income")
 	assert.EqualValues(t, 4, payrollPension)
 	assert.EqualValues(t, 1, withdrawals)
+	// The employer contribution is an investment leg tagged with the employer
+	// label (the payer name lives in the label now, not the comment).
 	var employerRow domain.Transaction
-	require.NoError(t, db.First(&employerRow, "type = 'income' AND comment LIKE '%Vipps%'").Error)
-	assert.Contains(t, employerRow.Labels, "vipps mobilepay")
-	assert.Equal(t, "", employerRow.CreditAccount, "payroll income never hit a bank account")
+	require.NoError(t, db.First(&employerRow, "type = 'investment' AND category = 'Pension' AND (','||labels||',') LIKE '%,vipps mobilepay,%'").Error)
+	assert.Equal(t, "art", employerRow.CreditAccount, "the contribution goes into the Artea fund")
 
 	// Idempotent: every month now tracks Artea, every row fingerprinted.
 	rec = invlUpload(t, r, invlSample)
@@ -173,7 +175,7 @@ func TestImportINVL_EnrichCreateAndGuard(t *testing.T) {
 	db.Model(&domain.Balance{}).Count(&count)
 	assert.EqualValues(t, 5, count)
 	db.Model(&domain.Transaction{}).Count(&txCount)
-	assert.EqualValues(t, 10, txCount)
+	assert.EqualValues(t, 6, txCount)
 }
 
 func TestImportINVL_TransactionDedup(t *testing.T) {
