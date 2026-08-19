@@ -22,7 +22,11 @@ type TransactionScan struct {
 	Comment  string   `json:"comment"`  // merchant / description
 	Category string   `json:"category"` // one of the known categories, or ""
 	Labels   []string `json:"labels"`   // from the user's vocabulary
-	Note     string   `json:"note"`     // one-line explanation / caveats
+	// Account linkage recognized from the image (e.g. a known bank-app look);
+	// setting these makes the created transaction adjust that balance.
+	DebitAccount  string `json:"debit_account"`
+	CreditAccount string `json:"credit_account"`
+	Note          string `json:"note"` // one-line explanation / caveats
 }
 
 // visionMediaTypes is the set the Anthropic vision API accepts.
@@ -59,13 +63,18 @@ func (s *insightService) ScanTransaction(ctx context.Context, imageData []byte, 
 	prompt := fmt.Sprintf(`You are extracting ONE financial transaction from an image (a receipt, invoice, or a bank/payment-app screenshot) for a personal finance tracker. Amounts are in EUR; if the image shows another currency, still return the numeric amount you see and note the currency in "note".
 
 Return ONE JSON object, nothing else:
-{"type":"expense|income|investment","date":"YYYY-MM-DD","amount":<positive number>,"comment":"<merchant or short description>","category":"<one of the categories below, or empty if unsure>","labels":["<0-3 labels from the list below>"],"note":"<one short sentence: what you read, and any caveat like an unclear total or a non-EUR amount>"}
+{"type":"expense|income|investment","date":"YYYY-MM-DD","amount":<positive number>,"comment":"<merchant or short description>","category":"<one of the categories below, or empty if unsure>","labels":["<0-3 labels from the list below>"],"debit_account":"<account code or empty>","credit_account":"<account code or empty>","note":"<one short sentence: what you read, and any caveat like an unclear total or a non-EUR amount>"}
 
 CATEGORIES (pick the best fit, or "" if genuinely unclear):
 %s
 
 LABELS (use only these, or none):
 %s
+
+ACCOUNTS (codes: seb, swed, swed_etf, seb_pen, luminor, art, rev_m, rev_r, rev_stocks, ibkr_stocks, cash — leave empty when unsure):
+- A screenshot of "PzM sąskaita" (the user's bank app view, usually black with orange accents) is the user's SWEDBANK account: use "swed" — debit_account for an expense, credit_account for income.
+- Revolut-app screenshots are rev_m or rev_r (leave empty if you can't tell which).
+- Plain paper receipts don't show the paying account — leave both empty.
 
 Rules: amount is the transaction total (the amount actually charged), as a positive number. Most receipts are expenses. If the date isn't visible, use an empty string. Never invent a merchant — if unreadable, say so in note and leave comment short.`,
 		strings.Join(cats, ", "), strings.Join(vocab, ", "))
@@ -115,6 +124,18 @@ Rules: amount is the transaction total (the amount actually charged), as a posit
 	}
 	out.Comment = strings.TrimSpace(out.Comment)
 	out.Labels = normalizeSuggested(out.Labels, nil, 3)
+	// Accounts: only real codes survive; anything else clears silently (the
+	// form leaves its default).
+	if a, ok := normalizeAccountCode(out.DebitAccount); ok {
+		out.DebitAccount = a
+	} else {
+		out.DebitAccount = ""
+	}
+	if a, ok := normalizeAccountCode(out.CreditAccount); ok {
+		out.CreditAccount = a
+	} else {
+		out.CreditAccount = ""
+	}
 	out.Note = strings.TrimSpace(clipText(out.Note, 240))
 
 	s.logAIActivity("scan", out.Type, fmt.Sprintf("scanned image → %s €%.2f %q (%s)", out.Type, out.Amount, out.Comment, out.Category))

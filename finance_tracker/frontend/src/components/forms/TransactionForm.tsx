@@ -118,6 +118,10 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         const merged = [...existing, ...res.labels.filter((l) => !existing.includes(l))]
         setValue('labels', merged.join(','))
       }
+      // Account recognized from the image (e.g. a PzM sąskaita / Swedbank
+      // screenshot) — prefill so the balance adjusts on save.
+      if (res.debit_account) setValue('debit_account', res.debit_account)
+      if (res.credit_account) setValue('credit_account', res.credit_account)
       if (res.note) setAssistNote(res.note)
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }

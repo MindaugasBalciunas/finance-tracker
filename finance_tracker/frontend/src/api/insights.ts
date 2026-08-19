@@ -60,6 +60,9 @@ export interface TransactionScan {
   comment: string
   category: string
   labels: string[]
+  // Account recognized from the image (bank-app screenshots), '' when unknown.
+  debit_account: string
+  credit_account: string
   note: string
 }
 

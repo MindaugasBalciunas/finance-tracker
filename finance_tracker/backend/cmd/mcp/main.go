@@ -236,6 +236,9 @@ type createTransactionArgs struct {
 	Comment  string  `json:"comment" jsonschema:"merchant / short description"`
 	Category string  `json:"category" jsonschema:"one of the app's categories (see get_label_stats / the overview for valid names)"`
 	Labels   string  `json:"labels" jsonschema:"optional comma-separated lowercase labels"`
+	// Setting an account adjusts its balance in a new snapshot.
+	DebitAccount  string `json:"debit_account" jsonschema:"optional: account the money left — seb|swed|swed_etf|seb_pen|luminor|art|rev_m|rev_r|rev_stocks|ibkr_stocks|cash"`
+	CreditAccount string `json:"credit_account" jsonschema:"optional: account the money arrived at — same codes"`
 }
 
 // ── Tool handlers ────────────────────────────────────────────────────
@@ -536,6 +539,7 @@ func handleCreateTransaction(ctx context.Context, req *mcp.CallToolRequest, a cr
 	body, err := apiWrite(http.MethodPost, "/transactions", map[string]any{
 		"type": a.Type, "date": a.Date, "amount": a.Amount,
 		"comment": a.Comment, "category": a.Category, "labels": a.Labels,
+		"debit_account": a.DebitAccount, "credit_account": a.CreditAccount,
 	})
 	if err != nil {
 		return nil, nil, err

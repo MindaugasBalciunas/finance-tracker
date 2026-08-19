@@ -51,6 +51,27 @@ func mkTool(name, description string, params map[string]any) gatewayTool {
 	return t
 }
 
+// accountCodes mirrors the balance columns (applyAccountDelta and the form's
+// ACCOUNT_LABELS): the only accounts a transaction may debit/credit. Setting
+// one makes SnapshotFromTransaction adjust that account's balance.
+var accountCodes = map[string]bool{
+	"seb": true, "swed": true, "swed_etf": true, "seb_pen": true,
+	"luminor": true, "art": true, "rev_m": true, "rev_r": true,
+	"rev_stocks": true, "ibkr_stocks": true, "cash": true,
+}
+
+const accountCodeList = "seb, swed, swed_etf, seb_pen, luminor, art, rev_m, rev_r, rev_stocks, ibkr_stocks, cash"
+
+// normalizeAccountCode lowercases/trims an account code; ok=false when it
+// isn't a real account ("" is valid and means none).
+func normalizeAccountCode(a string) (string, bool) {
+	a = strings.ToLower(strings.TrimSpace(a))
+	if a == "" {
+		return "", true
+	}
+	return a, accountCodes[a]
+}
+
 // webSearchTool declares Anthropic's provider-executed web search, which the
 // nexos gateway passes through (verified live). The search runs entirely
 // server-side — results come back already woven into the reply.
@@ -183,7 +204,7 @@ func chatTools() []gatewayTool {
 				"to":   str("the new label (existing label = merge)"),
 			}, "from", "to")),
 		mkTool("create_transaction",
-			"Create a REAL new transaction — e.g. from a receipt/screenshot the user attached, or a spending they described. Amounts are EUR and positive. ONLY after the user confirms the details you extracted; show them the fields first. One call per transaction.",
+			"Create a REAL new transaction — e.g. from a receipt/screenshot the user attached, or a spending they described. Amounts are EUR and positive. ONLY after the user confirms the details you extracted; show them the fields first. One call per transaction. Setting an account automatically adjusts that account's balance in a new snapshot (skipped for backdated entries) — ask which account the money moved through when it isn't obvious.",
 			obj(map[string]any{
 				"type":     str("expense | income | investment"),
 				"date":     str("YYYY-MM-DD"),
@@ -191,6 +212,9 @@ func chatTools() []gatewayTool {
 				"comment":  str("merchant / description"),
 				"category": str("one of the app's categories"),
 				"labels":   str("optional comma-separated lowercase labels"),
+				"debit_account": str("optional: account the money LEFT (expense paying account; investment/transfer source). " +
+					"One of: seb, swed, swed_etf, seb_pen, luminor, art, rev_m, rev_r, rev_stocks, ibkr_stocks, cash"),
+				"credit_account": str("optional: account the money ARRIVED at (income destination; investment/transfer target). Same codes"),
 			}, "type", "date", "amount", "category")),
 	}
 }
@@ -226,10 +250,12 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		} `json:"retag"`
 		// create_transaction args (Date/Type/Category/Comment reuse the fields
 		// above where names collide; Amount here is a value, not a filter).
-		Date    string  `json:"date"`
-		Comment string  `json:"comment"`
-		Amount  float64 `json:"amount"`
-		Labels  string  `json:"labels"`
+		Date          string  `json:"date"`
+		Comment       string  `json:"comment"`
+		Amount        float64 `json:"amount"`
+		Labels        string  `json:"labels"`
+		DebitAccount  string  `json:"debit_account"`
+		CreditAccount string  `json:"credit_account"`
 	}
 	if rawArgs != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -575,19 +601,37 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		if _, derr := time.Parse("2006-01-02", strings.TrimSpace(args.Date)); derr != nil {
 			return "", fmt.Errorf("date must be YYYY-MM-DD")
 		}
+		debit, ok := normalizeAccountCode(args.DebitAccount)
+		if !ok {
+			return "", fmt.Errorf("unknown debit_account %q — valid: %s", args.DebitAccount, accountCodeList)
+		}
+		credit, ok := normalizeAccountCode(args.CreditAccount)
+		if !ok {
+			return "", fmt.Errorf("unknown credit_account %q — valid: %s", args.CreditAccount, accountCodeList)
+		}
 		tx, err := s.txSvc.Create(CreateTransactionInput{
-			Date:     strings.TrimSpace(args.Date),
-			Type:     typ,
-			Amount:   args.Amount,
-			Comment:  strings.TrimSpace(args.Comment),
-			Category: domain.Category(cat),
-			Labels:   domain.NormalizeLabels(args.Labels),
+			Date:          strings.TrimSpace(args.Date),
+			Type:          typ,
+			Amount:        args.Amount,
+			Comment:       strings.TrimSpace(args.Comment),
+			Category:      domain.Category(cat),
+			Labels:        domain.NormalizeLabels(args.Labels),
+			DebitAccount:  debit,
+			CreditAccount: credit,
 		})
 		if err != nil {
 			return "", fmt.Errorf("creating transaction: %w", err)
 		}
-		s.logAIActivity("transaction", "created", fmt.Sprintf("created %s €%.2f %q (%s) id=%d", typ, args.Amount, tx.Comment, cat, tx.ID))
-		return marshalToolResult(map[string]any{"created_id": tx.ID, "type": string(typ), "amount": args.Amount, "category": cat, "comment": tx.Comment})
+		s.logAIActivity("transaction", "created", fmt.Sprintf("created %s €%.2f %q (%s) id=%d debit=%s credit=%s", typ, args.Amount, tx.Comment, cat, tx.ID, debit, credit))
+		note := ""
+		if debit != "" || credit != "" {
+			note = "a new balance snapshot with the account delta was created automatically (unless the date is before the latest snapshot)"
+		}
+		return marshalToolResult(map[string]any{
+			"created_id": tx.ID, "type": string(typ), "amount": args.Amount,
+			"category": cat, "comment": tx.Comment,
+			"debit_account": debit, "credit_account": credit, "note": note,
+		})
 
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
