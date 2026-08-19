@@ -15,6 +15,7 @@ export const insightsApi = {
   // Optional date range scopes the period-sensitive sections of the overview.
   generate: async (range?: { date_from?: string; date_to?: string }): Promise<AIInsight> => {
     const { data } = await client.post<AIInsight>('/insights/generate', range ?? {})
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
@@ -155,6 +156,7 @@ export const aiApi = {
     const { data } = await client.post<TransactionScan>('/ai/scan-transaction', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
@@ -169,6 +171,7 @@ export const aiApi = {
     labels?: string
   }): Promise<{ labels: string[]; comment: string; note?: string }> => {
     const { data } = await client.post('/ai/assist-transaction', input)
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
@@ -183,12 +186,14 @@ export const aiApi = {
     remaining_unlabeled: number
   }> => {
     const { data } = await client.post('/ai/label-reindex', { mode, offset })
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
   // Writes the user-approved changes (fixed labels can never be removed).
   applyLabelSuggestions: async (items: { id: number; add: string[]; remove?: string[] }[]): Promise<number> => {
     const { data } = await client.post<{ applied: number }>('/ai/label-reindex/apply', { items })
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data.applied
   },
 
@@ -209,6 +214,7 @@ export const aiApi = {
   // rules. Suggestion-only — every item carries live match counts.
   ruleReview: async (): Promise<{ suggestions: RuleSuggestion[]; rules_scanned: number }> => {
     const { data } = await client.post('/ai/rule-review', {})
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
@@ -218,6 +224,7 @@ export const aiApi = {
     items: { action: string; rule_id?: number; label: string; comment_match?: string; category?: string }[],
   ): Promise<{ added: number; updated: number; deleted: number; relabeled: number }> => {
     const { data } = await client.post('/ai/rule-review/apply', { items })
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data
   },
 
@@ -231,6 +238,7 @@ export const aiApi = {
     const { data } = await client.get<{ summary: string }>('/ai/view-summary', {
       params: { view, ...range, ...(refresh ? { refresh: '1' } : {}) },
     })
+    if (data && (data as any).error) throw new Error((data as any).error)
     return data.summary
   },
 }

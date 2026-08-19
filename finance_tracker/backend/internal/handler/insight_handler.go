@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -117,12 +116,7 @@ func (h *InsightHandler) AssistTransaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	out, err := h.svc.AssistTransaction(input)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, out)
+	streamJSONResult(c, func() (any, error) { return h.svc.AssistTransaction(input) })
 }
 
 // maxScanImageBytes caps the uploaded image; a phone photo is a few MB. The
@@ -155,15 +149,11 @@ func (h *InsightHandler) ScanTransaction(c *gin.Context) {
 	}
 	mediaType := http.DetectContentType(data)
 
-	// Vision calls are slower than text; give it a bounded budget below nginx.
+	// Vision calls are slower than text; give it a bounded budget below nginx,
+	// and stream heartbeats so a proxy never 504s it.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
 	defer cancel()
-	out, err := h.svc.ScanTransaction(ctx, data, mediaType)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, out)
+	streamJSONResult(c, func() (any, error) { return h.svc.ScanTransaction(ctx, data, mediaType) })
 }
 
 func (h *InsightHandler) LabelReindex(c *gin.Context) {
@@ -173,27 +163,17 @@ func (h *InsightHandler) LabelReindex(c *gin.Context) {
 		Offset int    `json:"offset"`
 	}
 	_ = c.ShouldBindJSON(&input)
-	out, err := h.svc.ReindexSuggest(input.Mode, input.Limit, input.Offset)
-	if err != nil {
-		if strings.Contains(err.Error(), "unknown mode") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+	if input.Mode != "" && input.Mode != "unlabeled" && input.Mode != "review" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown mode"})
 		return
 	}
-	c.JSON(http.StatusOK, out)
+	streamJSONResult(c, func() (any, error) { return h.svc.ReindexSuggest(input.Mode, input.Limit, input.Offset) })
 }
 
 // RuleReview asks the AI to audit the auto-labeling rule set and returns
 // validated suggestions with live match counts. Suggestion-only.
 func (h *InsightHandler) RuleReview(c *gin.Context) {
-	out, err := h.svc.RuleReview()
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, out)
+	streamJSONResult(c, func() (any, error) { return h.svc.RuleReview() })
 }
 
 // ApplyRuleSuggestions writes the user-approved rule changes.
@@ -209,12 +189,7 @@ func (h *InsightHandler) ApplyRuleSuggestions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "items must contain 1-100 suggestions"})
 		return
 	}
-	out, err := h.svc.ApplyRuleSuggestions(input.Items)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, out)
+	streamJSONResult(c, func() (any, error) { return h.svc.ApplyRuleSuggestions(input.Items) })
 }
 
 func (h *InsightHandler) ApplyLabelSuggestions(c *gin.Context) {
@@ -229,12 +204,13 @@ func (h *InsightHandler) ApplyLabelSuggestions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "items must contain 1-500 suggestions"})
 		return
 	}
-	applied, err := h.svc.ApplyLabelSuggestions(input.Items)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"applied": applied})
+	streamJSONResult(c, func() (any, error) {
+		applied, err := h.svc.ApplyLabelSuggestions(input.Items)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{"applied": applied}, nil
+	})
 }
 
 func (h *InsightHandler) ViewSummary(c *gin.Context) {
@@ -242,16 +218,13 @@ func (h *InsightHandler) ViewSummary(c *gin.Context) {
 	from := parseInsightDate(c.Query("date_from"))
 	to := parseInsightDate(c.Query("date_to"))
 	refresh := c.Query("refresh") == "1"
-	summary, err := h.svc.ViewSummary(view, from, to, refresh)
-	if err != nil {
-		if strings.Contains(err.Error(), "unknown view") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+	streamJSONResult(c, func() (any, error) {
+		summary, err := h.svc.ViewSummary(view, from, to, refresh)
+		if err != nil {
+			return nil, err
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"summary": summary})
+		return gin.H{"summary": summary}, nil
+	})
 }
 
 func (h *InsightHandler) DataReport(c *gin.Context) {
@@ -381,63 +354,22 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message must not be blank"})
 		return
 	}
-	// Bound the whole agentic chat (tool rounds included) to a budget.
+	// Bound the whole agentic chat (tool rounds included) to a budget, and
+	// stream heartbeats so a reverse proxy never 504s the long call.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), chatBudget)
 	defer cancel()
-
-	// The agentic label-audit chat can run a minute or more. A reverse proxy
-	// in front of the app (e.g. the one terminating TLS on the public port)
-	// applies its own read timeout — often ~60s — and returns a bare 504 while
-	// the backend is still working (and still billing). To survive that, we
-	// stream whitespace heartbeats while the loop runs so bytes keep flowing
-	// and no proxy idles out. Leading whitespace is ignored by JSON parsers,
-	// so the final buffered body still parses as {"reply"|"error": …}. Because
-	// the 200 is committed before the result is known, chat errors ride in the
-	// body's "error" field (the client checks for it) rather than a status.
-	type chatResult struct {
-		res service.ChatResult
-		err error
-	}
-	done := make(chan chatResult, 1)
-	go func() {
+	streamJSONResult(c, func() (any, error) {
 		res, err := h.svc.Chat(ctx, message, image)
-		done <- chatResult{res: res, err: err}
-	}()
-
-	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-	c.Writer.WriteHeader(http.StatusOK)
-	flusher, _ := c.Writer.(http.Flusher)
-	if flusher != nil {
-		flusher.Flush()
-	}
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case r := <-done:
-			payload := gin.H{
-				"reply":         r.res.Reply,
-				"cost_usd":      r.res.CostUSD,
-				"input_tokens":  r.res.InputTokens,
-				"output_tokens": r.res.OutputTokens,
-			}
-			if r.err != nil {
-				payload = gin.H{"error": r.err.Error()}
-			}
-			b, _ := json.Marshal(payload)
-			_, _ = c.Writer.Write(b)
-			return
-		case <-ticker.C:
-			// One space — ignored leading JSON whitespace — keeps the
-			// connection active so proxy read-timeouts never fire.
-			if _, err := c.Writer.Write([]byte(" ")); err != nil {
-				return // client/proxy went away; stop heartbeating
-			}
-			if flusher != nil {
-				flusher.Flush()
-			}
+		if err != nil {
+			return nil, err
 		}
-	}
+		return gin.H{
+			"reply":         res.Reply,
+			"cost_usd":      res.CostUSD,
+			"input_tokens":  res.InputTokens,
+			"output_tokens": res.OutputTokens,
+		}, nil
+	})
 }
 
 func (h *InsightHandler) ChatHistory(c *gin.Context) {
@@ -491,12 +423,9 @@ func (h *InsightHandler) Generate(c *gin.Context) {
 	dateFrom := parseInsightDate(input.DateFrom)
 	dateTo := parseInsightDate(input.DateTo)
 
-	insight, err := h.svc.Generate(dateFrom, dateTo)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, insight)
+	// Streamed: a slow gateway analysis must not 504 behind a proxy. Errors
+	// arrive in the body's "error" field (200 committed up front).
+	streamJSONResult(c, func() (any, error) { return h.svc.Generate(dateFrom, dateTo) })
 }
 
 // parseInsightDate accepts a YYYY-MM-DD string, returning nil when empty or

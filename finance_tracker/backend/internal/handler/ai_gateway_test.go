@@ -227,7 +227,7 @@ func TestGenerateViaGateway(t *testing.T) {
 	require.Equal(t, 200, w.Code)
 
 	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", nil)
-	require.Equal(t, 201, w.Code, w.Body.String())
+	require.Equal(t, 200, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "Your finances look healthy.")
 
 	var count int64
@@ -256,7 +256,7 @@ func TestGenerateWithPeriod(t *testing.T) {
 
 	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", map[string]any{
 		"date_from": "2026-01-01", "date_to": "2026-06-30"})
-	require.Equal(t, 201, w.Code, w.Body.String())
+	require.Equal(t, 200, w.Code, w.Body.String())
 	prompt := cap.Req.Messages[0].Content[0].Text
 	assert.Contains(t, prompt, "2026-01-01 to 2026-06-30", "period reflected in the report")
 	assert.Contains(t, prompt, "TRANSACTION SUMMARY (2026-01-01 to 2026-06-30)")
@@ -282,7 +282,7 @@ func TestEmptyGatewayReplyRejected(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "empty reply")
 
 	w = budgetDoJSON(r, "POST", "/api/v1/insights/generate", nil)
-	assert.Equal(t, 500, w.Code)
+	assert.Equal(t, 200, w.Code)
 	var count int64
 	require.NoError(t, db.Model(&domain.AIInsight{}).Count(&count).Error)
 	assert.Zero(t, count, "no blank insight persisted")
@@ -497,10 +497,11 @@ func TestViewSummary(t *testing.T) {
 	require.Equal(t, 200, w.Code)
 	assert.Equal(t, 3, hits)
 
-	// Unknown views are rejected before any spend.
+	// Unknown views are rejected before any spend (streamed: 200 + error body).
 	w = budgetDoJSON(r, "GET", "/api/v1/ai/view-summary?view=admin", nil)
-	assert.Equal(t, 400, w.Code)
-	assert.Equal(t, 3, hits)
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "unknown view")
+	assert.Equal(t, 3, hits, "no gateway spend on an unknown view")
 }
 
 // AI labeling: assist suggests from history, reindex proposes for unlabeled
