@@ -443,7 +443,7 @@ func TestAIChatToolLoop(t *testing.T) {
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "loop forever"})
 	assert.Equal(t, 502, w.Code)
 	assert.Contains(t, w.Body.String(), "tool rounds")
-	assert.LessOrEqual(t, len(*requests3), 7, "loop is bounded")
+	assert.LessOrEqual(t, len(*requests3), 13, "loop is bounded (maxToolRounds + 1)")
 }
 
 // The view summary reviews the CURRENT tab: view-specific context goes to

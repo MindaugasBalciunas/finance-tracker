@@ -12,6 +12,7 @@ export interface AuthStatus {
   webauthn_registered: boolean
   webauthn_credentials: number
   has_api_token: boolean
+  has_api_token_rw: boolean
 }
 
 export interface WebauthnCredentialInfo {
@@ -42,6 +43,17 @@ export const authApi = {
 
   revokeApiToken: async (): Promise<void> => {
     await client.delete('/auth/token')
+  },
+
+  // Read-WRITE machine token for the MCP server — can modify labels and
+  // auto-labeling rules, not just read. Plaintext returned once.
+  generateApiTokenRw: async (): Promise<string> => {
+    const { data } = await client.post<{ token: string; note: string }>('/auth/token/rw')
+    return data.token
+  },
+
+  revokeApiTokenRw: async (): Promise<void> => {
+    await client.delete('/auth/token/rw')
   },
 
   pinDisable: async (pin: string): Promise<void> => {

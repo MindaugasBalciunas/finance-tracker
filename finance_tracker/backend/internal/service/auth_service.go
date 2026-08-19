@@ -59,6 +59,7 @@ type AuthStatus struct {
 	WebauthnRegistered  bool `json:"webauthn_registered"`
 	WebauthnCredentials int  `json:"webauthn_credentials"`
 	HasAPIToken         bool `json:"has_api_token"`
+	HasAPITokenRW       bool `json:"has_api_token_rw"`
 }
 
 type AuthService struct {
@@ -118,6 +119,7 @@ func (s *AuthService) Status(sessionToken string) AuthStatus {
 		WebauthnRegistered:  len(creds) > 0,
 		WebauthnCredentials: len(creds),
 		HasAPIToken:         settings != nil && settings.APITokenHash != "",
+		HasAPITokenRW:       settings != nil && settings.APITokenRWHash != "",
 	}
 }
 
@@ -458,6 +460,8 @@ func (s *AuthService) RevokeAPIToken() error {
 
 // ValidAPIToken reports whether the presented bearer token matches the
 // stored hash (constant-time). No hash stored = no token access at all.
+// The ftkw_ (read-write) prefix is intentionally NOT accepted here — a
+// read-write token must never be treated as the read-only one, or vice versa.
 func (s *AuthService) ValidAPIToken(token string) bool {
 	if token == "" || !strings.HasPrefix(token, "ftk_") {
 		return false
@@ -468,4 +472,51 @@ func (s *AuthService) ValidAPIToken(token string) bool {
 	}
 	sum := sha256.Sum256([]byte(token))
 	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(settings.APITokenHash)) == 1
+}
+
+// ── API token (read-WRITE machine access — opt-in) ──────────────────
+
+// GenerateAPITokenRW mints a fresh read-write bearer token (ftkw_ prefix),
+// stores only its hash, and returns the plaintext once. Separate from the
+// read-only token so the two are independently revocable.
+func (s *AuthService) GenerateAPITokenRW() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	token := "ftkw_" + hex.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(token))
+	settings, err := s.repo.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	settings.APITokenRWHash = hex.EncodeToString(sum[:])
+	if err := s.repo.SaveSettings(settings); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// RevokeAPITokenRW deletes the stored read-write hash.
+func (s *AuthService) RevokeAPITokenRW() error {
+	settings, err := s.repo.GetSettings()
+	if err != nil {
+		return err
+	}
+	settings.APITokenRWHash = ""
+	return s.repo.SaveSettings(settings)
+}
+
+// ValidAPITokenRW reports whether the presented bearer token is the stored
+// read-write token (constant-time; ftkw_ prefix required).
+func (s *AuthService) ValidAPITokenRW(token string) bool {
+	if token == "" || !strings.HasPrefix(token, "ftkw_") {
+		return false
+	}
+	settings, err := s.repo.GetSettings()
+	if err != nil || settings.APITokenRWHash == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(settings.APITokenRWHash)) == 1
 }

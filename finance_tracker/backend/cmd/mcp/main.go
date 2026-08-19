@@ -1,13 +1,21 @@
-// finance-tracker-mcp is a read-only MCP server exposing the Finance Tracker
-// API as typed tools for MCP clients (Claude Desktop, Claude Code, or any
-// gateway that attaches MCP servers).
+// finance-tracker-mcp is an MCP server exposing the Finance Tracker API as
+// typed tools for MCP clients (Claude Desktop, Claude Code, or any gateway
+// that attaches MCP servers).
 //
-// Safeguards, by construction:
-//   - No database access: every tool is an HTTP GET against the app's REST
-//     API, authenticated with the read-only API token (Security → API token).
-//     The backend enforces GET-only + a route allowlist server-side, so even
-//     a compromised or confused client cannot mutate data or read backups,
+// Two token scopes, selected by whichever token you put in FT_API_TOKEN:
+//   - A read-only token (ftk_…) — the default and safe choice — can drive only
+//     the read (GET) tools. The backend rejects it on any write, so even a
+//     compromised or confused client cannot mutate data or read backups,
 //     settings or the AI key.
+//   - A read-write token (ftkw_…) additionally unlocks the write tools
+//     (add_rule, update_rule, delete_rule, rename_label, retag_transactions),
+//     which MUTATE your labels and auto-labeling rules. Mint it only when you
+//     want the model to edit them, in Security → read-write API token.
+//
+// Regardless of scope:
+//   - No database access: every tool is an HTTP call against the app's REST
+//     API. The backend enforces the token's scope + a route allowlist
+//     server-side, so a client can never exceed what the token permits.
 //   - The token comes from the FT_API_TOKEN environment variable and is never
 //     logged or echoed into tool output.
 //   - Every list tool caps its result size, so a broad query cannot dump the
@@ -16,7 +24,8 @@
 // Configuration (environment):
 //
 //	FT_API_URL   base URL of the API, e.g. http://homeassistant.local:8098/api/v1
-//	FT_API_TOKEN the read-only token minted in Security → API token (ftk_…)
+//	FT_API_TOKEN the token minted in Security → API token: read-only (ftk_…) by
+//	             default, or read-write (ftkw_…) to enable the write tools
 //
 // Claude Desktop / Claude Code config example:
 //
@@ -27,6 +36,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -76,6 +86,48 @@ func apiGET(path string, query url.Values) ([]byte, error) {
 		return nil, fmt.Errorf("route not permitted for the read-only token")
 	default:
 		return nil, fmt.Errorf("API returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+}
+
+// apiWrite calls an allowlisted write route with an optional JSON body and
+// returns the raw JSON response. Only a read-write token (ftkw_) reaches these
+// routes; a read-only token is rejected server-side with 403, surfaced here as
+// a clear "mint a read-write token" message.
+func apiWrite(method, path string, body any) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reqBody = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequest(method, apiURL+path, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("finance tracker API unreachable at %s: %w", apiURL, err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4 MB hard cap
+	if err != nil {
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return respBody, nil
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("API token rejected — mint a new one in the app under Security → API token")
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("this token can't perform writes — mint a read-write token (ftkw_) in the app under Security → read-write API token")
+	default:
+		return nil, fmt.Errorf("API returned %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
 	}
 }
 
@@ -142,6 +194,39 @@ type balancesArgs struct {
 
 type quoteArgs struct {
 	Ticker string `json:"ticker" jsonschema:"stock ticker symbol, e.g. VWCE or AAPL"`
+}
+
+// ── Write tool inputs (read-write token only) ────────────────────────
+
+type deleteRuleArgs struct {
+	RuleID int `json:"rule_id" jsonschema:"numeric id of the auto-labeling rule to delete (from get_label_rules)"`
+}
+
+type addRuleArgs struct {
+	Label        string `json:"label" jsonschema:"label the new rule assigns (lowercase tag, e.g. groceries)"`
+	CommentMatch string `json:"comment_match" jsonschema:"substring matched against the transaction comment; a leading ^ anchors to the start"`
+	Category     string `json:"category,omitempty" jsonschema:"optional category the rule also requires to match, e.g. Food (empty = any category)"`
+}
+
+type updateRuleArgs struct {
+	RuleID       int    `json:"rule_id" jsonschema:"numeric id of the rule to edit (from get_label_rules)"`
+	CommentMatch string `json:"comment_match,omitempty" jsonschema:"new comment match pattern; a leading ^ anchors to the start"`
+	Category     string `json:"category,omitempty" jsonschema:"new category the rule requires to match (empty = any category)"`
+}
+
+type retagItem struct {
+	ID     int      `json:"id" jsonschema:"transaction id to edit (from search_transactions)"`
+	Add    []string `json:"add,omitempty" jsonschema:"labels to add to this transaction"`
+	Remove []string `json:"remove,omitempty" jsonschema:"labels to remove from this transaction"`
+}
+
+type retagArgs struct {
+	Items []retagItem `json:"items" jsonschema:"per-transaction label edits; each names a transaction id plus labels to add and/or remove"`
+}
+
+type renameLabelArgs struct {
+	From string `json:"from" jsonschema:"existing label to rename"`
+	To   string `json:"to" jsonschema:"new label name; merges into it if it already exists"`
 }
 
 // ── Tool handlers ────────────────────────────────────────────────────
@@ -361,6 +446,77 @@ func handleAssets(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*
 	return textResult(combined), nil, nil
 }
 
+// ── Write handlers (read-write token only) ───────────────────────────
+
+func handleDeleteRule(ctx context.Context, req *mcp.CallToolRequest, a deleteRuleArgs) (*mcp.CallToolResult, any, error) {
+	if a.RuleID <= 0 {
+		return nil, nil, fmt.Errorf("rule_id must be a positive rule id (see get_label_rules)")
+	}
+	body, err := apiWrite(http.MethodDelete, fmt.Sprintf("/labels/rules/%d", a.RuleID), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleAddRule(ctx context.Context, req *mcp.CallToolRequest, a addRuleArgs) (*mcp.CallToolResult, any, error) {
+	if strings.TrimSpace(a.Label) == "" || strings.TrimSpace(a.CommentMatch) == "" {
+		return nil, nil, fmt.Errorf("label and comment_match are both required to add a rule")
+	}
+	body, err := apiWrite(http.MethodPost, "/ai/rule-review/apply", map[string]any{
+		"items": []map[string]any{{
+			"action":        "add",
+			"label":         a.Label,
+			"comment_match": a.CommentMatch,
+			"category":      a.Category,
+		}},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleUpdateRule(ctx context.Context, req *mcp.CallToolRequest, a updateRuleArgs) (*mcp.CallToolResult, any, error) {
+	if a.RuleID <= 0 {
+		return nil, nil, fmt.Errorf("rule_id must be a positive rule id (see get_label_rules)")
+	}
+	body, err := apiWrite(http.MethodPost, "/ai/rule-review/apply", map[string]any{
+		"items": []map[string]any{{
+			"action":        "update",
+			"rule_id":       a.RuleID,
+			"comment_match": a.CommentMatch,
+			"category":      a.Category,
+		}},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleRetagTransactions(ctx context.Context, req *mcp.CallToolRequest, a retagArgs) (*mcp.CallToolResult, any, error) {
+	if len(a.Items) == 0 {
+		return nil, nil, fmt.Errorf("items must name at least one transaction to retag")
+	}
+	body, err := apiWrite(http.MethodPost, "/ai/label-reindex/apply", a)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleRenameLabel(ctx context.Context, req *mcp.CallToolRequest, a renameLabelArgs) (*mcp.CallToolResult, any, error) {
+	if strings.TrimSpace(a.From) == "" || strings.TrimSpace(a.To) == "" {
+		return nil, nil, fmt.Errorf("both from and to are required to rename a label")
+	}
+	body, err := apiWrite(http.MethodPost, "/labels/rename", map[string]any{"from": a.From, "to": a.To})
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
 // dataNotes is prepended guidance so models interpret the data correctly.
 const dataNotes = ` Data semantics: amounts are EUR; 'labels' is a comma-separated multiset of lowercase tags; category 'Transfers' rows are moves between the user's own accounts (NOT income or spending); fixed-obligation labels (loan, alimony, leasing, evelina) mark pre-committed money, not discretionary choices.`
 
@@ -437,6 +593,36 @@ func main() {
 		Name:        "get_assets",
 		Description: "Physical assets (real estate, vehicles, solar) with valuations, loan balances, interest structure (margin + EURIBOR) and net equity, plus portfolio totals.",
 	}, handleAssets)
+
+	// ── Write tools ──────────────────────────────────────────────────
+	// These MUTATE data and require a read-write API token (ftkw_). With the
+	// default read-only token (ftk_) the backend answers 403 and the tool
+	// returns a clear "mint a read-write token" message.
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_rule",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Creates a new auto-labeling rule: applies `label` to transactions whose comment contains `comment_match` (a leading ^ anchors to the start) and, when `category` is given, whose category matches it.",
+	}, handleAddRule)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_rule",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Edits an existing auto-labeling rule (id from get_label_rules): sets its comment match pattern and/or category.",
+	}, handleUpdateRule)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_rule",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Permanently deletes one auto-labeling rule by its id (from get_label_rules).",
+	}, handleDeleteRule)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rename_label",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Renames label `from` to `to` everywhere it is used (transactions, rules, budgets); merges into `to` if that label already exists.",
+	}, handleRenameLabel)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "retag_transactions",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Adds and/or removes labels on specific transactions by id (ids from search_transactions), one entry per transaction.",
+	}, handleRetagTransactions)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)

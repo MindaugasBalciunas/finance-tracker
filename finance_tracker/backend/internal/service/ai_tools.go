@@ -21,8 +21,12 @@ const aiToolDataNotes = " Amounts are EUR; 'labels' is a comma-separated multise
 const maxToolResultBytes = 30_000
 
 // maxToolRounds bounds the agentic loop — a model that keeps asking for
-// tools past this gets cut off rather than looping forever.
-const maxToolRounds = 6
+// tools past this gets cut off rather than looping forever. A label/rule
+// audit legitimately needs many rounds (list the rules, then investigate
+// several suspects with separate queries), so the ceiling is generous; the
+// overall chat budget (context deadline) is the real backstop against a
+// runaway loop.
+const maxToolRounds = 12
 
 func obj(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
@@ -116,6 +120,47 @@ func chatTools() []gatewayTool {
 			obj(map[string]any{
 				"decision": str("the decision in one sentence, as the user stated it, e.g. 'Buffer floor revised to €15,000 (5 months × €3,000 critical burn)'"),
 			}, "decision")),
+
+		// ── Write tools (label/rule maintenance) ──────────────────────────
+		// These MUTATE data. Only ever call them after the user has explicitly
+		// approved the specific change in this conversation. Every call is
+		// logged to the AI activity feed.
+		mkTool("delete_rule",
+			"Delete one auto-labeling rule by id (get_label_rules lists ids). Removes the rule only — transactions keep the labels already applied. Use to kill a wrong or duplicate rule. ONLY after the user approves this specific deletion.",
+			obj(map[string]any{"rule_id": num("the rule id to delete")}, "rule_id")),
+		mkTool("add_rule",
+			"Create an auto-labeling rule: it applies 'label' to every transaction whose comment contains 'comment_match' (a leading ^ anchors to the start) and, when set, whose category matches. Immediately labels matching history. ONLY after the user approves.",
+			obj(map[string]any{
+				"label":         str("the lowercase label to apply"),
+				"comment_match": str("substring to match in the comment (≥2 chars; ^ anchors to start)"),
+				"category":      str("optional: restrict to this category (empty = any category)"),
+			}, "label")),
+		mkTool("update_rule",
+			"Change an existing rule's comment pattern and/or category (the label is fixed — to change a label, delete and add). Re-applies the rule to history. ONLY after the user approves.",
+			obj(map[string]any{
+				"rule_id":       num("the rule id to update"),
+				"comment_match": str("the new substring pattern (^ anchors to start)"),
+				"category":      str("optional new category scope (empty = any)"),
+			}, "rule_id")),
+		mkTool("retag_transactions",
+			"Add and/or remove labels on specific transactions by id (from search_transactions). Fixed-obligation labels (loan, alimony, leasing, evelina) can never be removed. ONLY after the user approves the change.",
+			obj(map[string]any{
+				"retag": map[string]any{
+					"type":        "array",
+					"description": "the per-transaction changes",
+					"items": obj(map[string]any{
+						"id":     num("transaction id"),
+						"add":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "labels to add"},
+						"remove": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "labels to remove"},
+					}, "id"),
+				},
+			}, "retag")),
+		mkTool("rename_label",
+			"Rename or merge a label everywhere at once — across transactions, rules and budgets. Renaming to an existing label MERGES the two. ONLY after the user approves.",
+			obj(map[string]any{
+				"from": str("the current label"),
+				"to":   str("the new label (existing label = merge)"),
+			}, "from", "to")),
 	}
 }
 
@@ -138,6 +183,16 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		Ticker    string   `json:"ticker"`
 		Month     string   `json:"month"`
 		Decision  string   `json:"decision"`
+		// write-tool args
+		RuleID       uint   `json:"rule_id"`
+		CommentMatch string `json:"comment_match"`
+		From         string `json:"from"`
+		To           string `json:"to"`
+		Retag        []struct {
+			ID     uint     `json:"id"`
+			Add    []string `json:"add"`
+			Remove []string `json:"remove"`
+		} `json:"retag"`
 	}
 	if rawArgs != "" {
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -375,6 +430,85 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 		}
 		s.logAIActivity("decision", "", decision)
 		return marshalToolResult(map[string]any{"recorded": decision, "note": "appended to the user's context document — all future AI calls will see it"})
+
+	case "delete_rule":
+		if s.budgetRepo == nil {
+			return "", fmt.Errorf("labels unavailable")
+		}
+		if args.RuleID == 0 {
+			return "", fmt.Errorf("rule_id is required")
+		}
+		res, err := s.ApplyRuleSuggestions([]RuleApplyItem{{Action: "delete", RuleID: args.RuleID}})
+		if err != nil {
+			return "", err
+		}
+		if res.Deleted == 0 {
+			return "", fmt.Errorf("no rule with id %d", args.RuleID)
+		}
+		return marshalToolResult(map[string]any{"deleted": res.Deleted})
+
+	case "add_rule":
+		if s.budgetRepo == nil {
+			return "", fmt.Errorf("labels unavailable")
+		}
+		res, err := s.ApplyRuleSuggestions([]RuleApplyItem{{
+			Action: "add", Label: args.Label, CommentMatch: args.CommentMatch, Category: args.Category,
+		}})
+		if err != nil {
+			return "", err
+		}
+		if res.Added == 0 {
+			return "", fmt.Errorf("rule rejected — check the label, pattern (≥2 chars) and category")
+		}
+		return marshalToolResult(map[string]any{"added": res.Added, "relabeled": res.Relabeled})
+
+	case "update_rule":
+		if s.budgetRepo == nil {
+			return "", fmt.Errorf("labels unavailable")
+		}
+		if args.RuleID == 0 {
+			return "", fmt.Errorf("rule_id is required")
+		}
+		res, err := s.ApplyRuleSuggestions([]RuleApplyItem{{
+			Action: "update", RuleID: args.RuleID, CommentMatch: args.CommentMatch, Category: args.Category,
+		}})
+		if err != nil {
+			return "", err
+		}
+		if res.Updated == 0 {
+			return "", fmt.Errorf("rule %d not updated — check the id and pattern", args.RuleID)
+		}
+		return marshalToolResult(map[string]any{"updated": res.Updated, "relabeled": res.Relabeled})
+
+	case "retag_transactions":
+		if len(args.Retag) == 0 {
+			return "", fmt.Errorf("retag must list at least one transaction")
+		}
+		items := make([]LabelApplyItem, len(args.Retag))
+		for i, r := range args.Retag {
+			items[i] = LabelApplyItem{ID: r.ID, Add: r.Add, Remove: r.Remove}
+		}
+		applied, err := s.ApplyLabelSuggestions(items)
+		if err != nil {
+			return "", err
+		}
+		return marshalToolResult(map[string]any{"retagged": applied})
+
+	case "rename_label":
+		if s.budgetRepo == nil {
+			return "", fmt.Errorf("labels unavailable")
+		}
+		from := strings.ToLower(strings.TrimSpace(args.From))
+		to := strings.ToLower(strings.TrimSpace(args.To))
+		if from == "" || to == "" {
+			return "", fmt.Errorf("both from and to are required")
+		}
+		res, err := s.budgetRepo.RenameLabel(from, to)
+		if err != nil {
+			return "", err
+		}
+		s.logAIActivity("tagging", "applied", fmt.Sprintf("renamed label %q → %q (%d transactions)", from, to, res.Transactions))
+		return marshalToolResult(map[string]any{"renamed": res.Transactions, "from": from, "to": to})
 
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)

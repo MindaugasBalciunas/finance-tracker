@@ -65,6 +65,27 @@ func TestPreMigrationBackup(t *testing.T) {
 	assert.Len(t, backupNames(t, backups, "nightly-"), 1)
 }
 
+// A burst of restarts must not each write a pre-migration backup: the prune
+// budget would otherwise evict good pre-incident snapshots in favor of
+// copies of a damaged state (exactly how a crash-loop could destroy the only
+// recent good backups).
+func TestPreMigrationBackupDedup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "finance.db")
+	db, err := NewSQLiteDB(path)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&domain.Transaction{Date: time.Now(), Type: domain.TransactionTypeExpense, Amount: 1, Category: "Food", Comment: "x"}).Error)
+
+	backups := filepath.Join(dir, "backups")
+	// Three back-to-back pre-migration backups (a restart burst) collapse to
+	// one, because the second and third land inside preMigrateMinInterval.
+	for i := 0; i < 3; i++ {
+		require.NoError(t, PreMigrationBackup(db, path))
+	}
+	assert.Len(t, backupNames(t, backups, "pre-migrate-"), 1,
+		"a restart burst must collapse to a single pre-migration backup")
+}
+
 func TestBackupPrune(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"nightly-20260101.db", "nightly-20260102.db", "nightly-20260103.db"} {

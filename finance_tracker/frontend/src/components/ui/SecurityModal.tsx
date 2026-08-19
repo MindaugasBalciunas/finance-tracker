@@ -14,8 +14,9 @@ export default function SecurityModal({ onClose }: Props) {
   const [currentPin, setCurrentPin] = useState('')
   const [deviceName, setDeviceName] = useState('')
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
-  // Freshly minted API token — displayed exactly once, never re-fetchable.
+  // Freshly minted API tokens — displayed exactly once, never re-fetchable.
   const [freshToken, setFreshToken] = useState<string | null>(null)
+  const [freshTokenRw, setFreshTokenRw] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<'overview' | 'setup' | 'change' | 'disable'>('overview')
 
@@ -194,6 +195,42 @@ export default function SecurityModal({ onClose }: Props) {
                     {status?.has_api_token && (
                       <button
                         onClick={() => run(async () => { await authApi.revokeApiToken(); setFreshToken(null) }, '')}
+                        className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Read-WRITE API token — more sensitive: it can change data, not just read. */}
+                <div className="border border-amber-300 rounded-lg p-3 space-y-2 bg-amber-50/40">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-800">⚠️ API token (read-write)</p>
+                    <span className="text-xs text-gray-400">{status?.has_api_token_rw ? 'active' : 'none'}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Lets the MCP server <strong className="text-amber-700">modify</strong> your labels and
+                    auto-labeling rules (add / edit / delete rules, rename labels, retag transactions) —
+                    not just read. Treat it as more sensitive than the read-only token. Prefer the
+                    read-only token above unless you specifically need write access via MCP.
+                  </p>
+                  {freshTokenRw && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                      <p className="text-[11px] text-amber-700 mb-1">Copy it now — it is shown only once:</p>
+                      <code className="block text-[11px] break-all select-all text-gray-800">{freshTokenRw}</code>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => run(async () => setFreshTokenRw(await authApi.generateApiTokenRw()), '')}
+                      className="flex-1 px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-100 rounded-lg hover:bg-amber-200"
+                    >
+                      {status?.has_api_token_rw ? 'Rotate token' : 'Generate token'}
+                    </button>
+                    {status?.has_api_token_rw && (
+                      <button
+                        onClick={() => run(async () => { await authApi.revokeApiTokenRw(); setFreshTokenRw(null) }, '')}
                         className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
                       >
                         Revoke

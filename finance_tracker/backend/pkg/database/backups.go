@@ -14,8 +14,14 @@ import (
 
 const (
 	nightlyKeep    = 14
-	preMigrateKeep = 3
+	preMigrateKeep = 10
 	backupInterval = 24 * time.Hour
+	// preMigrateMinInterval collapses a burst of restarts into a single
+	// pre-migration snapshot. Without it, a crash-loop (or a rapid rebuild
+	// cycle) writes one backup per restart, and the keep-N prune then evicts
+	// the good pre-incident snapshots in favor of copies of the damaged
+	// state. Nightly backups remain the durable safety net.
+	preMigrateMinInterval = 30 * time.Minute
 )
 
 // backupDir returns the directory backups live in (a "backups" folder next
@@ -46,12 +52,38 @@ func PreMigrationBackup(db *gorm.DB, dbPath string) error {
 	if err != nil {
 		return err
 	}
+	// Skip if a pre-migration snapshot was taken very recently: a restart
+	// burst must not spend the whole retention budget on copies of the same
+	// (possibly already-damaged) state and evict older, good backups.
+	if newest := newestBackupTime(dir, "pre-migrate-"); !newest.IsZero() &&
+		time.Since(newest) < preMigrateMinInterval {
+		return nil
+	}
 	target := filepath.Join(dir, "pre-migrate-"+time.Now().Format("20060102-150405")+".db")
 	if err := vacuumInto(db, target); err != nil {
 		return err
 	}
 	prune(dir, "pre-migrate-", preMigrateKeep)
 	return nil
+}
+
+// newestBackupTime returns the mtime of the most recent backup with prefix,
+// or the zero time when none exist.
+func newestBackupTime(dir, prefix string) time.Time {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return time.Time{}
+	}
+	var newest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	return newest
 }
 
 // StartBackupLoop writes a nightly VACUUM INTO snapshot with retention.

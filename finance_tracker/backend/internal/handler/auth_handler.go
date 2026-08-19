@@ -37,7 +37,34 @@ func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		auth.DELETE("/webauthn/credentials/:id", h.DeleteCredential)
 		auth.POST("/token", h.GenerateToken)
 		auth.DELETE("/token", h.RevokeToken)
+		auth.POST("/token/rw", h.GenerateTokenRW)
+		auth.DELETE("/token/rw", h.RevokeTokenRW)
 	}
+}
+
+// apiTokenWriteRoutes is the NARROW set of mutating routes the read-write
+// token may call (in addition to every read route). Deliberately limited to
+// label/rule maintenance — never delete-all, settings, auth, or import/export.
+// Matched as (METHOD, path-prefix) with the same segment-boundary rule as
+// reads, so "/labels/rulesX" can't ride "/labels/rules".
+var apiTokenWriteRoutes = []struct{ method, prefix string }{
+	{"POST", "/api/v1/ai/rule-review/apply"},
+	{"POST", "/api/v1/ai/label-reindex/apply"},
+	{"POST", "/api/v1/labels/rename"},
+	{"POST", "/api/v1/labels/delete"},
+	{"DELETE", "/api/v1/labels/rules"},
+}
+
+func apiTokenWriteAllowed(method, path string) bool {
+	for _, r := range apiTokenWriteRoutes {
+		if method != r.method {
+			continue
+		}
+		if path == r.prefix || (strings.HasPrefix(path, r.prefix) && path[len(r.prefix)] == '/') {
+			return true
+		}
+	}
+	return false
 }
 
 // apiTokenPrefixes is everything a bearer API token may read. The token is
@@ -96,6 +123,20 @@ func (h *AuthHandler) Middleware() gin.HandlerFunc {
 			return
 		}
 		if bearer := bearerToken(c); bearer != "" {
+			// Read-write token: every read route, PLUS the narrow write
+			// allowlist. Checked first because its ftkw_ prefix is distinct.
+			if h.svc.ValidAPITokenRW(bearer) {
+				if c.Request.Method == http.MethodGet && apiTokenAllowed(p) {
+					c.Next()
+					return
+				}
+				if apiTokenWriteAllowed(c.Request.Method, p) {
+					c.Next()
+					return
+				}
+				c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "this route is outside the API token's scope"})
+				return
+			}
 			if !h.svc.ValidAPIToken(bearer) {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid API token"})
 				return
@@ -334,6 +375,36 @@ func (h *AuthHandler) RevokeToken(c *gin.Context) {
 		return
 	}
 	if err := h.svc.RevokeAPIToken(); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// GenerateTokenRW mints the read-WRITE API token — an opt-in credential that
+// can additionally call the label/rule maintenance routes. Returned once;
+// only its hash is stored. Requires an unlocked session.
+func (h *AuthHandler) GenerateTokenRW(c *gin.Context) {
+	if !h.requireUnlocked(c) {
+		return
+	}
+	token, err := h.svc.GenerateAPITokenRW()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"note":  "Shown once — store it now. This token can READ your data AND modify labels and auto-labeling rules. Keep it secret; revoke it if leaked.",
+	})
+}
+
+// RevokeTokenRW invalidates the read-write API token immediately.
+func (h *AuthHandler) RevokeTokenRW(c *gin.Context) {
+	if !h.requireUnlocked(c) {
+		return
+	}
+	if err := h.svc.RevokeAPITokenRW(); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}

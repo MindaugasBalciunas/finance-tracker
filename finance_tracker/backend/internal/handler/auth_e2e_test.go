@@ -37,6 +37,15 @@ func authTestRouter(t *testing.T) *gin.Engine {
 	v1.GET("/ai/settings", func(c *gin.Context) { c.JSON(200, gin.H{"secret-adjacent": true}) })
 	v1.GET("/export/finances.json", func(c *gin.Context) { c.JSON(200, gin.H{"backup": true}) })
 	v1.GET("/labelsx", func(c *gin.Context) { c.JSON(200, gin.H{"boundary": true}) })
+	// Write-route stubs so the RW-token allowlist is exercised at the
+	// middleware layer (not defeated by an unregistered route → 404).
+	ok := func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) }
+	v1.POST("/ai/rule-review/apply", ok) // in write allowlist
+	v1.POST("/labels/rename", ok)        // in write allowlist
+	v1.DELETE("/labels/rules/:id", ok)   // in write allowlist
+	v1.POST("/balances", ok)             // NOT in write allowlist
+	v1.PUT("/ai/settings", ok)           // NOT in write allowlist
+	v1.DELETE("/transactions", ok)       // NOT in write allowlist (delete-all)
 	return r
 }
 

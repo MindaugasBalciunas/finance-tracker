@@ -9,8 +9,13 @@ type AuthSettings struct {
 	Enabled bool   `json:"enabled"`
 	// APITokenHash is the SHA-256 of the read-only machine token (for the
 	// MCP server and other API clients). Only the hash is ever stored.
-	APITokenHash string    `json:"-"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	APITokenHash string `json:"-"`
+	// APITokenRWHash is the SHA-256 of the read-WRITE machine token — a
+	// separate, opt-in credential that can additionally hit a narrow
+	// allowlist of label/rule mutation routes. Kept distinct so the
+	// read-only token can never gain write access.
+	APITokenRWHash string    `json:"-"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // WebauthnCredential stores one enrolled authenticator (e.g. a phone's
