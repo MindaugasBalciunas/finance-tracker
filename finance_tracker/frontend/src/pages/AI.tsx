@@ -7,8 +7,28 @@ import Markdown from '../components/ui/Markdown'
 
 // A rendered chat turn. Server history is plain {role, content}; the local
 // optimistic echo may also carry an object-URL preview of an image the user
-// attached (the image itself is never stored server-side).
-type ChatEntry = ChatMessage & { imageUrl?: string }
+// attached (the image itself is never stored server-side). Assistant turns
+// from the live send also carry what that answer cost — history from the
+// server has none (not stored), so the badge is simply omitted there.
+type ChatEntry = ChatMessage & {
+  imageUrl?: string
+  costUsd?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+// Cost as `$` + up to 4 decimals with trailing zeros trimmed (e.g. `$0.045`,
+// `$0.3`).
+function fmtCost(usd: number): string {
+  return `$${parseFloat(usd.toFixed(4))}`
+}
+
+// Compact token count: 6553 → `6.6k`, >1M → `1.2M`.
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}M`
+  if (n >= 1_000) return `${parseFloat((n / 1_000).toFixed(1))}k`
+  return `${n}`
+}
 
 // Full-screen AI chat grounded in the full financial dataset. History is
 // stored server-side (follows the user between phone and browser), and
@@ -29,10 +49,22 @@ export default function AI() {
   useEffect(() => {
     if (!serverHistory) return
     // The authoritative history is text-only — free any preview URLs the
-    // optimistic echoes were holding before they're replaced.
+    // optimistic echoes were holding before they're replaced. Carry the
+    // cost/token badge from this session's just-answered assistant turns onto
+    // the matching history entries (history doesn't store cost), so the badge
+    // survives the post-send resync instead of vanishing.
     setMessages((prev) => {
       prev.forEach((m) => m.imageUrl && URL.revokeObjectURL(m.imageUrl))
-      return serverHistory
+      return serverHistory.map((sm) => {
+        if (sm.role !== 'assistant') return sm
+        const local = prev.find(
+          (p) => p.role === 'assistant' && p.content === sm.content &&
+            ((p.costUsd ?? 0) > 0 || (p.inputTokens ?? 0) > 0 || (p.outputTokens ?? 0) > 0),
+        )
+        return local
+          ? { ...sm, costUsd: local.costUsd, inputTokens: local.inputTokens, outputTokens: local.outputTokens }
+          : sm
+      })
     })
   }, [serverHistory])
 
@@ -89,8 +121,14 @@ export default function AI() {
     setChatError('')
     setThinking(true)
     try {
-      const reply = await aiApi.chat(text, attached ?? undefined)
-      setMessages((m) => [...m, { role: 'assistant', content: reply }])
+      const res = await aiApi.chat(text, attached ?? undefined)
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        content: res.reply,
+        costUsd: res.costUsd,
+        inputTokens: res.inputTokens,
+        outputTokens: res.outputTokens,
+      }])
       qc.invalidateQueries({ queryKey: ['ai-chat-history'] })
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
@@ -167,34 +205,46 @@ export default function AI() {
               )}
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[90%] sm:max-w-[85%] rounded-2xl px-3.5 py-2 min-w-0 ${
-                  m.role === 'user'
-                    ? 'bg-indigo-600 text-white rounded-br-sm'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-                }`}
-              >
-                {m.role === 'assistant' ? (
-                  <Markdown>{m.content}</Markdown>
-                ) : (
-                  <div className="space-y-1.5">
-                    {m.imageUrl && (
-                      <img
-                        src={m.imageUrl}
-                        alt="attachment"
-                        className="max-h-40 rounded-lg"
-                      />
-                    )}
-                    {m.content
-                      ? <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                      : !m.imageUrl && <p className="text-sm text-indigo-100">📷 image</p>}
-                  </div>
-                )}
+          {messages.map((m, i) => {
+            // Per-answer cost/token badge — live assistant turns only; combine
+            // input+output tokens, and only show when there's something to show.
+            const tokens = (m.inputTokens ?? 0) + (m.outputTokens ?? 0)
+            const cost = m.costUsd ?? 0
+            const badge = m.role === 'assistant'
+              ? [cost > 0 ? fmtCost(cost) : null, tokens > 0 ? `${fmtTokens(tokens)} tokens` : null]
+                  .filter(Boolean)
+                  .join(' · ')
+              : ''
+            return (
+              <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div
+                  className={`max-w-[90%] sm:max-w-[85%] rounded-2xl px-3.5 py-2 min-w-0 ${
+                    m.role === 'user'
+                      ? 'bg-indigo-600 text-white rounded-br-sm'
+                      : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                  }`}
+                >
+                  {m.role === 'assistant' ? (
+                    <Markdown>{m.content}</Markdown>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {m.imageUrl && (
+                        <img
+                          src={m.imageUrl}
+                          alt="attachment"
+                          className="max-h-40 rounded-lg"
+                        />
+                      )}
+                      {m.content
+                        ? <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                        : !m.imageUrl && <p className="text-sm text-indigo-100">📷 image</p>}
+                    </div>
+                  )}
+                </div>
+                {badge && <span className="mt-1 px-1 text-[11px] text-gray-400">{badge}</span>}
               </div>
-            </div>
-          ))}
+            )
+          })}
           {thinking && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-sm text-gray-400">

@@ -35,6 +35,7 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai := rg.Group("/ai")
 	ai.GET("/settings", h.GetAISettings)
 	ai.PUT("/settings", h.SaveAISettings)
+	ai.GET("/models", h.Models)
 	ai.POST("/test", h.TestGateway)
 	ai.POST("/chat", h.Chat)
 	ai.GET("/chat/history", h.ChatHistory)
@@ -307,6 +308,20 @@ func (h *InsightHandler) SaveAISettings(c *gin.Context) {
 	})
 }
 
+// Models returns the model ids the configured gateway offers, for the
+// settings dropdown. An empty list (with ok:false) means the gateway has no
+// usable models endpoint and the UI should fall back to a free-text field.
+func (h *InsightHandler) Models(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+	defer cancel()
+	models, err := h.svc.ListModels(ctx)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"models": []string{}, "ok": false, "note": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models, "ok": true})
+}
+
 func (h *InsightHandler) TestGateway(c *gin.Context) {
 	if err := h.svc.TestGateway(); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -380,13 +395,13 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 	// the 200 is committed before the result is known, chat errors ride in the
 	// body's "error" field (the client checks for it) rather than a status.
 	type chatResult struct {
-		reply string
-		err   error
+		res service.ChatResult
+		err error
 	}
 	done := make(chan chatResult, 1)
 	go func() {
-		reply, err := h.svc.Chat(ctx, message, image)
-		done <- chatResult{reply: reply, err: err}
+		res, err := h.svc.Chat(ctx, message, image)
+		done <- chatResult{res: res, err: err}
 	}()
 
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -400,7 +415,12 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 	for {
 		select {
 		case r := <-done:
-			payload := gin.H{"reply": r.reply}
+			payload := gin.H{
+				"reply":         r.res.Reply,
+				"cost_usd":      r.res.CostUSD,
+				"input_tokens":  r.res.InputTokens,
+				"output_tokens": r.res.OutputTokens,
+			}
 			if r.err != nil {
 				payload = gin.H{"error": r.err.Error()}
 			}

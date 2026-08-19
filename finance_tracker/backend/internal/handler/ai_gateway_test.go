@@ -155,9 +155,12 @@ func TestAIChatThroughGateway(t *testing.T) {
 
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "how much did I spend?"})
 	require.Equal(t, 200, w.Code, w.Body.String())
-	var res map[string]string
+	var res map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 	assert.Equal(t, "You spent €50 on groceries.", res["reply"])
+	// The response now carries a cost/token badge (present even if 0 from the fake gateway).
+	_, hasCost := res["cost_usd"]
+	assert.True(t, hasCost, "response includes cost_usd for the badge")
 
 	assert.Equal(t, "/messages", cap.Path, "Anthropic-native passthrough endpoint")
 	assert.Equal(t, "Bearer sk-test", cap.Auth)

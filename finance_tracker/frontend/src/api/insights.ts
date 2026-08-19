@@ -84,27 +84,56 @@ export const aiApi = {
     await client.post('/ai/test')
   },
 
+  // The model catalogue exposed by the gateway. When the gateway has no
+  // models endpoint the backend returns ok:false with an empty list — the UI
+  // falls back to a free-text field. Never throws: any failure looks like an
+  // empty, not-ok list so the caller can degrade gracefully.
+  models: async (): Promise<{ models: string[]; ok: boolean }> => {
+    try {
+      const { data } = await client.get<{ models?: string[]; ok?: boolean }>('/ai/models')
+      return { models: data?.models ?? [], ok: !!data?.ok }
+    } catch {
+      return { models: [], ok: false }
+    }
+  },
+
   // History lives server-side so the conversation follows the user across
   // phone and browser — only the new message travels up. An optional image
   // (receipt/screenshot) switches the request to multipart so the AI can read
-  // it; message may be empty when a file is attached.
-  chat: async (message: string, file?: File): Promise<string> => {
+  // it; message may be empty when a file is attached. Returns the reply plus
+  // what the model spent on this answer (summed over tool rounds).
+  chat: async (
+    message: string,
+    file?: File,
+  ): Promise<{ reply: string; costUsd: number; inputTokens: number; outputTokens: number }> => {
     // The server streams whitespace heartbeats during the long agentic call
     // and commits a 200 up front, so failures arrive as {error} in the body
     // (not a status) — check for it. Leading heartbeat whitespace parses away.
-    let data: { reply?: string; error?: string }
+    type ChatResponse = {
+      reply?: string
+      error?: string
+      cost_usd?: number
+      input_tokens?: number
+      output_tokens?: number
+    }
+    let data: ChatResponse
     if (file) {
       const form = new FormData()
       form.append('message', message)
       form.append('file', file)
-      ;({ data } = await client.post<{ reply?: string; error?: string }>('/ai/chat', form, {
+      ;({ data } = await client.post<ChatResponse>('/ai/chat', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       }))
     } else {
-      ;({ data } = await client.post<{ reply?: string; error?: string }>('/ai/chat', { message }))
+      ;({ data } = await client.post<ChatResponse>('/ai/chat', { message }))
     }
     if (data?.error) throw new Error(data.error)
-    return data?.reply ?? ''
+    return {
+      reply: data?.reply ?? '',
+      costUsd: data?.cost_usd ?? 0,
+      inputTokens: data?.input_tokens ?? 0,
+      outputTokens: data?.output_tokens ?? 0,
+    }
   },
 
   chatHistory: async (): Promise<ChatMessage[]> => {

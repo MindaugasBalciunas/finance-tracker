@@ -32,11 +32,16 @@ type InsightService interface {
 	// report the analysis uses. Both turns are persisted so the conversation
 	// follows the user across devices.
 	// Chat answers a message; image (optional) is a receipt/screenshot the
-	// user attached, sent to the vision model for this turn only.
-	Chat(ctx context.Context, message string, image *ChatImage) (string, error)
+	// user attached, sent to the vision model for this turn only. The result
+	// carries the reply plus what it cost (summed over tool rounds).
+	Chat(ctx context.Context, message string, image *ChatImage) (ChatResult, error)
 	// ScanTransaction extracts transaction fields from an uploaded image
 	// (receipt / bank-app screenshot) to prefill the form. Read-only.
 	ScanTransaction(ctx context.Context, imageData []byte, mediaType string) (*TransactionScan, error)
+	// ListModels fetches the model ids the configured gateway offers, for the
+	// settings dropdown. Returns an error when the gateway has no models
+	// endpoint (the UI then falls back to free text).
+	ListModels(ctx context.Context) ([]string, error)
 	ChatHistory() ([]domain.AIChatMessage, error)
 	ClearChat() error
 	AISettings() (*domain.AISettings, error)
@@ -159,24 +164,33 @@ type ChatImage struct {
 	MediaType string
 }
 
-func (s *insightService) Chat(ctx context.Context, message string, image *ChatImage) (string, error) {
+// ChatResult is a chat answer plus what the model spent producing it (summed
+// across the agentic tool rounds), for the per-response cost badge.
+type ChatResult struct {
+	Reply        string  `json:"reply"`
+	CostUSD      float64 `json:"cost_usd"`
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
+}
+
+func (s *insightService) Chat(ctx context.Context, message string, image *ChatImage) (ChatResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 	if !settings.Configured() {
-		return "", errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
+		return ChatResult{}, errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
 	}
 	system, err := s.chatSystemMessage()
 	if err != nil {
-		return "", fmt.Errorf("building context: %w", err)
+		return ChatResult{}, fmt.Errorf("building context: %w", err)
 	}
 	history, err := s.repo.ListChat(maxChatTurns)
 	if err != nil {
-		return "", err
+		return ChatResult{}, err
 	}
 	cutoff := time.Now().Add(-aiMemoryWindow)
 	messages := make([]gatewayMessage, 0, len(history)+2)
@@ -194,7 +208,7 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 	userTurn := gatewayMessage{Role: "user", Content: message}
 	if image != nil {
 		if !visionMediaTypes[image.MediaType] {
-			return "", fmt.Errorf("unsupported image type %q — use JPEG, PNG, WebP or GIF", image.MediaType)
+			return ChatResult{}, fmt.Errorf("unsupported image type %q — use JPEG, PNG, WebP or GIF", image.MediaType)
 		}
 		userTurn.Image = &messageImage{
 			MediaType: image.MediaType,
@@ -213,26 +227,31 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 	// persisted to history.
 	tools := chatTools()
 	var reply string
+	var usage gatewayUsage
 	for round := 0; ; round++ {
 		if round >= maxToolRounds {
-			return "", fmt.Errorf("the model exceeded %d tool rounds without answering — try a narrower question", maxToolRounds)
+			return ChatResult{}, fmt.Errorf("the model exceeded %d tool rounds without answering — try a narrower question", maxToolRounds)
 		}
 		// Stop before starting another round once the overall budget is spent,
 		// with a message the user can act on — better than the request hanging
 		// until nginx returns a bare 504.
 		if err := ctx.Err(); err != nil {
-			return "", errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
+			return ChatResult{}, errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
 		}
 		msg, err := callGatewayFull(ctx, settings, messages, 8192, tools)
 		if err != nil {
 			if ctx.Err() != nil {
-				return "", errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
+				return ChatResult{}, errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
 			}
-			return "", fmt.Errorf("calling AI gateway: %w", err)
+			return ChatResult{}, fmt.Errorf("calling AI gateway: %w", err)
 		}
+		// Sum the cost/tokens of every round for the response badge.
+		usage.CostUSD += msg.Usage.CostUSD
+		usage.InputTokens += msg.Usage.InputTokens
+		usage.OutputTokens += msg.Usage.OutputTokens
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) == "" {
-				return "", errors.New("gateway returned an empty reply — try again or raise the model's token limit")
+				return ChatResult{}, errors.New("gateway returned an empty reply — try again or raise the model's token limit")
 			}
 			reply = msg.Content
 			break
@@ -258,10 +277,15 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 		&domain.AIChatMessage{Role: "user", Content: message},
 		&domain.AIChatMessage{Role: "assistant", Content: reply},
 	); err != nil {
-		return "", fmt.Errorf("saving chat: %w", err)
+		return ChatResult{}, fmt.Errorf("saving chat: %w", err)
 	}
 	s.logAIActivity("chat", "", "Q: "+clipText(message, 160)+" — A: "+clipText(reply, 240))
-	return reply, nil
+	return ChatResult{
+		Reply:        reply,
+		CostUSD:      usage.CostUSD,
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+	}, nil
 }
 
 func (s *insightService) ChatHistory() ([]domain.AIChatMessage, error) {
@@ -787,6 +811,15 @@ type gatewayMessage struct {
 	// text (a receipt/screenshot dropped into the chat). Never persisted to
 	// history — it rides only the live request.
 	Image *messageImage `json:"-"`
+	// Usage carries the gateway's per-call cost/tokens on assistant replies,
+	// summed across an agentic chat's tool rounds for the response badge.
+	Usage gatewayUsage `json:"-"`
+}
+
+type gatewayUsage struct {
+	InputTokens  int
+	OutputTokens int
+	CostUSD      float64
 }
 
 type messageImage struct {
@@ -1079,6 +1112,11 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 
 	var msg gatewayMessage
 	msg.Role = "assistant"
+	msg.Usage = gatewayUsage{
+		InputTokens:  u.InputTokens + u.CacheReadInput + u.CacheCreationInput,
+		OutputTokens: u.OutputTokens,
+		CostUSD:      u.NexosCreditsCost,
+	}
 	for _, b := range result.Content {
 		switch b.Type {
 		case "text":

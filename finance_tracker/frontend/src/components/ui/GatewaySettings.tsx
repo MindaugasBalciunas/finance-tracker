@@ -9,6 +9,10 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
   const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [testing, setTesting] = useState(false)
+  // Model catalogue from the gateway. `ok:false` means the gateway has no
+  // models endpoint — the field stays a plain free-text input.
+  const [models, setModels] = useState<{ list: string[]; ok: boolean }>({ list: [], ok: false })
+  const [modelsLoading, setModelsLoading] = useState(false)
 
   useEffect(() => {
     if (settings && !loaded) {
@@ -16,6 +20,20 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
       setLoaded(true)
     }
   }, [settings, loaded])
+
+  const loadModels = async () => {
+    setModelsLoading(true)
+    try {
+      const { models: list, ok } = await aiApi.models()
+      setModels({ list, ok })
+    } finally {
+      setModelsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadModels()
+  }, [])
 
   const doSave = async () => {
     try {
@@ -68,12 +86,37 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
         </label>
         <label className="text-xs text-gray-500">
           Model
-          <input
-            value={form.model}
-            onChange={(e) => setForm({ ...form, model: e.target.value })}
-            placeholder="e.g. Claude Opus 5"
-            className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-3 py-2"
-          />
+          <div className="flex items-center gap-1.5 mt-1">
+            <input
+              list="ai-models"
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              placeholder="e.g. Claude Opus 5"
+              className="block w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+            />
+            <datalist id="ai-models">
+              {models.list.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            <button
+              type="button"
+              onClick={loadModels}
+              disabled={modelsLoading}
+              aria-label="Refresh model list"
+              title="Refresh model list"
+              className="shrink-0 px-2.5 py-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <span className={modelsLoading ? 'inline-block animate-spin' : ''}>↻</span>
+            </button>
+          </div>
+          <span className="block mt-1 text-xs text-gray-400">
+            {modelsLoading
+              ? 'Loading models…'
+              : models.ok
+                ? `${models.list.length} model${models.list.length === 1 ? '' : 's'} from your gateway`
+                : 'gateway has no model list — type the model name'}
+          </span>
         </label>
         <label className="text-xs text-gray-500">
           API key {settings?.has_key && <span className="text-emerald-600">(saved — leave blank to keep)</span>}
