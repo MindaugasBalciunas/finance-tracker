@@ -792,3 +792,40 @@ func TestApplyArteaPayrollFix(t *testing.T) {
 	db.Model(&domain.Transaction{}).Where("type = 'income'").Count(&income)
 	assert.EqualValues(t, 1, income)
 }
+
+func TestApplyCreditRepaymentFix(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.LabelRule{}))
+
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now(), Type: "expense", Amount: 250, Category: "Finance",
+		Comment: "Credit repayment", Labels: "loan", DebitAccount: "swed"}).Error)
+	// A REAL loan payment must survive untouched.
+	require.NoError(t, db.Create(&domain.Transaction{
+		Date: time.Now(), Type: "expense", Amount: 1285, Category: "Finance",
+		Comment: "Loan return", Labels: "loan"}).Error)
+	require.NoError(t, db.Create(&domain.LabelRule{Label: "loan", CommentMatch: "credit repayment"}).Error)
+
+	applyCreditRepaymentFix(db)
+
+	var cc domain.Transaction
+	require.NoError(t, db.First(&cc, "comment = 'Credit repayment'").Error)
+	assert.Equal(t, "investment", string(cc.Type))
+	assert.Equal(t, "Transfers", string(cc.Category))
+	assert.Equal(t, "credit card", cc.Labels, "loan stripped, credit card added")
+
+	var loan domain.Transaction
+	require.NoError(t, db.First(&loan, "comment = 'Loan return'").Error)
+	assert.Equal(t, "expense", string(loan.Type))
+	assert.Equal(t, "loan", loan.Labels, "real loan rows untouched")
+
+	var ruleCount int64
+	db.Model(&domain.LabelRule{}).Where("comment_match = 'credit repayment'").Count(&ruleCount)
+	assert.Zero(t, ruleCount, "the mislabeling rule is retired")
+
+	// Idempotent.
+	applyCreditRepaymentFix(db)
+	require.NoError(t, db.First(&cc, "comment = 'Credit repayment'").Error)
+	assert.Equal(t, "credit card", cc.Labels)
+}

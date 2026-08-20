@@ -359,8 +359,13 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 		!strings.Contains(upPayee, "EVELINA") {
 		switch {
 		case strings.Contains(lowDetails, "credit repayment") || strings.Contains(lowDetails, "credit card repayment") || strings.Contains(lowDetails, "kredito padengim"):
-			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-				Category: "Finance", Comment: "Credit repayment", Labels: "loan", Debit: "swed"}, false
+			// Paying off the credit-card balance moves own money from the
+			// main account to the card — the purchases it covers are already
+			// recorded as expenses, so booking the repayment as a Finance/
+			// loan expense double-counted spending. Own-money movement →
+			// Transfers (same convention as the ATM cash rows).
+			return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeInvestment,
+				Category: "Transfers", Comment: "Credit repayment", Labels: "credit card", Debit: "swed"}, false
 		case strings.Contains(lowDetails, "revolut"):
 			// handled by the Revolut top-up rule below
 		case dk == "K" && !date.Before(danskeSalaryFrom) && date.Before(danskeSalaryTo) &&

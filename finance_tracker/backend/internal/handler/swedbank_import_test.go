@@ -164,11 +164,15 @@ func TestSwedbankImport(t *testing.T) {
 	assert.Equal(t, "Salary", string(danske.Category))
 	assert.Contains(t, danske.Labels, "danske")
 
-	// Lithuanian credit repayments join the loan bucket.
+	// Credit-card repayments are own-money Transfers, not loan expenses —
+	// the purchases they cover are already recorded as expenses.
 	var creditRows []domain.Transaction
 	require.NoError(t, db.Where("comment = 'Credit repayment'").Find(&creditRows).Error)
 	assert.Len(t, creditRows, 1)
-	assert.Contains(t, creditRows[0].Labels, "loan")
+	assert.Equal(t, domain.TransactionTypeInvestment, creditRows[0].Type)
+	assert.Equal(t, "Transfers", string(creditRows[0].Category))
+	assert.Contains(t, creditRows[0].Labels, "credit card")
+	assert.NotContains(t, creditRows[0].Labels, "loan")
 
 	// RAV4 down payment is car capital, not servicing.
 	rav4 := get("RAV4 pradinė įmoka (Tokvila)")

@@ -101,10 +101,32 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 	applyDataCleanups(db)
 	applyCategoryMigrations(db)
 	applyArteaPayrollFix(db)
+	applyCreditRepaymentFix(db)
 	applyLabelCleanups(db)
 	applyBalanceBackfills(db)
 
 	return db, nil
+}
+
+// applyCreditRepaymentFix refiles credit-card repayments (comment "Credit
+// repayment", imported as Finance expenses with the fixed-obligation `loan`
+// label) as own-money Transfers: the purchases the repayment covers are
+// already recorded as expenses, so counting the repayment too double-counted
+// ~€31.6k of spending and polluted the loan totals. The importer now
+// classifies them as Transfers directly; this repairs history and retires
+// the auto-labeling rule that stamped `loan` on them. Idempotent.
+func applyCreditRepaymentFix(db *gorm.DB) {
+	db.Exec(`DELETE FROM label_rules WHERE label = 'loan' AND comment_match = 'credit repayment'`)
+	db.Exec(`UPDATE transactions
+		SET labels = TRIM(REPLACE(',' || labels || ',', ',loan,', ','), ',')
+		WHERE comment = 'Credit repayment' AND (',' || labels || ',') LIKE '%,loan,%'`)
+	db.Exec(`UPDATE transactions SET labels = CASE
+		WHEN labels = '' THEN 'credit card'
+		WHEN (',' || labels || ',') LIKE '%,credit card,%' THEN labels
+		ELSE labels || ',credit card' END
+		WHERE comment = 'Credit repayment'`)
+	db.Exec(`UPDATE transactions SET type = 'investment', category = 'Transfers'
+		WHERE comment = 'Credit repayment' AND type = 'expense'`)
 }
 
 // applyArteaPayrollFix removes the phantom income legs the INVL pension
