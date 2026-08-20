@@ -773,3 +773,64 @@ func TestAIForecast(t *testing.T) {
 	w = budgetDoJSON(r, "GET", "/api/v1/ai/forecast", nil)
 	assert.Contains(t, w.Body.String(), "index funds", "old forecast still served")
 }
+
+// An image-only chat turn must never wedge the conversation: the stored user
+// turn carries the substituted instruction (not ""), and pre-existing empty
+// rows are skipped on replay — an empty text block gets rejected by the
+// gateway and would break every following message.
+func TestAIChatImageOnlyTurnReplay(t *testing.T) {
+	r, db := aiTestRouter(t)
+	srv, requests := scriptedGateway(t, []string{
+		anthropicText("I read the receipt: €42.56 at NORFA."),
+		anthropicText("Added it."),
+	})
+	w := budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	// A stale empty user row from before the fix must not replay either.
+	require.NoError(t, db.Create(&domain.AIChatMessage{Role: "user", Content: ""}).Error)
+
+	// Image attached, message left blank.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "receipt.png")
+	require.NoError(t, err)
+	// Minimal valid PNG header so content-type detection says image/png.
+	_, err = fw.Write([]byte("\x89PNG\r\n\x1a\n0000000000000000"))
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/chat", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "NORFA")
+
+	// Follow-up text turn: the replayed history must contain no empty text.
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/chat", map[string]any{"message": "Ok"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "Added it")
+
+	second := (*requests)[1]
+	for _, m := range second["messages"].([]any) {
+		msg := m.(map[string]any)
+		blocks, ok := msg["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, blk := range blocks {
+			b := blk.(map[string]any)
+			if b["type"] == "text" {
+				text, _ := b["text"].(string)
+				assert.NotEmpty(t, strings.TrimSpace(text), "no empty text block may reach the gateway (role %s)", msg["role"])
+			}
+		}
+	}
+
+	// The stored user turn is the substituted instruction, not "".
+	var turns []domain.AIChatMessage
+	require.NoError(t, db.Where("role = 'user'").Order("id").Find(&turns).Error)
+	require.Len(t, turns, 3) // stale empty row + image turn + "Ok"
+	assert.Contains(t, turns[1].Content, "image", "image-only turn stored with its effective text")
+}

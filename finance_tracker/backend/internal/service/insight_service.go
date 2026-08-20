@@ -202,6 +202,12 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 		if m.CreatedAt.Before(cutoff) {
 			continue // older turns live on as activity digests, not transcripts
 		}
+		// An empty turn (image-only messages saved before v1.52.1 stored "")
+		// must never replay: the gateway rejects a text block with no text,
+		// which would wedge the whole chat until history is cleared.
+		if strings.TrimSpace(m.Content) == "" {
+			continue
+		}
 		content := m.Content
 		if len(content) > maxReplayChars {
 			content = content[:maxReplayChars] + "… [earlier answer trimmed]"
@@ -276,8 +282,11 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 
 	// Persist both turns only after a successful reply — a failed call
 	// leaves history unchanged so a retry doesn't duplicate the question.
+	// The user turn stores what was effectively sent: for an image-only
+	// message that's the substituted instruction, never the empty string
+	// (images themselves aren't replayed).
 	if err := s.repo.AppendChat(
-		&domain.AIChatMessage{Role: "user", Content: message},
+		&domain.AIChatMessage{Role: "user", Content: userTurn.Content},
 		&domain.AIChatMessage{Role: "assistant", Content: reply},
 	); err != nil {
 		return ChatResult{}, fmt.Errorf("saving chat: %w", err)
