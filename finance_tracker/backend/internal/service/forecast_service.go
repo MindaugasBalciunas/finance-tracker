@@ -32,10 +32,21 @@ type ForecastAllocation struct {
 	Action     string  `json:"action"`
 }
 
+// ForecastBucket projects one account type on its own: its yearly growth
+// rate and the new money flowing into it per month — this is what lets the
+// UI show which buckets stay flat and which compound.
+type ForecastBucket struct {
+	Bucket       string  `json:"bucket"` // free_cash | investments | pensions | crypto
+	AnnualReturn float64 `json:"annual_return"`
+	MonthlyFlow  float64 `json:"monthly_flow"`
+	Note         string  `json:"note"`
+}
+
 type forecastAI struct {
 	Narrative           string               `json:"narrative"`
 	MonthlyContribution float64              `json:"monthly_contribution"`
 	Scenarios           []ForecastScenario   `json:"scenarios"`
+	BucketProjections   []ForecastBucket     `json:"bucket_projections"`
 	TargetAllocation    []ForecastAllocation `json:"target_allocation"`
 	Actions             []string             `json:"actions"`
 }
@@ -110,6 +121,12 @@ Return ONLY a JSON object (no markdown fence, no prose around it) with exactly t
     {"name": "expected", "annual_return": 0.06, "rationale": "one sentence"},
     {"name": "optimistic", "annual_return": 0.09, "rationale": "one sentence"}
   ],
+  "bucket_projections": [
+    {"bucket": "free_cash", "annual_return": 0.0, "monthly_flow": 0, "note": "one clause"},
+    {"bucket": "investments", "annual_return": 0.07, "monthly_flow": 900, "note": "one clause"},
+    {"bucket": "pensions", "annual_return": 0.05, "monthly_flow": 250, "note": "one clause"},
+    {"bucket": "crypto", "annual_return": 0.0, "monthly_flow": 0, "note": "one clause"}
+  ],
   "target_allocation": [
     {"bucket": "Free cash", "current_pct": 30, "target_pct": 15, "action": "one imperative sentence"}
   ],
@@ -120,6 +137,7 @@ Rules:
 - Be compact: one short sentence per rationale and action, narrative at most 5 sentences — the whole JSON must stay well under 2000 tokens.
 - annual_return is the blended yearly growth rate of the WHOLE net worth given its CURRENT allocation drifting toward the target (cash earns ~0%%, broad index funds their long-run rates). Each must be between -0.10 and 0.20, strictly increasing across the three scenarios.
 - monthly_contribution: realistic NEW money invested per month, grounded in their savings history below (income minus expenses); never more than their average monthly savings.
+- bucket_projections: one entry per bucket the user actually holds, using EXACTLY these ids: free_cash, investments, pensions, crypto. annual_return is that bucket's own growth rate (cash ~0). monthly_flow is new money into that bucket per month (0 for buckets that just sit; pension flows include employer/II-pillar contributions; may be negative when deliberately drawing down). This view shows the user what stays flat and what compounds.
 - target_allocation: how the portfolio SHOULD look. Cover at least Free cash, Investments, Pensions%s; target_pct values sum to roughly 100.
 - Keep every figure in EUR and grounded in the data — no invented positions.
 
@@ -271,6 +289,29 @@ func validateForecastAI(ai *forecastAI, cur forecastCurrent) error {
 		a.CurrentPct = clampPct(a.CurrentPct)
 		a.TargetPct = clampPct(a.TargetPct)
 	}
+	// Bucket projections are optional (older prompts, terse models); keep
+	// only the known bucket ids with sane rates and flows.
+	validBuckets := map[string]bool{"free_cash": true, "investments": true, "pensions": true, "crypto": true}
+	kept := ai.BucketProjections[:0:0]
+	for _, b := range ai.BucketProjections {
+		if !validBuckets[b.Bucket] {
+			continue
+		}
+		if b.AnnualReturn < -0.5 {
+			b.AnnualReturn = -0.5
+		}
+		if b.AnnualReturn > 0.5 {
+			b.AnnualReturn = 0.5
+		}
+		if b.MonthlyFlow < -20000 {
+			b.MonthlyFlow = -20000
+		}
+		if b.MonthlyFlow > 20000 {
+			b.MonthlyFlow = 20000
+		}
+		kept = append(kept, b)
+	}
+	ai.BucketProjections = kept
 	return nil
 }
 

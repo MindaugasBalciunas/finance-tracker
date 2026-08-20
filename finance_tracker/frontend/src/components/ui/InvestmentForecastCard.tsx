@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { aiApi } from '../../api/insights'
-import type { ForecastResponse } from '../../api/insights'
+import type { ForecastResponse, ForecastDoc } from '../../api/insights'
 import { useAISettings } from '../../hooks/useInsights'
 import { formatEuro } from '../../utils/format'
 import Markdown from './Markdown'
@@ -29,6 +30,28 @@ function horizonLabel(m: number): string {
   return m % 12 === 0 ? `${m / 12}y` : `${(m / 12).toFixed(1)}y`
 }
 
+// Per-account-type projection params: the AI's bucket_projections when the
+// saved forecast carries them, otherwise a conservative synthesis from the
+// expected scenario (cash and crypto flat, contributions into investments) —
+// so forecasts saved before this view existed still render it.
+function bucketParams(doc: ForecastDoc) {
+  const expected = doc.ai.scenarios[Math.min(1, doc.ai.scenarios.length - 1)]?.annual_return ?? 0.06
+  const defs = [
+    { id: 'free_cash', label: 'Free cash', value: doc.current.free_cash, color: '#94a3b8', r: 0, flow: 0 },
+    { id: 'investments', label: 'Investments', value: doc.current.investments, color: '#3b82f6', r: expected, flow: doc.ai.monthly_contribution },
+    { id: 'pensions', label: 'Pensions', value: doc.current.pensions, color: '#8b5cf6', r: expected, flow: 0 },
+    { id: 'crypto', label: 'Crypto', value: doc.current.crypto, color: '#f59e0b', r: 0, flow: 0 },
+  ]
+  for (const b of defs) {
+    const ai = doc.ai.bucket_projections?.find((p) => p.bucket === b.id)
+    if (ai) {
+      b.r = ai.annual_return
+      b.flow = ai.monthly_flow
+    }
+  }
+  return defs.filter((b) => b.value > 0 || b.flow > 0)
+}
+
 function fmtCost(costUsd?: number, inTok?: number, outTok?: number): string {
   const parts: string[] = []
   if ((costUsd ?? 0) > 0) parts.push(`$${parseFloat((costUsd as number).toFixed(4))}`)
@@ -41,6 +64,7 @@ export default function InvestmentForecastCard() {
   const { data: settings } = useAISettings()
   const configured = !!settings?.has_key && !!settings?.model
   const qc = useQueryClient()
+  const [view, setView] = useState<'total' | 'buckets'>('total')
 
   const { data, isLoading } = useQuery({
     queryKey: ['ai-forecast'],
@@ -100,21 +124,43 @@ export default function InvestmentForecastCard() {
   }))
   const mid = Math.min(1, scenarios.length - 1)
 
+  // Per-account-type projection (expected path): flat buckets stay visibly
+  // flat, compounding ones climb. Negative flows floor at zero.
+  const buckets = bucketParams(doc)
+  const bucketPoints = Array.from({ length: 41 }, (_, k) => {
+    const m = k * 3
+    const row: Record<string, number> = { m }
+    for (const b of buckets) row[b.label] = Math.max(0, Math.round(fv(b.value, b.r, b.flow, m)))
+    return row
+  })
+
   const ForecastTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
     const d = new Date()
     d.setMonth(d.getMonth() + Number(label))
+    // Read each series' own value from the row — in the stacked area view
+    // p.value is the stack offset, not the bucket's amount.
+    const items = [...payload].reverse().map((p: any) => ({
+      name: p.name as string, color: p.stroke as string, value: p.payload[p.dataKey] as number,
+    }))
+    const total = items.reduce((s, i) => s + i.value, 0)
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
         <p className="font-semibold text-gray-700 mb-1">
           {horizonLabel(Number(label))} · {d.toLocaleDateString('en', { month: 'short', year: 'numeric' })}
         </p>
-        {[...payload].reverse().map((p: any) => (
-          <div key={p.name} className="flex justify-between gap-4">
-            <span style={{ color: p.stroke }} className="capitalize">{p.name}</span>
-            <span className="font-medium">{formatEuro(p.value)}</span>
+        {items.map((i) => (
+          <div key={i.name} className="flex justify-between gap-4">
+            <span style={{ color: i.color }} className="capitalize">{i.name}</span>
+            <span className="font-medium">{formatEuro(i.value)}</span>
           </div>
         ))}
+        {view === 'buckets' && items.length > 1 && (
+          <div className="border-t border-gray-100 mt-1 pt-1 flex justify-between font-bold text-gray-800">
+            <span>Total</span>
+            <span>{formatEuro(total)}</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -162,40 +208,101 @@ export default function InvestmentForecastCard() {
         ))}
       </div>
 
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={points} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey="m"
-            type="number"
-            domain={[0, 120]}
-            ticks={[0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120]}
-            tickFormatter={horizonLabel}
-            tick={{ fontSize: 11 }}
-          />
-          <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} width={56} />
-          <Tooltip content={<ForecastTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 11, textTransform: 'capitalize' }} />
-          <ReferenceLine x={12} stroke="#d1d5db" strokeDasharray="3 3" />
-          <ReferenceLine x={60} stroke="#d1d5db" strokeDasharray="3 3" />
-          <ReferenceLine y={base} stroke="#9ca3af" strokeDasharray="3 3" />
-          {scenarios.map((sc, i) => (
-            <Line
-              key={sc.name}
-              type="monotone"
-              dataKey={sc.name}
-              stroke={SCENARIO_COLORS[i % SCENARIO_COLORS.length]}
-              strokeWidth={i === mid ? 2.5 : 1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
+      {/* Total scenarios vs per-account-type breakdown */}
+      <div className="flex justify-end mb-1">
+        <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          {([['total', 'Scenarios'], ['buckets', 'By account type']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md ${view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              title={v === 'total' ? 'Whole net worth under three return scenarios' : 'Each account type on its own — see what stays flat and what compounds'}
+            >
+              {label}
+            </button>
           ))}
-        </LineChart>
-      </ResponsiveContainer>
-      <p className="text-[11px] text-gray-400 mt-1">
-        {scenarios.map((sc) => `${sc.name} ${(sc.annual_return * 100).toFixed(1)}%/y`).join(' · ')} — blended
-        rates across your whole net worth, chosen by the AI from your actual allocation.
-      </p>
+        </div>
+      </div>
+
+      {view === 'total' ? (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={points} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="m"
+                type="number"
+                domain={[0, 120]}
+                ticks={[0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120]}
+                tickFormatter={horizonLabel}
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} width={56} />
+              <Tooltip content={<ForecastTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11, textTransform: 'capitalize' }} />
+              <ReferenceLine x={12} stroke="#d1d5db" strokeDasharray="3 3" />
+              <ReferenceLine x={60} stroke="#d1d5db" strokeDasharray="3 3" />
+              <ReferenceLine y={base} stroke="#9ca3af" strokeDasharray="3 3" />
+              {scenarios.map((sc, i) => (
+                <Line
+                  key={sc.name}
+                  type="monotone"
+                  dataKey={sc.name}
+                  stroke={SCENARIO_COLORS[i % SCENARIO_COLORS.length]}
+                  strokeWidth={i === mid ? 2.5 : 1.5}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+          <p className="text-[11px] text-gray-400 mt-1">
+            {scenarios.map((sc) => `${sc.name} ${(sc.annual_return * 100).toFixed(1)}%/y`).join(' · ')} — blended
+            rates across your whole net worth, chosen by the AI from your actual allocation.
+          </p>
+        </>
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={bucketPoints} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="m"
+                type="number"
+                domain={[0, 120]}
+                ticks={[0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120]}
+                tickFormatter={horizonLabel}
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} width={56} />
+              <Tooltip content={<ForecastTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine x={12} stroke="#d1d5db" strokeDasharray="3 3" />
+              <ReferenceLine x={60} stroke="#d1d5db" strokeDasharray="3 3" />
+              {buckets.map((b) => (
+                <Area
+                  key={b.id}
+                  type="monotone"
+                  dataKey={b.label}
+                  stackId="buckets"
+                  stroke={b.color}
+                  strokeWidth={1}
+                  fill={b.color}
+                  fillOpacity={0.55}
+                  isAnimationActive={false}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Expected path per account type:{' '}
+            {buckets.map((b) =>
+              `${b.label} ${b.r === 0 && b.flow === 0 ? 'flat' : `${(b.r * 100).toFixed(1)}%/y${b.flow > 0 ? ` + ${formatEuro(b.flow)}/mo` : b.flow < 0 ? ` − ${formatEuro(-b.flow)}/mo` : ''}`}`
+            ).join(' · ')}
+            {!doc.ai.bucket_projections?.length && ' (estimated — update the forecast for AI per-bucket rates)'}
+          </p>
+        </>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mt-5">
         {/* The clear path: narrative + concrete steps */}

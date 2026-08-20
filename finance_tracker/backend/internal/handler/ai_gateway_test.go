@@ -695,6 +695,11 @@ func TestAIForecast(t *testing.T) {
 			{"name": "conservative", "annual_return": 0.03, "rationale": "cash drag"},
 			{"name": "optimistic", "annual_return": 0.09, "rationale": "equity run"}
 		],
+		"bucket_projections": [
+			{"bucket": "free_cash", "annual_return": 0.0, "monthly_flow": 0, "note": "flat"},
+			{"bucket": "investments", "annual_return": 0.07, "monthly_flow": 500, "note": "compounds"},
+			{"bucket": "made_up_bucket", "annual_return": 0.99, "monthly_flow": 1, "note": "dropped"}
+		],
 		"target_allocation": [
 			{"bucket": "Free cash", "current_pct": 100, "target_pct": 20, "action": "Keep 3 months of expenses."},
 			{"bucket": "Investments", "current_pct": 0, "target_pct": 80, "action": "DCA into VWCE monthly."}
@@ -728,9 +733,10 @@ func TestAIForecast(t *testing.T) {
 				TotalEur float64 `json:"total_eur"`
 			} `json:"current"`
 			AI struct {
-				MonthlyContribution float64                  `json:"monthly_contribution"`
-				Scenarios           []map[string]any         `json:"scenarios"`
-				TargetAllocation    []map[string]any         `json:"target_allocation"`
+				MonthlyContribution float64          `json:"monthly_contribution"`
+				Scenarios           []map[string]any `json:"scenarios"`
+				BucketProjections   []map[string]any `json:"bucket_projections"`
+				TargetAllocation    []map[string]any `json:"target_allocation"`
 			} `json:"ai"`
 		} `json:"forecast"`
 	}
@@ -744,6 +750,10 @@ func TestAIForecast(t *testing.T) {
 	// the fixture has expenses but no income, so capacity floors at zero.
 	assert.Equal(t, float64(0), gen.Forecast.AI.MonthlyContribution)
 	assert.Len(t, gen.Forecast.AI.TargetAllocation, 2)
+	// Unknown bucket ids are dropped; the known ones survive.
+	require.Len(t, gen.Forecast.AI.BucketProjections, 2)
+	assert.Equal(t, "free_cash", gen.Forecast.AI.BucketProjections[0]["bucket"])
+	assert.Equal(t, "investments", gen.Forecast.AI.BucketProjections[1]["bucket"])
 
 	// Saved: GET returns it without another gateway call.
 	w = budgetDoJSON(r, "GET", "/api/v1/ai/forecast", nil)

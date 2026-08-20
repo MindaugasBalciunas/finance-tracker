@@ -283,6 +283,13 @@ export interface ForecastAllocation {
   action: string
 }
 
+export interface ForecastBucket {
+  bucket: 'free_cash' | 'investments' | 'pensions' | 'crypto'
+  annual_return: number
+  monthly_flow: number
+  note?: string
+}
+
 export interface ForecastDoc {
   generated_at: string
   current: {
@@ -299,6 +306,7 @@ export interface ForecastDoc {
     narrative: string
     monthly_contribution: number
     scenarios: ForecastScenario[]
+    bucket_projections?: ForecastBucket[]
     target_allocation: ForecastAllocation[]
     actions: string[]
   }
