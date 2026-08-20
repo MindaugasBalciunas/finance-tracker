@@ -453,7 +453,7 @@ func TestAIChatToolLoop(t *testing.T) {
 	// exceeding the tool-round cap rides in the body's "error" field.
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "tool rounds")
-	assert.LessOrEqual(t, len(*requests3), 13, "loop is bounded (maxToolRounds + 1)")
+	assert.LessOrEqual(t, len(*requests3), 61, "loop is bounded (maxToolRounds + 1)")
 }
 
 // The view summary reviews the CURRENT tab: view-specific context goes to

@@ -21,13 +21,12 @@ const aiToolDataNotes = " Amounts are EUR; 'labels' is a comma-separated multise
 // maxToolResultBytes caps any single tool result fed back to the model.
 const maxToolResultBytes = 30_000
 
-// maxToolRounds bounds the agentic loop — a model that keeps asking for
-// tools past this gets cut off rather than looping forever. A label/rule
-// audit legitimately needs many rounds (list the rules, then investigate
-// several suspects with separate queries), so the ceiling is generous; the
-// overall chat budget (context deadline) is the real backstop against a
-// runaway loop.
-const maxToolRounds = 12
+// maxToolRounds is a pure infinite-spin guard, NOT a practical limit: the
+// chat's 240s context budget (checked before every round) is what actually
+// bounds a runaway loop and its cost. Deep integrations legitimately chain
+// many quick queries — a 12-round cap kept cutting them off mid-work, so the
+// ceiling sits far above anything the time budget allows in practice.
+const maxToolRounds = 60
 
 func obj(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
