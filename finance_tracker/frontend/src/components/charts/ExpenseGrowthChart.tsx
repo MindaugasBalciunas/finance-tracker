@@ -52,8 +52,10 @@ export type GrowthView = 'monthly' | 'cumulative'
 // counts under its FIRST label (so the stack sums to real spend) and fixed
 // obligations are excluded — their identical monthly steps would drown the
 // variation the chart exists to show.
+type Row = Record<string, number | string | null>
+
 function buildSeries(transactions: Transaction[], mode: 'category' | 'label', topN: number, view: GrowthView) {
-  const empty = { rows: [] as Record<string, number | string>[], series: [] as string[], seriesTotals: {} as Record<string, number> }
+  const empty = { rows: [] as Row[], series: [] as string[], seriesTotals: {} as Record<string, number> }
   const relevant = transactions.filter((tx) => !(mode === 'label' && isCommitted(tx)))
   if (relevant.length === 0) return empty
 
@@ -89,11 +91,17 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
     .map(([g]) => g)
 
   const otherName = mode === 'label' ? 'other labels' : 'Other'
+  const allKeys = [...top, otherName, 'unlabeled']
   const running: Record<string, number> = {}
   const seriesTotals: Record<string, number> = {}
   let hasOther = false
   let hasUnlabeled = false
-  const rows: Record<string, number | string>[] = []
+  const rows: Row[] = []
+  const fillRow = (ts: number, value: number | null): Row => {
+    const row: Row = { ts }
+    for (const g of allKeys) row[g] = value
+    return row
+  }
   // Advance via setDate so bucket timestamps stay at local midnight across
   // DST switches — raw +86400000·n drifts an hour and stops matching the
   // byBucket keys.
@@ -106,6 +114,11 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
     cursor.setDate(cursor.getDate() + (granularity === 'day' ? 1 : 7))
     if (view === 'monthly' && monthKey !== prevMonth) {
       for (const k of Object.keys(running)) running[k] = 0
+      // Clean cut between months: an all-null row breaks the area paths
+      // (connectNulls is off), and a zero anchor makes the new month rise
+      // from the baseline instead of inheriting the previous month's peak.
+      if (prevMonth !== '') rows.push(fillRow(ts - 2, null))
+      rows.push(fillRow(ts - 1, 0))
       prevMonth = monthKey
     }
     for (const [g, amt] of Object.entries(byBucket[ts] ?? {})) {
@@ -115,8 +128,8 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
       if (key === otherName) hasOther = true
       if (key === 'unlabeled') hasUnlabeled = true
     }
-    const row: Record<string, number | string> = { ts }
-    for (const g of [...top, otherName, 'unlabeled']) row[g] = running[g] ?? 0
+    const row: Row = { ts }
+    for (const g of allKeys) row[g] = running[g] ?? 0
     rows.push(row)
   }
   if (rows.length < 2) return empty
@@ -316,6 +329,7 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
             type={view === 'monthly' ? 'linear' : 'monotone'}
             dataKey={name}
             stackId="growth"
+            connectNulls={false}
             isAnimationActive={false}
             stroke={colorFor(name, i)}
             strokeWidth={0.5}
