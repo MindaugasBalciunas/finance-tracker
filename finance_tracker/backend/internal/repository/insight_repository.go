@@ -26,6 +26,10 @@ type InsightRepository interface {
 	// GetAIContext/SaveAIContext manage the user's CFO-context document.
 	GetAIContext() (*domain.AIContext, error)
 	SaveAIContext(content string) (*domain.AIContext, error)
+	// SaveForecast stores a new AI investment forecast; LatestForecast returns
+	// the newest one, or (nil, nil) when none has been generated yet.
+	SaveForecast(f *domain.AIForecast) error
+	LatestForecast() (*domain.AIForecast, error)
 }
 
 type insightRepository struct {
@@ -128,6 +132,25 @@ func (r *insightRepository) RecentActivity(since time.Time, limit int) ([]domain
 	var out []domain.AIActivity
 	err := r.db.Where("created_at >= ?", since).Order("id DESC").Limit(limit).Find(&out).Error
 	return out, err
+}
+
+func (r *insightRepository) SaveForecast(f *domain.AIForecast) error {
+	if err := r.db.Create(f).Error; err != nil {
+		return err
+	}
+	// Keep a short history for comparison, not an archive.
+	return r.db.Exec("DELETE FROM ai_forecasts WHERE id NOT IN (SELECT id FROM ai_forecasts ORDER BY id DESC LIMIT 10)").Error
+}
+
+func (r *insightRepository) LatestForecast() (*domain.AIForecast, error) {
+	var f domain.AIForecast
+	if err := r.db.Order("id DESC").First(&f).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &f, nil
 }
 
 func (r *insightRepository) SaveAISettings(s *domain.AISettings) error {

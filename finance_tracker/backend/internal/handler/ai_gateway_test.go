@@ -26,7 +26,7 @@ func aiTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}, &domain.AIActivity{}, &domain.AIContext{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}))
 
 	// Chat context needs at least one transaction and one balance snapshot.
 	require.NoError(t, db.Create(&domain.Transaction{
@@ -675,4 +675,91 @@ func TestAIReviewRemap(t *testing.T) {
 	// Unknown mode is rejected.
 	w = budgetDoJSON(r, "POST", "/api/v1/ai/label-reindex", map[string]any{"mode": "chaos"})
 	assert.Equal(t, 400, w.Code)
+}
+
+// The investment forecast is generated once (paid) and then served from the
+// database for free — the GET must never touch the gateway.
+func TestAIForecast(t *testing.T) {
+	r, _ := aiTestRouter(t)
+
+	// No forecast yet: GET is free and reports absence.
+	w := budgetDoJSON(r, "GET", "/api/v1/ai/forecast", nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"exists":false`)
+
+	forecastJSON := `{
+		"narrative": "You hold €1,000 in cash. Move steadily into index funds.",
+		"monthly_contribution": 99999,
+		"scenarios": [
+			{"name": "expected", "annual_return": 0.06, "rationale": "blended"},
+			{"name": "conservative", "annual_return": 0.03, "rationale": "cash drag"},
+			{"name": "optimistic", "annual_return": 0.09, "rationale": "equity run"}
+		],
+		"target_allocation": [
+			{"bucket": "Free cash", "current_pct": 100, "target_pct": 20, "action": "Keep 3 months of expenses."},
+			{"bucket": "Investments", "current_pct": 0, "target_pct": 80, "action": "DCA into VWCE monthly."}
+		],
+		"actions": ["Open a monthly VWCE order"]
+	}`
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		hits++
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		prompt := promptText(body)
+		assert.Contains(t, prompt, "Net worth today", "prompt carries the snapshot facts")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(anthropicText("Here is the forecast:\n" + forecastJSON)))
+	}))
+	t.Cleanup(srv.Close)
+
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+
+	// Generate (paid, streamed 200 + JSON body).
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/forecast", nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Equal(t, 1, hits)
+	var gen struct {
+		Exists   bool `json:"exists"`
+		Forecast struct {
+			Current struct {
+				TotalEur float64 `json:"total_eur"`
+			} `json:"current"`
+			AI struct {
+				MonthlyContribution float64                  `json:"monthly_contribution"`
+				Scenarios           []map[string]any         `json:"scenarios"`
+				TargetAllocation    []map[string]any         `json:"target_allocation"`
+			} `json:"ai"`
+		} `json:"forecast"`
+	}
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(w.Body.Bytes()), &gen))
+	require.True(t, gen.Exists)
+	assert.Equal(t, float64(1000), gen.Forecast.Current.TotalEur, "current portfolio from the snapshot")
+	assert.Len(t, gen.Forecast.AI.Scenarios, 3)
+	// Scenarios come back sorted by return regardless of reply order.
+	assert.Equal(t, "conservative", gen.Forecast.AI.Scenarios[0]["name"])
+	// A contribution beyond the user's savings capacity is clamped to it —
+	// the fixture has expenses but no income, so capacity floors at zero.
+	assert.Equal(t, float64(0), gen.Forecast.AI.MonthlyContribution)
+	assert.Len(t, gen.Forecast.AI.TargetAllocation, 2)
+
+	// Saved: GET returns it without another gateway call.
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/forecast", nil)
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `"exists":true`)
+	assert.Contains(t, w.Body.String(), "index funds")
+	assert.Equal(t, 1, hits, "GET is free — no gateway spend")
+
+	// A garbage reply is rejected and the saved forecast survives.
+	srv2, _ := fakeGateway(t, "no json here at all")
+	w = budgetDoJSON(r, "PUT", "/api/v1/ai/settings", map[string]any{
+		"gateway_url": srv2.URL, "model": "m", "api_key": "k"})
+	require.Equal(t, 200, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/ai/forecast", nil)
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "error")
+	w = budgetDoJSON(r, "GET", "/api/v1/ai/forecast", nil)
+	assert.Contains(t, w.Body.String(), "index funds", "old forecast still served")
 }

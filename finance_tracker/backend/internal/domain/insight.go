@@ -42,6 +42,20 @@ func (s *AISettings) Configured() bool {
 	return s.APIKey != "" && s.Model != ""
 }
 
+// AIForecast is a saved AI investment projection: the model's blended-return
+// scenarios, contribution target, target allocation and narrative as one JSON
+// document (Content). Persisted so the dashboard renders the forecast for
+// free on every visit — only an explicit regenerate spends gateway tokens.
+type AIForecast struct {
+	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Content      string    `json:"content" gorm:"type:text;not null"`
+	Model        string    `json:"model" gorm:"not null;default:''"`
+	CostUSD      float64   `json:"cost_usd"`
+	InputTokens  int       `json:"input_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 // ChatMessage is one turn of the AI chat (role: user | assistant | system).
 type ChatMessage struct {
 	Role    string `json:"role"` // "system" | "user" | "assistant"

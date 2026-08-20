@@ -12,6 +12,7 @@ import CumulativeSpendingChart from '../components/charts/CumulativeSpendingChar
 import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import InsightsPanel from '../components/ui/InsightsPanel'
+import InvestmentForecastCard from '../components/ui/InvestmentForecastCard'
 import BudgetPulseCard from '../components/ui/BudgetPulseCard'
 import TopLabelsCard from '../components/ui/TopLabelsCard'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
@@ -185,6 +186,9 @@ export default function Dashboard() {
           <BalanceTrendChart trend={trend} btcPrice={liveBtcPrice} />
         </div>
       )}
+
+      {/* AI investment forecast — saved server-side; viewing it is free */}
+      <InvestmentForecastCard />
 
       {/* Expense breakdown by category per month — numbers embedded in X-axis ticks */}
       {allExpenses && allExpenses.data.length > 0 && (

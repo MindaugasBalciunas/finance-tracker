@@ -60,6 +60,11 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.GET("/context", h.GetAIContext)
 	ai.PUT("/context", h.SaveAIContext)
 
+	// Saved AI investment forecast: GET is free (returns the persisted
+	// document), POST regenerates via the gateway — session-only.
+	ai.GET("/forecast", h.GetForecast)
+	ai.POST("/forecast", h.GenerateForecast)
+
 	// Structured month-to-date budget progress. Lives under /budgets so the
 	// read-only API token (and thus MCP) can reach it.
 	rg.GET("/budgets/status", h.BudgetStatus)
@@ -229,6 +234,46 @@ func (h *InsightHandler) ViewSummary(c *gin.Context) {
 			"input_tokens":  r.InputTokens,
 			"output_tokens": r.OutputTokens,
 		}, nil
+	})
+}
+
+// forecastPayload is the wire shape shared by GET (saved) and POST (fresh).
+func forecastPayload(r service.ForecastResult) gin.H {
+	if !r.Exists {
+		return gin.H{"exists": false}
+	}
+	return gin.H{
+		"exists":        true,
+		"forecast":      r.Doc,
+		"model":         r.Model,
+		"cost_usd":      r.CostUSD,
+		"input_tokens":  r.InputTokens,
+		"output_tokens": r.OutputTokens,
+		"created_at":    r.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+// GetForecast returns the saved forecast without touching the gateway.
+func (h *InsightHandler) GetForecast(c *gin.Context) {
+	r, err := h.svc.Forecast(c.Request.Context(), false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, forecastPayload(r))
+}
+
+// GenerateForecast regenerates and persists the forecast — a paid AI call,
+// streamed so a reverse proxy never 504s it.
+func (h *InsightHandler) GenerateForecast(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
+	defer cancel()
+	streamJSONResult(c, func() (any, error) {
+		r, err := h.svc.Forecast(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		return forecastPayload(r), nil
 	})
 }
 

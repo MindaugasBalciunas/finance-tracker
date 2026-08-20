@@ -254,4 +254,62 @@ export const aiApi = {
       outputTokens: data.output_tokens ?? 0,
     }
   },
+
+  // Saved AI investment forecast: GET is free (persisted server-side),
+  // generateForecast spends gateway tokens and replaces the saved one.
+  getForecast: async (): Promise<ForecastResponse> => {
+    const { data } = await client.get<ForecastResponse>('/ai/forecast')
+    if (data && (data as any).error) throw new Error((data as any).error)
+    return data
+  },
+
+  generateForecast: async (): Promise<ForecastResponse> => {
+    const { data } = await client.post<ForecastResponse>('/ai/forecast', {}, { timeout: 180_000 })
+    if (data && (data as any).error) throw new Error((data as any).error)
+    return data
+  },
+}
+
+export interface ForecastScenario {
+  name: string
+  annual_return: number
+  rationale: string
+}
+
+export interface ForecastAllocation {
+  bucket: string
+  current_pct: number
+  target_pct: number
+  action: string
+}
+
+export interface ForecastDoc {
+  generated_at: string
+  current: {
+    total_eur: number
+    free_cash: number
+    investments: number
+    pensions: number
+    crypto: number
+    monthly_income_avg: number
+    monthly_expense_avg: number
+    monthly_invest_avg: number
+  }
+  ai: {
+    narrative: string
+    monthly_contribution: number
+    scenarios: ForecastScenario[]
+    target_allocation: ForecastAllocation[]
+    actions: string[]
+  }
+}
+
+export interface ForecastResponse {
+  exists: boolean
+  forecast?: ForecastDoc
+  model?: string
+  cost_usd?: number
+  input_tokens?: number
+  output_tokens?: number
+  created_at?: string
 }

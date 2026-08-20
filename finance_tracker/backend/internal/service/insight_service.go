@@ -78,6 +78,9 @@ type InsightService interface {
 	// replaces it (capped at 32KB).
 	AIContext() (*domain.AIContext, error)
 	SaveAIContext(content string) (*domain.AIContext, error)
+	// Forecast returns the saved AI investment projection (refresh=false is
+	// free — no gateway call); refresh=true regenerates and persists it.
+	Forecast(ctx context.Context, refresh bool) (ForecastResult, error)
 }
 
 type insightService struct {
