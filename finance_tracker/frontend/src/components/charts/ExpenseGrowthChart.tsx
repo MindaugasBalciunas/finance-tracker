@@ -27,27 +27,53 @@ const LABEL_COLORS = [
 const OTHER_COLOR = '#9ca3af'
 const UNLABELED_COLOR = '#d1d5db'
 
-// Cumulative running sum per group at each month of the period. Label mode
-// follows the MonthlyLabelChart conventions: each transaction counts under
-// its FIRST label (so the stack sums to real spend) and fixed obligations
-// are excluded — their identical monthly steps would drown the variation
-// the chart exists to show.
+const DAY_MS = 86_400_000
+
+// Snap a date string to its bucket start: the day itself, or the Monday of
+// its week.
+function bucketStart(date: string, granularity: 'day' | 'week'): number {
+  const d = new Date(date.slice(0, 10))
+  d.setHours(0, 0, 0, 0)
+  if (granularity === 'week') {
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  }
+  return d.getTime()
+}
+
+// Cumulative running sum per group through the period, at daily resolution
+// for short ranges and weekly beyond ~4 months — fine enough that salary-day
+// bursts and quiet weeks show as real movement instead of one smooth monthly
+// ramp. Empty buckets are kept so no-spend stretches read as flat plateaus.
+// Label mode follows the MonthlyLabelChart conventions: each transaction
+// counts under its FIRST label (so the stack sums to real spend) and fixed
+// obligations are excluded — their identical monthly steps would drown the
+// variation the chart exists to show.
 function buildSeries(transactions: Transaction[], mode: 'category' | 'label', topN: number) {
-  const byMonth: Record<string, Record<string, number>> = {}
-  for (const tx of transactions) {
-    if (mode === 'label' && isCommitted(tx)) continue
-    const mk = tx.date.slice(0, 7)
+  const empty = { rows: [] as Record<string, number | string>[], series: [] as string[] }
+  const relevant = transactions.filter((tx) => !(mode === 'label' && isCommitted(tx)))
+  if (relevant.length === 0) return empty
+
+  let minTs = Infinity
+  let maxTs = -Infinity
+  for (const tx of relevant) {
+    const ts = bucketStart(tx.date, 'day')
+    if (ts < minTs) minTs = ts
+    if (ts > maxTs) maxTs = ts
+  }
+  const granularity: 'day' | 'week' = (maxTs - minTs) / DAY_MS <= 120 ? 'day' : 'week'
+
+  const byBucket: Record<number, Record<string, number>> = {}
+  for (const tx of relevant) {
+    const ts = bucketStart(tx.date, granularity)
     const group = mode === 'category'
       ? (tx.category as string)
       : (txLabels(tx)[0] ?? 'unlabeled')
-    if (!byMonth[mk]) byMonth[mk] = {}
-    byMonth[mk][group] = (byMonth[mk][group] ?? 0) + tx.amount.value
+    if (!byBucket[ts]) byBucket[ts] = {}
+    byBucket[ts][group] = (byBucket[ts][group] ?? 0) + tx.amount.value
   }
-  const months = Object.keys(byMonth).sort()
-  if (months.length < 2) return { rows: [] as Record<string, number | string>[], series: [] as string[] }
 
   const totals: Record<string, number> = {}
-  for (const groups of Object.values(byMonth)) {
+  for (const groups of Object.values(byBucket)) {
     for (const [g, amt] of Object.entries(groups)) {
       if (g === 'unlabeled') continue
       totals[g] = (totals[g] ?? 0) + amt
@@ -62,17 +88,26 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
   const running: Record<string, number> = {}
   let hasOther = false
   let hasUnlabeled = false
-  const rows = months.map((mk) => {
-    for (const [g, amt] of Object.entries(byMonth[mk])) {
+  const rows: Record<string, number | string>[] = []
+  // Advance via setDate so bucket timestamps stay at local midnight across
+  // DST switches — raw +86400000·n drifts an hour and stops matching the
+  // byBucket keys.
+  const cursor = new Date(minTs)
+  if (granularity === 'week') cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  while (cursor.getTime() <= maxTs) {
+    const ts = cursor.getTime()
+    cursor.setDate(cursor.getDate() + (granularity === 'day' ? 1 : 7))
+    for (const [g, amt] of Object.entries(byBucket[ts] ?? {})) {
       const key = top.includes(g) ? g : g === 'unlabeled' ? 'unlabeled' : otherName
       running[key] = (running[key] ?? 0) + amt
       if (key === otherName) hasOther = true
       if (key === 'unlabeled') hasUnlabeled = true
     }
-    const row: Record<string, number | string> = { month: mk, ts: new Date(`${mk}-01`).getTime() }
+    const row: Record<string, number | string> = { ts }
     for (const g of [...top, otherName, 'unlabeled']) row[g] = running[g] ?? 0
-    return row
-  })
+    rows.push(row)
+  }
+  if (rows.length < 2) return empty
 
   // Biggest spender at the bottom of the stack; catch-all buckets on top.
   const series = [...top]
@@ -81,9 +116,8 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
   return { rows, series }
 }
 
-function monthLabel(mk: string): string {
-  const [y, m] = mk.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleDateString('en', { month: 'short', year: '2-digit' })
+function dateLabel(ts: number): string {
+  return new Date(ts).toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
 interface TooltipProps {
@@ -94,7 +128,7 @@ interface TooltipProps {
 
 function CustomTooltip({ active, payload, hiddenKeys }: TooltipProps) {
   if (!active || !payload?.length) return null
-  const mk = payload[0]?.payload?.month as string | undefined
+  const ts = payload[0]?.payload?.ts as number | undefined
   // Segment values live in payload[i].payload[dataKey]; payload[i].value is
   // the stacked offset, not the series' own amount.
   const items = [...payload]
@@ -105,7 +139,7 @@ function CustomTooltip({ active, payload, hiddenKeys }: TooltipProps) {
   const total = items.reduce((s, i) => s + i.value, 0)
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs max-w-56">
-      <p className="font-semibold text-gray-700 mb-1">Through {mk ? monthLabel(mk) : ''}</p>
+      <p className="font-semibold text-gray-700 mb-1">Through {ts != null ? dateLabel(ts) : ''}</p>
       {items.map((i) => (
         <div key={i.dataKey} className="flex justify-between gap-3">
           <span style={{ color: i.color }}>{i.name}</span>
@@ -178,11 +212,16 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
     return values
   }, [rows, series])
 
-  // Monthly points thinned to at most ~12 axis labels.
-  const timeTicks = useMemo(() => {
+  // Bucket points thinned to at most ~12 axis labels; short ranges get
+  // day-level labels, long ones month/year.
+  const { timeTicks, tickFmt } = useMemo(() => {
     const all = rows.map((r) => r.ts as number)
     const step = Math.ceil(all.length / 12)
-    return all.filter((_, i) => i % step === 0)
+    const spanDays = all.length > 1 ? (all[all.length - 1] - all[0]) / 86_400_000 : 0
+    const tickFmt = spanDays <= 200
+      ? (ts: number) => new Date(ts).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })
+      : (ts: number) => new Date(ts).toLocaleDateString('lt-LT', { year: '2-digit', month: 'short' })
+    return { timeTicks: all.filter((_, i) => i % step === 0), tickFmt }
   }, [rows])
 
   if (rows.length === 0) return null
@@ -223,7 +262,7 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
           scale="time"
           domain={['dataMin', 'dataMax']}
           ticks={timeTicks}
-          tickFormatter={(ts: number) => new Date(ts).toLocaleDateString('lt-LT', { year: '2-digit', month: 'short' })}
+          tickFormatter={tickFmt}
           tick={{ fontSize: 11 }}
         />
         <YAxis

@@ -346,7 +346,7 @@ export default function Reports() {
 
           {/* Cumulative expense growth — same stacked-area style as the
               Balances account chart: click a legend entry to hide a series. */}
-          {allExpenses && labelStats.months.length > 1 && (
+          {allExpenses && allExpenses.data.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Category</h3>
               <p className="text-xs text-gray-400 mb-4">
@@ -355,7 +355,7 @@ export default function Reports() {
               <ExpenseGrowthChart transactions={allExpenses.data} mode="category" />
             </div>
           )}
-          {allExpenses && labelStats.discMonthCount > 1 && (
+          {allExpenses && allExpenses.data.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Label</h3>
               <p className="text-xs text-gray-400 mb-4">
