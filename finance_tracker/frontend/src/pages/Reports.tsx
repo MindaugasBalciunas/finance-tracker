@@ -6,6 +6,7 @@ import SavingsRateTrendChart from '../components/charts/SavingsRateTrendChart'
 import NetCashFlowChart from '../components/charts/NetCashFlowChart'
 import MonthlyExpenseCategoryChart from '../components/charts/MonthlyExpenseCategoryChart'
 import MonthlyLabelChart from '../components/charts/MonthlyLabelChart'
+import ExpenseGrowthChart from '../components/charts/ExpenseGrowthChart'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import QueryError from '../components/ui/QueryError'
@@ -340,6 +341,27 @@ export default function Reports() {
               <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Breakdown by Month</h3>
               <p className="text-xs text-gray-400 mb-4">Stacked by category — see how spending composition changes over time</p>
               <MonthlyExpenseCategoryChart transactions={allExpenses.data} />
+            </div>
+          )}
+
+          {/* Cumulative expense growth — same stacked-area style as the
+              Balances account chart: click a legend entry to hide a series. */}
+          {allExpenses && labelStats.months.length > 1 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Category</h3>
+              <p className="text-xs text-gray-400 mb-4">
+                Cumulative spending through the period, stacked by category — a steep stretch is money leaving fast. Click a legend entry to hide it.
+              </p>
+              <ExpenseGrowthChart transactions={allExpenses.data} mode="category" />
+            </div>
+          )}
+          {allExpenses && labelStats.discMonthCount > 1 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Label</h3>
+              <p className="text-xs text-gray-400 mb-4">
+                Discretionary spending accumulated by label — each transaction counted under its first label, fixed obligations excluded. Click a legend entry to hide it.
+              </p>
+              <ExpenseGrowthChart transactions={allExpenses.data} mode="label" />
             </div>
           )}
 
