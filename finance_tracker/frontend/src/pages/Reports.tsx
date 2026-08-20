@@ -350,7 +350,8 @@ export default function Reports() {
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Category</h3>
               <p className="text-xs text-gray-400 mb-4">
-                Cumulative spending through the period, stacked by category — a steep stretch is money leaving fast. Click a legend entry to hide it.
+                Spending climbs from zero each month — peak height is the month's total, so shapes compare directly.
+                Switch to Cumulative for whole-period growth. Click a legend entry to hide it; legend amounts are period totals.
               </p>
               <ExpenseGrowthChart transactions={allExpenses.data} mode="category" />
             </div>
@@ -359,7 +360,8 @@ export default function Reports() {
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h3 className="text-base font-semibold text-gray-900 mb-1">Expense Growth by Label</h3>
               <p className="text-xs text-gray-400 mb-4">
-                Discretionary spending accumulated by label — each transaction counted under its first label, fixed obligations excluded. Click a legend entry to hide it.
+                Discretionary spending by label, restarting at zero each month — each transaction counted under its first label, fixed obligations excluded.
+                Switch to Cumulative for whole-period growth. Click a legend entry to hide it; legend amounts are period totals.
               </p>
               <ExpenseGrowthChart transactions={allExpenses.data} mode="label" />
             </div>

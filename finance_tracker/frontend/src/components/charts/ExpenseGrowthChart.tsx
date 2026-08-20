@@ -40,16 +40,20 @@ function bucketStart(date: string, granularity: 'day' | 'week'): number {
   return d.getTime()
 }
 
-// Cumulative running sum per group through the period, at daily resolution
-// for short ranges and weekly beyond ~4 months — fine enough that salary-day
-// bursts and quiet weeks show as real movement instead of one smooth monthly
-// ramp. Empty buckets are kept so no-spend stretches read as flat plateaus.
+export type GrowthView = 'monthly' | 'cumulative'
+
+// Running sum per group through the period, at daily resolution for short
+// ranges and weekly beyond ~4 months — fine enough that salary-day bursts
+// and quiet weeks show as real movement instead of one smooth monthly ramp.
+// Empty buckets are kept so no-spend stretches read as flat plateaus. The
+// 'monthly' view resets the sums at each month boundary: every month climbs
+// from zero, so peak height = month total and shapes compare directly.
 // Label mode follows the MonthlyLabelChart conventions: each transaction
 // counts under its FIRST label (so the stack sums to real spend) and fixed
 // obligations are excluded — their identical monthly steps would drown the
 // variation the chart exists to show.
-function buildSeries(transactions: Transaction[], mode: 'category' | 'label', topN: number) {
-  const empty = { rows: [] as Record<string, number | string>[], series: [] as string[] }
+function buildSeries(transactions: Transaction[], mode: 'category' | 'label', topN: number, view: GrowthView) {
+  const empty = { rows: [] as Record<string, number | string>[], series: [] as string[], seriesTotals: {} as Record<string, number> }
   const relevant = transactions.filter((tx) => !(mode === 'label' && isCommitted(tx)))
   if (relevant.length === 0) return empty
 
@@ -86,6 +90,7 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
 
   const otherName = mode === 'label' ? 'other labels' : 'Other'
   const running: Record<string, number> = {}
+  const seriesTotals: Record<string, number> = {}
   let hasOther = false
   let hasUnlabeled = false
   const rows: Record<string, number | string>[] = []
@@ -94,12 +99,19 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
   // byBucket keys.
   const cursor = new Date(minTs)
   if (granularity === 'week') cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  let prevMonth = ''
   while (cursor.getTime() <= maxTs) {
     const ts = cursor.getTime()
+    const monthKey = `${cursor.getFullYear()}-${cursor.getMonth()}`
     cursor.setDate(cursor.getDate() + (granularity === 'day' ? 1 : 7))
+    if (view === 'monthly' && monthKey !== prevMonth) {
+      for (const k of Object.keys(running)) running[k] = 0
+      prevMonth = monthKey
+    }
     for (const [g, amt] of Object.entries(byBucket[ts] ?? {})) {
       const key = top.includes(g) ? g : g === 'unlabeled' ? 'unlabeled' : otherName
       running[key] = (running[key] ?? 0) + amt
+      seriesTotals[key] = (seriesTotals[key] ?? 0) + amt
       if (key === otherName) hasOther = true
       if (key === 'unlabeled') hasUnlabeled = true
     }
@@ -113,7 +125,7 @@ function buildSeries(transactions: Transaction[], mode: 'category' | 'label', to
   const series = [...top]
   if (hasOther) series.push(otherName)
   if (hasUnlabeled) series.push('unlabeled')
-  return { rows, series }
+  return { rows, series, seriesTotals }
 }
 
 function dateLabel(ts: number): string {
@@ -200,17 +212,14 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
 
 const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  const [view, setView] = useState<GrowthView>('monthly')
   // Side legend would halve the plot width on phones — stack it below.
   const isMobile = useIsMobile()
 
-  const { rows, series } = useMemo(() => buildSeries(transactions, mode, topN), [transactions, mode, topN])
-
-  const latestValues = useMemo(() => {
-    const values: Record<string, number> = {}
-    const last = rows[rows.length - 1]
-    if (last) for (const g of series) values[g] = typeof last[g] === 'number' ? (last[g] as number) : 0
-    return values
-  }, [rows, series])
+  const { rows, series, seriesTotals } = useMemo(
+    () => buildSeries(transactions, mode, topN, view),
+    [transactions, mode, topN, view]
+  )
 
   // Bucket points thinned to at most ~12 axis labels; short ranges get
   // day-level labels, long ones month/year.
@@ -242,7 +251,22 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={isMobile ? 460 : 380}>
+    <div>
+      <div className="flex justify-end mb-1">
+        <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          {(['monthly', 'cumulative'] as GrowthView[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md capitalize ${view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              title={v === 'monthly' ? 'Restart at zero each month — compare month shapes' : 'Keep growing through the whole period'}
+            >
+              {v === 'monthly' ? 'Monthly reset' : 'Cumulative'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={isMobile ? 460 : 380}>
       <AreaChart data={rows} margin={{ top: 5, right: isMobile ? 8 : 20, left: isMobile ? 0 : 10, bottom: 5 }}>
         <defs>
           {series.map((name, i) => {
@@ -278,7 +302,7 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
           content={
             <CustomLegend
               hiddenKeys={hiddenKeys}
-              latestValues={latestValues}
+              latestValues={seriesTotals}
               onToggle={toggleKey}
               horizontal={isMobile}
             />
@@ -287,7 +311,9 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
         {series.map((name, i) => (
           <Area
             key={name}
-            type="monotone"
+            // Linear keeps the monthly sawtooth's drops crisp; monotone
+            // smoothing suits the ever-growing cumulative curve.
+            type={view === 'monthly' ? 'linear' : 'monotone'}
             dataKey={name}
             stackId="growth"
             isAnimationActive={false}
@@ -300,7 +326,8 @@ const ExpenseGrowthChart = ({ transactions, mode, topN = 8 }: Props) => {
           />
         ))}
       </AreaChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
