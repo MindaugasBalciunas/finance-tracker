@@ -134,6 +134,8 @@ export default function BankSettingsModal({ onClose }: { onClose: () => void }) 
               </label>
             </div>
             <p className="text-xs text-gray-400">
+              Environment has to match the application you registered — an Enable Banking
+              application belongs to one environment for life and cannot be moved between them.
               The redirect URL has to match the one registered with Enable Banking exactly — scheme,
               port and trailing slash included. If the bank can't reach this app afterwards, the
               paste-the-address fallback on the Banking page still works.

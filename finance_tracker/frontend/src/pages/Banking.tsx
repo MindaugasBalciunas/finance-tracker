@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import BankConnectionCard from '../components/ui/BankConnectionCard'
 import BankSettingsModal from '../components/ui/BankSettingsModal'
+import BankSetupGuide from '../components/ui/BankSetupGuide'
 import BankStagingList from '../components/ui/BankStagingList'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import QueryError from '../components/ui/QueryError'
@@ -45,7 +46,7 @@ export default function Banking() {
     <div className="p-4 sm:p-6 space-y-4 max-w-2xl mx-auto">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">🏦 Bank connections</h1>
+          <h1 className="text-xl font-bold text-gray-900">🔗 Bank connections</h1>
           <p className="text-xs text-gray-400">
             Pull recent transactions from your bank and add them one at a time
           </p>
@@ -74,6 +75,11 @@ export default function Banking() {
           </button>
         </div>
       )}
+
+      {/* Open by default with nothing set up — the credentials do not exist
+          until you have walked the control panel, so the form on its own is a
+          dead end. Collapsed once configured, because by then it is reference. */}
+      {!configured && <BankSetupGuide defaultOpen />}
 
       {configured && (
         <>
@@ -178,6 +184,8 @@ export default function Banking() {
               </div>
             )}
           </div>
+
+          <BankSetupGuide />
 
           <div>
             <div className="flex items-center gap-1 mb-2 overflow-x-auto">

@@ -8,7 +8,8 @@ import ViewInsightBar from '../ui/ViewInsightBar'
 import { GatewaySettingsModal } from '../ui/GatewaySettings'
 import { useAIAvailable } from '../../hooks/useInsights'
 // The single mobile menu is the top hamburger: date range + the tools that
-// don't earn a bottom tab (Assets, Data, Security, AI settings, API docs).
+// don't earn a bottom tab (Assets, Labels, Bank import, Data, Security,
+// AI settings, API docs).
 
 // Desktop shows every page; the mobile bottom bar keeps the daily drivers
 // as icon-only tabs (Labels is desktop-only to keep mobile lean).
@@ -97,6 +98,13 @@ export default function Layout() {
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap">
               🤖 Export
             </button>
+            <NavLink to="/banking"
+              className={({ isActive }) => clsx(
+                'text-xs font-medium px-2 py-1 rounded-md transition-colors whitespace-nowrap',
+                isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              )}>
+              🔗 Bank import
+            </NavLink>
             <button onClick={() => setSecurityOpen(true)}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
               Security
@@ -139,6 +147,10 @@ export default function Layout() {
                 className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏠 Assets</NavLink>
               <NavLink to="/labels" onClick={() => setDateMenuOpen(false)}
                 className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏷️ Labels</NavLink>
+              {/* 🔗, not 🏦 — the bottom bar already spends 🏦 on Balances, and
+                  two doors with the same icon is a wayfinding bug at 390px. */}
+              <NavLink to="/banking" onClick={() => setDateMenuOpen(false)}
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔗 Bank import</NavLink>
               <button onClick={() => { setDataMode('backup'); setDateMenuOpen(false) }}
                 className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">💾 Backup &amp; restore</button>
               <button onClick={() => { setDataMode('export'); setDateMenuOpen(false) }}

@@ -79,10 +79,9 @@ export default function More() {
           </span>
           <span className="text-gray-300">›</span>
         </button>
-        {/* Always listed, even with AI off — this is a way back to the
-            switch. The AI page itself renders the settings panel. */}
         <Link to="/banking" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
-          <span className="text-xl">🏦</span>
+          {/* 🔗 rather than 🏦 — the bottom bar already uses 🏦 for Balances. */}
+          <span className="text-xl">🔗</span>
           <span className="flex-1 min-w-0">
             <span className="block text-sm font-medium text-gray-800">Bank connections</span>
             <span className="block text-xs text-gray-400">
@@ -98,6 +97,8 @@ export default function More() {
           )}
           <span className="text-gray-300">›</span>
         </Link>
+        {/* Always listed, even with AI off — this is a way back to the
+            switch. The AI page itself renders the settings panel. */}
         <Link to="/ai" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
           <span className="text-xl">✦</span>
           <span className="flex-1 min-w-0">
