@@ -22,7 +22,10 @@ function expiryNote(days: number): { text: string; className: string } {
 function syncSummary(r: SyncResult): string {
   const bits = [`${r.fetched} fetched`, `${r.staged_new} new to review`]
   if (r.unchanged) bits.push(`${r.unchanged} already seen`)
-  if (r.auto_skipped) bits.push(`${r.auto_skipped} skipped`)
+  // auto_skipped counts one thing only: rows the bank has not booked yet.
+  // "skipped" alone reads like something went wrong, when the honest answer
+  // is "today's card payments are still reserved — they arrive tomorrow".
+  if (r.auto_skipped) bits.push(`${r.auto_skipped} still pending at the bank`)
   return bits.join(' · ')
 }
 
