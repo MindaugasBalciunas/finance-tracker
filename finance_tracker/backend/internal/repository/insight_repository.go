@@ -30,6 +30,16 @@ type InsightRepository interface {
 	// the newest one, or (nil, nil) when none has been generated yet.
 	SaveForecast(f *domain.AIForecast) error
 	LatestForecast() (*domain.AIForecast, error)
+	// Spend ledger. RecordSpend is called once per gateway call;
+	// SpendSince totals what was spent at or after a moment.
+	RecordSpend(s *domain.AISpend) error
+	SpendSince(since time.Time) (float64, error)
+	SpendByKindSince(since time.Time) (map[string]float64, error)
+	// Top-ups the user entered by hand — the only input the app has for the
+	// money side, since no provider reports a balance.
+	ListTopUps() ([]domain.AITopUp, error)
+	SaveTopUp(t *domain.AITopUp) error
+	DeleteTopUp(id uint) error
 }
 
 type insightRepository struct {
@@ -160,4 +170,64 @@ func (r *insightRepository) SaveAISettings(s *domain.AISettings) error {
 	// into any slow-or-errored statement it prints — the key must never
 	// reach the log sink.
 	return r.db.Session(&gorm.Session{Logger: r.db.Logger.LogMode(logger.Silent)}).Save(s).Error
+}
+
+// --- spend ledger ---
+
+func (r *insightRepository) RecordSpend(s *domain.AISpend) error {
+	return r.db.Create(s).Error
+}
+
+// SpendSince sums recorded cost at or after a moment. A zero time means "all
+// of it". Rows with no cost (an unpriced model) contribute nothing, which is
+// correct: they are calls whose price we do not know, not free calls — the
+// handler reports that count separately so the total is never read as
+// complete when it is not.
+func (r *insightRepository) SpendSince(since time.Time) (float64, error) {
+	var total *float64
+	q := r.db.Model(&domain.AISpend{})
+	if !since.IsZero() {
+		q = q.Where("created_at >= ?", since)
+	}
+	if err := q.Select("SUM(cost_usd)").Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	if total == nil {
+		return 0, nil
+	}
+	return *total, nil
+}
+
+func (r *insightRepository) SpendByKindSince(since time.Time) (map[string]float64, error) {
+	type row struct {
+		Kind  string
+		Total float64
+	}
+	var rows []row
+	q := r.db.Model(&domain.AISpend{}).Select("kind, SUM(cost_usd) as total").Group("kind")
+	if !since.IsZero() {
+		q = q.Where("created_at >= ?", since)
+	}
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]float64, len(rows))
+	for _, r := range rows {
+		out[r.Kind] = r.Total
+	}
+	return out, nil
+}
+
+func (r *insightRepository) ListTopUps() ([]domain.AITopUp, error) {
+	var out []domain.AITopUp
+	err := r.db.Order("occurred_on DESC, id DESC").Find(&out).Error
+	return out, err
+}
+
+func (r *insightRepository) SaveTopUp(t *domain.AITopUp) error {
+	return r.db.Save(t).Error
+}
+
+func (r *insightRepository) DeleteTopUp(id uint) error {
+	return r.db.Delete(&domain.AITopUp{}, id).Error
 }

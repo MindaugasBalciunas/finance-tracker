@@ -97,7 +97,7 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
 	// callGatewayFull rather than callGateway: the blurb's cost badge needs
 	// the usage that rides on the message.
-	msg, err := callGatewayFull(context.Background(), settings, toGatewayMessages(msgs), 2048, nil)
+	msg, err := callGatewayFull(withSpendKind(context.Background(), "view_summary"), settings, toGatewayMessages(msgs), 2048, nil)
 	if err != nil {
 		return zero, err
 	}

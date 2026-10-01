@@ -150,7 +150,7 @@ Rules:
 		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctxBlock})
 	}
 	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-	msg, err := callGatewayFull(ctx, settings, toGatewayMessages(msgs), 8192, nil)
+	msg, err := callGatewayFull(withSpendKind(ctx, "forecast"), settings, toGatewayMessages(msgs), 8192, nil)
 	if err != nil {
 		return zero, err
 	}

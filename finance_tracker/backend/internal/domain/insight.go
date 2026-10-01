@@ -172,3 +172,38 @@ type AIActivity struct {
 	Content   string    `json:"content" gorm:"type:text;not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"index"`
 }
+
+// AISpend is one gateway call's cost, recorded so the app can answer "what
+// has the AI cost me" — and, with AITopUp, "how much is left".
+//
+// Anthropic publishes no balance endpoint (GET /v1/organizations/balance is a
+// 404, and the Admin API reports spend, not balance), so a running ledger kept
+// here is the only way to show a remaining figure at all. It is necessarily an
+// estimate: see Estimated below, and note that anything else billed to the
+// same API key — another app, another machine — is invisible to this ledger.
+type AISpend struct {
+	ID    uint   `json:"id" gorm:"primaryKey;autoIncrement"`
+	Kind  string `json:"kind" gorm:"not null;default:'other';index"` // chat | view_summary | forecast | analysis | tagging | rule_review | other
+	Model string `json:"model" gorm:"not null;default:''"`
+	// Provider the call went to, so a ledger that spans a gateway move stays
+	// readable rather than silently mixing two billing relationships.
+	Provider     string  `json:"provider" gorm:"not null;default:''"`
+	CostUSD      float64 `json:"cost_usd" gorm:"not null;default:0"`
+	InputTokens  int     `json:"input_tokens" gorm:"not null;default:0"`
+	OutputTokens int     `json:"output_tokens" gorm:"not null;default:0"`
+	// Estimated marks a cost computed from published list prices because the
+	// provider reported none — every direct-Claude call, in practice.
+	Estimated bool      `json:"estimated" gorm:"not null;default:false"`
+	CreatedAt time.Time `json:"created_at" gorm:"index"`
+}
+
+// AITopUp is money the user says they added to their provider account. The
+// app cannot observe this — nothing in the API reports it — so it is entered
+// by hand, and the balance is only as current as the last entry.
+type AITopUp struct {
+	ID         uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	AmountUSD  float64   `json:"amount_usd" gorm:"not null"`
+	Note       string    `json:"note" gorm:"not null;default:''"`
+	OccurredOn time.Time `json:"occurred_on" gorm:"index"`
+	CreatedAt  time.Time `json:"created_at"`
+}

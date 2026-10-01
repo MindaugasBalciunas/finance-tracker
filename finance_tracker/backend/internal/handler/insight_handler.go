@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +63,12 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	// The user's CFO-context document: GET is token-reachable (MCP exposes
 	// it), PUT is session-only.
+	// What the AI has cost, and what is left of the top-ups the user
+	// recorded. The provider publishes no balance, so this ledger is the
+	// only answer the app can give.
+	ai.GET("/spend", h.SpendReport)
+	ai.POST("/spend/topups", h.AddTopUp)
+	ai.DELETE("/spend/topups/:id", h.DeleteTopUp)
 	ai.GET("/context", h.GetAIContext)
 	ai.PUT("/context", h.SaveAIContext)
 
@@ -543,4 +550,57 @@ func (h *InsightHandler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, insights)
+}
+
+// SpendReport answers "what has the AI cost me, and how much is left".
+func (h *InsightHandler) SpendReport(c *gin.Context) {
+	out, err := h.svc.SpendReport()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// AddTopUp records money the user added at the provider. Nothing in any
+// provider API reports this, so it is typed in — which is also why the
+// remaining figure is only ever as current as the last entry.
+func (h *InsightHandler) AddTopUp(c *gin.Context) {
+	var in struct {
+		AmountUSD  float64 `json:"amount_usd"`
+		Note       string  `json:"note"`
+		OccurredOn string  `json:"occurred_on"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	var on time.Time
+	if s := strings.TrimSpace(in.OccurredOn); s != "" {
+		parsed, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "date must be YYYY-MM-DD"})
+			return
+		}
+		on = parsed
+	}
+	t, err := h.svc.AddTopUp(in.AmountUSD, strings.TrimSpace(in.Note), on)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, t)
+}
+
+func (h *InsightHandler) DeleteTopUp(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid id"})
+		return
+	}
+	if err := h.svc.DeleteTopUp(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

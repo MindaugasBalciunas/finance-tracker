@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import AISpendCard from './AISpendCard'
 import { aiApi, type AIProvider } from '../../api/insights'
 import { useAISettings, useSaveAISettings } from '../../hooks/useInsights'
 
@@ -329,6 +330,11 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
             {status.text}
           </span>
         )}
+      </div>
+
+      {/* What it has cost, next to the key that is paying for it. */}
+      <div className="mt-4">
+        <AISpendCard />
       </div>
     </div>
   )

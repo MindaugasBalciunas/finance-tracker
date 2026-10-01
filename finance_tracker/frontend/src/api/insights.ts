@@ -106,6 +106,19 @@ export const aiApi = {
   // models endpoint the backend returns ok:false with an empty list — the UI
   // falls back to a free-text field. Never throws: any failure looks like an
   // empty, not-ok list so the caller can degrade gracefully.
+  spend: async (): Promise<SpendReport> => {
+    const { data } = await client.get<SpendReport>('/ai/spend')
+    return data
+  },
+
+  addTopUp: async (input: { amount_usd: number; note?: string; occurred_on?: string }): Promise<void> => {
+    await client.post('/ai/spend/topups', input)
+  },
+
+  deleteTopUp: async (id: number): Promise<void> => {
+    await client.delete(`/ai/spend/topups/${id}`)
+  },
+
   models: async (): Promise<{ models: string[]; ok: boolean }> => {
     try {
       const { data } = await client.get<{ models?: string[]; ok?: boolean }>('/ai/models')
@@ -339,4 +352,23 @@ export interface ForecastResponse {
   input_tokens?: number
   output_tokens?: number
   created_at?: string
+}
+
+export type TopUp = {
+  id: number
+  amount_usd: number
+  note: string
+  occurred_on: string
+}
+
+export type SpendReport = {
+  this_month: number
+  last_30_days: number
+  all_time: number
+  /** null until a top-up is recorded — there is nothing to count down from. */
+  remaining: number | null
+  topped_up: number
+  since_date?: string
+  by_kind: Record<string, number>
+  top_ups: TopUp[]
 }

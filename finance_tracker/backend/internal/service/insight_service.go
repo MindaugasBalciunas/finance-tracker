@@ -51,6 +51,11 @@ type InsightService interface {
 	TestGateway() error
 	// WithBanking attaches the PSD2 review queue (optional).
 	WithBanking(repo repository.BankRepository) InsightService
+	// SpendReport totals what the AI has cost, and what is left of the
+	// top-ups the user recorded.
+	SpendReport() (SpendSummary, error)
+	AddTopUp(amountUSD float64, note string, on time.Time) (*domain.AITopUp, error)
+	DeleteTopUp(id uint) error
 	// DataReport returns the full financial context report (all-time scope)
 	// — the same text the analysis and chat are grounded in. Contains no
 	// secrets; consumed by the MCP server's get_overview tool.
@@ -100,11 +105,20 @@ type insightService struct {
 
 func NewInsightService(repo repository.InsightRepository, txSvc TransactionService, balSvc BalanceService,
 	budgetRepo repository.BudgetRepository, stockSvc StockService, assetSvc AssetService) InsightService {
-	return &insightService{
+	svc := &insightService{
 		repo: repo, txSvc: txSvc, balSvc: balSvc,
 		budgetRepo: budgetRepo, stockSvc: stockSvc, assetSvc: assetSvc,
 		quote: marketdata.Fetch,
 	}
+	// Every gateway call funnels through callGatewayFull, a free function, so
+	// the ledger hooks in there rather than at each of the nine call sites —
+	// a ledger that silently misses calls is worse than none.
+	setSpendRecorder(func(rec *domain.AISpend) {
+		if err := svc.repo.RecordSpend(rec); err != nil {
+			log.Printf("ai spend: could not record %s call: %v", rec.Kind, err)
+		}
+	})
+	return svc
 }
 
 // WithBanking attaches the PSD2 review queue, enabling the banking chat tools.
@@ -141,7 +155,7 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
 	}
 	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-	content, err := callGateway(context.Background(), settings, msgs, 4096)
+	content, err := callGateway(withSpendKind(context.Background(), "analysis"), settings, msgs, 4096)
 	if err != nil {
 		return nil, fmt.Errorf("calling AI provider: %w", err)
 	}
@@ -252,7 +266,7 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 		if err := ctx.Err(); err != nil {
 			return ChatResult{}, errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
 		}
-		msg, err := callGatewayFull(ctx, settings, messages, 8192, tools)
+		msg, err := callGatewayFull(withSpendKind(ctx, "chat"), settings, messages, 8192, tools)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ChatResult{}, errors.New("this question took too long to answer — try a narrower one, or ask for fewer things at once")
@@ -1243,6 +1257,12 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 		CostUSD:       cost,
 		CostEstimated: estimated,
 	}
+	recordSpend(&domain.AISpend{
+		Kind: spendKindFrom(ctx), Model: settings.Model,
+		Provider: settings.ResolvedProvider(), CostUSD: cost,
+		InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens,
+		Estimated: estimated,
+	})
 	for _, b := range result.Content {
 		switch b.Type {
 		case "text":

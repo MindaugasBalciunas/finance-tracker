@@ -89,7 +89,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		db.Exec("ALTER TABLE balances DROP COLUMN is_auto")
 	}
 
-	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}, &domain.BankSettings{}, &domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}); err != nil {
+	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}, &domain.BankSettings{}, &domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}, &domain.AISpend{}, &domain.AITopUp{}); err != nil {
 		return nil, err
 	}
 
