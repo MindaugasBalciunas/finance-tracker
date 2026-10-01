@@ -1,10 +1,63 @@
 package openbanking
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+// FlexBool is a boolean that survives a provider sending something richer.
+// Enable Banking documents `sandbox` as a flag but answers the real /aspsps
+// call with an object describing the sandbox's test users — and because Go
+// aborts the whole decode on the first type mismatch, that one cosmetic field
+// took the entire bank list down with it.
+//
+// So the flag fields decode permissively: an object or a non-empty array means
+// "yes, and there is detail here we do not need", a string is read as a word,
+// and null is false. The fields this type guards are only ever badges in the
+// picker; the load-bearing ones (name, country, consent validity, PSU headers)
+// stay strictly typed, where a surprise should still be loud.
+type FlexBool bool
+
+func (b *FlexBool) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		*b = false
+		return nil
+	}
+	switch trimmed[0] {
+	case '{':
+		// An object carries detail, which is itself the answer: it exists.
+		*b = true
+		return nil
+	case '[':
+		var arr []json.RawMessage
+		if err := json.Unmarshal(trimmed, &arr); err != nil {
+			return err
+		}
+		*b = FlexBool(len(arr) > 0)
+		return nil
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "true", "yes", "1":
+			*b = true
+		default:
+			*b = false
+		}
+		return nil
+	}
+	var v bool
+	if err := json.Unmarshal(trimmed, &v); err != nil {
+		return err
+	}
+	*b = FlexBool(v)
+	return nil
+}
 
 // ASPSP is one bank as Enable Banking describes it. There is no stable id —
 // a bank is addressed by name+country everywhere in the API.
@@ -13,8 +66,8 @@ type ASPSP struct {
 	Country  string   `json:"country"`
 	Logo     string   `json:"logo"`
 	BIC      string   `json:"bic"`
-	Beta     bool     `json:"beta"`
-	Sandbox  bool     `json:"sandbox"`
+	Beta     FlexBool `json:"beta"`
+	Sandbox  FlexBool `json:"sandbox"`
 	PSUTypes []string `json:"psu_types"`
 	// MaximumConsentValidity is in seconds and is per-bank (commonly 180
 	// days). Asking for longer than this is rejected.
@@ -26,11 +79,11 @@ type ASPSP struct {
 }
 
 type AuthMethod struct {
-	Name     string `json:"name"`
-	Title    string `json:"title"`
-	PSUType  string `json:"psu_type"`
-	Approach string `json:"approach"` // REDIRECT | DECOUPLED | EMBEDDED
-	Hidden   bool   `json:"hidden_method"`
+	Name     string   `json:"name"`
+	Title    string   `json:"title"`
+	PSUType  string   `json:"psu_type"`
+	Approach string   `json:"approach"` // REDIRECT | DECOUPLED | EMBEDDED
+	Hidden   FlexBool `json:"hidden_method"`
 }
 
 type aspspsResponse struct {

@@ -226,7 +226,7 @@ func (h *BankHandler) ListASPSPs(c *gin.Context) {
 	for _, a := range list {
 		out = append(out, aspspResponse{
 			Name: a.Name, Country: a.Country, Logo: a.Logo,
-			Beta: a.Beta, Sandbox: a.Sandbox,
+			Beta: bool(a.Beta), Sandbox: bool(a.Sandbox),
 			MaxDays:  a.MaximumConsentValidity / 86400,
 			Redirect: hasRedirectAuth(a),
 		})

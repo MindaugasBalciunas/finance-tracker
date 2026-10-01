@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -339,4 +340,66 @@ func TestAPIErrorUnwrapsThroughCallers(t *testing.T) {
 	var apiErr *APIError
 	require.True(t, errors.As(err, &apiErr))
 	assert.True(t, apiErr.Expired())
+}
+
+// The real /aspsps answer sends `sandbox` as an object describing the test
+// users, not the documented flag — and one mismatched cosmetic field aborted
+// the whole decode, so the bank picker showed "Couldn't load data" with no
+// bank in it. Every shape here must leave the load-bearing fields intact.
+func TestASPSPDecodesFlagsWhateverShapeTheySend(t *testing.T) {
+	body := `{"aspsps":[
+      {"name":"Swedbank","country":"LT","sandbox":{"users":[{"username":"19901111-1111"}]},"beta":false,
+       "maximum_consent_validity":15552000,"required_psu_headers":["Psu-Ip-Address"]},
+      {"name":"SEB","country":"LT","sandbox":false,"beta":true,"maximum_consent_validity":7776000},
+      {"name":"Artea","country":"LT","sandbox":true,"beta":[],"maximum_consent_validity":7776000},
+      {"name":"Urbo","country":"LT","sandbox":null,"beta":"true","maximum_consent_validity":7776000}
+    ]}`
+
+	var out aspspsResponse
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if len(out.ASPSPs) != 4 {
+		t.Fatalf("want 4 banks, got %d", len(out.ASPSPs))
+	}
+
+	for _, tc := range []struct {
+		i             int
+		name          string
+		sandbox, beta bool
+	}{
+		{0, "Swedbank", true, false}, // object -> the detail's existence is the answer
+		{1, "SEB", false, true},      // plain bools still work
+		{2, "Artea", true, false},    // empty array -> false
+		{3, "Urbo", false, true},     // null -> false; "true" -> true
+	} {
+		got := out.ASPSPs[tc.i]
+		if got.Name != tc.name {
+			t.Fatalf("[%d] name = %q, want %q", tc.i, got.Name, tc.name)
+		}
+		if bool(got.Sandbox) != tc.sandbox {
+			t.Errorf("%s: sandbox = %v, want %v", tc.name, got.Sandbox, tc.sandbox)
+		}
+		if bool(got.Beta) != tc.beta {
+			t.Errorf("%s: beta = %v, want %v", tc.name, got.Beta, tc.beta)
+		}
+	}
+
+	// The whole point: the fields the sync actually depends on survived.
+	if out.ASPSPs[0].MaximumConsentValidity != 15552000 {
+		t.Errorf("consent validity lost: %d", out.ASPSPs[0].MaximumConsentValidity)
+	}
+	if len(out.ASPSPs[0].RequiredPSUHeaders) != 1 {
+		t.Errorf("PSU headers lost: %v", out.ASPSPs[0].RequiredPSUHeaders)
+	}
+}
+
+// A genuinely malformed flag is still an error — this is tolerance for shape,
+// not a blanket "ignore anything you don't understand".
+func TestASPSPStillRejectsNonsense(t *testing.T) {
+	var out aspspsResponse
+	err := json.Unmarshal([]byte(`{"aspsps":[{"name":"X","sandbox":12.5.3}]}`), &out)
+	if err == nil {
+		t.Fatal("expected a decode error for malformed JSON")
+	}
 }
