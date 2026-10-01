@@ -70,7 +70,8 @@ func main() {
 	// first-party Claude API instead of a gateway.
 	seedAISettings(insightRepo)
 	// insightSvc reads budgets, stocks and assets for the AI report + chat tools.
-	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc, assetSvc)
+	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc, assetSvc).
+		WithBanking(bankRepo)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)

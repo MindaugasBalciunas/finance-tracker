@@ -145,6 +145,8 @@ token nothing a model can call mutates data.
 | `get_stock_trades` | The individual trade ledger, newest first, optional ticker filter |
 | `get_stock_quote` | Live market price for one ticker |
 | `get_assets` | Physical assets with loans, interest structure and equity |
+| `get_staged_transactions` | Bank rows pulled over PSD2 that are **waiting for the user to approve them**, with the classifier's proposal, the raw bank narrative and a duplicate verdict |
+| `get_bank_connections` | Linked banks, their accounts, and days until each consent expires |
 
 ### Write tools
 
@@ -163,7 +165,26 @@ labels and rules or add transactions.
 | `rename_label` | Renames a label everywhere (transactions, rules, budgets); merges if the target exists |
 | `retag_transactions` | Adds/removes labels on specific transactions by id |
 | `create_transaction` | Creates a REAL new transaction (`type`, `date`, `amount`, `category`, optional `comment`/`labels`) |
+| `update_staged_transaction` | Corrects one **unapproved** bank row's category/description/labels/accounts — does **not** import it |
 
 The read tools are also available to the in-app AI chat (executed
 in-process), so the web chat and any MCP client answer with identical
 query power.
+
+### The bank review queue is readable and correctable, never committable
+
+`get_staged_transactions` reads rows that Swedbank/SEB sent over PSD2 and that
+are **not in the ledger**. `update_staged_transaction` can fix the proposal on
+one — useful when the classifier misreads a card purchase as a bank fee, since
+the raw narrative comes back with each row. Neither can import anything.
+
+That is enforced by the route scope, not by the tool list. Committing,
+dismissing and restoring are `POST`s and the write allowlist grants only
+`PUT /api/v1/banking/staged`, so no token this server can hold will put a bank
+row in the ledger — approving each row by hand is the whole reason the staging
+queue exists.
+
+The credentials are out of reach too: the read allowlist names
+`/api/v1/banking/staged` and `/api/v1/banking/connections` specifically rather
+than `/api/v1/banking`, which would have opened `/banking/settings` and the
+Enable Banking private key with it.

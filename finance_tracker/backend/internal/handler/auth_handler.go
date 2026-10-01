@@ -56,6 +56,12 @@ var apiTokenWriteRoutes = []struct{ method, prefix string }{
 	// Create a new transaction (the only transaction write the RW token gets
 	// — never update/delete/delete-all). POST /transactions exactly.
 	{"POST", "/api/v1/transactions"},
+	// Correct a bank row's proposed category/description BEFORE a human
+	// approves it. PUT is the whole grant: commit, dismiss and restore are
+	// POSTs under the same prefix and stay unreachable, so a model can
+	// improve a proposal but can never put a transaction in the ledger.
+	// That one-by-one approval is the point of the staging queue.
+	{"PUT", "/api/v1/banking/staged"},
 }
 
 func apiTokenWriteAllowed(method, path string) bool {
@@ -84,6 +90,11 @@ var apiTokenPrefixes = []string{
 	"/api/v1/insights",
 	"/api/v1/ai/report",
 	"/api/v1/ai/context",
+	// The bank review queue and the connections' health. Named one level
+	// deeper than "/api/v1/banking" on purpose: that prefix would also open
+	// /banking/settings, which holds the Enable Banking private key.
+	"/api/v1/banking/staged",
+	"/api/v1/banking/connections",
 	"/api/v1/health",
 }
 

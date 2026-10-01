@@ -6,8 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/marketdata"
+	"github.com/mindaugas/finance-tracker/internal/repository"
 )
 
 // AI chat tools: the same read-only surface the MCP server exposes, executed
@@ -196,6 +199,28 @@ func chatTools() []gatewayTool {
 					}, "id"),
 				},
 			}, "retag")),
+		mkTool("get_staged_transactions",
+			"Bank rows pulled from Swedbank/SEB over PSD2 that are WAITING FOR THE USER'S APPROVAL — not in the ledger yet, and they only get there when the user presses Add. Each carries the classifier's proposal, the raw bank narrative behind it, and a verdict: new, duplicate_exact, duplicate_content (looks like an existing row), internal (own transfer), needs_review."+aiToolDataNotes,
+			obj(map[string]any{
+				"state":   str("staged (awaiting review, the default) | imported | dismissed"),
+				"verdict": str("new | duplicate_exact | duplicate_content | internal | needs_review"),
+				"limit":   num("max rows, default 100, cap 500"),
+			})),
+		mkTool("get_bank_connections",
+			"The user's PSD2 bank connections: status, days until each consent expires, and the accounts on them with their app mapping. Nothing watches consent expiry in the background, so a connection dies quietly unless someone looks.",
+			obj(map[string]any{})),
+		mkTool("update_staged_transaction",
+			"Corrects the proposed category/description/labels/accounts on ONE bank row still awaiting review. Does NOT import it — the row stays in the queue and the user still approves it by hand. Use it to fix rows the classifier misread. The raw bank fields are never touched. ONLY after the user approves the change.",
+			obj(map[string]any{
+				"id":             num("the staged row's id, from get_staged_transactions"),
+				"date":           str("YYYY-MM-DD"),
+				"type":           str("expense | income | investment"),
+				"category":       str("exact category name"),
+				"comment":        str("the description that will appear in the ledger"),
+				"labels":         str("comma-separated lowercase tags"),
+				"debit_account":  str("account key the money left, e.g. swed, seb, cash"),
+				"credit_account": str("account key the money arrived in; omit for an ordinary expense"),
+			})),
 		mkTool("rename_label",
 			"Rename or merge a label everywhere at once — across transactions, rules and budgets. Renaming to an existing label MERGES the two. ONLY after the user approves.",
 			obj(map[string]any{
@@ -247,6 +272,10 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			Add    []string `json:"add"`
 			Remove []string `json:"remove"`
 		} `json:"retag"`
+		// banking review-queue args
+		ID      uint   `json:"id"`
+		State   string `json:"state"`
+		Verdict string `json:"verdict"`
 		// create_transaction args (Date/Type/Category/Comment reuse the fields
 		// above where names collide; Amount here is a value, not a filter).
 		Date          string  `json:"date"`
@@ -637,6 +666,27 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			"debit_account": debit, "credit_account": credit, "note": note,
 		})
 
+	case "get_staged_transactions", "get_bank_connections", "update_staged_transaction":
+		if s.bankRepo == nil {
+			return "", fmt.Errorf("no bank is connected to this install")
+		}
+		switch name {
+		case "get_bank_connections":
+			return s.chatBankConnections()
+		case "get_staged_transactions":
+			state := strings.TrimSpace(args.State)
+			if state == "" {
+				state = domain.StagedStateStaged
+			}
+			return s.chatStagedRows(state, strings.TrimSpace(args.Verdict), limit)
+		default:
+			return s.chatUpdateStaged(args.ID, map[string]string{
+				"date": args.Date, "type": args.Type, "category": args.Category,
+				"comment": args.Comment, "labels": args.Labels,
+				"debit_account": args.DebitAccount, "credit_account": args.CreditAccount,
+			})
+		}
+
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
@@ -651,6 +701,158 @@ func marshalToolResult(v any) (string, error) {
 	}
 	if len(b) > maxToolResultBytes {
 		return string(b[:maxToolResultBytes]) + `… (truncated — narrow the query with filters or a smaller limit)`, nil
+	}
+	return string(b), nil
+}
+
+// ── banking review queue ────────────────────────────────────────────
+//
+// These read and amend the staging table directly rather than going out
+// through the HTTP API, the same way every other chat tool reaches its
+// service. The one thing they deliberately cannot do is commit: putting a row
+// in the ledger stays a human action, because approving each row by hand is
+// the entire reason the staging queue exists.
+
+// chatStagedRows renders the review queue compactly. The raw bank narrative is
+// included — it is what a model needs to tell a misread row from a correct
+// one, and it is the only place a card merchant's name survives.
+func (s *insightService) chatStagedRows(state, verdict string, limit int) (string, error) {
+	rows, total, err := s.bankRepo.ListStaged(repository.StagedFilter{
+		State: state, Verdict: verdict, Page: 1, PageSize: limit,
+	})
+	if err != nil {
+		return "", err
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{
+			"id": r.ID, "date": r.Date.Format("2006-01-02"),
+			"type": r.Type, "amount": r.Amount, "category": r.Category,
+			"comment": r.Comment, "labels": r.Labels,
+			"debit_account": r.DebitAccount, "credit_account": r.CreditAccount,
+			"verdict": r.Verdict, "verdict_note": r.VerdictNote,
+			"raw_payee": r.RawPayee, "raw_details": r.RawDetails,
+			"raw_direction": r.RawDK, "currency": r.RawCurrency,
+		})
+	}
+	return jsonResult(map[string]any{"total": total, "returned": len(out), "transactions": out})
+}
+
+func (s *insightService) chatBankConnections() (string, error) {
+	conns, err := s.bankRepo.ListConnections()
+	if err != nil {
+		return "", err
+	}
+	out := make([]map[string]any, 0, len(conns))
+	for _, c := range conns {
+		links, err := s.bankRepo.ListLinks(c.ID)
+		if err != nil {
+			return "", err
+		}
+		accs := make([]map[string]any, 0, len(links))
+		for _, l := range links {
+			accs = append(accs, map[string]any{
+				"display_name": l.DisplayName,
+				"account_key":  l.AccountKey,
+				"last_synced":  formatDayPtr(l.LastSyncedAt),
+			})
+		}
+		out = append(out, map[string]any{
+			"bank": c.ASPSPName, "country": c.ASPSPCountry, "status": c.Status,
+			"days_until_expiry": int(time.Until(c.ValidUntil).Hours() / 24),
+			"accounts":          accs,
+		})
+	}
+	return jsonResult(map[string]any{"connections": out})
+}
+
+// chatUpdateStaged patches one row's ledger-bound fields. It mirrors the HTTP
+// handler's rules: a row that already left the queue is not editable, and the
+// verdict is never re-derived — it answers "have I seen this bank row before",
+// which retyping a comment does not change.
+func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (string, error) {
+	if id == 0 {
+		return "", fmt.Errorf("id is required — take it from get_staged_transactions")
+	}
+	rows, err := s.bankRepo.GetStagedByIDs([]uint{id})
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", fmt.Errorf("no staged row with id %d", id)
+	}
+	row := &rows[0]
+	if row.State != domain.StagedStateStaged {
+		return "", fmt.Errorf("row %d has already been %s — it is no longer in the review queue", id, row.State)
+	}
+
+	changed := make([]string, 0, len(patch))
+	for field, v := range patch {
+		v = strings.TrimSpace(v)
+		// An account is the one field where empty is a real value, but the
+		// model omits what it does not mean to touch, so a blank is "leave it".
+		if v == "" {
+			continue
+		}
+		switch field {
+		case "date":
+			d, err := time.Parse("2006-01-02", v)
+			if err != nil {
+				return "", fmt.Errorf("date must be YYYY-MM-DD, got %q", v)
+			}
+			row.Date = d
+		case "type":
+			switch domain.TransactionType(v) {
+			case domain.TransactionTypeExpense, domain.TransactionTypeIncome, domain.TransactionTypeInvestment:
+				row.Type = domain.TransactionType(v)
+			default:
+				return "", fmt.Errorf("type must be expense, income or investment, got %q", v)
+			}
+		case "category":
+			row.Category = domain.Category(v)
+		case "comment":
+			row.Comment = v
+		case "labels":
+			row.Labels = v
+		case "debit_account", "credit_account":
+			if !domain.IsValidAccountKey(v) {
+				return "", fmt.Errorf("unknown account %q", v)
+			}
+			if field == "debit_account" {
+				row.DebitAccount = v
+			} else {
+				row.CreditAccount = v
+			}
+		default:
+			continue
+		}
+		changed = append(changed, field)
+	}
+	if len(changed) == 0 {
+		return "", fmt.Errorf("nothing to change — pass at least one field")
+	}
+	if err := s.bankRepo.SaveStaged(row); err != nil {
+		return "", err
+	}
+	sort.Strings(changed)
+	return jsonResult(map[string]any{
+		"id": row.ID, "updated": changed,
+		"still_awaiting_approval": true,
+		"note":                    "Changed the proposal only. The row is still in the review queue — the user adds it to the ledger by hand.",
+	})
+}
+
+func formatDayPtr(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.Format("2006-01-02")
+}
+
+func jsonResult(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
 	}
 	return string(b), nil
 }

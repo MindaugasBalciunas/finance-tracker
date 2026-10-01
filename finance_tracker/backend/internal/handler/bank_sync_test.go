@@ -611,3 +611,61 @@ func TestBankEditRejectsUnknownAccount(t *testing.T) {
 	rec = bankJSON(t, env.r, "PUT", path, map[string]any{"date": "15/09/2026"})
 	assert.Equal(t, 400, rec.Code)
 }
+
+// The API token's view of banking is a keyhole, and these are the edges of
+// it. The feature's premise is that a human approves every row one at a time,
+// so the grant has to let a model improve a proposal without ever being able
+// to act on one — and it must not drag the credentials in behind it.
+func TestAPITokenBankingScopeIsExactlyTheReviewQueue(t *testing.T) {
+	t.Run("readable", func(t *testing.T) {
+		for _, p := range []string{
+			"/api/v1/banking/staged",
+			"/api/v1/banking/staged/12",
+			"/api/v1/banking/connections",
+		} {
+			if !apiTokenAllowed(p) {
+				t.Errorf("%s should be readable by an API token", p)
+			}
+		}
+	})
+
+	// The private key lives behind /banking/settings. Nothing an AI does is
+	// worth putting that inside a token's reach.
+	t.Run("credentials stay out of reach", func(t *testing.T) {
+		for _, p := range []string{
+			"/api/v1/banking/settings",
+			"/api/v1/banking",
+			"/api/v1/banking/aspsps",
+			// A sibling that merely starts with an allowed prefix.
+			"/api/v1/banking/staged-exports",
+			"/api/v1/banking/connections-admin",
+		} {
+			if apiTokenAllowed(p) {
+				t.Errorf("%s must NOT be readable by an API token", p)
+			}
+		}
+	})
+
+	// Editing a proposal is granted; acting on one is not. Commit, dismiss
+	// and restore are POSTs under the same prefix — the method is what keeps
+	// them out, so this is the assertion that matters most.
+	t.Run("edit yes, commit no", func(t *testing.T) {
+		if !apiTokenWriteAllowed("PUT", "/api/v1/banking/staged/12") {
+			t.Error("PUT /banking/staged/:id should be writable by an ftkw_ token")
+		}
+		for _, r := range []struct{ method, path string }{
+			{"POST", "/api/v1/banking/staged/commit"},
+			{"POST", "/api/v1/banking/staged/dismiss"},
+			{"POST", "/api/v1/banking/staged/restore"},
+			{"POST", "/api/v1/banking/accounts/1/sync"},
+			{"POST", "/api/v1/banking/connections"},
+			{"DELETE", "/api/v1/banking/connections/1"},
+			{"PUT", "/api/v1/banking/settings"},
+			{"PUT", "/api/v1/banking/accounts/1"},
+		} {
+			if apiTokenWriteAllowed(r.method, r.path) {
+				t.Errorf("%s %s must NOT be writable by an API token", r.method, r.path)
+			}
+		}
+	})
+}

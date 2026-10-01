@@ -49,6 +49,8 @@ type InsightService interface {
 	SaveAISettings(in AISettingsInput) (*domain.AISettings, error)
 	// TestGateway makes a minimal round-trip through the configured gateway.
 	TestGateway() error
+	// WithBanking attaches the PSD2 review queue (optional).
+	WithBanking(repo repository.BankRepository) InsightService
 	// DataReport returns the full financial context report (all-time scope)
 	// — the same text the analysis and chat are grounded in. Contains no
 	// secrets; consumed by the MCP server's get_overview tool.
@@ -89,6 +91,9 @@ type insightService struct {
 	budgetRepo repository.BudgetRepository // may be nil; budget section is skipped when so
 	stockSvc   StockService                // may be nil; stock section is skipped when so
 	assetSvc   AssetService                // may be nil; the assets chat tool reports unavailable
+	// bankRepo is the PSD2 review queue. May be nil; the banking chat tools
+	// then report unavailable, exactly like the optional services above.
+	bankRepo repository.BankRepository
 	// quote fetches a live market quote; injectable so tests avoid the network.
 	quote func(ticker string) (*marketdata.Quote, error)
 }
@@ -100,6 +105,14 @@ func NewInsightService(repo repository.InsightRepository, txSvc TransactionServi
 		budgetRepo: budgetRepo, stockSvc: stockSvc, assetSvc: assetSvc,
 		quote: marketdata.Fetch,
 	}
+}
+
+// WithBanking attaches the PSD2 review queue, enabling the banking chat tools.
+// Optional on purpose: an install with no bank connected should not have the
+// model offered tools that can only answer "not configured".
+func (s *insightService) WithBanking(repo repository.BankRepository) InsightService {
+	s.bankRepo = repo
+	return s
 }
 
 func (s *insightService) GetLatest() (*domain.AIInsight, error) {

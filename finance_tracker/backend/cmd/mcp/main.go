@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,6 +223,23 @@ type retagItem struct {
 
 type retagArgs struct {
 	Items []retagItem `json:"items" jsonschema:"per-transaction label edits; each names a transaction id plus labels to add and/or remove"`
+}
+
+type stagedTransactionsArgs struct {
+	State   string `json:"state,omitempty" jsonschema:"staged (awaiting review, the default) | imported | dismissed"`
+	Verdict string `json:"verdict,omitempty" jsonschema:"new | duplicate_exact | duplicate_content | internal | needs_review"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"max rows (default 100, max 500)"`
+}
+
+type updateStagedArgs struct {
+	ID            int    `json:"id" jsonschema:"the staged row's id"`
+	Date          string `json:"date,omitempty" jsonschema:"YYYY-MM-DD"`
+	Type          string `json:"type,omitempty" jsonschema:"expense | income | investment"`
+	Category      string `json:"category,omitempty" jsonschema:"exact category name, e.g. Food, Housing, Transport"`
+	Comment       string `json:"comment,omitempty" jsonschema:"the description that will appear in the ledger"`
+	Labels        string `json:"labels,omitempty" jsonschema:"comma-separated lowercase tags"`
+	DebitAccount  string `json:"debit_account,omitempty" jsonschema:"account key the money left, e.g. swed, seb, cash; empty string clears it"`
+	CreditAccount string `json:"credit_account,omitempty" jsonschema:"account key the money arrived in; empty for an ordinary expense"`
 }
 
 type renameLabelArgs struct {
@@ -518,6 +536,66 @@ func handleRetagTransactions(ctx context.Context, req *mcp.CallToolRequest, a re
 	return textResult(body), nil, nil
 }
 
+func handleStagedTransactions(ctx context.Context, req *mcp.CallToolRequest, a stagedTransactionsArgs) (*mcp.CallToolResult, any, error) {
+	q := url.Values{}
+	state := strings.TrimSpace(a.State)
+	if state == "" {
+		state = "staged"
+	}
+	q.Set("state", state)
+	if v := strings.TrimSpace(a.Verdict); v != "" {
+		q.Set("verdict", v)
+	}
+	q.Set("page_size", strconv.Itoa(clampLimit(a.Limit)))
+	body, err := apiGET("/banking/staged", q)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleBankConnections(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	body, err := apiGET("/banking/connections", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
+func handleUpdateStaged(ctx context.Context, req *mcp.CallToolRequest, a updateStagedArgs) (*mcp.CallToolResult, any, error) {
+	if a.ID <= 0 {
+		return nil, nil, fmt.Errorf("id is required — get it from get_staged_transactions")
+	}
+	// Only the fields actually supplied travel: the endpoint patches, so an
+	// omitted field keeps the classifier's proposal rather than blanking it.
+	// debit_account and credit_account are the exception — an empty string is
+	// a legitimate value there (an expense has no credit side), so they are
+	// sent whenever the caller mentioned them at all.
+	patch := map[string]any{}
+	for k, v := range map[string]string{
+		"date": a.Date, "type": a.Type, "category": a.Category,
+		"comment": a.Comment, "labels": a.Labels,
+	} {
+		if strings.TrimSpace(v) != "" {
+			patch[k] = v
+		}
+	}
+	if a.DebitAccount != "" {
+		patch["debit_account"] = a.DebitAccount
+	}
+	if a.CreditAccount != "" {
+		patch["credit_account"] = a.CreditAccount
+	}
+	if len(patch) == 0 {
+		return nil, nil, fmt.Errorf("nothing to change — pass at least one field")
+	}
+	body, err := apiWrite(http.MethodPut, "/banking/staged/"+strconv.Itoa(a.ID), patch)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
 func handleRenameLabel(ctx context.Context, req *mcp.CallToolRequest, a renameLabelArgs) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(a.From) == "" || strings.TrimSpace(a.To) == "" {
 		return nil, nil, fmt.Errorf("both from and to are required to rename a label")
@@ -658,6 +736,21 @@ func main() {
 		Name:        "create_transaction",
 		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Creates a REAL new transaction (e.g. from a receipt the user describes). Amount is positive EUR; type is expense|income|investment; category must be a valid app category. Confirm the details with the user before calling.",
 	}, handleCreateTransaction)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_staged_transactions",
+		Description: "Bank rows pulled from Swedbank/SEB over PSD2 that are WAITING FOR THE USER TO APPROVE them one by one — they are NOT in the ledger yet and will not be until the user presses Add in the app. Each row carries the classifier's proposal (type/category/comment/accounts), the raw bank narrative it was derived from, and a verdict: new, duplicate_exact (already imported), duplicate_content (looks like an existing row — shown to the user unticked), internal (a transfer between the user's own accounts), needs_review. Use this to summarise what is waiting, to spot misread rows, or to find duplicates." + dataNotes,
+	}, handleStagedTransactions)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_bank_connections",
+		Description: "The user's PSD2 bank connections: which banks are linked, each connection's status and how many days until its consent expires, and the accounts on it with the app account they are mapped to. Useful for answering 'is anything about to stop working' — consent expiry is not watched by any background job, so a connection quietly dies unless someone looks.",
+	}, handleBankConnections)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_staged_transaction",
+		Description: "MUTATES DATA — requires a read-write API token (ftkw_). Corrects the proposed category/description/labels/accounts on ONE bank row that is still awaiting review. This does NOT import anything: the row stays in the review queue and the user still approves it by hand. Use it to fix rows the classifier misread (e.g. card purchases labelled as a bank fee). The raw bank fields are never touched — they are the audit trail. Confirm with the user before changing rows in bulk.",
+	}, handleUpdateStaged)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
