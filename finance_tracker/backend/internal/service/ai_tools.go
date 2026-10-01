@@ -622,9 +622,14 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			return "", fmt.Errorf("creating transaction: %w", err)
 		}
 		s.logAIActivity("transaction", "created", fmt.Sprintf("created %s €%.2f %q (%s) id=%d debit=%s credit=%s", typ, args.Amount, tx.Comment, cat, tx.ID, debit, credit))
-		note := ""
-		if debit != "" || credit != "" {
-			note = "a new balance snapshot with the account delta was created automatically (unless the date is before the latest snapshot)"
+		// Report what actually happened to the balance, not what probably
+		// happened: tx.BalanceNote is set by the create path whenever the
+		// snapshot was skipped, and is empty when the delta was applied.
+		// Guessing here is how the model ends up telling the user their
+		// balance moved when it didn't.
+		note := tx.BalanceNote
+		if note == "" {
+			note = "a new balance snapshot was created with the account delta applied"
 		}
 		return marshalToolResult(map[string]any{
 			"created_id": tx.ID, "type": string(typ), "amount": args.Amount,

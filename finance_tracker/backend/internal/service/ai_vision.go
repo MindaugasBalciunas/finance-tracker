@@ -42,8 +42,8 @@ func (s *insightService) ScanTransaction(ctx context.Context, imageData []byte, 
 	if err != nil {
 		return nil, err
 	}
-	if !settings.Configured() {
-		return nil, errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
+	if err := requireAI(settings); err != nil {
+		return nil, err
 	}
 	if len(imageData) == 0 {
 		return nil, errors.New("empty image")

@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"net/url"
+	"strings"
+	"time"
+)
 
 // AIInsight stores an LLM-generated financial overview
 type AIInsight struct {
@@ -9,17 +13,60 @@ type AIInsight struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// AISettings is a single-row table configuring the LLM gateway used for AI
-// analysis and chat. Calls go to the gateway's Anthropic-native Messages
-// endpoint ({base}/messages — nexos.ai passthrough preserves prompt caching);
-// any base URL exposing that API works. The key is write-only — json:"-" keeps it
-// out of every response and export.
+// AISettings is a single-row table configuring the LLM provider used for AI
+// analysis and chat. Calls go to the provider's Anthropic-native Messages
+// endpoint ({base}/messages) — either the nexos.ai passthrough (which
+// preserves prompt caching) or api.anthropic.com directly; any base URL
+// exposing that API works. The key is write-only — json:"-" keeps it out of
+// every response and export.
 type AISettings struct {
-	ID         uint      `gorm:"primarykey" json:"id"`
-	GatewayURL string    `json:"gateway_url" gorm:"not null;default:''"`
-	APIKey     string    `json:"-" gorm:"not null;default:''"`
-	Model      string    `json:"model" gorm:"not null;default:''"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID         uint   `gorm:"primarykey" json:"id"`
+	GatewayURL string `json:"gateway_url" gorm:"not null;default:''"`
+	APIKey     string `json:"-" gorm:"not null;default:''"`
+	Model      string `json:"model" gorm:"not null;default:''"`
+	// Provider selects the authentication dialect: ProviderAnthropic sends
+	// the direct Claude API headers (x-api-key + anthropic-version),
+	// ProviderGateway sends a Bearer token. Empty means "infer from the
+	// URL", which is what every row written before v1.53.0 carries.
+	Provider string `json:"provider" gorm:"not null;default:''"`
+	// Disabled is the master switch for every AI feature, stored INVERTED on
+	// purpose: the Go and SQL zero value then means "AI is on", so both a
+	// freshly created row and a row written before this column existed come
+	// back with AI available instead of silently going dark on upgrade. Read
+	// it through Enabled(); the API speaks in terms of "enabled".
+	Disabled  bool      `json:"-" gorm:"not null;default:0"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Enabled reports whether the AI master switch is on.
+func (s *AISettings) Enabled() bool { return !s.Disabled }
+
+// Provider dialects for AISettings.Provider.
+const (
+	// ProviderGateway is an OpenAI-style gateway (nexos.ai and friends)
+	// exposing the Anthropic Messages API behind a Bearer token.
+	ProviderGateway = "gateway"
+	// ProviderAnthropic is the first-party Claude API at api.anthropic.com.
+	ProviderAnthropic = "anthropic"
+)
+
+// ResolvedProvider returns the provider dialect to use, inferring it from the
+// base URL when the field is unset (rows written before the provider column
+// existed, or a user who only pasted a URL). Anything hosted under
+// anthropic.com speaks the first-party dialect; everything else is a gateway.
+func (s *AISettings) ResolvedProvider() string {
+	switch s.Provider {
+	case ProviderAnthropic, ProviderGateway:
+		return s.Provider
+	}
+	host := strings.ToLower(strings.TrimSpace(s.GatewayURL))
+	if u, err := url.Parse(host); err == nil && u.Host != "" {
+		host = strings.ToLower(u.Hostname())
+	}
+	if host == "anthropic.com" || strings.HasSuffix(host, ".anthropic.com") {
+		return ProviderAnthropic
+	}
+	return ProviderGateway
 }
 
 // AIContext is a single-row, user-authored markdown document describing who
@@ -37,10 +84,26 @@ type AIContext struct {
 // DefaultGatewayURL is the nexos.ai gateway API base.
 const DefaultGatewayURL = "https://api.nexos.ai/v1"
 
-// Configured reports whether the gateway can be called.
+// DefaultAnthropicURL is the first-party Claude API base.
+const DefaultAnthropicURL = "https://api.anthropic.com/v1"
+
+// AnthropicVersion is the API version header the Claude API requires.
+const AnthropicVersion = "2023-06-01"
+
+// Configured reports whether the provider can be called. It does NOT consider
+// Enabled — callers that must respect the master switch use Active().
 func (s *AISettings) Configured() bool {
 	return s.APIKey != "" && s.Model != ""
 }
+
+// Active reports whether AI features should run: configured AND switched on.
+func (s *AISettings) Active() bool {
+	return s.Enabled() && s.Configured()
+}
+
+// DefaultClaudeModel is what a direct-Claude install starts on when the user
+// (or the add-on options) didn't name a model.
+const DefaultClaudeModel = "claude-opus-5"
 
 // AIForecast is a saved AI investment projection: the model's blended-return
 // scenarios, contribution target, target allocation and narrative as one JSON

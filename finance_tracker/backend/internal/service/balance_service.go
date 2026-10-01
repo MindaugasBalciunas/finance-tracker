@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -245,8 +246,14 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 }
 
 // SnapshotFromTransaction creates a new balance snapshot by applying a single
-// transaction's debit/credit to the current latest snapshot values.
-// Called only on transaction Create — Update and Delete leave balances untouched.
+// transaction's debit/credit to the current latest snapshot values. Called on
+// transaction Create, and on an Update that first adds account linkage;
+// Delete leaves balances untouched.
+//
+// Every path that declines to move the balance writes the reason to
+// tx.BalanceNote instead of returning nil silently — the skips are all
+// legitimate, but a user who photographed a receipt expecting their balance
+// to follow needs to be told it didn't.
 func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
 	// Serialize the read-modify-write: two concurrent creates would otherwise
 	// both clone the same "latest" and each lose the other's delta.
@@ -256,7 +263,9 @@ func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
 	latest, err := s.repo.GetLatest()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil // no snapshot to base on — legitimate skip
+			// No snapshot to base on — legitimate skip.
+			tx.BalanceNote = "no balance snapshot exists yet, so there was nothing to adjust — add one on the Balances page and later entries will follow it"
+			return nil
 		}
 		return err
 	}
@@ -265,20 +274,28 @@ func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
 	// date — that cuts a wrong point into the net-worth trend. Balances only
 	// move forward; past entries are already reflected in later snapshots.
 	if tx.Date.Before(latest.Date.Truncate(24 * time.Hour)) {
+		tx.BalanceNote = fmt.Sprintf(
+			"balance not adjusted: this entry is dated %s, before your latest snapshot (%s), which may already include it — update it on the Balances page if it doesn't",
+			tx.Date.Format("2006-01-02"), latest.Date.Format("2006-01-02"))
 		return nil
 	}
 
 	debit, credit := resolveAccounts(tx)
 	if debit == "" && credit == "" {
-		return nil // no account info — nothing to apply
+		tx.BalanceNote = "balance not adjusted: no account was set on this entry"
+		return nil
 	}
 
 	snap := *latest
-	if debit != "" {
-		applyAccountDelta(&snap, debit, -tx.Amount)
+	// An account code that matches no column would write a snapshot that is
+	// a byte-for-byte clone of the previous one — the balance looks
+	// "adjusted" in the trend while nothing moved. Fail loudly instead; the
+	// caller logs it and the bad linkage becomes visible.
+	if debit != "" && !applyAccountDelta(&snap, debit, -tx.Amount) {
+		return fmt.Errorf("unknown debit_account %q — balance not adjusted", debit)
 	}
-	if credit != "" {
-		applyAccountDelta(&snap, credit, tx.Amount)
+	if credit != "" && !applyAccountDelta(&snap, credit, tx.Amount) {
+		return fmt.Errorf("unknown credit_account %q — balance not adjusted", credit)
 	}
 	roundAllAccounts(&snap)
 
@@ -306,7 +323,10 @@ func resolveAccounts(tx *domain.Transaction) (debit, credit string) {
 	return debit, credit
 }
 
-func applyAccountDelta(b *domain.Balance, account string, delta float64) {
+// applyAccountDelta adds delta to the named account column, reporting
+// whether the code matched one. An unmatched code is a caller error, not a
+// silent no-op.
+func applyAccountDelta(b *domain.Balance, account string, delta float64) bool {
 	switch account {
 	case "seb":
 		b.Seb += delta
@@ -330,7 +350,10 @@ func applyAccountDelta(b *domain.Balance, account string, delta float64) {
 		b.IBKRStocks += delta
 	case "cash":
 		b.Cash += delta
+	default:
+		return false
 	}
+	return true
 }
 
 func roundAllAccounts(b *domain.Balance) {

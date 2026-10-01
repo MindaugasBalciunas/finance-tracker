@@ -5,6 +5,8 @@ import DateRangeFilter from '../ui/DateRangeFilter'
 import SecurityModal from '../ui/SecurityModal'
 import DataModal from '../ui/DataModal'
 import ViewInsightBar from '../ui/ViewInsightBar'
+import { GatewaySettingsModal } from '../ui/GatewaySettings'
+import { useAIAvailable } from '../../hooks/useInsights'
 // The single mobile menu is the top hamburger: date range + the tools that
 // don't earn a bottom tab (Assets, Data, Security, AI settings, API docs).
 
@@ -47,6 +49,15 @@ const bottomBarItems = [
 ]
 
 export default function Layout() {
+  // With AI switched off (or never configured) the AI tab is dropped from
+  // both navs rather than leading to a page that only says "not available".
+  const aiOn = useAIAvailable()
+  const nav = aiOn ? navItems : navItems.filter((i) => i.to !== '/ai')
+  const tabs = aiOn ? bottomBarItems : bottomBarItems.filter((i) => i.to !== '/ai')
+  // …which means the AI settings need their own door while AI is off: it is
+  // the only way back to the switch. When AI is on, the ⚙️ in the AI sub-nav
+  // is that door and this stays out of the header.
+  const [aiSettingsOpen, setAISettingsOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
   const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [dateMenuOpen, setDateMenuOpen] = useState(false)
@@ -64,7 +75,7 @@ export default function Layout() {
           {/* Nav is the flexible middle: it scrolls horizontally on a narrow
               desktop rather than crushing the date filter or tools. */}
           <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar">
-            {navItems.map((item) => (
+            {nav.map((item) => (
               <NavLink key={item.to} to={item.to} end={item.to === '/'}
                 className={({ isActive }) => clsx(
                   'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
@@ -90,6 +101,12 @@ export default function Layout() {
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
               Security
             </button>
+            {!aiOn && (
+              <button onClick={() => setAISettingsOpen(true)}
+                className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap">
+                ✦ AI
+              </button>
+            )}
             <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline whitespace-nowrap">API Docs</a>
           </div>
@@ -128,6 +145,10 @@ export default function Layout() {
                 className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🤖 Export to AI</button>
               <button onClick={() => { setSecurityOpen(true); setDateMenuOpen(false) }}
                 className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔒 Security</button>
+              {!aiOn && (
+                <button onClick={() => { setAISettingsOpen(true); setDateMenuOpen(false) }}
+                  className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">✦ AI settings</button>
+              )}
               <a href="/swagger/index.html" target="_blank" rel="noopener noreferrer"
                 className="px-3 py-2 text-sm text-blue-600 hover:bg-gray-50 rounded-lg">📚 API docs</a>
             </div>
@@ -141,6 +162,9 @@ export default function Layout() {
       {/* ── Security settings ── */}
       {securityOpen && <SecurityModal onClose={() => setSecurityOpen(false)} />}
 
+      {/* ── AI settings (chrome entry point — only while AI is off) ── */}
+      {aiSettingsOpen && <GatewaySettingsModal onClose={() => setAISettingsOpen(false)} />}
+
       {/* ── Main content ── */}
       <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
         {VIEW_BY_PATH[location.pathname] && <ViewInsightBar view={VIEW_BY_PATH[location.pathname]} />}
@@ -149,8 +173,10 @@ export default function Layout() {
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-7 h-14">
-          {bottomBarItems.map((item) => (
+        {/* Literal classes, not a template string — Tailwind only emits the
+            column counts it can see in the source. */}
+        <div className={clsx('grid h-14', aiOn ? 'grid-cols-7' : 'grid-cols-6')}>
+          {tabs.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               aria-label={item.name} title={item.name}
               className={({ isActive }) => clsx(

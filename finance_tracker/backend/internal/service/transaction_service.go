@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -28,12 +29,12 @@ type CreateTransactionInput struct {
 
 // UpdateTransactionInput is the input DTO for updating a transaction
 type UpdateTransactionInput struct {
-	Date          string                 `json:"date"`
-	Type          domain.TransactionType `json:"type" binding:"omitempty,oneof=expense income investment"`
-	Amount        float64                `json:"amount" binding:"omitempty,gt=0"`
-	Comment       string                 `json:"comment"`
-	Category      domain.Category        `json:"category"`
-	Labels *string `json:"labels"`
+	Date     string                 `json:"date"`
+	Type     domain.TransactionType `json:"type" binding:"omitempty,oneof=expense income investment"`
+	Amount   float64                `json:"amount" binding:"omitempty,gt=0"`
+	Comment  string                 `json:"comment"`
+	Category domain.Category        `json:"category"`
+	Labels   *string                `json:"labels"`
 	// Pointers so a partial update can't erase account linkage: nil = keep
 	// the current value, "" (explicitly sent) = clear it. The transaction
 	// form always sends both fields, so clearing via the UI still works.
@@ -92,6 +93,19 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		return nil, errors.New("invalid date format, use YYYY-MM-DD")
 	}
 
+	// Reject unknown account codes here rather than storing them: a code
+	// that matches no balance column saves fine, displays fine, and then
+	// never moves the balance — the exact failure that looks like "the
+	// balance didn't adjust".
+	debit, ok := normalizeAccountCode(input.DebitAccount)
+	if !ok {
+		return nil, fmt.Errorf("unknown debit_account %q — valid: %s", input.DebitAccount, accountCodeList)
+	}
+	credit, ok := normalizeAccountCode(input.CreditAccount)
+	if !ok {
+		return nil, fmt.Errorf("unknown credit_account %q — valid: %s", input.CreditAccount, accountCodeList)
+	}
+
 	tx := &domain.Transaction{
 		Date:          date,
 		Type:          input.Type,
@@ -99,8 +113,8 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		Comment:       input.Comment,
 		Category:      input.Category,
 		Labels:        domain.NormalizeLabels(input.Labels),
-		DebitAccount:  input.DebitAccount,
-		CreditAccount: input.CreditAccount,
+		DebitAccount:  debit,
+		CreditAccount: credit,
 	}
 
 	// Auto-apply label rules (e.g. Finance + "loan" → loan) — except those
@@ -131,6 +145,7 @@ func (s *transactionService) Create(input CreateTransactionInput) (*domain.Trans
 		// history silently stopping is exactly how trends go quietly wrong.
 		if err := s.balSvc.SnapshotFromTransaction(tx); err != nil {
 			log.Printf("balance auto-snapshot failed for transaction %d: %v", tx.ID, err)
+			tx.BalanceNote = "balance not adjusted: " + err.Error()
 		}
 	}
 	return tx, nil
@@ -188,11 +203,22 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 	if input.Labels != nil {
 		tx.Labels = domain.NormalizeLabels(*input.Labels)
 	}
+	// Whether the row carried account linkage BEFORE the edit decides if an
+	// auto-snapshot is owed below.
+	hadAccounts := tx.DebitAccount != "" || tx.CreditAccount != "" || tx.SourceAccount != ""
 	if input.DebitAccount != nil {
-		tx.DebitAccount = *input.DebitAccount
+		a, ok := normalizeAccountCode(*input.DebitAccount)
+		if !ok {
+			return nil, fmt.Errorf("unknown debit_account %q — valid: %s", *input.DebitAccount, accountCodeList)
+		}
+		tx.DebitAccount = a
 	}
 	if input.CreditAccount != nil {
-		tx.CreditAccount = *input.CreditAccount
+		a, ok := normalizeAccountCode(*input.CreditAccount)
+		if !ok {
+			return nil, fmt.Errorf("unknown credit_account %q — valid: %s", *input.CreditAccount, accountCodeList)
+		}
+		tx.CreditAccount = a
 	}
 
 	// Deterministic labeling on edits: only rules that NEWLY match (because
@@ -213,6 +239,18 @@ func (s *transactionService) Update(id uint, input UpdateTransactionInput) (*dom
 		return nil, err
 	}
 	populateTx(tx)
+	// Adding account linkage to a row that had none is the natural fix after
+	// a scan or an AI chat failed to recognize the account — and until now it
+	// left the balance permanently unadjusted, because Create was the only
+	// thing that ever snapshotted. Apply the delta exactly once: only on the
+	// none → some transition, so re-editing an already-applied row (or
+	// changing its amount) still can't double-count.
+	if s.balSvc != nil && !hadAccounts && (tx.DebitAccount != "" || tx.CreditAccount != "") {
+		if err := s.balSvc.SnapshotFromTransaction(tx); err != nil {
+			log.Printf("balance auto-snapshot failed for transaction %d: %v", tx.ID, err)
+			tx.BalanceNote = "balance not adjusted: " + err.Error()
+		}
+	}
 	return tx, nil
 }
 

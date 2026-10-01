@@ -56,8 +56,8 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 	if err != nil {
 		return zero, err
 	}
-	if !settings.Configured() {
-		return zero, errors.New("AI gateway not configured")
+	if err := requireAI(settings); err != nil {
+		return zero, err
 	}
 
 	key := view + "|" + periodLabel(from, to)

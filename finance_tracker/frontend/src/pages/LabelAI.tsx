@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '../api/insights'
-import { useAISettings } from '../hooks/useInsights'
+import { useAIAvailable } from '../hooks/useInsights'
 import LabelsNav, { BannerAlert, type Banner } from '../components/ui/LabelsNav'
 import { formatEuro } from '../utils/format'
 
@@ -10,8 +10,7 @@ import { formatEuro } from '../utils/format'
 // proposals, or audit already-labeled ones for remaps. Vocabulary-only,
 // fixed labels never removed, nothing written until the user applies.
 export default function LabelAI() {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
+  const configured = useAIAvailable()
   const qc = useQueryClient()
   const [banner, setBanner] = useState<Banner>(null)
   const [mode, setMode] = useState<'unlabeled' | 'review'>('unlabeled')

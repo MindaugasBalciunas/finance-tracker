@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi, type ChatMessage } from '../api/insights'
-import { useAISettings } from '../hooks/useInsights'
+import { useAIAvailable, useAIUnavailableReason } from '../hooks/useInsights'
+import { invalidateTransactionQueries } from '../hooks/useTransactions'
 import AINav from '../components/ui/AINav'
 import Markdown from '../components/ui/Markdown'
 
@@ -35,13 +36,15 @@ function fmtTokens(n: number): string {
 // assistant answers render as markdown — tables, lists, bold figures.
 // Analysis and gateway settings live on the Overview tab.
 export default function AI() {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
+  const configured = useAIAvailable()
+  const unavailable = useAIUnavailableReason()
 
   const qc = useQueryClient()
   const { data: serverHistory } = useQuery({
     queryKey: ['ai-chat-history'],
     queryFn: aiApi.chatHistory,
+    // With AI off the endpoint is gone — don't fetch into a 404.
+    enabled: configured,
   })
   // Local copy so an in-flight turn renders immediately; re-synced whenever
   // the server history lands (initial load or another device's turns).
@@ -130,6 +133,11 @@ export default function AI() {
         outputTokens: res.outputTokens,
       }])
       qc.invalidateQueries({ queryKey: ['ai-chat-history'] })
+      // The chat has write tools (create_transaction and friends), so a turn
+      // can have changed the ledger and the balances behind our back. Caches
+      // live 5 minutes with no refocus refetch, so without this the user
+      // books a receipt here and the dashboard still shows the old balance.
+      invalidateTransactionQueries(qc)
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       setChatError(e.response?.data?.error ?? e.message ?? 'Chat failed')
@@ -187,7 +195,9 @@ export default function AI() {
               <p>
                 {configured
                   ? 'Ask anything — the AI can search your transactions and query budgets, balances and live stock prices while answering.'
-                  : <>Configure the nexos.ai gateway with the ⚙️ button above to start chatting.</>}
+                  : unavailable === 'off'
+                    ? 'AI features are switched off. Turn them back on with the ⚙️ button above.'
+                    : 'Add your provider and API key with the ⚙️ button above to start chatting.'}
               </p>
               {configured && (
                 <div className="flex flex-wrap justify-center gap-1.5">
@@ -303,7 +313,11 @@ export default function AI() {
                 }
               }}
               rows={draft.includes('\n') ? 3 : 1}
-              placeholder={configured ? 'Ask about your finances… (Enter to send)' : 'Set up the gateway first'}
+              placeholder={
+                configured
+                  ? 'Ask about your finances… (Enter to send)'
+                  : unavailable === 'off' ? 'AI features are off' : 'Set up your AI provider first'
+              }
               disabled={!configured || thinking}
               className="flex-1 min-w-0 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50"
             />

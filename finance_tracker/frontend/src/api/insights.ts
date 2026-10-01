@@ -25,9 +25,18 @@ export const insightsApi = {
   },
 }
 
+// 'gateway' is an OpenAI-style gateway behind a Bearer token (nexos.ai and
+// friends); 'anthropic' is the first-party Claude API.
+export type AIProvider = 'gateway' | 'anthropic'
+
 export interface AISettings {
   gateway_url: string
   model: string
+  // Always resolved by the backend — never the empty "infer from URL" value.
+  provider: AIProvider
+  // Master switch. When false every AI surface is hidden and the AI
+  // endpoints 404; only /ai/settings and /ai/models stay reachable.
+  enabled: boolean
   has_key: boolean
   updated_at: string
 }
@@ -66,17 +75,22 @@ export interface TransactionScan {
   note: string
 }
 
-// LLM gateway (nexos.ai by default): settings, connectivity test, chat.
+// LLM provider (nexos.ai gateway by default, or the Claude API directly):
+// settings, connectivity test, chat.
 export const aiApi = {
   getSettings: async (): Promise<AISettings> => {
     const { data } = await client.get<AISettings>('/ai/settings')
     return data
   },
 
-  // Empty api_key keeps the stored key; clear_key removes it.
+  // Every field is optional and omitted ones keep their stored value — the
+  // enable/disable toggle PUTs nothing but { enabled }. Empty api_key keeps
+  // the stored key; clear_key removes it.
   saveSettings: async (input: {
-    gateway_url: string
-    model: string
+    gateway_url?: string
+    model?: string
+    provider?: AIProvider
+    enabled?: boolean
     api_key?: string
     clear_key?: boolean
   }): Promise<AISettings> => {

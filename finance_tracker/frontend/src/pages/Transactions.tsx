@@ -64,6 +64,10 @@ export default function Transactions() {
   const [showForm, setShowForm] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // Set when the server saved the transaction but did NOT move an account
+  // balance, and says why. Survives the modal closing — the point is that the
+  // user sees it after the form is gone.
+  const [balanceNote, setBalanceNote] = useState<string | null>(null)
   const [filter, setFilter] = useState<TransactionFilter>(() => ({
     page: 1,
     page_size: 20,
@@ -189,9 +193,12 @@ export default function Transactions() {
 
   const handleCreate = async (input: CreateTransactionInput) => {
     try {
-      await createMutation.mutateAsync(input)
+      const tx = await createMutation.mutateAsync(input)
       setShowForm(false)
       setFormError(null)
+      // The server says so whenever it declined to move the balance. Saying
+      // nothing is how "I scanned a receipt and nothing happened" happens.
+      setBalanceNote(tx.balance_note ?? null)
     } catch (err) {
       setFormError((err as Error).message)
     }
@@ -200,9 +207,10 @@ export default function Transactions() {
   const handleUpdate = async (input: CreateTransactionInput) => {
     if (!editingTx) return
     try {
-      await updateMutation.mutateAsync({ id: editingTx.id, input })
+      const tx = await updateMutation.mutateAsync({ id: editingTx.id, input })
       setEditingTx(null)
       setFormError(null)
+      setBalanceNote(tx.balance_note ?? null)
     } catch (err) {
       setFormError((err as Error).message)
     }
@@ -243,6 +251,22 @@ export default function Transactions() {
           + Add
         </button>
       </div>
+
+      {/* The transaction saved, but no account balance moved — say so rather
+          than let the user discover it on the dashboard later. */}
+      {balanceNote && (
+        <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <span aria-hidden>⚠️</span>
+          <span className="flex-1">Saved, but the account balance was not adjusted — {balanceNote}</span>
+          <button
+            onClick={() => setBalanceNote(null)}
+            aria-label="Dismiss"
+            className="text-amber-500 hover:text-amber-700"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Add form modal */}
       {showForm && (

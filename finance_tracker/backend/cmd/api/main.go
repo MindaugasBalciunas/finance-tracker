@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/handler"
 	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/mindaugas/finance-tracker/internal/service"
@@ -61,23 +62,12 @@ func main() {
 	stockSvc := service.NewStockService(stockRepo)
 	assetSvc := service.NewAssetService(assetRepo)
 
-	// Seed the AI gateway from the add-on options when the database carries
+	// Seed the AI provider from the add-on options when the database carries
 	// no key — a wiped or reinstalled instance comes back with AI working,
 	// and a key the user set in the app is NEVER overwritten by the env.
-	if key := os.Getenv("NEXOS_API_KEY"); key != "" {
-		if s, err := insightRepo.GetAISettings(); err == nil && s.APIKey == "" {
-			s.APIKey = key
-			if m := os.Getenv("NEXOS_MODEL"); m != "" && s.Model == "" {
-				s.Model = m
-			}
-			if u := os.Getenv("NEXOS_GATEWAY_URL"); u != "" {
-				s.GatewayURL = u
-			}
-			if err := insightRepo.SaveAISettings(s); err == nil {
-				log.Println("AI gateway seeded from add-on options")
-			}
-		}
-	}
+	// NEXOS_API_KEY wins when both are set; ANTHROPIC_API_KEY configures the
+	// first-party Claude API instead of a gateway.
+	seedAISettings(insightRepo)
 	// insightSvc reads budgets, stocks and assets for the AI report + chat tools.
 	insightSvc := service.NewInsightService(insightRepo, txSvc, balSvc, budgetRepo, stockSvc, assetSvc)
 
@@ -96,9 +86,9 @@ func main() {
 
 	// CORS — allow all origins for self-hosted deployment (nginx + local network access)
 	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:    []string{"Origin", "Content-Type", "Accept"},
 	}))
 
 	// Cap request bodies so a stray or malicious client can't exhaust
@@ -177,4 +167,36 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// seedAISettings fills the AI provider config from the add-on options on an
+// instance that has no key yet. A key set inside the app always wins — the
+// env only bootstraps. NEXOS_API_KEY takes precedence over
+// ANTHROPIC_API_KEY when both are present.
+func seedAISettings(repo repository.InsightRepository) {
+	s, err := repo.GetAISettings()
+	if err != nil || s.APIKey != "" {
+		return
+	}
+	switch {
+	case os.Getenv("NEXOS_API_KEY") != "":
+		s.APIKey = os.Getenv("NEXOS_API_KEY")
+		s.Provider = domain.ProviderGateway
+		s.GatewayURL = getEnv("NEXOS_GATEWAY_URL", domain.DefaultGatewayURL)
+		if m := os.Getenv("NEXOS_MODEL"); m != "" && s.Model == "" {
+			s.Model = m
+		}
+	case os.Getenv("ANTHROPIC_API_KEY") != "":
+		s.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+		s.Provider = domain.ProviderAnthropic
+		s.GatewayURL = domain.DefaultAnthropicURL
+		if s.Model == "" {
+			s.Model = getEnv("ANTHROPIC_MODEL", domain.DefaultClaudeModel)
+		}
+	default:
+		return
+	}
+	if err := repo.SaveAISettings(s); err == nil {
+		log.Printf("AI provider seeded from add-on options (%s)", s.ResolvedProvider())
+	}
 }

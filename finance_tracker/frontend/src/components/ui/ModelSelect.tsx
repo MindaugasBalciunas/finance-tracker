@@ -18,8 +18,9 @@ export default function ModelSelect() {
     staleTime: 5 * 60 * 1000,
   })
 
-  // Nothing to choose until the gateway is configured with a model.
-  if (!settings?.gateway_url || !settings?.model) return null
+  // Nothing to choose until a provider is configured with a model — or while
+  // AI is switched off and no model will be called at all.
+  if (!settings?.enabled || !settings?.gateway_url || !settings?.model) return null
 
   const list = models && models.ok ? models.models : []
 
@@ -38,10 +39,8 @@ export default function ModelSelect() {
 
   const onChange = (model: string) => {
     if (!model || model === settings.model) return
-    save.mutate(
-      { gateway_url: settings.gateway_url, model },
-      { onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-settings'] }) },
-    )
+    // Model only — every other stored field keeps its value.
+    save.mutate({ model }, { onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-settings'] }) })
   }
 
   return (

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLabelRules, useDeleteRule, useApplyLabel, useReapplyRules } from '../hooks/useBudgets'
 import { budgetsApi } from '../api/budgets'
 import { aiApi, type RuleSuggestion } from '../api/insights'
-import { useAISettings } from '../hooks/useInsights'
+import { useAIAvailable } from '../hooks/useInsights'
 import LabelsNav, { BannerAlert, errText, type Banner } from '../components/ui/LabelsNav'
 import QueryError from '../components/ui/QueryError'
 import { CATEGORIES } from '../constants/categories'
@@ -207,8 +207,7 @@ export default function LabelRules() {
 // covers; the model proposes adds/updates/deletes, each shown with real match
 // counts. Nothing is written until the user applies the checked items.
 function AIRuleReviewCard({ onBanner }: { onBanner: (b: Banner) => void }) {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
+  const configured = useAIAvailable()
   const qc = useQueryClient()
   const [reviewing, setReviewing] = useState(false)
   const [applying, setApplying] = useState(false)

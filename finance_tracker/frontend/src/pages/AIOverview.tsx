@@ -1,10 +1,22 @@
 import AINav from '../components/ui/AINav'
 import AIInsightCard from '../components/ui/AIInsightCard'
+import AIUnavailable from '../components/ui/AIUnavailable'
+import { useAIAvailable } from '../hooks/useInsights'
 
 // AI Financial Overview: the per-section analysis (now with a detailed
-// category review). The nexos.ai gateway configuration is reachable from the
-// ⚙️ button in the shared AINav bar; the chat lives on its own tab.
+// category review). The provider configuration is reachable from the ⚙️
+// button in the shared AINav bar; the chat lives on its own tab.
 export default function AIOverview() {
+  const available = useAIAvailable()
+  if (!available) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4 max-w-4xl mx-auto">
+        <AINav />
+        <AIUnavailable />
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-4xl mx-auto">
       <AINav />

@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,9 +44,9 @@ type InsightService interface {
 	ChatHistory() ([]domain.AIChatMessage, error)
 	ClearChat() error
 	AISettings() (*domain.AISettings, error)
-	// SaveAISettings updates the gateway config. An empty apiKey keeps the
+	// SaveAISettings updates the provider config. An empty apiKey keeps the
 	// stored key unless clearKey is set.
-	SaveAISettings(gatewayURL, model, apiKey string, clearKey bool) (*domain.AISettings, error)
+	SaveAISettings(in AISettingsInput) (*domain.AISettings, error)
 	// TestGateway makes a minimal round-trip through the configured gateway.
 	TestGateway() error
 	// DataReport returns the full financial context report (all-time scope)
@@ -117,31 +116,21 @@ func (s *insightService) Generate(dateFrom, dateTo *time.Time) (*domain.AIInsigh
 		return nil, fmt.Errorf("building prompt: %w", err)
 	}
 
-	// Configured gateway (nexos.ai) first; the ANTHROPIC_API_KEY env var
-	// remains as a legacy fallback for pre-gateway deployments.
 	settings, serr := s.repo.GetAISettings()
 	if serr != nil {
 		return nil, fmt.Errorf("reading AI settings: %w", serr)
 	}
-	var content string
-	switch {
-	case settings.Configured():
-		msgs := []domain.ChatMessage{}
-		if ctx := s.userContextBlock(); ctx != "" {
-			msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
-		}
-		msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
-		content, err = callGateway(context.Background(), settings, msgs, 4096)
-		if err != nil {
-			return nil, fmt.Errorf("calling AI gateway: %w", err)
-		}
-	case os.Getenv("ANTHROPIC_API_KEY") != "":
-		content, err = callClaude(os.Getenv("ANTHROPIC_API_KEY"), prompt)
-		if err != nil {
-			return nil, fmt.Errorf("calling Claude API: %w", err)
-		}
-	default:
-		return nil, errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
+	if err := requireAI(settings); err != nil {
+		return nil, err
+	}
+	msgs := []domain.ChatMessage{}
+	if ctx := s.userContextBlock(); ctx != "" {
+		msgs = append(msgs, domain.ChatMessage{Role: "system", Content: ctx})
+	}
+	msgs = append(msgs, domain.ChatMessage{Role: "user", Content: prompt})
+	content, err := callGateway(context.Background(), settings, msgs, 4096)
+	if err != nil {
+		return nil, fmt.Errorf("calling AI provider: %w", err)
 	}
 
 	insight := &domain.AIInsight{Content: content}
@@ -184,8 +173,8 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 	if err != nil {
 		return ChatResult{}, err
 	}
-	if !settings.Configured() {
-		return ChatResult{}, errors.New("AI gateway not configured — add your nexos.ai API key and model in AI settings")
+	if err := requireAI(settings); err != nil {
+		return ChatResult{}, err
 	}
 	system, err := s.chatSystemMessage()
 	if err != nil {
@@ -343,21 +332,55 @@ func (s *insightService) AISettings() (*domain.AISettings, error) {
 	return s.repo.GetAISettings()
 }
 
-func (s *insightService) SaveAISettings(gatewayURL, model, apiKey string, clearKey bool) (*domain.AISettings, error) {
+// AISettingsInput is one PUT of the AI configuration. Pointer fields are
+// "leave as is when omitted" so a partial save (e.g. only flipping Enabled)
+// can't blank the URL or silently switch provider.
+type AISettingsInput struct {
+	GatewayURL *string
+	Model      *string
+	Provider   *string
+	Enabled    *bool
+	APIKey     string
+	ClearKey   bool
+}
+
+func (s *insightService) SaveAISettings(in AISettingsInput) (*domain.AISettings, error) {
 	settings, err := s.repo.GetAISettings()
 	if err != nil {
 		return nil, err
 	}
-	settings.GatewayURL = strings.TrimRight(strings.TrimSpace(gatewayURL), "/")
-	if settings.GatewayURL == "" {
-		settings.GatewayURL = domain.DefaultGatewayURL
+	// Provider first: it decides which default URL an empty URL falls back to.
+	if in.Provider != nil {
+		switch p := strings.ToLower(strings.TrimSpace(*in.Provider)); p {
+		case domain.ProviderAnthropic, domain.ProviderGateway:
+			settings.Provider = p
+		case "":
+			settings.Provider = "" // back to inferring from the URL
+		default:
+			return nil, fmt.Errorf("unknown provider %q — use %q or %q", p, domain.ProviderGateway, domain.ProviderAnthropic)
+		}
 	}
-	settings.Model = strings.TrimSpace(model)
+	if in.GatewayURL != nil {
+		settings.GatewayURL = strings.TrimRight(strings.TrimSpace(*in.GatewayURL), "/")
+	}
+	if settings.GatewayURL == "" {
+		if settings.ResolvedProvider() == domain.ProviderAnthropic {
+			settings.GatewayURL = domain.DefaultAnthropicURL
+		} else {
+			settings.GatewayURL = domain.DefaultGatewayURL
+		}
+	}
+	if in.Model != nil {
+		settings.Model = strings.TrimSpace(*in.Model)
+	}
+	if in.Enabled != nil {
+		settings.Disabled = !*in.Enabled
+	}
 	switch {
-	case clearKey:
+	case in.ClearKey:
 		settings.APIKey = ""
-	case strings.TrimSpace(apiKey) != "":
-		settings.APIKey = strings.TrimSpace(apiKey)
+	case strings.TrimSpace(in.APIKey) != "":
+		settings.APIKey = strings.TrimSpace(in.APIKey)
 	}
 	if err := s.repo.SaveAISettings(settings); err != nil {
 		return nil, err
@@ -370,8 +393,8 @@ func (s *insightService) TestGateway() error {
 	if err != nil {
 		return err
 	}
-	if !settings.Configured() {
-		return errors.New("AI gateway not configured — set an API key and model first")
+	if err := requireAI(settings); err != nil {
+		return err
 	}
 	reply, err := callGateway(context.Background(), settings, []domain.ChatMessage{
 		{Role: "user", Content: "Reply with the single word: ok"},
@@ -1076,7 +1099,7 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 		return zero, err
 	}
 
-	url := strings.TrimRight(settings.GatewayURL, "/") + "/messages"
+	url := providerBaseURL(settings) + "/messages"
 	client := &http.Client{Timeout: 120 * time.Second}
 
 	// Rate limits and gateway-side transient failures (429/502/503/529) get
@@ -1095,7 +1118,7 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 		if rerr != nil {
 			return zero, rerr
 		}
-		req.Header.Set("Authorization", "Bearer "+settings.APIKey)
+		applyProviderAuth(req, settings)
 		req.Header.Set("Content-Type", "application/json")
 
 		var derr error
@@ -1187,75 +1210,16 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 	return msg, nil
 }
 
-// Claude API types
-type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	Messages  []claudeMessage `json:"messages"`
-}
-
-type claudeMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type claudeResponse struct {
-	Content []struct {
-		Text string `json:"text"`
-	} `json:"content"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-const claudeModel = "claude-haiku-4-5-20251001"
-
-func callClaude(apiKey, prompt string) (string, error) {
-	reqBody := claudeRequest{
-		Model:     claudeModel,
-		MaxTokens: 1024,
-		Messages: []claudeMessage{
-			{Role: "user", Content: prompt},
-		},
+// requireAI is the single gate every AI entry point goes through: the master
+// switch first (so "turned off" reads as turned off, not as misconfigured),
+// then the credentials. Both branches return a user-facing message — these
+// surface verbatim in the UI.
+func requireAI(settings *domain.AISettings) error {
+	if !settings.Enabled() {
+		return errors.New("AI features are turned off — enable them in AI settings")
 	}
-
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
+	if !settings.Configured() {
+		return errors.New("AI is not configured — add your API key and model in AI settings")
 	}
-
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
-
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var result claudeResponse
-	if err := json.Unmarshal(respBytes, &result); err != nil {
-		return "", fmt.Errorf("parsing response: %w", err)
-	}
-
-	if result.Error != nil {
-		return "", fmt.Errorf("Claude API error: %s", result.Error.Message)
-	}
-
-	if len(result.Content) == 0 {
-		return "", errors.New("empty response from Claude")
-	}
-
-	return result.Content[0].Text, nil
+	return nil
 }

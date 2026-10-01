@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { aiApi } from '../../api/insights'
 import type { ForecastResponse, ForecastDoc } from '../../api/insights'
-import { useAISettings } from '../../hooks/useInsights'
+import { useAIAvailable } from '../../hooks/useInsights'
 import { formatEuro } from '../../utils/format'
 import Markdown from './Markdown'
 
@@ -61,8 +61,7 @@ function fmtCost(costUsd?: number, inTok?: number, outTok?: number): string {
 }
 
 export default function InvestmentForecastCard() {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
+  const configured = useAIAvailable()
   const qc = useQueryClient()
   const [view, setView] = useState<'total' | 'buckets'>('total')
 

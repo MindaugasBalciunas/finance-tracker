@@ -97,8 +97,8 @@ func (s *insightService) AssistTransaction(input TransactionAssistInput) (*Trans
 	if err != nil {
 		return nil, err
 	}
-	if !settings.Configured() {
-		return nil, errors.New("AI gateway not configured")
+	if err := requireAI(settings); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(input.Comment) == "" {
 		return nil, errors.New("add a comment first — suggestions are based on the description")
@@ -188,8 +188,8 @@ func (s *insightService) ReindexSuggest(mode string, limit, offset int) (*Reinde
 	if err != nil {
 		return nil, err
 	}
-	if !settings.Configured() {
-		return nil, errors.New("AI gateway not configured")
+	if err := requireAI(settings); err != nil {
+		return nil, err
 	}
 	if mode == "" {
 		mode = "unlabeled"

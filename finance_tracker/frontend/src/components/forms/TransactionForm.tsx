@@ -10,7 +10,7 @@ import { useTransactionComments } from '../../hooks/useTransactions'
 import { useLabels, useLabelRules } from '../../hooks/useBudgets'
 import { ruleCoversComment, commentPatternMatches } from '../../utils/rulePattern'
 import { aiApi } from '../../api/insights'
-import { useAISettings } from '../../hooks/useInsights'
+import { useAIAvailable } from '../../hooks/useInsights'
 import RuleSuggestion from './RuleSuggestion'
 
 interface Props {
@@ -87,8 +87,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
   // AI assist: labels merged into the field as normal removable chips, the
   // cleaner description offered beside the form (never applied silently).
-  const { data: aiSettings } = useAISettings()
-  const aiConfigured = !!aiSettings?.has_key && !!aiSettings?.model
+  const aiConfigured = useAIAvailable()
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistNote, setAssistNote] = useState('')
   const [assistComment, setAssistComment] = useState('')

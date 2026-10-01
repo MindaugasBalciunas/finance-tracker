@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
-import GatewaySettings from './GatewaySettings'
+import { GatewaySettingsModal } from './GatewaySettings'
 import ModelSelect from './ModelSelect'
 
 // Sub-navigation for the AI pages: the full-screen chat, the financial
@@ -46,18 +46,7 @@ export default function AINav() {
         </button>
       </div>
 
-      {settingsOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8"
-          onClick={() => setSettingsOpen(false)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="max-w-lg w-full px-4" onClick={(e) => e.stopPropagation()}>
-            <GatewaySettings onClose={() => setSettingsOpen(false)} />
-          </div>
-        </div>
-      )}
+      {settingsOpen && <GatewaySettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

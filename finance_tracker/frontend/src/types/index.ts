@@ -47,6 +47,10 @@ export interface Transaction {
   credit_account: string
   created_at: string
   updated_at: string
+  // Only on a create/update response, and only when the account balance was
+  // NOT adjusted: says why (no account set, dated before the latest
+  // snapshot, no snapshot yet…). Absent when the balance did move.
+  balance_note?: string
 }
 
 export interface CreateTransactionInput {

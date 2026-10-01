@@ -24,16 +24,16 @@ func (s *insightService) ListModels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(settings.GatewayURL) == "" || strings.TrimSpace(settings.APIKey) == "" {
+	if strings.TrimSpace(settings.APIKey) == "" {
 		return nil, fmt.Errorf("gateway not configured")
 	}
 
-	url := strings.TrimRight(settings.GatewayURL, "/") + "/models"
+	url := providerBaseURL(settings) + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+settings.APIKey)
+	applyProviderAuth(req, settings)
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -125,8 +125,8 @@ func (s *insightService) RuleReview() (*RuleReviewResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !settings.Configured() {
-		return nil, errors.New("AI gateway not configured")
+	if err := requireAI(settings); err != nil {
+		return nil, err
 	}
 	if s.budgetRepo == nil {
 		return nil, errors.New("labels unavailable")

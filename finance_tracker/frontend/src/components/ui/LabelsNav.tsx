@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
+import { useAIAvailable } from '../../hooks/useInsights'
 
 // Shared chrome for the three label-management pages (Labels / Rules /
 // AI tagging) so they behave as one section split for readability.
@@ -18,9 +19,12 @@ const tabs = [
 ]
 
 export default function LabelsNav() {
+  // AI tagging is a third of this section; with AI off it's just a dead tab.
+  const aiOn = useAIAvailable()
+  const visible = aiOn ? tabs : tabs.filter((t) => t.to !== '/labels/ai')
   return (
     <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-      {tabs.map((t) => (
+      {visible.map((t) => (
         <NavLink
           key={t.to}
           to={t.to}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '../../api/insights'
-import { useAISettings } from '../../hooks/useInsights'
+import { useAIAvailable } from '../../hooks/useInsights'
 import { useDateRange } from '../../context/DateRangeContext'
 
 // ViewInsightBar: on-demand AI review of the tab the user is on, scoped to
@@ -10,8 +10,7 @@ import { useDateRange } from '../../context/DateRangeContext'
 // view + period) shows again instantly from the client cache, and the server
 // additionally caches per view+period for 15 minutes.
 export default function ViewInsightBar({ view }: { view: string }) {
-  const { data: settings } = useAISettings()
-  const configured = !!settings?.has_key && !!settings?.model
+  const configured = useAIAvailable()
   const { dateRange } = useDateRange()
   const qc = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)

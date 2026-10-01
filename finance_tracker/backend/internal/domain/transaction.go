@@ -164,6 +164,14 @@ type Transaction struct {
 
 	// Computed for API response (not persisted)
 	AmountMoney Money `json:"amount" gorm:"-"`
+
+	// BalanceNote explains why creating this transaction did NOT move an
+	// account balance (no account selected, dated before the latest
+	// snapshot, no snapshot to base on…). Empty when the balance was
+	// adjusted — or when the response isn't from a create/update. Set on the
+	// create path only; a silent skip is how "the balance didn't adjust"
+	// goes unnoticed, so the UI shows this verbatim.
+	BalanceNote string `json:"balance_note,omitempty" gorm:"-"`
 }
 
 // TransactionFilter holds filtering options for querying transactions

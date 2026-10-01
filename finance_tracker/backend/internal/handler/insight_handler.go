@@ -26,15 +26,20 @@ func NewInsightHandler(svc service.InsightService) *InsightHandler {
 }
 
 func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	g := rg.Group("/insights")
+	// /ai/settings and /ai/models stay reachable while AI is switched off —
+	// they are how the user switches it back on. Everything else that reads
+	// or produces AI output sits behind requireEnabled.
+	settings := rg.Group("/ai")
+	settings.GET("/settings", h.GetAISettings)
+	settings.PUT("/settings", h.SaveAISettings)
+	settings.GET("/models", h.Models)
+
+	g := rg.Group("/insights", h.requireEnabled)
 	g.GET("/latest", h.GetLatest)
 	g.POST("/generate", h.Generate)
 	g.GET("", h.List)
 
-	ai := rg.Group("/ai")
-	ai.GET("/settings", h.GetAISettings)
-	ai.PUT("/settings", h.SaveAISettings)
-	ai.GET("/models", h.Models)
+	ai := rg.Group("/ai", h.requireEnabled)
 	ai.POST("/test", h.TestGateway)
 	ai.POST("/chat", h.Chat)
 	ai.GET("/chat/history", h.ChatHistory)
@@ -66,8 +71,26 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	ai.POST("/forecast", h.GenerateForecast)
 
 	// Structured month-to-date budget progress. Lives under /budgets so the
-	// read-only API token (and thus MCP) can reach it.
+	// read-only API token (and thus MCP) can reach it. Not an AI call — it is
+	// plain arithmetic over the user's own budgets — so the switch doesn't
+	// gate it.
 	rg.GET("/budgets/status", h.BudgetStatus)
+}
+
+// requireEnabled blocks every AI surface while the master switch is off, so
+// a disabled install can't be driven through the API (or MCP) behind the
+// hidden UI. 404 rather than 403: with AI off the feature does not exist.
+func (h *InsightHandler) requireEnabled(c *gin.Context) {
+	s, err := h.svc.AISettings()
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !s.Enabled() {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "AI features are turned off — enable them in AI settings"})
+		return
+	}
+	c.Next()
 }
 
 func (h *InsightHandler) GetAIContext(c *gin.Context) {
@@ -290,8 +313,20 @@ func (h *InsightHandler) DataReport(c *gin.Context) {
 type aiSettingsResponse struct {
 	GatewayURL string `json:"gateway_url"`
 	Model      string `json:"model"`
-	HasKey     bool   `json:"has_key"`
-	UpdatedAt  string `json:"updated_at"`
+	// Provider is the resolved dialect ("gateway" | "anthropic"), never the
+	// raw empty value — the UI shows what will actually be used.
+	Provider  string `json:"provider"`
+	Enabled   bool   `json:"enabled"`
+	HasKey    bool   `json:"has_key"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func toAISettingsResponse(s *domain.AISettings) aiSettingsResponse {
+	return aiSettingsResponse{
+		GatewayURL: s.GatewayURL, Model: s.Model,
+		Provider: s.ResolvedProvider(), Enabled: s.Enabled(), HasKey: s.APIKey != "",
+		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
+	}
 }
 
 func (h *InsightHandler) GetAISettings(c *gin.Context) {
@@ -300,15 +335,16 @@ func (h *InsightHandler) GetAISettings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, aiSettingsResponse{
-		GatewayURL: s.GatewayURL, Model: s.Model, HasKey: s.APIKey != "",
-		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
-	})
+	c.JSON(http.StatusOK, toAISettingsResponse(s))
 }
 
+// aiSettingsInput mirrors service.AISettingsInput: pointers so an omitted
+// field keeps its stored value (the Enabled toggle PUTs only {"enabled":…}).
 type aiSettingsInput struct {
-	GatewayURL string `json:"gateway_url"`
-	Model      string `json:"model"`
+	GatewayURL *string `json:"gateway_url"`
+	Model      *string `json:"model"`
+	Provider   *string `json:"provider"`
+	Enabled    *bool   `json:"enabled"`
 	// APIKey empty = keep the stored key; ClearKey removes it explicitly.
 	APIKey   string `json:"api_key"`
 	ClearKey bool   `json:"clear_key"`
@@ -320,15 +356,15 @@ func (h *InsightHandler) SaveAISettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	s, err := h.svc.SaveAISettings(input.GatewayURL, input.Model, input.APIKey, input.ClearKey)
+	s, err := h.svc.SaveAISettings(service.AISettingsInput{
+		GatewayURL: input.GatewayURL, Model: input.Model, Provider: input.Provider,
+		Enabled: input.Enabled, APIKey: input.APIKey, ClearKey: input.ClearKey,
+	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, aiSettingsResponse{
-		GatewayURL: s.GatewayURL, Model: s.Model, HasKey: s.APIKey != "",
-		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
-	})
+	c.JSON(http.StatusOK, toAISettingsResponse(s))
 }
 
 // Models returns the model ids the configured gateway offers, for the

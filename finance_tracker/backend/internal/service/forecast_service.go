@@ -101,8 +101,8 @@ func (s *insightService) Forecast(ctx context.Context, refresh bool) (ForecastRe
 	if err != nil {
 		return zero, err
 	}
-	if !settings.Configured() {
-		return zero, errors.New("AI gateway not configured")
+	if err := requireAI(settings); err != nil {
+		return zero, err
 	}
 
 	current, facts, err := s.forecastFacts()

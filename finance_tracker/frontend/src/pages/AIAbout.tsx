@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '../api/insights'
 import AINav from '../components/ui/AINav'
+import AIUnavailable from '../components/ui/AIUnavailable'
 import Markdown from '../components/ui/Markdown'
+import { useAIAvailable } from '../hooks/useInsights'
 
 // About me: the user's CFO-context briefing on its own tab. It rides along
 // on EVERY AI call (chat, overview, view reviews) as a cached system block,
@@ -11,7 +13,14 @@ import Markdown from '../components/ui/Markdown'
 // via record_user_decision.
 export default function AIAbout() {
   const qc = useQueryClient()
-  const { data: ctx } = useQuery({ queryKey: ['ai-context'], queryFn: aiApi.getContext })
+  // The brief is only ever read by the AI, and its endpoint is switched off
+  // with everything else — don't fetch into a 404.
+  const available = useAIAvailable()
+  const { data: ctx } = useQuery({
+    queryKey: ['ai-context'],
+    queryFn: aiApi.getContext,
+    enabled: available,
+  })
   const [editing, setEditing] = useState(false)
   const [preview, setPreview] = useState(false)
   const [draft, setDraft] = useState('')
@@ -38,6 +47,15 @@ export default function AIAbout() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (!available) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4 max-w-4xl mx-auto">
+        <AINav />
+        <AIUnavailable />
+      </div>
+    )
   }
 
   return (
