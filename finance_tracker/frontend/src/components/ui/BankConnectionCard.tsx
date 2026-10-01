@@ -93,8 +93,33 @@ export default function BankConnectionCard({
       )}
 
       <div className="mt-3 space-y-3">
+        {/* An authorised connection with no accounts is not a failure state
+            the API reports — it is what a restricted-mode application looks
+            like when this bank's accounts were never whitelisted. Enable
+            Banking strips accounts you did not link and returns an empty
+            list, so without this note the screen is a dead end. */}
         {conn.accounts.length === 0 && (
-          <p className="text-xs text-gray-400">No accounts on this connection.</p>
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 space-y-1">
+            <p className="font-medium">Connected, but the bank returned no accounts.</p>
+            <p>
+              If your Enable Banking application is in restricted mode, it only ever returns the
+              accounts you whitelisted — everything else is stripped out silently. Open the{' '}
+              <a
+                href="https://enablebanking.com/cp"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-medium"
+              >
+                control panel
+              </a>
+              , press <b>Activate by linking accounts</b> and go through {conn.aspsp_name} as well,
+              then reconnect here.
+            </p>
+            <p className="text-amber-600">
+              Less often: the bank's own consent screen has a list of accounts to tick, and none
+              were selected.
+            </p>
+          </div>
         )}
         {conn.accounts.map((acc) => (
           <div key={acc.id} className="border border-gray-100 rounded-xl p-3">
