@@ -846,3 +846,51 @@ func TestExportAllJSON_NoPurpose_IsFullBackup(t *testing.T) {
 	assert.Contains(t, w.Header().Get("Content-Disposition"), "backup_finances_")
 	logRepo.AssertCalled(t, "Save", "full")
 }
+
+// TestExportOmitsBankCredentials is a tripwire, not a behaviour test.
+//
+// The AI gateway key is deliberately inside the JSON backup — it is cheap to
+// rotate and losing it with your data is an annoyance. A bank credential is a
+// different animal: the PEM signs every call to a licensed AISP that can read
+// your accounts, and the backup is a file you download and mail to yourself.
+// It must never travel in there.
+//
+// Two halves. The first marshals the domain structs directly, which is the half
+// that can actually go red: drop a `json:"-"` to make some endpoint return the
+// app id and this fails immediately, wherever that struct gets embedded. The
+// second scans a real full backup, so if someone later wires a WithBanking()
+// into the export handler the way WithAI() is wired today, it is caught here.
+func TestExportOmitsBankCredentials(t *testing.T) {
+	const (
+		appID = "7f3c91ea-0000-4d2b-aaaa-c0ffee123456"
+		pem   = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----"
+		sess  = "sess-2f9a-secret"
+	)
+
+	settings, _ := json.Marshal(domain.BankSettings{
+		ApplicationID: appID,
+		PrivateKeyPEM: pem,
+		Environment:   "production",
+		RedirectURL:   "https://example.duckdns.org:8443/",
+	})
+	conn, _ := json.Marshal(domain.BankConnection{ASPSPName: "Swedbank", SessionID: sess})
+
+	for _, blob := range []string{string(settings), string(conn)} {
+		assert.NotContains(t, blob, appID, "application id must not serialise")
+		assert.NotContains(t, blob, "BEGIN", "private key must not serialise")
+		assert.NotContains(t, blob, sess, "session id must not serialise")
+	}
+	// The non-secret half still has to come through, or the settings screen
+	// would have nothing to render and this test would pass vacuously.
+	assert.Contains(t, string(settings), "production")
+
+	r := rtExportRouter(rtTransactions, rtBalances, rtStocks, rtAssets)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/export/finances.json", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, "BEGIN", "no private key anywhere in a full backup")
+	assert.NotContains(t, body, "application_id")
+	assert.NotContains(t, body, "session_id")
+}

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/layout/Layout'
 import LoadingSpinner from './components/ui/LoadingSpinner'
 import AuthGate from './components/ui/AuthGate'
+import BankRedirectCatcher from './components/ui/BankRedirectCatcher'
 import { DateRangeProvider } from './context/DateRangeContext'
 
 // Each page (and the charts only it uses) loads as its own chunk, so first
@@ -22,6 +23,7 @@ const AI = lazy(() => import('./pages/AI'))
 const AIOverview = lazy(() => import('./pages/AIOverview'))
 const AIAbout = lazy(() => import('./pages/AIAbout'))
 const More = lazy(() => import('./pages/More'))
+const Banking = lazy(() => import('./pages/Banking'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +41,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthGate>
+      <BankRedirectCatcher />
       <DateRangeProvider>
         <HashRouter>
           <Routes>
@@ -57,6 +60,7 @@ export default function App() {
               <Route path="ai/overview" element={<Suspense fallback={<LoadingSpinner />}><AIOverview /></Suspense>} />
               <Route path="ai/about" element={<Suspense fallback={<LoadingSpinner />}><AIAbout /></Suspense>} />
               <Route path="more" element={<Suspense fallback={<LoadingSpinner />}><More /></Suspense>} />
+              <Route path="banking" element={<Suspense fallback={<LoadingSpinner />}><Banking /></Suspense>} />
             </Route>
           </Routes>
         </HashRouter>

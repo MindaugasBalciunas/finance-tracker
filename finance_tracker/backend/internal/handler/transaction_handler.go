@@ -10,15 +10,40 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/mindaugas/finance-tracker/internal/service"
 )
 
 type TransactionHandler struct {
 	svc service.TransactionService
+	// bankRepo is optional. When set, deleting a transaction that came from a
+	// bank sync puts its staged row back on the review list — that is what
+	// makes "Undo" after a PSD2 import return you to where you were instead of
+	// dropping the row on the floor.
+	bankRepo repository.BankRepository
 }
 
 func NewTransactionHandler(svc service.TransactionService) *TransactionHandler {
 	return &TransactionHandler{svc: svc}
+}
+
+func (h *TransactionHandler) WithBanking(repo repository.BankRepository) *TransactionHandler {
+	h.bankRepo = repo
+	return h
+}
+
+// restoreStagedFor is best-effort: the transactions are already gone, and
+// failing the delete response because the review list could not be updated
+// would be a lie about what happened.
+//
+// Deliberately not wired into DeleteAll: wiping the ledger is normally the
+// prelude to restoring a backup, and repopulating the review list with every
+// row ever imported would bury the user.
+func (h *TransactionHandler) restoreStagedFor(ids []uint) {
+	if h.bankRepo == nil || len(ids) == 0 {
+		return
+	}
+	_ = h.bankRepo.RestoreByImportedTxIDs(ids)
 }
 
 func (h *TransactionHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -162,6 +187,7 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 		return
 	}
+	h.restoreStagedFor([]uint{id})
 	c.Status(http.StatusNoContent)
 }
 
@@ -177,6 +203,7 @@ func (h *TransactionHandler) DeleteBatch(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	h.restoreStagedFor(body.IDs)
 	c.Status(http.StatusNoContent)
 }
 

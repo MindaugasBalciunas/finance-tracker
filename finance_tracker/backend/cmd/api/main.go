@@ -54,6 +54,7 @@ func main() {
 	stockRepo := repository.NewStockRepository(db)
 	assetRepo := repository.NewAssetRepository(db)
 	exportLogRepo := repository.NewExportLogRepository(db)
+	bankRepo := repository.NewBankRepository(db)
 
 	// Services — balSvc must be created before txSvc (txSvc holds a reference to balSvc)
 	authSvc := service.NewAuthService(authRepo)
@@ -74,13 +75,16 @@ func main() {
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
 	budgetHandler := handler.NewBudgetHandler(budgetRepo)
-	txHandler := handler.NewTransactionHandler(txSvc)
+	// WithBanking: deleting a transaction that came from a bank sync returns
+	// its staged row to the review list, which is what makes undo work.
+	txHandler := handler.NewTransactionHandler(txSvc).WithBanking(bankRepo)
 	balHandler := handler.NewBalanceHandler(balSvc)
 	insightHandler := handler.NewInsightHandler(insightSvc)
 	exportHandler := handler.NewExportHandler(txSvc, balSvc, stockSvc, assetSvc, exportLogRepo).WithBudgets(budgetRepo).WithAI(insightRepo)
 	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).WithBudgets(budgetRepo).WithAI(insightRepo).WithDB(db)
 	stockHandler := handler.NewStockHandler(stockSvc)
 	assetHandler := handler.NewAssetHandler(assetSvc)
+	bankHandler := handler.NewBankHandler(bankRepo, txRepo).WithDB(db)
 
 	r := gin.Default()
 
@@ -120,6 +124,7 @@ func main() {
 	importHandler.RegisterRoutes(v1)
 	stockHandler.RegisterRoutes(v1)
 	assetHandler.RegisterRoutes(v1)
+	bankHandler.RegisterRoutes(v1)
 
 	// Health check
 	v1.GET("/health", func(c *gin.Context) {

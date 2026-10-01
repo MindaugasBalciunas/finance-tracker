@@ -1,0 +1,613 @@
+package handler
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/openbanking"
+	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/internal/service"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+type bankTestEnv struct {
+	r      *gin.Engine
+	db     *gorm.DB
+	h      *BankHandler
+	repo   repository.BankRepository
+	txRepo repository.TransactionRepository
+	link   *domain.BankAccountLink
+}
+
+func bankTestRouter(t *testing.T, configured bool) *bankTestEnv {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.Budget{},
+		&domain.LabelRule{}, &domain.BudgetSettings{}, &domain.BankSettings{},
+		&domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}))
+
+	bankRepo := repository.NewBankRepository(db)
+	txRepo := repository.NewTransactionRepository(db)
+	txSvc := service.NewTransactionServiceWithRules(txRepo, nil, repository.NewBudgetRepository(db))
+
+	if configured {
+		s, err := bankRepo.GetSettings()
+		require.NoError(t, err)
+		s.ApplicationID = "test-app"
+		s.PrivateKeyPEM = testRSAKeyPEM(t)
+		s.RedirectURL = "https://example.invalid/"
+		require.NoError(t, bankRepo.SaveSettings(s))
+	}
+
+	h := NewBankHandler(bankRepo, txRepo).WithDB(db)
+	r := gin.New()
+	v1 := r.Group("/api/v1")
+	h.RegisterRoutes(v1)
+	NewTransactionHandler(txSvc).WithBanking(bankRepo).RegisterRoutes(v1)
+
+	conn := &domain.BankConnection{
+		ASPSPName: "Swedbank", ASPSPCountry: "LT",
+		Status: domain.BankConnAuthorized, ValidUntil: time.Now().Add(90 * 24 * time.Hour),
+	}
+	require.NoError(t, bankRepo.SaveConnection(conn))
+	link := &domain.BankAccountLink{
+		ConnectionID: conn.ID, IdentificationHash: "hash-1",
+		UID: "uid-1", IBAN: "LT160000000000001234", AccountKey: "swed",
+	}
+	require.NoError(t, bankRepo.SaveLink(link))
+
+	return &bankTestEnv{r: r, db: db, h: h, repo: bankRepo, txRepo: txRepo, link: link}
+}
+
+// testRSAKeyPEM mints a throwaway signing key. The handler validates the PEM
+// before storing it, so a placeholder string would not get past settings.
+func testRSAKeyPEM(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
+}
+
+func bankJSON(t *testing.T, r http.Handler, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		require.NoError(t, json.NewEncoder(&buf).Encode(body))
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// ebRow builds one booked provider transaction.
+func ebRow(ref, date, amount, dk, payee, details string) openbanking.Transaction {
+	tx := openbanking.Transaction{
+		EntryReference:        ref,
+		Status:                openbanking.StatusBooked,
+		BookingDate:           date,
+		ValueDate:             date,
+		TransactionAmount:     openbanking.Amount{Amount: amount, Currency: "EUR"},
+		RemittanceInformation: []string{details},
+	}
+	if dk == "K" {
+		tx.CreditDebitIndicator = openbanking.IndicatorCredit
+		tx.Debtor.Name = payee
+	} else {
+		tx.CreditDebitIndicator = openbanking.IndicatorDebit
+		tx.Creditor.Name = payee
+	}
+	return tx
+}
+
+func bankFeed() []openbanking.Transaction {
+	return []openbanking.Transaction{
+		ebRow("7001", "2026-09-10", "23.40", "D", "'50146 LIDL SNIPISKES", "PIRKINYS 516793******2950 2026.09.09 23.40 EUR (294126) 50146 LIDL SNIPISKES"),
+		ebRow("7002", "2026-09-12", "8.12", "D", "UAB IGNITIS", "E.Sąskaitos Nr. LDTESB-01464043 apmokėjimas"),
+		ebRow("7003", "2026-09-15", "2100.00", "K", "MOBILEPAY A/S LITHUANIA BRANCH", "Pervedimas pagal darbo sutarti su MobilePay A/S 2026/09 men."),
+	}
+}
+
+func (e *bankTestEnv) stage(t *testing.T, feed []openbanking.Transaction) syncResult {
+	t.Helper()
+	res, err := e.h.stage(feed, e.link, time.Now().AddDate(0, 0, -30), time.Now())
+	require.NoError(t, err)
+	return res
+}
+
+func (e *bankTestEnv) staged(t *testing.T) []domain.BankStagedTx {
+	t.Helper()
+	rows, _, err := e.repo.ListStaged(repository.StagedFilter{})
+	require.NoError(t, err)
+	return rows
+}
+
+func TestBankStageAndCommit(t *testing.T) {
+	env := bankTestRouter(t, true)
+	res := env.stage(t, bankFeed())
+	assert.Equal(t, 3, res.Fetched)
+	assert.Equal(t, 3, res.StagedNew)
+	assert.Equal(t, 0, res.DuplicateContent)
+
+	rows := env.staged(t)
+	require.Len(t, rows, 3)
+	for _, r := range rows {
+		assert.Equal(t, domain.VerdictNew, r.Verdict)
+		assert.True(t, r.Preticked(), "an unambiguously new row arrives ticked")
+		assert.Equal(t, domain.StagedStateStaged, r.State)
+	}
+
+	// The window advances off the newest booking date, not the clock.
+	link, err := env.repo.GetLink(env.link.ID)
+	require.NoError(t, err)
+	require.NotNil(t, link.LastTxDate)
+	assert.Equal(t, "2026-09-15", link.LastTxDate.Format("2006-01-02"))
+
+	// Commit one row — one at a time is the primary interaction.
+	var target domain.BankStagedTx
+	for _, r := range rows {
+		if r.Comment == "UAB IGNITIS" {
+			target = r
+		}
+	}
+	require.NotZero(t, target.ID)
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{target.ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 1, out.Imported)
+	assert.Equal(t, 0, out.Skipped)
+	require.Len(t, out.ImportedTxIDs, 1)
+	// The one honest line about what this did not do.
+	assert.Contains(t, out.BalanceNote, "balances were not changed")
+
+	var tx domain.Transaction
+	require.NoError(t, env.db.First(&tx, out.ImportedTxIDs[0]).Error)
+	assert.Equal(t, target.ExternalID, tx.ExternalID)
+	assert.Equal(t, "UAB IGNITIS", tx.Comment)
+	assert.Equal(t, "Utilities", string(tx.Category))
+	assert.Equal(t, "swed", tx.DebitAccount)
+
+	// No balance snapshot was cut — the commit path deliberately avoids
+	// TransactionService.Create, which would plant one step in the net-worth
+	// trend per committed row.
+	var balances int64
+	require.NoError(t, env.db.Table("balances").Count(&balances).Error)
+	assert.Zero(t, balances)
+}
+
+// TestBankSyncIdempotent — pressing Sync twice must not re-offer anything.
+func TestBankSyncIdempotent(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	second := env.stage(t, bankFeed())
+	assert.Equal(t, 0, second.StagedNew, "nothing new on a re-sync")
+	assert.Equal(t, 3, second.Unchanged)
+	assert.Len(t, env.staged(t), 3)
+}
+
+// TestBankDismissedRowStaysDismissed — the dismissal ledger IS the persisted
+// state. Re-offering a row the user already rejected is the one thing a
+// re-sync must never do.
+func TestBankDismissedRowStaysDismissed(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/dismiss", map[string]any{"ids": []uint{rows[0].ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	env.stage(t, bankFeed())
+	after, err := env.repo.GetStagedByExternalID(rows[0].ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StagedStateDismissed, after.State)
+
+	// And a mis-tap is recoverable.
+	rec = bankJSON(t, env.r, "POST", "/api/v1/banking/staged/restore", map[string]any{"ids": []uint{rows[0].ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	after, err = env.repo.GetStagedByExternalID(rows[0].ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StagedStateStaged, after.State)
+}
+
+// TestBankCommittedRowIsDuplicateExactOnResync — layer 1. Once a row is in
+// the ledger its provider id is there too, so a re-sync recognises it with
+// certainty rather than heuristically.
+func TestBankCommittedRowIsDuplicateExactOnResync(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{rows[0].ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	res := env.stage(t, bankFeed())
+	assert.Equal(t, 1, res.DuplicateExact)
+	after, err := env.repo.GetStagedByExternalID(rows[0].ExternalID)
+	require.NoError(t, err)
+	// Already imported, so it stays imported and off the review list.
+	assert.Equal(t, domain.StagedStateImported, after.State)
+}
+
+// TestBankDuplicateContentIsUntickedNotHidden — layer 2, the ~150-duplicate
+// class. A row already in the ledger from a CSV import carries no provider
+// id, so only content dedup catches it. It is a heuristic, so it is shown
+// with its reason rather than hidden — and left unticked.
+func TestBankDuplicateContentIsUntickedNotHidden(t *testing.T) {
+	env := bankTestRouter(t, true)
+	// Seed the ledger the way a CSV import would: no external id.
+	seed := &domain.Transaction{
+		Date: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
+		Type: domain.TransactionTypeExpense, Amount: 8.12,
+		Category: domain.CategoryUtilities, Comment: "UAB IGNITIS",
+	}
+	require.NoError(t, env.txRepo.Create(seed))
+
+	res := env.stage(t, bankFeed())
+	assert.Equal(t, 1, res.DuplicateContent)
+
+	var dup domain.BankStagedTx
+	for _, r := range env.staged(t) {
+		if r.Verdict == domain.VerdictDuplicateContent {
+			dup = r
+		}
+	}
+	require.NotZero(t, dup.ID)
+	assert.False(t, dup.Preticked(), "a duplicate never arrives ticked")
+	assert.Equal(t, domain.StagedStateStaged, dup.State, "shown with its reason, not hidden")
+	assert.Contains(t, dup.VerdictNote, "UAB IGNITIS")
+	require.NotNil(t, dup.MatchedTxID)
+	assert.Equal(t, seed.ID, *dup.MatchedTxID)
+
+	// Ticked anyway, it still commits: the user saw the warning, and two
+	// identical payments on one day are a real thing.
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{dup.ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 1, out.Imported)
+}
+
+// TestBankCommitReverifiesVerdict — the review list may have been open for an
+// hour. A row staged as new that has since been matched in the ledger is held
+// back with an explanation, not written blind.
+func TestBankCommitReverifiesVerdict(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	var target domain.BankStagedTx
+	for _, r := range env.staged(t) {
+		if r.Comment == "UAB IGNITIS" {
+			target = r
+		}
+	}
+	require.NotZero(t, target.ID)
+	require.Equal(t, domain.VerdictNew, target.Verdict)
+
+	// Someone adds the same transaction by hand in the meantime.
+	require.NoError(t, env.txRepo.Create(&domain.Transaction{
+		Date: target.Date, Type: target.Type, Amount: target.Amount,
+		Category: target.Category, Comment: target.Comment,
+	}))
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{target.ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 0, out.Imported)
+	assert.Equal(t, 1, out.Skipped)
+	require.NotEmpty(t, out.Notes)
+
+	after, err := env.repo.GetStagedByExternalID(target.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.VerdictDuplicateContent, after.Verdict)
+	assert.Equal(t, domain.StagedStateStaged, after.State, "still reviewable, with the warning now attached")
+}
+
+// TestBankUndoRestoresStagedRow — deleting the committed transaction returns
+// you to the review list rather than dropping the row on the floor.
+func TestBankUndoRestoresStagedRow(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{rows[0].ID, rows[1].ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.ImportedTxIDs, 2)
+
+	rec = bankJSON(t, env.r, "DELETE", "/api/v1/transactions/batch", map[string]any{"ids": out.ImportedTxIDs})
+	require.Equal(t, 204, rec.Code, rec.Body.String())
+
+	var count int64
+	require.NoError(t, env.db.Model(&domain.Transaction{}).Count(&count).Error)
+	assert.Zero(t, count)
+
+	for _, id := range []uint{rows[0].ID, rows[1].ID} {
+		var row domain.BankStagedTx
+		require.NoError(t, env.db.First(&row, id).Error)
+		assert.Equal(t, domain.StagedStateStaged, row.State)
+		assert.Equal(t, domain.VerdictNew, row.Verdict, "the transaction it matched has just been deleted")
+		assert.Nil(t, row.ImportedTxID)
+	}
+}
+
+// TestBankStagesOnlyBookedRows — a pending row is re-issued with a different
+// entry_reference once it books, so staging it would stage it twice.
+func TestBankStagesOnlyBookedRows(t *testing.T) {
+	env := bankTestRouter(t, true)
+	feed := bankFeed()
+	feed = append(feed, func() openbanking.Transaction {
+		p := ebRow("7004", "2026-09-16", "4.20", "D", "Caffeine", "Kava")
+		p.Status = openbanking.StatusPending
+		return p
+	}())
+	res := env.stage(t, feed)
+	assert.Equal(t, 1, res.AutoSkipped)
+	assert.Equal(t, 3, res.StagedNew)
+}
+
+// TestBankInternalRowsStagedNotDropped — the classifier's own-account verdict
+// is surfaced unticked rather than silently discarded, so a misfire is
+// visible instead of invisible.
+func TestBankInternalRowsStagedNotDropped(t *testing.T) {
+	env := bankTestRouter(t, true)
+	feed := []openbanking.Transaction{
+		ebRow("8001", "2026-09-11", "1000.00", "K", "Mindaugas BALCIUNAS", "Transfer between my accounts"),
+	}
+	res := env.stage(t, feed)
+	assert.Equal(t, 1, res.Internal)
+	rows := env.staged(t)
+	require.Len(t, rows, 1)
+	assert.Equal(t, domain.VerdictInternal, rows[0].Verdict)
+	assert.False(t, rows[0].Preticked())
+}
+
+// TestBankRoutesHiddenWhenUnconfigured — with no application registered there
+// is nothing here to forbid, so the feature does not exist. Settings stay
+// reachable: they are how the credentials get there in the first place.
+func TestBankRoutesHiddenWhenUnconfigured(t *testing.T) {
+	env := bankTestRouter(t, false)
+	for _, p := range []string{"/api/v1/banking/connections", "/api/v1/banking/staged", "/api/v1/banking/aspsps"} {
+		rec := bankJSON(t, env.r, "GET", p, nil)
+		assert.Equal(t, http.StatusNotFound, rec.Code, p)
+	}
+	rec := bankJSON(t, env.r, "GET", "/api/v1/banking/settings", nil)
+	require.Equal(t, 200, rec.Code)
+	var s bankSettingsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &s))
+	assert.False(t, s.Configured)
+	assert.False(t, s.HasKey)
+}
+
+// TestBankSettingsNeverEchoKey — the private key is write-only over the API.
+func TestBankSettingsNeverEchoKey(t *testing.T) {
+	env := bankTestRouter(t, true)
+	rec := bankJSON(t, env.r, "GET", "/api/v1/banking/settings", nil)
+	require.Equal(t, 200, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "BEGIN")
+	assert.Contains(t, rec.Body.String(), `"has_key":true`)
+
+	// Blank means keep: an unrelated edit must not wipe the stored key.
+	rec = bankJSON(t, env.r, "PUT", "/api/v1/banking/settings", map[string]any{"redirect_url": "https://example.invalid/app/"})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	s, err := env.repo.GetSettings()
+	require.NoError(t, err)
+	assert.NotEmpty(t, s.PrivateKeyPEM)
+	assert.Equal(t, "https://example.invalid/app/", s.RedirectURL)
+
+	// And clearing is explicit.
+	rec = bankJSON(t, env.r, "PUT", "/api/v1/banking/settings", map[string]any{"clear_key": true})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	s, err = env.repo.GetSettings()
+	require.NoError(t, err)
+	assert.Empty(t, s.PrivateKeyPEM)
+}
+
+// TestExportOmitsBankCredentials — the JSON backup is a file the user
+// downloads, mails to themselves and forgets about. The AI key travels in it
+// deliberately; a long-lived bank credential is a different class of secret
+// and must not. This guards the structure, so adding a bank section to the
+// export later fails here first.
+func TestExportOmitsBankCredentials(t *testing.T) {
+	env := bankTestRouter(t, true)
+	require.NoError(t, env.db.AutoMigrate(&domain.StockTrade{}, &domain.Asset{}, &domain.ExportLog{}, &domain.AISettings{}))
+
+	s, err := env.repo.GetSettings()
+	require.NoError(t, err)
+	s.ApplicationID = "4f1e-secret-app-id"
+	require.NoError(t, env.repo.SaveSettings(s))
+
+	conn, err := env.repo.GetConnection(env.link.ConnectionID)
+	require.NoError(t, err)
+	conn.SessionID = "sess-should-never-be-exported"
+	require.NoError(t, env.repo.SaveConnection(conn))
+
+	txRepo := repository.NewTransactionRepository(env.db)
+	balRepo := repository.NewBalanceRepository(env.db)
+	balSvc := service.NewBalanceService(balRepo, txRepo)
+	exp := NewExportHandler(
+		service.NewTransactionServiceWithRules(txRepo, balSvc, repository.NewBudgetRepository(env.db)),
+		balSvc,
+		service.NewStockService(repository.NewStockRepository(env.db)),
+		service.NewAssetService(repository.NewAssetRepository(env.db)),
+		repository.NewExportLogRepository(env.db),
+	)
+	r := gin.New()
+	exp.RegisterRoutes(r.Group("/api/v1"))
+
+	rec := bankJSON(t, r, "GET", "/api/v1/export/finances.json", nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.NotContains(t, body, "4f1e-secret-app-id")
+	assert.NotContains(t, body, "sess-should-never-be-exported")
+	assert.NotContains(t, body, "BEGIN")
+	assert.NotContains(t, body, "private_key")
+	assert.NotContains(t, body, "application_id")
+}
+
+// TestBankRoutesLocked — the banking routes register after the lock
+// middleware, so a locked instance must not answer any of them. The 404 for
+// an unconfigured feature is a layer *below* this one: the lock is checked
+// first, and a locked instance must not even reveal whether banking is set up.
+func TestBankRoutesLocked(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.AuthSettings{}, &domain.WebauthnCredential{},
+		&domain.Transaction{}, &domain.BankSettings{}, &domain.BankConnection{},
+		&domain.BankAccountLink{}, &domain.BankStagedTx{}))
+
+	bankRepo := repository.NewBankRepository(db)
+	s, err := bankRepo.GetSettings()
+	require.NoError(t, err)
+	s.ApplicationID = "test-app"
+	s.PrivateKeyPEM = testRSAKeyPEM(t)
+	require.NoError(t, bankRepo.SaveSettings(s))
+
+	authHandler := NewAuthHandler(service.NewAuthService(repository.NewAuthRepository(db)))
+	r := gin.New()
+	v1 := r.Group("/api/v1")
+	authHandler.RegisterRoutes(v1)
+	v1.Use(authHandler.Middleware())
+	NewBankHandler(bankRepo, repository.NewTransactionRepository(db)).WithDB(db).RegisterRoutes(v1)
+
+	// upstream marks the routes that would reach Enable Banking once they get
+	// past their own preconditions. They are exercised in the locked pass only
+	// — the middleware answers before the handler runs — so the suite never
+	// makes an outbound call.
+	routes := []struct {
+		method, path string
+		upstream     bool
+	}{
+		{method: "GET", path: "/api/v1/banking/settings"},
+		{method: "PUT", path: "/api/v1/banking/settings"},
+		{method: "GET", path: "/api/v1/banking/aspsps", upstream: true},
+		{method: "GET", path: "/api/v1/banking/connections"},
+		{method: "POST", path: "/api/v1/banking/connections", upstream: true},
+		{method: "POST", path: "/api/v1/banking/connections/callback", upstream: true},
+		{method: "DELETE", path: "/api/v1/banking/connections/1"},
+		{method: "PUT", path: "/api/v1/banking/accounts/1"},
+		{method: "POST", path: "/api/v1/banking/accounts/1/sync"},
+		{method: "GET", path: "/api/v1/banking/staged"},
+		{method: "PUT", path: "/api/v1/banking/staged/1"},
+		{method: "POST", path: "/api/v1/banking/staged/commit"},
+		{method: "POST", path: "/api/v1/banking/staged/dismiss"},
+		{method: "POST", path: "/api/v1/banking/staged/restore"},
+	}
+
+	// Unlocked: the routes answer (any status but 401 — we are proving the
+	// middleware is not the thing replying).
+	for _, rt := range routes {
+		if rt.upstream {
+			continue
+		}
+		rec := bankJSON(t, r, rt.method, rt.path, map[string]any{})
+		assert.NotEqual(t, http.StatusUnauthorized, rec.Code, "%s %s with no lock set", rt.method, rt.path)
+	}
+
+	rec := bankJSON(t, r, "POST", "/api/v1/auth/pin/setup", map[string]string{"pin": "123456"})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	for _, rt := range routes {
+		rec := bankJSON(t, r, rt.method, rt.path, map[string]any{})
+		assert.Equal(t, http.StatusUnauthorized, rec.Code, "%s %s must be locked", rt.method, rt.path)
+	}
+}
+
+// TestBankEditStagedRowCarriesIntoLedger — the point of editing at review time
+// is that the correction lands in the ledger, not that it looks right on the
+// card. Also pins the two guards: the raw provider columns are not editable,
+// and an already-imported row is not editable at all.
+func TestBankEditStagedRowCarriesIntoLedger(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+	var target domain.BankStagedTx
+	for _, r := range rows {
+		if r.Comment == "UAB IGNITIS" {
+			target = r
+		}
+	}
+	require.NotZero(t, target.ID)
+
+	path := fmt.Sprintf("/api/v1/banking/staged/%d", target.ID)
+	rec := bankJSON(t, env.r, "PUT", path, map[string]any{
+		"category":      "Housing",
+		"comment":       "Electricity — summer house",
+		"labels":        "utilities,house",
+		"debit_account": "seb",
+	})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	var edited stagedResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &edited))
+	assert.Equal(t, "Housing", string(edited.Category))
+	assert.Equal(t, "Electricity — summer house", edited.Comment)
+	assert.Equal(t, "seb", edited.DebitAccount)
+	// The audit trail is not editable: raw columns and the dedup key survive.
+	assert.Equal(t, target.RawPayee, edited.RawPayee)
+	assert.Equal(t, target.ExternalID, edited.ExternalID)
+	// Editing does not re-run the verdict — it answers a question about the
+	// provider row, which retyping a comment does not change.
+	assert.Equal(t, domain.VerdictNew, edited.Verdict)
+
+	rec = bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{target.ID}})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.ImportedTxIDs, 1)
+
+	var tx domain.Transaction
+	require.NoError(t, env.db.First(&tx, out.ImportedTxIDs[0]).Error)
+	assert.Equal(t, "Housing", string(tx.Category))
+	assert.Equal(t, "Electricity — summer house", tx.Comment)
+	assert.Equal(t, "utilities,house", tx.Labels)
+	assert.Equal(t, "seb", tx.DebitAccount)
+
+	// Already imported: editing it would change a card that no longer drives
+	// anything, so it is refused rather than silently ignored.
+	rec = bankJSON(t, env.r, "PUT", path, map[string]any{"category": "Food"})
+	assert.Equal(t, 409, rec.Code)
+}
+
+// TestBankEditRejectsUnknownAccount — the mapping dropdown and the commit
+// validator read the same list; a typo must not reach the ledger.
+func TestBankEditRejectsUnknownAccount(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+	require.NotEmpty(t, rows)
+	path := fmt.Sprintf("/api/v1/banking/staged/%d", rows[0].ID)
+
+	rec := bankJSON(t, env.r, "PUT", path, map[string]any{"debit_account": "monzo"})
+	assert.Equal(t, 400, rec.Code)
+	assert.Contains(t, rec.Body.String(), "monzo")
+
+	// Empty is legitimate — an expense has no credit side.
+	rec = bankJSON(t, env.r, "PUT", path, map[string]any{"credit_account": ""})
+	assert.Equal(t, 200, rec.Code, rec.Body.String())
+
+	rec = bankJSON(t, env.r, "PUT", path, map[string]any{"date": "15/09/2026"})
+	assert.Equal(t, 400, rec.Code)
+}

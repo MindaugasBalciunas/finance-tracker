@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import DataModal from '../components/ui/DataModal'
 import SecurityModal from '../components/ui/SecurityModal'
 import { useAIAvailable } from '../hooks/useInsights'
+import { useBankSettings, useStagedTransactions } from '../hooks/useBanking'
 
 // "More" collects the pages and tools that don't earn a bottom-bar tab on
 // mobile: secondary pages, backup/import, security and the API docs.
@@ -10,6 +11,11 @@ export default function More() {
   const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [securityOpen, setSecurityOpen] = useState(false)
   const aiOn = useAIAvailable()
+  // The badge is the only nudge that bank rows are waiting — there is no
+  // background sync, so nothing else would mention them.
+  const { data: bankSettings } = useBankSettings()
+  const { data: staged } = useStagedTransactions({ state: 'staged', page_size: 1 }, !!bankSettings?.configured)
+  const pendingBank = staged?.total ?? 0
 
   const pageLinks = [
     { to: '/assets', icon: '🏠', title: 'Assets', hint: 'Property, vehicles and loans' },
@@ -75,6 +81,23 @@ export default function More() {
         </button>
         {/* Always listed, even with AI off — this is a way back to the
             switch. The AI page itself renders the settings panel. */}
+        <Link to="/banking" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
+          <span className="text-xl">🏦</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-medium text-gray-800">Bank connections</span>
+            <span className="block text-xs text-gray-400">
+              {bankSettings?.configured
+                ? 'Pull recent transactions straight from Swedbank and SEB'
+                : 'Not set up — connect a bank to import without CSV files'}
+            </span>
+          </span>
+          {pendingBank > 0 && (
+            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700">
+              {pendingBank}
+            </span>
+          )}
+          <span className="text-gray-300">›</span>
+        </Link>
         <Link to="/ai" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
           <span className="text-xl">✦</span>
           <span className="flex-1 min-w-0">

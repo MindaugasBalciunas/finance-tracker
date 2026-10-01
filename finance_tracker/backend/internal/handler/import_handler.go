@@ -147,24 +147,14 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBalance, internal int, enrich bool) (swedbankImportResult, error) {
 	result := swedbankImportResult{Internal: internal}
 
-	// Dedup by date|type|amount|comment as a MULTISET: each existing row
-	// absorbs one matching statement row, so re-imports are no-ops while
-	// genuine repeats (two identical rounds at the same bar) still import.
-	// Category is deliberately excluded from the key: the same bank row may
-	// have been categorised differently by an earlier import.
-	// The baseline read MUST succeed: proceeding with an empty dedup set
-	// would re-import the entire statement as duplicates.
+	// Dedup by content as a multiset — see dedupIndex. The baseline read MUST
+	// succeed: proceeding with an empty dedup set would re-import the entire
+	// statement.
 	existing, err := h.txRepo.ListAll()
 	if err != nil {
 		return result, fmt.Errorf("reading existing transactions for dedup: %w", err)
 	}
-	remaining := make(map[string]int, len(existing))
-	key := func(date time.Time, typ domain.TransactionType, amount float64, comment string) string {
-		return fmt.Sprintf("%s|%s|%.2f|%s", date.Format("2006-01-02"), typ, amount, strings.ToLower(strings.TrimSpace(comment)))
-	}
-	for _, t := range existing {
-		remaining[key(t.Date, t.Type, t.Amount, t.Comment)]++
-	}
+	dedup := newDedupIndex(existing)
 
 	// Enrich mode: never create rows. A statement row whose classified
 	// comment EXTENDS an existing row's comment (same date/type/amount,
@@ -181,9 +171,7 @@ func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBala
 	}
 
 	for _, row := range rows {
-		k := key(row.Date, row.Type, row.Amount, row.Comment)
-		if remaining[k] > 0 {
-			remaining[k]--
+		if _, dup := dedup.take(row.Date, row.Type, row.Amount, row.Comment); dup {
 			result.Duplicate++
 			continue
 		}

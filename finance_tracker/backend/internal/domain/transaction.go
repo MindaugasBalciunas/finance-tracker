@@ -159,6 +159,11 @@ type Transaction struct {
 	// transfer/investment: destination). Empty = no account credited.
 	CreditAccount string `json:"credit_account" gorm:"not null;default:''"`
 
+	// ExternalID is the provider row id for PSD2 imports
+	// ("eb:<linkID>:<entry_reference>"). Empty for manual and CSV rows —
+	// which is exactly why content-based dedup still has to run alongside it.
+	ExternalID string `json:"external_id,omitempty" gorm:"index;default:''"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

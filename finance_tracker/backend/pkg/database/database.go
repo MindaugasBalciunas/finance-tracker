@@ -89,7 +89,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		db.Exec("ALTER TABLE balances DROP COLUMN is_auto")
 	}
 
-	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}); err != nil {
+	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}, &domain.BankSettings{}, &domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}); err != nil {
 		return nil, err
 	}
 
@@ -104,8 +104,18 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 	applyCreditRepaymentFix(db)
 	applyLabelCleanups(db)
 	applyBalanceBackfills(db)
+	applyBankIndexes(db)
 
 	return db, nil
+}
+
+// applyBankIndexes adds the partial unique index that stops the same bank row
+// being committed to the ledger twice. It has to be raw SQL: GORM's
+// `uniqueIndex` tag would cover every manual and CSV row too, and they all
+// share the empty external_id. Idempotent.
+func applyBankIndexes(db *gorm.DB) {
+	db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_external_id
+		ON transactions(external_id) WHERE external_id != ''`)
 }
 
 // applyCreditRepaymentFix refiles credit-card repayments (comment "Credit
@@ -272,16 +282,16 @@ func applyCategoryMigrations(db *gorm.DB) {
 	// Context labels mined from repetitive comment patterns. Each pattern
 	// becomes a rule (future auto-tagging) and is applied to history here.
 	contextLabels := map[string][]string{
-		"flowers":    {"gele", "gėle", "gėlė", "flower", "žiedas"},
-		"coffee":     {"kava", "kavin", "coffee", "vero cafe", "caffeine", "cafe"},
-		"fuel":       {"circle k", "viada", "orlen", "neste", "degalin", "baltic petrol", "balticpetroleum"},
-		"pharmacy":   {"vaistin", "benu vaist", "gintarin", "camelia", "anteja", "rossmann"},
+		"flowers":  {"gele", "gėle", "gėlė", "flower", "žiedas"},
+		"coffee":   {"kava", "kavin", "coffee", "vero cafe", "caffeine", "cafe"},
+		"fuel":     {"circle k", "viada", "orlen", "neste", "degalin", "baltic petrol", "balticpetroleum"},
+		"pharmacy": {"vaistin", "benu vaist", "gintarin", "camelia", "anteja", "rossmann"},
 		// "^iki" anchors to the comment start: as a substring, "iki" is the
 		// Lithuanian "until" ("nuoma iki 24d") and hid inside other words.
-		"groceries":  {"maxima", "lidl", "rimi", "norfa", "^iki", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
-		"delivery":   {"wolt", "bolt food", "maisto mylet"},
-		"taxi":       {"uber", "etransport", "bolt.eu", "citybee"},
-		"parking":    {"parking", "unipark", "stova", "susisiekimo paslaugos"},
+		"groceries": {"maxima", "lidl", "rimi", "norfa", "^iki", "barbora", "supermaistas", "biedronka", "aldi", "prekybos taskas", "zabka"},
+		"delivery":  {"wolt", "bolt food", "maisto mylet"},
+		"taxi":      {"uber", "etransport", "bolt.eu", "citybee"},
+		"parking":   {"parking", "unipark", "stova", "susisiekimo paslaugos"},
 		// Canonical singular — "bars" was merged into "bar" in v1.10.0, and
 		// re-seeding the old name would resurrect it on every boot.
 		"bar":        {"alaus", "baras", "vyno"},
@@ -304,8 +314,8 @@ func applyCategoryMigrations(db *gorm.DB) {
 		// Own-money movements inside investment/Finance.
 		"cash":    {"cash withdrawal", "cash deposit"},
 		"revolut": {"revolut top up"},
-		"beauty":     {"haircut", "barber", "kirpykl", "grozio", "grožio"},
-		"therapy":    {"psichoterap", "emosesij", "emosession", "mindfulness"},
+		"beauty":  {"haircut", "barber", "kirpykl", "grozio", "grožio"},
+		"therapy": {"psichoterap", "emosesij", "emosession", "mindfulness"},
 		// Per-store labels (alongside the generic groceries label) so store
 		// totals and average basket size can be compared in Reports.
 		"maxima":  {"maxima"},
@@ -366,8 +376,8 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`DELETE FROM label_rules WHERE label IN ('diy', 'depo') AND comment_match = 'depo'`)
 	for _, l := range []string{"diy", "depo"} {
 		db.Exec(`UPDATE transactions
-			SET labels = TRIM(REPLACE(',' || labels || ',', ',`+l+`,', ','), ',')
-			WHERE LOWER(comment) LIKE '%deposit%' AND (',' || labels || ',') LIKE '%,`+l+`,%'`)
+			SET labels = TRIM(REPLACE(',' || labels || ',', ',` + l + `,', ','), ',')
+			WHERE LOWER(comment) LIKE '%deposit%' AND (',' || labels || ',') LIKE '%,` + l + `,%'`)
 		addLabel(l, `LOWER(comment) = 'depo'`)
 	}
 
@@ -394,9 +404,9 @@ func applyCategoryMigrations(db *gorm.DB) {
 	db.Exec(`DELETE FROM label_rules WHERE label = 'moki-vezi'`)
 	for _, l := range []string{"groceries", "moki-vezi"} {
 		db.Exec(`UPDATE transactions
-			SET labels = TRIM(REPLACE(',' || labels || ',', ',`+l+`,', ','), ',')
+			SET labels = TRIM(REPLACE(',' || labels || ',', ',` + l + `,', ','), ',')
 			WHERE (LOWER(comment) LIKE '%moki vež%' OR LOWER(comment) LIKE '%moki vezi%' OR LOWER(comment) LIKE '%moki-vezi%')
-			AND (',' || labels || ',') LIKE '%,`+l+`,%'`)
+			AND (',' || labels || ',') LIKE '%,` + l + `,%'`)
 	}
 	db.Exec(`UPDATE transactions SET category = 'Housing'
 		WHERE type = 'expense' AND category = 'Food'

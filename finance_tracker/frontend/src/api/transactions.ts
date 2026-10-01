@@ -47,6 +47,12 @@ export const transactionsApi = {
     await client.delete(`/transactions/${id}`)
   },
 
+  // Used by undo after a bulk add (JSON restore, bank import). Deleting rows
+  // that came from a bank sync also returns them to the review list.
+  deleteBatch: async (ids: number[]): Promise<void> => {
+    await client.delete('/transactions/batch', { data: { ids } })
+  },
+
   getSummary: async (filter: Pick<TransactionFilter, 'date_from' | 'date_to'> = {}): Promise<TransactionSummary> => {
     const { data } = await client.get<TransactionSummary>('/transactions/summary', { params: filter })
     return data
