@@ -145,3 +145,80 @@ func TestAnthropicToolUseResponse(t *testing.T) {
 		t.Fatalf("arguments not preserved: %q", msg.ToolCalls[0].Function.Arguments)
 	}
 }
+
+// "model: Claude Opus 5" is exactly what the Claude API answers when it is
+// handed a gateway's display name, and on its own it names no remedy. The
+// annotation is the whole fix for a user staring at that string.
+func TestModelErrorCarriesARemedy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type":  "error",
+			"error": map[string]any{"type": "not_found_error", "message": "model: Claude Opus 5"},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{
+		GatewayURL: srv.URL, APIKey: "k",
+		Model: "Claude Opus 5", Provider: domain.ProviderAnthropic,
+	}
+	_, err := callGateway(context.Background(), settings,
+		[]domain.ChatMessage{{Role: "user", Content: "hi"}}, 64)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	got := err.Error()
+	// The upstream words are kept — they are the ground truth — and a next
+	// step is appended.
+	if !strings.Contains(got, "model: Claude Opus 5") {
+		t.Fatalf("upstream message was lost: %q", got)
+	}
+	if !strings.Contains(got, "display name") || !strings.Contains(got, domain.DefaultClaudeModel) {
+		t.Fatalf("no remedy offered: %q", got)
+	}
+}
+
+// A model the provider genuinely does not carry is a different problem with a
+// different answer, and must not be mislabelled as a display name.
+func TestUnknownRealModelIDGetsTheOtherRemedy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"message": "model: claude-opus-9"},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{
+		GatewayURL: srv.URL, APIKey: "k",
+		Model: "claude-opus-9", Provider: domain.ProviderAnthropic,
+	}
+	_, err := callGateway(context.Background(), settings,
+		[]domain.ChatMessage{{Role: "user", Content: "hi"}}, 64)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if got := err.Error(); strings.Contains(got, "display name") {
+		t.Fatalf("a well-formed id must not be called a display name: %q", got)
+	}
+}
+
+// Every other upstream message must pass through untouched — the annotation
+// is targeted, not a general rewriter.
+func TestNonModelErrorsAreNotAnnotated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"message": "invalid x-api-key"},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "claude-opus-5"}
+	_, err := callGateway(context.Background(), settings,
+		[]domain.ChatMessage{{Role: "user", Content: "hi"}}, 64)
+	if err == nil || !strings.HasSuffix(err.Error(), "invalid x-api-key") {
+		t.Fatalf("message should pass through verbatim, got: %v", err)
+	}
+}

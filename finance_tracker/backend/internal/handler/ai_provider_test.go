@@ -209,3 +209,34 @@ func TestAIEnabled_OffBlocksAIRoutes(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code, w.Body.String())
 }
+
+// A gateway catalogue lists display names; the Claude API only knows ids. The
+// save guard exists so that mismatch is caught at the field that caused it,
+// not three screens later as an upstream "model: Claude Opus 5".
+func TestSaveRejectsDisplayNameModelOnAnthropic(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		model string
+		ok    bool
+	}{
+		{"display name", "Claude Opus 5", false},
+		{"capitalised", "Claude-Opus-5", false},
+		{"trailing word", "claude-opus-5 latest", false},
+		{"real id", "claude-opus-5", true},
+		{"dotted id", "claude-sonnet-4.5", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := domain.IsAnthropicModelID(tc.model); got != tc.ok {
+				t.Fatalf("IsAnthropicModelID(%q) = %v, want %v", tc.model, got, tc.ok)
+			}
+		})
+	}
+}
+
+// The same string is legitimate on a gateway, so the guard must not fire there.
+func TestDisplayNameModelIsFineOnGateway(t *testing.T) {
+	s := &domain.AISettings{GatewayURL: domain.DefaultGatewayURL, Model: "Claude Opus 5"}
+	if s.ResolvedProvider() != domain.ProviderGateway {
+		t.Fatalf("expected gateway, got %q", s.ResolvedProvider())
+	}
+}

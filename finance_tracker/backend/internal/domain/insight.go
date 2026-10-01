@@ -87,6 +87,27 @@ const DefaultGatewayURL = "https://api.nexos.ai/v1"
 // DefaultAnthropicURL is the first-party Claude API base.
 const DefaultAnthropicURL = "https://api.anthropic.com/v1"
 
+// IsAnthropicModelID reports whether a model string is shaped like a Claude
+// API model id. Anthropic ids are lowercase and hyphenated ("claude-opus-5");
+// a gateway catalogue may instead list display names ("Claude Opus 5"), and
+// pasting one of those into a direct-Claude config fails at request time with
+// the opaque upstream message "model: Claude Opus 5". Catching the shape at
+// save time turns that into something you can act on.
+func IsAnthropicModelID(model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return false
+	}
+	for _, r := range model {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // AnthropicVersion is the API version header the Claude API requires.
 const AnthropicVersion = "2023-06-01"
 

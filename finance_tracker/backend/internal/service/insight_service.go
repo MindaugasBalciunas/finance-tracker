@@ -373,6 +373,18 @@ func (s *insightService) SaveAISettings(in AISettingsInput) (*domain.AISettings,
 	if in.Model != nil {
 		settings.Model = strings.TrimSpace(*in.Model)
 	}
+	// The model namespace belongs to the provider. A nexos.ai catalogue lists
+	// display names ("Claude Opus 5"); the Claude API only knows ids
+	// ("claude-opus-5") and answers anything else with a bare "model: <value>",
+	// which reads as a mystery three screens away from the field that caused
+	// it. Refuse it here, while the user is still looking at that field.
+	if settings.Model != "" && settings.ResolvedProvider() == domain.ProviderAnthropic &&
+		!domain.IsAnthropicModelID(settings.Model) {
+		return nil, fmt.Errorf(
+			"%q is not a Claude API model id — ids are lowercase and hyphenated, like %q. "+
+				"If you copied this from a gateway's model list, use the ↻ button to load the Claude API's own list",
+			settings.Model, domain.DefaultClaudeModel)
+	}
 	if in.Enabled != nil {
 		settings.Disabled = !*in.Enabled
 	}
@@ -943,6 +955,21 @@ type anthropicTool struct {
 	MaxUses     int            `json:"max_uses,omitempty"`
 }
 
+// annotateProviderError adds a next step to the upstream messages that are
+// otherwise a dead end. The Claude API rejects an unknown model with the bare
+// string "model: <value>" — accurate, and useless if you do not already know
+// that model ids differ from the display names a gateway lists.
+func annotateProviderError(msg string, settings *domain.AISettings) string {
+	if !strings.HasPrefix(strings.TrimSpace(msg), "model:") {
+		return msg
+	}
+	if settings.ResolvedProvider() == domain.ProviderAnthropic && !domain.IsAnthropicModelID(settings.Model) {
+		return msg + " — that is a display name, not a Claude API model id. Try " +
+			domain.DefaultClaudeModel + ", or press ↻ next to the model field to load the real list"
+	}
+	return msg + " — the provider does not offer this model. Press ↻ next to the model field to see what it does offer"
+}
+
 type anthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
@@ -1158,7 +1185,7 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 	// The raw upstream body is never reflected: with a user-controlled URL
 	// that would be a read primitive against internal endpoints.
 	if jsonErr == nil && result.Error != nil && result.Error.Message != "" {
-		return zero, fmt.Errorf("gateway error: %s", result.Error.Message)
+		return zero, fmt.Errorf("gateway error: %s", annotateProviderError(result.Error.Message, settings))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return zero, fmt.Errorf("gateway returned %s", resp.Status)

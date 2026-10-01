@@ -82,14 +82,30 @@ export default function GatewaySettings({ onClose }: { onClose: () => void }) {
     loadModels()
   }, [])
 
+  // Claude API model ids are lowercase and hyphenated. A gateway catalogue
+  // lists display names instead ("Claude Opus 5"), so a model carried across a
+  // provider switch is not merely stale — it cannot work, and it fails later
+  // with an upstream "model: Claude Opus 5" that names no remedy.
+  const looksLikeAnthropicID = (m: string) => /^[a-z0-9][a-z0-9.-]*$/.test(m.trim())
+
   // Switching provider carries the URL along, but only while it is still a
-  // default — a hand-entered endpoint is never overwritten.
+  // default — a hand-entered endpoint is never overwritten. The model is
+  // dropped when it belongs to the provider being left behind, and the
+  // catalogue is refetched so the new provider's own list is on offer.
   const switchProvider = (provider: AIProvider) => {
     setForm((f) => {
       const url = f.gateway_url.trim()
       const isDefault = url === '' || url === DEFAULT_URL.gateway || url === DEFAULT_URL.anthropic
-      return { ...f, provider, gateway_url: isDefault ? DEFAULT_URL[provider] : f.gateway_url }
+      const keepModel = provider !== 'anthropic' || looksLikeAnthropicID(f.model)
+      return {
+        ...f,
+        provider,
+        gateway_url: isDefault ? DEFAULT_URL[provider] : f.gateway_url,
+        model: keepModel ? f.model : '',
+      }
     })
+    setModels({ list: [], ok: false })
+    loadModels()
   }
 
   const doSave = async () => {
