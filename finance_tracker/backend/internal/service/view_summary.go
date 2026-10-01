@@ -29,10 +29,13 @@ type viewCacheEntry struct {
 // ViewSummaryResult is a view blurb plus what the model spent producing it,
 // for the cost badge on the AI review bar.
 type ViewSummaryResult struct {
-	Text         string
-	CostUSD      float64
-	InputTokens  int
-	OutputTokens int
+	Text    string
+	CostUSD float64
+	// CostEstimated: priced from list prices because the provider reported
+	// nothing. See estimateCostUSD.
+	CostEstimated bool
+	InputTokens   int
+	OutputTokens  int
 }
 
 var viewCache = struct {
@@ -66,7 +69,7 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 		e, ok := viewCache.m[key]
 		viewCache.Unlock()
 		if ok && time.Now().Before(e.expires) {
-			return ViewSummaryResult{Text: e.text, CostUSD: e.usage.CostUSD,
+			return ViewSummaryResult{Text: e.text, CostUSD: e.usage.CostUSD, CostEstimated: e.usage.CostEstimated,
 				InputTokens: e.usage.InputTokens, OutputTokens: e.usage.OutputTokens}, nil
 		}
 	}
@@ -107,7 +110,7 @@ func (s *insightService) ViewSummary(view string, from, to *time.Time, refresh b
 	viewCache.m[key] = viewCacheEntry{text: text, usage: msg.Usage, expires: time.Now().Add(viewSummaryTTL)}
 	viewCache.Unlock()
 	s.logAIActivity("view_summary", view+" "+periodLabel(from, to), text)
-	return ViewSummaryResult{Text: text, CostUSD: msg.Usage.CostUSD,
+	return ViewSummaryResult{Text: text, CostUSD: msg.Usage.CostUSD, CostEstimated: msg.Usage.CostEstimated,
 		InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens}, nil
 }
 

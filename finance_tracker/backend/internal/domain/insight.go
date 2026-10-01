@@ -131,13 +131,17 @@ const DefaultClaudeModel = "claude-opus-5"
 // document (Content). Persisted so the dashboard renders the forecast for
 // free on every visit — only an explicit regenerate spends gateway tokens.
 type AIForecast struct {
-	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Content      string    `json:"content" gorm:"type:text;not null"`
-	Model        string    `json:"model" gorm:"not null;default:''"`
-	CostUSD      float64   `json:"cost_usd"`
-	InputTokens  int       `json:"input_tokens"`
-	OutputTokens int       `json:"output_tokens"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID      uint    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Content string  `json:"content" gorm:"type:text;not null"`
+	Model   string  `json:"model" gorm:"not null;default:''"`
+	CostUSD float64 `json:"cost_usd"`
+	// CostEstimated records that CostUSD was computed from published list
+	// prices rather than reported by the provider, so a forecast reloaded
+	// months later still says what kind of number it is showing.
+	CostEstimated bool      `json:"cost_estimated" gorm:"not null;default:false"`
+	InputTokens   int       `json:"input_tokens"`
+	OutputTokens  int       `json:"output_tokens"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // ChatMessage is one turn of the AI chat (role: user | assistant | system).

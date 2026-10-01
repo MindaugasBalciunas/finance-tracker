@@ -252,10 +252,11 @@ func (h *InsightHandler) ViewSummary(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{
-			"summary":       r.Text,
-			"cost_usd":      r.CostUSD,
-			"input_tokens":  r.InputTokens,
-			"output_tokens": r.OutputTokens,
+			"summary":        r.Text,
+			"cost_usd":       r.CostUSD,
+			"cost_estimated": r.CostEstimated,
+			"input_tokens":   r.InputTokens,
+			"output_tokens":  r.OutputTokens,
 		}, nil
 	})
 }
@@ -266,13 +267,14 @@ func forecastPayload(r service.ForecastResult) gin.H {
 		return gin.H{"exists": false}
 	}
 	return gin.H{
-		"exists":        true,
-		"forecast":      r.Doc,
-		"model":         r.Model,
-		"cost_usd":      r.CostUSD,
-		"input_tokens":  r.InputTokens,
-		"output_tokens": r.OutputTokens,
-		"created_at":    r.CreatedAt.Format(time.RFC3339),
+		"exists":         true,
+		"forecast":       r.Doc,
+		"model":          r.Model,
+		"cost_usd":       r.CostUSD,
+		"cost_estimated": r.CostEstimated,
+		"input_tokens":   r.InputTokens,
+		"output_tokens":  r.OutputTokens,
+		"created_at":     r.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -450,10 +452,11 @@ func (h *InsightHandler) Chat(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{
-			"reply":         res.Reply,
-			"cost_usd":      res.CostUSD,
-			"input_tokens":  res.InputTokens,
-			"output_tokens": res.OutputTokens,
+			"reply":          res.Reply,
+			"cost_usd":       res.CostUSD,
+			"cost_estimated": res.CostEstimated,
+			"input_tokens":   res.InputTokens,
+			"output_tokens":  res.OutputTokens,
 		}, nil
 	})
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatAICost, AI_COST_ESTIMATE_HINT } from '../utils/aiCost'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi, type ChatMessage } from '../api/insights'
 import { useAIAvailable, useAIUnavailableReason } from '../hooks/useInsights'
@@ -14,16 +15,13 @@ import Markdown from '../components/ui/Markdown'
 type ChatEntry = ChatMessage & {
   imageUrl?: string
   costUsd?: number
+  costEstimated?: boolean
   inputTokens?: number
   outputTokens?: number
 }
 
 // Cost as `$` + up to 4 decimals with trailing zeros trimmed (e.g. `$0.045`,
 // `$0.3`).
-function fmtCost(usd: number): string {
-  return `$${parseFloat(usd.toFixed(4))}`
-}
-
 // Compact token count: 6553 → `6.6k`, >1M → `1.2M`.
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}M`
@@ -65,7 +63,7 @@ export default function AI() {
             ((p.costUsd ?? 0) > 0 || (p.inputTokens ?? 0) > 0 || (p.outputTokens ?? 0) > 0),
         )
         return local
-          ? { ...sm, costUsd: local.costUsd, inputTokens: local.inputTokens, outputTokens: local.outputTokens }
+          ? { ...sm, costUsd: local.costUsd, costEstimated: local.costEstimated, inputTokens: local.inputTokens, outputTokens: local.outputTokens }
           : sm
       })
     })
@@ -129,6 +127,7 @@ export default function AI() {
         role: 'assistant',
         content: res.reply,
         costUsd: res.costUsd,
+        costEstimated: res.costEstimated,
         inputTokens: res.inputTokens,
         outputTokens: res.outputTokens,
       }])
@@ -220,7 +219,7 @@ export default function AI() {
             const tokens = (m.inputTokens ?? 0) + (m.outputTokens ?? 0)
             const cost = m.costUsd ?? 0
             const badge = m.role === 'assistant'
-              ? [cost > 0 ? fmtCost(cost) : null, tokens > 0 ? `${fmtTokens(tokens)} tokens` : null]
+              ? [formatAICost(cost, m.costEstimated), tokens > 0 ? `${fmtTokens(tokens)} tokens` : null]
                   .filter(Boolean)
                   .join(' · ')
               : ''
@@ -250,7 +249,14 @@ export default function AI() {
                     </div>
                   )}
                 </div>
-                {badge && <span className="mt-1 px-1 text-[11px] text-gray-400">{badge}</span>}
+                {badge && (
+                  <span
+                    className="mt-1 px-1 text-[11px] text-gray-400"
+                    title={m.costEstimated ? AI_COST_ESTIMATE_HINT : undefined}
+                  >
+                    {badge}
+                  </span>
+                )}
               </div>
             )
           })}

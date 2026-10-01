@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatAICost, AI_COST_ESTIMATE_HINT } from '../../utils/aiCost'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '../../api/insights'
 import { useAIAvailable } from '../../hooks/useInsights'
@@ -62,9 +63,12 @@ export default function ViewInsightBar({ view }: { view: string }) {
         </p>
         {/* What this review cost — mirrors the chat's per-answer badge. */}
         {!isFetching && !refreshing && review && ((review.costUsd ?? 0) > 0 || (review.inputTokens ?? 0) + (review.outputTokens ?? 0) > 0) && (
-          <p className="mt-0.5 text-[11px] text-gray-400">
+          <p
+            className="mt-0.5 text-[11px] text-gray-400"
+            title={review.costEstimated ? AI_COST_ESTIMATE_HINT : undefined}
+          >
             {[
-              (review.costUsd ?? 0) > 0 ? `$${parseFloat(review.costUsd.toFixed(4))}` : null,
+              formatAICost(review.costUsd, review.costEstimated),
               (review.inputTokens ?? 0) + (review.outputTokens ?? 0) > 0
                 ? `${(() => { const n = (review.inputTokens ?? 0) + (review.outputTokens ?? 0); return n >= 1_000_000 ? `${parseFloat((n / 1_000_000).toFixed(1))}M` : n >= 1_000 ? `${parseFloat((n / 1_000).toFixed(1))}k` : `${n}` })()} tokens`
                 : null,

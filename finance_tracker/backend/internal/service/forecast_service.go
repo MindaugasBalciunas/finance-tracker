@@ -71,13 +71,14 @@ type forecastDoc struct {
 // ForecastResult carries the saved document (raw JSON — the handler passes it
 // through untouched) plus the usage that generating it cost.
 type ForecastResult struct {
-	Exists       bool
-	Doc          json.RawMessage
-	Model        string
-	CostUSD      float64
-	InputTokens  int
-	OutputTokens int
-	CreatedAt    time.Time
+	Exists        bool
+	Doc           json.RawMessage
+	Model         string
+	CostUSD       float64
+	CostEstimated bool
+	InputTokens   int
+	OutputTokens  int
+	CreatedAt     time.Time
 }
 
 func (s *insightService) Forecast(ctx context.Context, refresh bool) (ForecastResult, error) {
@@ -92,7 +93,7 @@ func (s *insightService) Forecast(ctx context.Context, refresh bool) (ForecastRe
 		}
 		return ForecastResult{
 			Exists: true, Doc: json.RawMessage(saved.Content), Model: saved.Model,
-			CostUSD: saved.CostUSD, InputTokens: saved.InputTokens,
+			CostUSD: saved.CostUSD, CostEstimated: saved.CostEstimated, InputTokens: saved.InputTokens,
 			OutputTokens: saved.OutputTokens, CreatedAt: saved.CreatedAt,
 		}, nil
 	}
@@ -177,7 +178,8 @@ Rules:
 		return zero, err
 	}
 	rec := &domain.AIForecast{
-		Content: string(content), Model: settings.Model, CostUSD: msg.Usage.CostUSD,
+		Content: string(content), Model: settings.Model,
+		CostUSD: msg.Usage.CostUSD, CostEstimated: msg.Usage.CostEstimated,
 		InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens,
 	}
 	if err := s.repo.SaveForecast(rec); err != nil {
@@ -186,7 +188,7 @@ Rules:
 	s.logAIActivity("forecast", "dashboard", firstLine(ai.Narrative))
 	return ForecastResult{
 		Exists: true, Doc: json.RawMessage(content), Model: rec.Model,
-		CostUSD: rec.CostUSD, InputTokens: rec.InputTokens,
+		CostUSD: rec.CostUSD, CostEstimated: rec.CostEstimated, InputTokens: rec.InputTokens,
 		OutputTokens: rec.OutputTokens, CreatedAt: rec.CreatedAt,
 	}, nil
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatAICost } from '../../utils/aiCost'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -52,9 +53,10 @@ function bucketParams(doc: ForecastDoc) {
   return defs.filter((b) => b.value > 0 || b.flow > 0)
 }
 
-function fmtCost(costUsd?: number, inTok?: number, outTok?: number): string {
+function fmtCost(costUsd?: number, inTok?: number, outTok?: number, estimated?: boolean): string {
   const parts: string[] = []
-  if ((costUsd ?? 0) > 0) parts.push(`$${parseFloat((costUsd as number).toFixed(4))}`)
+  const cost = formatAICost(costUsd, estimated)
+  if (cost) parts.push(cost)
   const n = (inTok ?? 0) + (outTok ?? 0)
   if (n > 0) parts.push(n >= 1000 ? `${parseFloat((n / 1000).toFixed(1))}k tokens` : `${n} tokens`)
   return parts.join(' · ')
@@ -172,8 +174,8 @@ export default function InvestmentForecastCard() {
           <p className="text-xs text-gray-400 mt-0.5">
             From {formatEuro(base)} net worth today + {formatEuro(contribution)}/mo invested · saved{' '}
             {data?.created_at ? new Date(data.created_at).toLocaleDateString('lt-LT') : ''}
-            {fmtCost(data?.cost_usd, data?.input_tokens, data?.output_tokens) && (
-              <> · {fmtCost(data?.cost_usd, data?.input_tokens, data?.output_tokens)}</>
+            {fmtCost(data?.cost_usd, data?.input_tokens, data?.output_tokens, data?.cost_estimated) && (
+              <> · {fmtCost(data?.cost_usd, data?.input_tokens, data?.output_tokens, data?.cost_estimated)}</>
             )}
           </p>
         </div>

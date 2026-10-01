@@ -123,7 +123,7 @@ export const aiApi = {
   chat: async (
     message: string,
     file?: File,
-  ): Promise<{ reply: string; costUsd: number; inputTokens: number; outputTokens: number }> => {
+  ): Promise<{ reply: string; costUsd: number; costEstimated: boolean; inputTokens: number; outputTokens: number }> => {
     // The server streams whitespace heartbeats during the long agentic call
     // and commits a 200 up front, so failures arrive as {error} in the body
     // (not a status) — check for it. Leading heartbeat whitespace parses away.
@@ -131,6 +131,7 @@ export const aiApi = {
       reply?: string
       error?: string
       cost_usd?: number
+      cost_estimated?: boolean
       input_tokens?: number
       output_tokens?: number
     }
@@ -149,6 +150,7 @@ export const aiApi = {
     return {
       reply: data?.reply ?? '',
       costUsd: data?.cost_usd ?? 0,
+      costEstimated: data?.cost_estimated ?? false,
       inputTokens: data?.input_tokens ?? 0,
       outputTokens: data?.output_tokens ?? 0,
     }
@@ -251,10 +253,11 @@ export const aiApi = {
     view: string,
     range: { date_from?: string; date_to?: string },
     refresh = false,
-  ): Promise<{ summary: string; costUsd: number; inputTokens: number; outputTokens: number }> => {
+  ): Promise<{ summary: string; costUsd: number; costEstimated: boolean; inputTokens: number; outputTokens: number }> => {
     const { data } = await client.get<{
       summary: string
       cost_usd?: number
+      cost_estimated?: boolean
       input_tokens?: number
       output_tokens?: number
     }>('/ai/view-summary', {
@@ -264,6 +267,7 @@ export const aiApi = {
     return {
       summary: data.summary,
       costUsd: data.cost_usd ?? 0,
+      costEstimated: data.cost_estimated ?? false,
       inputTokens: data.input_tokens ?? 0,
       outputTokens: data.output_tokens ?? 0,
     }
@@ -331,6 +335,7 @@ export interface ForecastResponse {
   forecast?: ForecastDoc
   model?: string
   cost_usd?: number
+  cost_estimated?: boolean
   input_tokens?: number
   output_tokens?: number
   created_at?: string

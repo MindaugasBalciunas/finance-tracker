@@ -176,6 +176,9 @@ type ChatResult struct {
 	CostUSD      float64 `json:"cost_usd"`
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
+	// CostEstimated: the cost was computed from list prices, not reported by
+	// the provider. The UI marks it so the number is never mistaken for a bill.
+	CostEstimated bool `json:"cost_estimated"`
 }
 
 func (s *insightService) Chat(ctx context.Context, message string, image *ChatImage) (ChatResult, error) {
@@ -256,10 +259,13 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 			}
 			return ChatResult{}, fmt.Errorf("calling AI gateway: %w", err)
 		}
-		// Sum the cost/tokens of every round for the response badge.
+		// Sum the cost/tokens of every round for the response badge. If any
+		// round was priced by us, the total is an estimate — a mixed total
+		// cannot honestly be presented as the provider's own figure.
 		usage.CostUSD += msg.Usage.CostUSD
 		usage.InputTokens += msg.Usage.InputTokens
 		usage.OutputTokens += msg.Usage.OutputTokens
+		usage.CostEstimated = usage.CostEstimated || msg.Usage.CostEstimated
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) == "" {
 				return ChatResult{}, errors.New("gateway returned an empty reply — try again or raise the model's token limit")
@@ -295,10 +301,11 @@ func (s *insightService) Chat(ctx context.Context, message string, image *ChatIm
 	}
 	s.logAIActivity("chat", "", "Q: "+clipText(message, 160)+" — A: "+clipText(reply, 240))
 	return ChatResult{
-		Reply:        reply,
-		CostUSD:      usage.CostUSD,
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
+		Reply:         reply,
+		CostUSD:       usage.CostUSD,
+		InputTokens:   usage.InputTokens,
+		OutputTokens:  usage.OutputTokens,
+		CostEstimated: usage.CostEstimated,
 	}, nil
 }
 
@@ -883,6 +890,10 @@ type gatewayUsage struct {
 	InputTokens  int
 	OutputTokens int
 	CostUSD      float64
+	// CostEstimated marks a cost this app computed from published list
+	// prices because the provider reported none. nexos.ai bills in credits
+	// and says what it charged; the Claude API never does.
+	CostEstimated bool
 }
 
 type messageImage struct {
@@ -1217,10 +1228,20 @@ func postAnthropic(ctx context.Context, settings *domain.AISettings, request ant
 
 	var msg gatewayMessage
 	msg.Role = "assistant"
+	// The gateway's own figure wins whenever it sent one — it is what was
+	// actually billed. Only when it is silent do we price the call ourselves.
+	cost, estimated := u.NexosCreditsCost, false
+	if cost == 0 {
+		if est, known := estimateCostUSD(settings.Model, u.InputTokens, u.OutputTokens,
+			u.CacheReadInput, u.CacheCreationInput); known {
+			cost, estimated = est, true
+		}
+	}
 	msg.Usage = gatewayUsage{
-		InputTokens:  u.InputTokens + u.CacheReadInput + u.CacheCreationInput,
-		OutputTokens: u.OutputTokens,
-		CostUSD:      u.NexosCreditsCost,
+		InputTokens:   u.InputTokens + u.CacheReadInput + u.CacheCreationInput,
+		OutputTokens:  u.OutputTokens,
+		CostUSD:       cost,
+		CostEstimated: estimated,
 	}
 	for _, b := range result.Content {
 		switch b.Type {

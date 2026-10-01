@@ -222,3 +222,91 @@ func TestNonModelErrorsAreNotAnnotated(t *testing.T) {
 		t.Fatalf("message should pass through verbatim, got: %v", err)
 	}
 }
+
+// The Claude API returns token counts and never a price, so a direct-Claude
+// install used to show a token count beside an empty space where the cost
+// should be. The estimate fills it — and says it is an estimate.
+func TestDirectClaudeResponseGetsAnEstimatedCost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": "ok"}},
+			// No nexos_credits_cost — this is what Anthropic actually sends.
+			"usage": map[string]any{
+				"input_tokens": 10_000, "output_tokens": 2_000,
+				"cache_read_input_tokens": 50_000,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{
+		GatewayURL: srv.URL, APIKey: "k",
+		Model: "claude-opus-5-5", Provider: domain.ProviderAnthropic,
+	}
+	msg, err := callGatewayFull(context.Background(), settings,
+		[]gatewayMessage{{Role: "user", Content: "hi"}}, 64, nil)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	// 10k in @$4 + 2k out @$20 + 50k cache read @$0.20 = 0.04 + 0.04 + 0.01
+	if want := 0.09; msg.Usage.CostUSD < want-1e-9 || msg.Usage.CostUSD > want+1e-9 {
+		t.Errorf("cost = $%.6f, want $%.4f", msg.Usage.CostUSD, want)
+	}
+	if !msg.Usage.CostEstimated {
+		t.Error("a cost we computed ourselves must be marked as an estimate")
+	}
+}
+
+// When the gateway does report what it charged, that number stands — it is
+// the billed figure, and ours is only ever a stand-in for a missing one.
+func TestReportedGatewayCostIsNotOverwritten(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": "ok"}},
+			"usage": map[string]any{
+				"input_tokens": 10_000, "output_tokens": 2_000,
+				"nexos_credits_cost": 0.4242,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "claude-opus-5-5"}
+	msg, err := callGatewayFull(context.Background(), settings,
+		[]gatewayMessage{{Role: "user", Content: "hi"}}, 64, nil)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if msg.Usage.CostUSD != 0.4242 {
+		t.Errorf("cost = %v, want the gateway's own 0.4242", msg.Usage.CostUSD)
+	}
+	if msg.Usage.CostEstimated {
+		t.Error("a reported cost must not be labelled an estimate")
+	}
+}
+
+// An unpriced model must leave the badge empty rather than claim the call
+// was free.
+func TestUnknownModelLeavesCostBlank(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": "ok"}},
+			"usage":   map[string]any{"input_tokens": 10_000, "output_tokens": 2_000},
+		})
+	}))
+	defer srv.Close()
+
+	settings := &domain.AISettings{GatewayURL: srv.URL, APIKey: "k", Model: "some-self-hosted-model"}
+	msg, err := callGatewayFull(context.Background(), settings,
+		[]gatewayMessage{{Role: "user", Content: "hi"}}, 64, nil)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if msg.Usage.CostUSD != 0 || msg.Usage.CostEstimated {
+		t.Errorf("unknown model should yield no cost at all, got %v (estimated=%v)",
+			msg.Usage.CostUSD, msg.Usage.CostEstimated)
+	}
+	if msg.Usage.OutputTokens != 2000 {
+		t.Errorf("tokens must still be reported: %d", msg.Usage.OutputTokens)
+	}
+}
