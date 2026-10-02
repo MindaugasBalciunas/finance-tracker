@@ -7,12 +7,14 @@ interface Props {
   onChange: (val: string) => void
   className?: string
   required?: boolean
+  /** Lets a <label htmlFor> point at the field. */
+  id?: string
 }
 
 const INPUT_CLASS =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
-export default function DateInput({ value, onChange, className, required }: Props) {
+export default function DateInput({ value, onChange, className, required, id }: Props) {
   const parsed = value ? parseISO(value) : null
   const selected = parsed && isValid(parsed) ? parsed : null
 
@@ -25,6 +27,7 @@ export default function DateInput({ value, onChange, className, required }: Prop
       wrapperClassName="w-full"
       className={className ?? INPUT_CLASS}
       required={required}
+      id={id}
       showMonthDropdown
       showYearDropdown
       dropdownMode="select"

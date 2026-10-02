@@ -32,6 +32,7 @@ func (h *BudgetHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// query lives on the budget repository alongside the other cross-cutting
 	// transaction lookups (labels, bulk apply).
 	rg.GET("/transactions/suggest-category", h.SuggestCategory)
+	rg.GET("/transactions/suggest-labels", h.SuggestLabels)
 	l := rg.Group("/labels")
 	{
 		l.GET("", h.Labels)
@@ -156,6 +157,21 @@ func (h *BudgetHandler) SuggestCategory(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"category": category, "matches": matches, "basis": basis})
+}
+
+// SuggestLabels answers "what did I label this merchant last time". The form
+// offers it rather than applying it — the same contract as the category
+// suggestion next to it.
+func (h *BudgetHandler) SuggestLabels(c *gin.Context) {
+	labels, matches, err := h.repo.SuggestLabels(c.Query("type"), c.Query("comment"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if labels == nil {
+		labels = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{"labels": labels, "matches": matches})
 }
 
 func (h *BudgetHandler) GetSettings(c *gin.Context) {

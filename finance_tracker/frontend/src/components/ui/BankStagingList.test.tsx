@@ -5,6 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BankStagingList from './BankStagingList'
 import { bankingApi, type StagedTx } from '../../api/banking'
+import { budgetsApi } from '../../api/budgets'
+import { transactionsApi } from '../../api/transactions'
+import { aiApi } from '../../api/insights'
 
 vi.mock('../../api/banking', () => ({
   bankingApi: {
@@ -18,10 +21,23 @@ vi.mock('../../api/banking', () => ({
 }))
 
 vi.mock('../../api/transactions', () => ({
-  transactionsApi: { deleteBatch: vi.fn() },
+  transactionsApi: { deleteBatch: vi.fn(), getComments: vi.fn(), suggestCategory: vi.fn(), suggestLabels: vi.fn() },
+}))
+
+// The review modal is the ordinary transaction form, so it pulls the same
+// label/AI surfaces the form does.
+vi.mock('../../api/budgets', () => ({
+  budgetsApi: { labels: vi.fn(), rules: vi.fn(), previewLabel: vi.fn(), applyLabel: vi.fn() },
+}))
+
+vi.mock('../../api/insights', () => ({
+  aiApi: { getSettings: vi.fn(), assistTransaction: vi.fn() },
+  insightsApi: {},
 }))
 
 const api = vi.mocked(bankingApi)
+const budgets = vi.mocked(budgetsApi)
+const txs = vi.mocked(transactionsApi)
 
 function row(over: Partial<StagedTx> = {}): StagedTx {
   return {
@@ -61,7 +77,7 @@ function renderList(rows: StagedTx[]) {
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <BankStagingList rows={rows} validAccountKeys={['swed', 'seb', 'cash']} />
+        <BankStagingList rows={rows} />
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -70,6 +86,13 @@ function renderList(rows: StagedTx[]) {
 describe('BankStagingList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    budgets.labels.mockResolvedValue([])
+    budgets.rules.mockResolvedValue([])
+    txs.getComments.mockResolvedValue([])
+    txs.suggestCategory.mockResolvedValue({ category: '', matches: 0, basis: '' })
+    txs.suggestLabels.mockResolvedValue({ labels: [], matches: 0 })
+    vi.mocked(aiApi).getSettings.mockResolvedValue({ enabled: false } as never)
+    api.updateStaged.mockImplementation(async (_id, edit) => ({ ...row(), ...edit }) as StagedTx)
     api.commit.mockResolvedValue({
       imported: 1,
       skipped: 0,
@@ -155,17 +178,36 @@ describe('BankStagingList', () => {
     await waitFor(() => expect(api.dismiss).toHaveBeenCalledWith([11]))
   })
 
-  it('an edit in the expanded card saves only the changed field', async () => {
+  // Reviewing a row opens the ordinary transaction form — the same one
+  // "+ Add" opens — prefilled from the bank's proposal.
+  it('reviews a row in the normal transaction form', async () => {
     const user = userEvent.setup()
-    api.updateStaged.mockResolvedValue(row({ category: 'Housing' }))
     renderList([row({ id: 11, comment: 'Lidl' })])
 
     await user.click(screen.getByText('Lidl'))
-    await user.selectOptions(screen.getByLabelText('Category'), 'Housing')
+
+    expect(await screen.findByRole('button', { name: 'Add transaction' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Amount (€)')).toHaveValue(23.4)
+    expect(screen.getByLabelText('Category')).toHaveValue('Food')
+    expect(screen.getByLabelText('Comment')).toHaveValue('Lidl')
+  })
+
+  // Submitting saves the corrections onto the staged row and then adds it —
+  // one action, because the queue is the draft.
+  it('saves the corrections and adds the transaction', async () => {
+    const user = userEvent.setup()
+    renderList([row({ id: 11, comment: 'Lidl' })])
+
+    await user.click(screen.getByText('Lidl'))
+    await user.selectOptions(await screen.findByLabelText('Category'), 'Housing')
+    await user.click(screen.getByRole('button', { name: 'Add transaction' }))
 
     await waitFor(() =>
-      expect(api.updateStaged).toHaveBeenCalledWith(11, { category: 'Housing' })
+      expect(api.updateStaged).toHaveBeenCalledWith(11, expect.objectContaining({
+        category: 'Housing', comment: 'Lidl', amount: 23.4, type: 'expense',
+      }))
     )
+    await waitFor(() => expect(api.commit).toHaveBeenCalledWith([11]))
   })
 
   it('shows the raw bank data behind a disclosure, not by default', async () => {
@@ -174,7 +216,7 @@ describe('BankStagingList', () => {
 
     expect(screen.queryByText(/PIRKINYS/)).not.toBeInTheDocument()
     await user.click(screen.getByText('Lidl'))
-    await user.click(screen.getByRole('button', { name: /raw bank data/ }))
+    await user.click(await screen.findByRole('button', { name: /raw bank data/ }))
     expect(screen.getByText(/PIRKINYS/)).toBeInTheDocument()
   })
 })

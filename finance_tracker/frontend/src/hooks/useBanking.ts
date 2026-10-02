@@ -99,6 +99,14 @@ export function useSyncBankAccount() {
   })
 }
 
+export function useSyncAllBanks() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (days?: number) => bankingApi.syncAll(days),
+    onSuccess: () => invalidateBanking(qc),
+  })
+}
+
 export function useStagedTransactions(filter: StagedFilter = {}, enabled = true) {
   return useQuery({
     queryKey: [BANK_STAGED_KEY, filter],

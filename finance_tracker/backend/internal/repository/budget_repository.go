@@ -45,6 +45,10 @@ type BudgetRepository interface {
 	// SuggestCategory proposes a category for a new transaction from similar
 	// historical rows (comment substring first, exact amount as fallback).
 	SuggestCategory(txType, comment string, amount float64) (category string, matches int, basis string, err error)
+
+	// SuggestLabels proposes the labels that similar historical rows agree
+	// on, so a recurring merchant keeps the labels it already had.
+	SuggestLabels(txType, comment string) (labels []string, matches int, err error)
 }
 
 type budgetRepository struct {
@@ -218,6 +222,68 @@ func (r *budgetRepository) SuggestCategory(txType, comment string, amount float6
 		}
 	}
 	return "", 0, "", nil
+}
+
+// SuggestLabels returns the labels that similar past transactions agree on.
+//
+// Label rules only cover what the user has bothered to write a rule for;
+// everything else is in the history and nowhere else. A merchant labelled
+// "groceries, barbora" seven times should not come back from the bank bare
+// just because no rule spells it out.
+//
+// Agreement, not presence: a label has to be on at least half the matching
+// rows (and at least two of them). One row tagged "bar" by accident is not a
+// pattern, and copying it forward would spread the mistake.
+func (r *budgetRepository) SuggestLabels(txType, comment string) ([]string, int, error) {
+	comment = strings.TrimSpace(comment)
+	if len(comment) < 3 {
+		return nil, 0, nil
+	}
+	var rows []string
+	// Same two-pattern match as SuggestCategory — see the note there about
+	// SQLite's ASCII-only LOWER().
+	q := r.db.Model(&domain.Transaction{}).
+		Where("comment != '' AND (comment LIKE ? OR LOWER(comment) LIKE ?)",
+			"%"+comment+"%", "%"+strings.ToLower(comment)+"%")
+	if txType != "" {
+		q = q.Where("type = ?", txType)
+	}
+	if err := q.Pluck("labels", &rows).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(rows) < 2 {
+		return nil, len(rows), nil
+	}
+
+	counts := map[string]int{}
+	// Order of first appearance, so the result is stable rather than map-random.
+	var order []string
+	for _, raw := range rows {
+		seen := map[string]bool{}
+		for _, l := range strings.Split(raw, ",") {
+			l = strings.ToLower(strings.TrimSpace(l))
+			if l == "" || seen[l] {
+				continue
+			}
+			seen[l] = true
+			if counts[l] == 0 {
+				order = append(order, l)
+			}
+			counts[l]++
+		}
+	}
+	threshold := (len(rows) + 1) / 2
+	if threshold < 2 {
+		threshold = 2
+	}
+	var out []string
+	for _, l := range order {
+		if counts[l] >= threshold {
+			out = append(out, l)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return counts[out[i]] > counts[out[j]] })
+	return out, len(rows), nil
 }
 
 func (r *budgetRepository) DistinctLabels(category string) ([]string, error) {

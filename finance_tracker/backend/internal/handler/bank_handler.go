@@ -62,6 +62,9 @@ func (h *BankHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.DELETE("/connections/:id", h.DeleteConnection)
 	g.PUT("/accounts/:id", h.UpdateAccountLink)
 	g.POST("/accounts/:id/sync", h.SyncAccount)
+	// Sync every mapped account at once — what the review queue on the
+	// transactions page presses.
+	g.POST("/sync", h.SyncAll)
 	g.GET("/staged", h.ListStaged)
 	g.PUT("/staged/:id", h.UpdateStaged)
 	g.POST("/staged/commit", h.CommitStaged)
@@ -666,18 +669,36 @@ func writeProviderError(c *gin.Context, err error) {
 	switch {
 	case apiErr.Expired():
 		c.JSON(http.StatusConflict, gin.H{
-			"error":   "the connection to this bank has expired — reconnect it",
+			"error":   providerReason(err),
 			"code":    apiErr.Code,
 			"expired": true,
 		})
 	case apiErr.RateLimited():
 		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error": "the bank is rate-limiting requests — try again in a few minutes",
+			"error": providerReason(err),
 			"code":  apiErr.Code,
 		})
 	default:
-		c.JSON(http.StatusBadGateway, gin.H{"error": apiErr.Error(), "code": apiErr.Code})
+		c.JSON(http.StatusBadGateway, gin.H{"error": providerReason(err), "code": apiErr.Code})
 	}
+}
+
+// providerReason is the sentence a user reads. providerMessage is the terse
+// code persisted on the connection; this is its counterpart for the screen,
+// shared so a failure worded one way in a single sync is not worded another
+// way in the Sync all report.
+func providerReason(err error) string {
+	var apiErr *openbanking.APIError
+	if !errors.As(err, &apiErr) {
+		return err.Error()
+	}
+	switch {
+	case apiErr.Expired():
+		return "the connection to this bank has expired — reconnect it"
+	case apiErr.RateLimited():
+		return "the bank is rate-limiting requests — try again in a few minutes"
+	}
+	return apiErr.Error()
 }
 
 // providerMessage is what gets persisted on the connection. Short, parsed,

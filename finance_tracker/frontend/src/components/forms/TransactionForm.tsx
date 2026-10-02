@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useId, useState, useRef } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType, AccountKey } from '../../types'
 import { ACCOUNT_LABELS } from '../../types'
@@ -11,6 +11,7 @@ import { useAIAvailable } from '../../hooks/useInsights'
 import RuleSuggestion from './RuleSuggestion'
 import LabelEditor from './LabelEditor'
 import CategorySuggestion from './CategorySuggestion'
+import LabelSuggestion from './LabelSuggestion'
 import CommentInput from './CommentInput'
 import { AIAssistButton, AIAssistResult, mergeLabels, useAIAssist } from './AIAssist'
 
@@ -19,6 +20,23 @@ interface Props {
   onCancel: () => void
   isSubmitting?: boolean
   defaultValues?: Partial<CreateTransactionInput>
+  /** Primary button text. "Save" unless the caller is doing something else. */
+  submitLabel?: string
+  /**
+   * Source material behind the description that it no longer contains — for a
+   * bank row, the raw payee and remittance narrative. Passed to AI assist so
+   * it can name a merchant the importer flattened away.
+   */
+  aiContext?: string
+  /**
+   * Fold the rule-preview (⚡) labels into the submitted value.
+   *
+   * On the create path the server applies the rules itself, so the ⚡ chips
+   * are a preview and the form sends only what the user typed. The bank
+   * review path stores labels verbatim — so there, what the user was shown
+   * has to be what is saved, or the preview is a promise nothing keeps.
+   */
+  includeAutoLabels?: boolean
 }
 
 const ALL_ACCOUNTS = Object.entries(ACCOUNT_LABELS) as [AccountKey, string][]
@@ -42,8 +60,19 @@ function AccountSelect({ label, name, register }: { label: string; name: 'debit_
   )
 }
 
-export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defaultValues }: Props) {
+export default function TransactionForm({
+  onSubmit,
+  onCancel,
+  isSubmitting,
+  defaultValues,
+  submitLabel = 'Save',
+  aiContext,
+  includeAutoLabels,
+}: Props) {
   const today = new Date().toISOString().slice(0, 10)
+  // Labels are tied to their fields by id: the form renders inside modals and
+  // more than once per session, so the ids have to be unique per instance.
+  const uid = useId()
   const { register, handleSubmit, formState: { errors }, control, setValue, watch } = useForm<CreateTransactionInput>({
     defaultValues: { type: 'expense', date: today, ...defaultValues },
   })
@@ -118,6 +147,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
       {
         date: watch('date'), type: watch('type'), category: String(watch('category') ?? ''),
         amount: Number(watch('amount')) || 0, comment: watch('comment') ?? '', labels: watch('labels') ?? '',
+        context: aiContext,
       },
       watch('comment') ?? '',
     )
@@ -151,9 +181,16 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
   return (
     <form
-      onSubmit={handleSubmit((data) =>
-        onSubmit(dismissedAuto.length ? { ...data, suppressed_labels: dismissedAuto.join(',') } : data)
-      )}
+      onSubmit={handleSubmit((data) => {
+        const pendingAuto = autoLabels.filter(
+          (l) => !currentLabels.includes(l) && !dismissedAuto.includes(l)
+        )
+        const out: CreateTransactionInput = includeAutoLabels
+          ? { ...data, labels: mergeLabels(data.labels ?? '', pendingAuto) }
+          : { ...data }
+        if (dismissedAuto.length) out.suppressed_labels = dismissedAuto.join(',')
+        onSubmit(out)
+      })}
       className="space-y-4"
     >
       {aiConfigured && (
@@ -188,19 +225,22 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+          <label htmlFor={`${uid}-date`} className="block text-sm font-medium text-gray-700 mb-1">Date</label>
           <Controller
             name="date"
             control={control}
             rules={{ required: 'Date is required' }}
-            render={({ field }) => <DateInput value={field.value ?? ''} onChange={field.onChange} />}
+            render={({ field }) => (
+              <DateInput id={`${uid}-date`} value={field.value ?? ''} onChange={field.onChange} />
+            )}
           />
           {errors.date && <p className="text-xs text-red-600 mt-1">{errors.date.message}</p>}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+          <label htmlFor={`${uid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type</label>
           <select
+            id={`${uid}-type`}
             {...register('type', { required: 'Type is required' })}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
@@ -213,8 +253,9 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount (€)</label>
+          <label htmlFor={`${uid}-amount`} className="block text-sm font-medium text-gray-700 mb-1">Amount (€)</label>
           <input
+            id={`${uid}-amount`}
             type="number"
             step="0.01"
             min="0.01"
@@ -225,8 +266,9 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+          <label htmlFor={`${uid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
           <select
+            id={`${uid}-category`}
             {...register('category', { required: 'Category is required' })}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
@@ -253,8 +295,9 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+        <label htmlFor={`${uid}-comment`} className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
         <CommentInput
+          id={`${uid}-comment`}
           value={commentValue}
           onChange={(v) => setValue('comment', v)}
           placeholder="Optional description..."
@@ -268,7 +311,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
             <AIAssistButton
               onClick={runAssist}
               busy={assist.busy}
-              disabled={commentValue.trim().length < 3}
+              disabled={commentValue.trim().length < 3 && (aiContext ?? '').trim().length < 3}
             />
           )}
         </div>
@@ -280,6 +323,12 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
           dismissedAuto={dismissedAuto}
           onDismissAuto={(l) => setDismissedAuto((d) => [...d, l])}
           onRestoreAuto={(l) => setDismissedAuto((d) => d.filter((x) => x !== l))}
+        />
+        <LabelSuggestion
+          type={selectedType}
+          comment={commentValue}
+          current={labelsValue}
+          onApply={(labels) => setValue('labels', mergeLabels(labelsValue, labels))}
         />
         <AIAssistResult
           error={assist.error}
@@ -327,7 +376,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
           disabled={isSubmitting}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
-          {isSubmitting ? 'Saving...' : 'Save'}
+          {isSubmitting ? 'Saving...' : submitLabel}
         </button>
       </div>
     </form>

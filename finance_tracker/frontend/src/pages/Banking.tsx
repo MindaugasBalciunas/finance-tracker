@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import BankConnectionCard from '../components/ui/BankConnectionCard'
 import BankSettingsModal from '../components/ui/BankSettingsModal'
 import BankSetupGuide from '../components/ui/BankSetupGuide'
@@ -14,19 +15,26 @@ import {
   useStagedTransactions,
 } from '../hooks/useBanking'
 
-type Tab = 'staged' | 'dismissed' | 'imported'
+// The to-review queue lives on the transactions page now — adding a bank row
+// to the ledger IS transaction entry, and it was three taps deep here. What
+// stays is the archive: what was dismissed, and what was already added.
+type Tab = 'dismissed' | 'imported'
 
 export default function Banking() {
   const { data: settings, isLoading: settingsLoading } = useBankSettings()
   const configured = !!settings?.configured
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [picker, setPicker] = useState(false)
-  const [tab, setTab] = useState<Tab>('staged')
+  const [tab, setTab] = useState<Tab>('dismissed')
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasted, setPasted] = useState('')
 
   const connections = useBankConnections(configured)
   const staged = useStagedTransactions({ state: tab }, configured)
+  // Counted separately from the archive list: the point is to send the user
+  // to where the queue actually is.
+  const waiting = useStagedTransactions({ state: 'staged', page_size: 1 }, configured)
+  const pending = waiting.data?.total ?? 0
   const aspsps = useASPSPs(picker && configured)
   const connect = useConnectBank()
   const callback = useBankCallback()
@@ -48,7 +56,7 @@ export default function Banking() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">🔗 Bank connections</h1>
           <p className="text-xs text-gray-400">
-            Pull recent transactions from your bank and add them one at a time
+            Connect a bank; review and add what it sends on the Transactions page
           </p>
         </div>
         <button
@@ -188,8 +196,23 @@ export default function Banking() {
           <BankSetupGuide />
 
           <div>
+            {pending > 0 && (
+              <Link
+                to="/transactions"
+                className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 mb-3 hover:bg-indigo-100"
+              >
+                <span className="text-lg">📥</span>
+                <span className="flex-1 min-w-0 text-sm text-indigo-800">
+                  <b>{pending}</b> row{pending === 1 ? '' : 's'} waiting to be reviewed
+                  <span className="block text-xs text-indigo-500">Review and add them on Transactions</span>
+                </span>
+                <span className="text-indigo-300">›</span>
+              </Link>
+            )}
+
+            <h2 className="text-sm font-medium text-gray-700 mb-2">Import history</h2>
             <div className="flex items-center gap-1 mb-2 overflow-x-auto">
-              {(['staged', 'dismissed', 'imported'] as Tab[]).map((t) => (
+              {(['dismissed', 'imported'] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -197,8 +220,7 @@ export default function Banking() {
                     tab === t ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
-                  {t === 'staged' ? 'To review' : t}
-                  {t === 'staged' && staged.data?.total ? ` (${staged.data.total})` : ''}
+                  {t}
                 </button>
               ))}
             </div>
@@ -206,10 +228,7 @@ export default function Banking() {
             {staged.isLoading && <LoadingSpinner />}
             {staged.isError && <QueryError error={staged.error} onRetry={() => staged.refetch()} />}
             {staged.data && (
-              <BankStagingList
-                rows={staged.data.transactions}
-                validAccountKeys={connections.data?.valid_account_keys ?? []}
-              />
+              <BankStagingList rows={staged.data.transactions} />
             )}
           </div>
         </>

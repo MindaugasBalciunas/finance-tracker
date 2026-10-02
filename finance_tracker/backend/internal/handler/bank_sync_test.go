@@ -511,6 +511,7 @@ func TestBankRoutesLocked(t *testing.T) {
 		{method: "DELETE", path: "/api/v1/banking/connections/1"},
 		{method: "PUT", path: "/api/v1/banking/accounts/1"},
 		{method: "POST", path: "/api/v1/banking/accounts/1/sync"},
+		{method: "POST", path: "/api/v1/banking/sync", upstream: true},
 		{method: "GET", path: "/api/v1/banking/staged"},
 		{method: "PUT", path: "/api/v1/banking/staged/1"},
 		{method: "POST", path: "/api/v1/banking/staged/commit"},
@@ -670,4 +671,87 @@ func TestAPITokenBankingScopeIsExactlyTheReviewQueue(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestSyncAllReportsEveryAccount — Sync all must not stop at the first
+// account that cannot sync, and must say why each one did not.
+//
+// Only the paths that never reach the provider are exercised: the suite makes
+// no outbound calls, and the skip reasons are the part worth pinning anyway —
+// an account silently missing from the report is how "I pressed sync and
+// nothing came" happens.
+func TestSyncAllReportsEveryAccount(t *testing.T) {
+	env := bankTestRouter(t, true)
+
+	// The harness link is mapped and authorised, so it would reach the bank.
+	// Drop its session: that is the "reconnect" case.
+	env.link.UID = ""
+	require.NoError(t, env.repo.SaveLink(env.link))
+
+	// An account the user chose not to sync — no line at all, because
+	// "Don't sync" is an answer, not a problem.
+	require.NoError(t, env.repo.SaveLink(&domain.BankAccountLink{
+		ConnectionID: env.link.ConnectionID, IdentificationHash: "hash-2",
+		UID: "uid-2", IBAN: "LT160000000000009999", AccountKey: "",
+	}))
+
+	// A second bank whose consent has lapsed.
+	dead := &domain.BankConnection{
+		ASPSPName: "SEB", ASPSPCountry: "LT",
+		Status: domain.BankConnAuthorized, ValidUntil: time.Now().Add(-24 * time.Hour),
+	}
+	require.NoError(t, env.repo.SaveConnection(dead))
+	require.NoError(t, env.repo.SaveLink(&domain.BankAccountLink{
+		ConnectionID: dead.ID, IdentificationHash: "hash-3",
+		UID: "uid-3", IBAN: "LT160000000000008888", AccountKey: "seb",
+	}))
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/sync", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var out syncAllResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 0, out.Synced)
+	assert.Equal(t, 0, out.Failed)
+	assert.Equal(t, 2, out.Skipped)
+	require.Len(t, out.Accounts, 2, "the unmapped account earns no line")
+
+	reasons := map[string]string{}
+	for _, a := range out.Accounts {
+		reasons[a.Bank] = a.Skipped
+		assert.Nil(t, a.Result)
+	}
+	assert.Contains(t, reasons["Swedbank"], "reconnect the bank")
+	assert.Contains(t, reasons["SEB"], "expired")
+}
+
+// TestPendingCountMatchesTheQueue — the badge and the list it labels must
+// agree. A likely duplicate still sits in the queue until somebody dismisses
+// it, so leaving it out of the count lets the queue grow while the badge
+// claims it is empty.
+func TestPendingCountMatchesTheQueue(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{
+		Date:   time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
+		Type:   domain.TransactionTypeExpense,
+		Amount: 8.12, Category: "Utilities", Comment: "UAB IGNITIS",
+	})
+
+	env.stage(t, bankFeed())
+
+	rows, total, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+
+	var dupes int
+	for _, r := range rows {
+		if r.Verdict == domain.VerdictDuplicateContent {
+			dupes++
+		}
+	}
+	require.Equal(t, 1, dupes, "the seeded row should make one staged row look like a duplicate")
+
+	counts, err := env.repo.CountPendingByLink()
+	require.NoError(t, err)
+	assert.Equal(t, int(total), counts[env.link.ID], "the badge counts the whole queue, duplicates included")
 }

@@ -33,6 +33,7 @@ import (
 type labelingSource interface {
 	ListRules() ([]domain.LabelRule, error)
 	SuggestCategory(txType, comment string, amount float64) (category string, matches int, basis string, err error)
+	SuggestLabels(txType, comment string) (labels []string, matches int, err error)
 }
 
 // WithLabeling wires the learned signals into the bank import.
@@ -57,7 +58,42 @@ func (h *BankHandler) enrich(row *domain.BankStagedTx) {
 	if n := h.applyRules(row); n != "" {
 		notes = append(notes, n)
 	}
+	// Rules last-but-one, history last: a rule is the user's explicit
+	// instruction and gets to set the shape; history fills in the labels they
+	// have been applying by hand without ever writing a rule for them.
+	if n := h.suggestLabels(row); n != "" {
+		notes = append(notes, n)
+	}
 	row.EnrichNote = strings.Join(notes, " · ")
+}
+
+// suggestLabels copies forward the labels similar past transactions agree on.
+//
+// Rules cover only what the user wrote a rule for. Everything else lives in
+// the history: a merchant tagged "groceries, barbora" seven times should not
+// come back from the bank bare. Same merchant probes as the category lookup,
+// so the two agree on what "similar" means.
+func (h *BankHandler) suggestLabels(row *domain.BankStagedTx) string {
+	probe := &domain.Transaction{Labels: row.Labels}
+	var added []string
+	for _, p := range categoryProbes(row.Comment) {
+		labels, matches, err := h.labeling.SuggestLabels(string(row.Type), p)
+		if err != nil || len(labels) == 0 {
+			continue
+		}
+		for _, l := range labels {
+			if !probe.HasLabel(l) {
+				probe.AddLabel(l)
+				added = append(added, l)
+			}
+		}
+		if len(added) == 0 {
+			return ""
+		}
+		row.Labels = probe.Labels
+		return fmt.Sprintf("labels %s — on %d similar past transactions", strings.Join(added, ", "), matches)
+	}
+	return ""
 }
 
 // suggestCategory replaces a placeholder category with the one similar past

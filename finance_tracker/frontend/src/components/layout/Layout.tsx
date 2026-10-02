@@ -7,9 +7,11 @@ import DataModal from '../ui/DataModal'
 import ViewInsightBar from '../ui/ViewInsightBar'
 import { GatewaySettingsModal } from '../ui/GatewaySettings'
 import { useAIAvailable } from '../../hooks/useInsights'
+import { useBankSettings, useStagedTransactions } from '../../hooks/useBanking'
 // The single mobile menu is the top hamburger: date range + the tools that
-// don't earn a bottom tab (Assets, Labels, Bank import, Data, Security,
-// AI settings, API docs).
+// don't earn a bottom tab (Assets, Labels, Bank connections, Data, Security,
+// AI settings, API docs). Reviewing bank rows is NOT in here — that is
+// transaction entry and lives on the Transactions page.
 
 // Desktop shows every page; the mobile bottom bar keeps the daily drivers
 // as icon-only tabs (Labels is desktop-only to keep mobile lean).
@@ -62,6 +64,16 @@ export default function Layout() {
   const [securityOpen, setSecurityOpen] = useState(false)
   const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [dateMenuOpen, setDateMenuOpen] = useState(false)
+  // Bank rows waiting to be reviewed, badged onto the Transactions tab.
+  // Nothing syncs in the background, so without a count visible from every
+  // page the queue is only discovered by going looking for it — which is the
+  // whole reason it moved out of the hamburger.
+  const { data: bankSettings } = useBankSettings()
+  const { data: bankStaged } = useStagedTransactions(
+    { state: 'staged', page_size: 1 },
+    !!bankSettings?.configured,
+  )
+  const pendingBank = bankStaged?.total ?? 0
   // Navigating away closes the date menu so it never lingers over content.
   const location = useLocation()
   useEffect(() => { setDateMenuOpen(false) }, [location.pathname])
@@ -83,6 +95,14 @@ export default function Layout() {
                   isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 )}>
                 <span aria-hidden>{item.icon}</span>{item.label}
+                {item.to === '/transactions' && pendingBank > 0 && (
+                  <span
+                    title={`${pendingBank} bank rows waiting to be reviewed`}
+                    className="px-1.5 py-0.5 text-[10px] font-semibold leading-none rounded-full bg-indigo-600 text-white"
+                  >
+                    {pendingBank}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -103,7 +123,7 @@ export default function Layout() {
                 'text-xs font-medium px-2 py-1 rounded-md transition-colors whitespace-nowrap',
                 isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
               )}>
-              🔗 Bank import
+              🔗 Bank connections
             </NavLink>
             <button onClick={() => setSecurityOpen(true)}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
@@ -150,7 +170,7 @@ export default function Layout() {
               {/* 🔗, not 🏦 — the bottom bar already spends 🏦 on Balances, and
                   two doors with the same icon is a wayfinding bug at 390px. */}
               <NavLink to="/banking" onClick={() => setDateMenuOpen(false)}
-                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔗 Bank import</NavLink>
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🔗 Bank connections</NavLink>
               <button onClick={() => { setDataMode('backup'); setDateMenuOpen(false) }}
                 className="text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">💾 Backup &amp; restore</button>
               <button onClick={() => { setDataMode('export'); setDateMenuOpen(false) }}
@@ -192,10 +212,15 @@ export default function Layout() {
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               aria-label={item.name} title={item.name}
               className={({ isActive }) => clsx(
-                'flex items-center justify-center transition-colors min-w-0 rounded-lg m-1',
+                'relative flex items-center justify-center transition-colors min-w-0 rounded-lg m-1',
                 isActive ? 'text-blue-600 bg-blue-50' : 'text-gray-500'
               )}>
               <span className="text-xl leading-none">{item.icon}</span>
+              {item.to === '/transactions' && pendingBank > 0 && (
+                <span className="absolute top-0.5 right-1.5 min-w-4 px-1 text-[10px] font-semibold leading-4 text-center rounded-full bg-indigo-600 text-white">
+                  {pendingBank > 99 ? '99+' : pendingBank}
+                </span>
+              )}
             </NavLink>
           ))}
         </div>

@@ -254,9 +254,15 @@ func (r *bankRepository) CountStagedByVerdict() (map[string]int, error) {
 	return out, nil
 }
 
-// CountPendingByLink powers the per-connection badge. Only rows that are both
-// staged and genuinely new are counted — a badge that includes duplicates and
-// internal noise reads as work to do when there is none.
+// CountPendingByLink powers the per-account badge.
+//
+// It counts every row still awaiting review, not just the genuinely new ones.
+// A likely duplicate is not noise to be ignored — it sits in the queue until
+// somebody looks at it and dismisses it, and a badge that leaves it out lets
+// the queue grow while claiming it is empty. It also has to agree with the
+// count on the transactions page, which labels the list the user actually
+// works through: two numbers disagreeing on one screen is worse than either
+// definition.
 func (r *bankRepository) CountPendingByLink() (map[uint]int, error) {
 	type row struct {
 		LinkID uint
@@ -265,7 +271,7 @@ func (r *bankRepository) CountPendingByLink() (map[uint]int, error) {
 	var rows []row
 	err := r.db.Model(&domain.BankStagedTx{}).
 		Select("link_id, COUNT(*) AS n").
-		Where("state = ? AND verdict = ?", domain.StagedStateStaged, domain.VerdictNew).
+		Where("state = ?", domain.StagedStateStaged).
 		Group("link_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err

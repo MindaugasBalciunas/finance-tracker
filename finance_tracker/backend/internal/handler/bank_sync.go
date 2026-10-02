@@ -89,25 +89,66 @@ func (h *BankHandler) SyncAccount(c *gin.Context) {
 		return
 	}
 
-	// Window: 90 days on a first sync (there is real history to close), a
-	// 7-day overlap afterwards.
-	now := time.Now()
+	txs, window, err := h.fetchWindow(c, cl, link, conn, requestedDays(c))
+	if err != nil {
+		writeProviderError(c, err)
+		return
+	}
+	res, err := h.stage(txs, link, window.from, window.to)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// requestedDays reads an explicit, narrower window off the query string. The
+// first real-data run is meant to be a cautious 7-day look before the full
+// 90; 0 means "use the normal window".
+func requestedDays(c *gin.Context) int {
+	if d, err := strconv.Atoi(c.Query("days")); err == nil && d > 0 && d <= 730 {
+		return d
+	}
+	return 0
+}
+
+// syncWindow is how far back this account's next sync reaches: 90 days on a
+// first sync (there is real history to close), a 7-day overlap afterwards,
+// or an explicit override.
+func syncWindow(link *domain.BankAccountLink, now time.Time, days int) time.Time {
+	if days > 0 {
+		return now.AddDate(0, 0, -days)
+	}
 	from := now.AddDate(0, 0, -firstSyncDays)
 	if anchor := syncAnchor(link); !anchor.IsZero() {
 		if candidate := anchor.AddDate(0, 0, -resyncOverlapDays); candidate.After(from) {
 			from = candidate
 		}
 	}
-	// Allow an explicit narrower window: the first real-data run is meant to
-	// be a cautious 7-day look before the full 90.
-	if d, derr := strconv.Atoi(c.Query("days")); derr == nil && d > 0 && d <= 730 {
-		from = now.AddDate(0, 0, -d)
-	}
+	return from
+}
+
+type window struct{ from, to time.Time }
+
+// fetchWindow pulls one mapped account's window from the provider. Shared by
+// the single-account sync and Sync all, so the two cannot drift in what a
+// sync actually reads.
+//
+// The error is returned, not written: the caller decides whether it fails the
+// request (one account) or becomes one line in a report (all of them). It is
+// kept separate from staging so a database failure is still a 500 and only a
+// provider failure is a 502.
+func (h *BankHandler) fetchWindow(
+	c *gin.Context, cl *openbanking.Client,
+	link *domain.BankAccountLink, conn *domain.BankConnection, days int,
+) ([]openbanking.Transaction, window, error) {
+	w := window{to: time.Now()}
+	w.from = syncWindow(link, w.to, days)
 
 	txs, err := cl.AllTransactions(c.Request.Context(), openbanking.TxQuery{
 		AccountUID:         link.UID,
-		DateFrom:           from,
-		DateTo:             now,
+		DateFrom:           w.from,
+		DateTo:             w.to,
 		PSU:                psuFrom(c),
 		RequiredPSUHeaders: h.requiredPSUHeaders(c, cl, conn),
 	})
@@ -121,16 +162,123 @@ func (h *BankHandler) SyncAccount(c *gin.Context) {
 			conn.LastError = apiErr.Code
 			_ = h.repo.SaveConnection(conn)
 		}
-		writeProviderError(c, err)
+		return nil, w, err
+	}
+	return txs, w, nil
+}
+
+// ── sync all ────────────────────────────────────────────────────────
+
+// syncAllResult reports every mapped account separately, plus the totals.
+//
+// One report rather than one request per account: the review queue is a
+// single list, so "what arrived just now" is a single question. Per-account
+// detail stays because the answer is rarely uniform — one bank's consent
+// expires while the other syncs fine, and a single "failed" would hide that.
+type syncAllResult struct {
+	Accounts []accountSyncResult `json:"accounts"`
+	// Totals sums the accounts that actually synced.
+	Totals syncResult `json:"totals"`
+	Synced int        `json:"synced"`
+	// Skipped counts accounts that were never going to sync — unmapped, or
+	// behind a dead consent. Not a failure, but not silence either.
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
+}
+
+type accountSyncResult struct {
+	LinkID uint   `json:"link_id"`
+	Bank   string `json:"bank"`
+	Name   string `json:"name"`
+	// Exactly one of result / skipped / error is set.
+	Result  *syncResult `json:"result,omitempty"`
+	Skipped string      `json:"skipped,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// SyncAll syncs every mapped account on every live connection.
+//
+// Pressing Sync once per account was the only way to fill the review queue,
+// which made the common case — "pull whatever is new everywhere" — a tour of
+// the settings page. One account failing does not stop the rest: each gets a
+// line, and the user sees exactly which bank is unhappy.
+func (h *BankHandler) SyncAll(c *gin.Context) {
+	cl, _, err := h.client()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	res, err := h.stage(txs, link, from, now)
+	conns, err := h.repo.ListConnections()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, res)
+
+	days := requestedDays(c)
+	out := syncAllResult{Accounts: []accountSyncResult{}}
+	for i := range conns {
+		conn := &conns[i]
+		links, lerr := h.repo.ListLinks(conn.ID)
+		if lerr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": lerr.Error()})
+			return
+		}
+		for j := range links {
+			link := &links[j]
+			// An account the user chose not to sync is not worth a line —
+			// "Don't sync" is an answer, and repeating it every time would
+			// bury the accounts that do have something to say.
+			if !link.Synced() {
+				continue
+			}
+			row := accountSyncResult{
+				LinkID: link.ID,
+				Bank:   conn.ASPSPName,
+				Name:   firstNonEmpty(link.DisplayName, link.IBAN, fmt.Sprintf("Account %d", link.ID)),
+			}
+			switch {
+			case effectiveStatus(conn) != domain.BankConnAuthorized:
+				row.Skipped = "the connection to this bank has expired — reconnect it"
+			case link.UID == "":
+				row.Skipped = "no active session — reconnect the bank"
+			}
+			if row.Skipped != "" {
+				out.Skipped++
+				out.Accounts = append(out.Accounts, row)
+				continue
+			}
+
+			txs, w, ferr := h.fetchWindow(c, cl, link, conn, days)
+			if ferr == nil {
+				var res syncResult
+				res, ferr = h.stage(txs, link, w.from, w.to)
+				if ferr == nil {
+					row.Result = &res
+					out.Synced++
+					out.Totals.Fetched += res.Fetched
+					out.Totals.StagedNew += res.StagedNew
+					out.Totals.Unchanged += res.Unchanged
+					out.Totals.AutoSkipped += res.AutoSkipped
+					out.Totals.DuplicateExact += res.DuplicateExact
+					out.Totals.DuplicateContent += res.DuplicateContent
+					out.Totals.NeedsReview += res.NeedsReview
+					out.Totals.Internal += res.Internal
+					if out.Totals.DateFrom == "" || res.DateFrom < out.Totals.DateFrom {
+						out.Totals.DateFrom = res.DateFrom
+					}
+					if res.DateTo > out.Totals.DateTo {
+						out.Totals.DateTo = res.DateTo
+					}
+				}
+			}
+			if ferr != nil {
+				row.Error = providerReason(ferr)
+				out.Failed++
+			}
+			out.Accounts = append(out.Accounts, row)
+		}
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // syncAnchor is where the next window starts from. LastTxDate is preferred
@@ -547,13 +695,18 @@ func (h *BankHandler) UpdateStaged(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Date          *string `json:"date"`
-		Type          *string `json:"type"`
-		Category      *string `json:"category"`
-		Comment       *string `json:"comment"`
-		Labels        *string `json:"labels"`
-		DebitAccount  *string `json:"debit_account"`
-		CreditAccount *string `json:"credit_account"`
+		Date *string `json:"date"`
+		Type *string `json:"type"`
+		// Amount is editable because some rows arrive unusable: a
+		// foreign-currency row is staged with a note saying "enter the euro
+		// amount by hand", and until now there was no hand to enter it with.
+		// RawAmount keeps the bank's own figure as the audit trail.
+		Amount        *float64 `json:"amount"`
+		Category      *string  `json:"category"`
+		Comment       *string  `json:"comment"`
+		Labels        *string  `json:"labels"`
+		DebitAccount  *string  `json:"debit_account"`
+		CreditAccount *string  `json:"credit_account"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -589,6 +742,13 @@ func (h *BankHandler) UpdateStaged(c *gin.Context) {
 			return
 		}
 		row.Type = t
+	}
+	if in.Amount != nil {
+		if *in.Amount <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "amount must be greater than zero"})
+			return
+		}
+		row.Amount = *in.Amount
 	}
 	if in.Category != nil {
 		row.Category = domain.Category(strings.TrimSpace(*in.Category))

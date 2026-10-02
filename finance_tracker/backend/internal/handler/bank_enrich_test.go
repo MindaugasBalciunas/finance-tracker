@@ -299,3 +299,62 @@ func TestEnrichIsOptional(t *testing.T) {
 func stagedPath(id uint) string {
 	return "/api/v1/banking/staged/" + strconv.FormatUint(uint64(id), 10)
 }
+
+// Label rules only cover what the user wrote a rule for. Everything else is
+// in the history: a merchant tagged the same way seven times should not come
+// back from the bank bare.
+func TestEnrichCopiesLabelsFromSimilarHistory(t *testing.T) {
+	env := bankTestRouter(t, true)
+	for i := 0; i < 4; i++ {
+		env.seedHistory(t, domain.Transaction{
+			Type: domain.TransactionTypeExpense, Category: "Food",
+			Comment: "Barbora delivery", Labels: "groceries,barbora",
+		})
+	}
+
+	env.stage(t, []openbanking.Transaction{
+		ebRow("8101", "2026-09-10", "41.20", "D", "Barbora", "Pirkiniai internetu"),
+	})
+
+	row := env.stagedByComment(t, "Barbora (Pirkiniai internetu)")
+	assert.Equal(t, "groceries,barbora", row.Labels)
+	assert.Contains(t, row.EnrichNote, "on 4 similar past transactions")
+}
+
+// Agreement, not presence. A label stuck on one row by accident is not a
+// pattern, and copying it forward would spread the mistake.
+func TestEnrichIgnoresOneOffLabels(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t,
+		domain.Transaction{Type: domain.TransactionTypeExpense, Category: "Food", Comment: "Barbora delivery", Labels: "groceries"},
+		domain.Transaction{Type: domain.TransactionTypeExpense, Category: "Food", Comment: "Barbora delivery", Labels: "groceries"},
+		domain.Transaction{Type: domain.TransactionTypeExpense, Category: "Food", Comment: "Barbora delivery", Labels: "groceries,oops"},
+	)
+
+	env.stage(t, []openbanking.Transaction{
+		ebRow("8102", "2026-09-10", "41.20", "D", "Barbora", "Pirkiniai internetu"),
+	})
+
+	row := env.stagedByComment(t, "Barbora (Pirkiniai internetu)")
+	assert.Equal(t, "groceries", row.Labels)
+}
+
+// A rule and the history can both have something to say; neither erases the
+// other, and nothing is added twice.
+func TestEnrichMergesRulesAndHistory(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedRule(t, "groceries", "", "barbora")
+	env.seedHistory(t,
+		domain.Transaction{Type: domain.TransactionTypeExpense, Category: "Food", Comment: "Barbora delivery", Labels: "groceries,barbora"},
+		domain.Transaction{Type: domain.TransactionTypeExpense, Category: "Food", Comment: "Barbora delivery", Labels: "groceries,barbora"},
+	)
+
+	env.stage(t, []openbanking.Transaction{
+		ebRow("8103", "2026-09-10", "41.20", "D", "Barbora", "Pirkiniai internetu"),
+	})
+
+	row := env.stagedByComment(t, "Barbora (Pirkiniai internetu)")
+	assert.Equal(t, "groceries,barbora", row.Labels)
+	assert.Contains(t, row.EnrichNote, "from your rules")
+	assert.Contains(t, row.EnrichNote, "similar past transactions")
+}

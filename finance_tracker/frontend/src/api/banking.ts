@@ -103,6 +103,26 @@ export type SyncResult = {
   date_to: string
 }
 
+// One line per mapped account, plus the totals. Per-account detail stays
+// because the answer is rarely uniform — one bank's consent expires while
+// the other syncs fine.
+export type AccountSyncResult = {
+  link_id: number
+  bank: string
+  name: string
+  result?: SyncResult
+  skipped?: string
+  error?: string
+}
+
+export type SyncAllResult = {
+  accounts: AccountSyncResult[]
+  totals: SyncResult
+  synced: number
+  skipped: number
+  failed: number
+}
+
 export type CommitResult = {
   imported: number
   skipped: number
@@ -122,6 +142,7 @@ export type StagedPage = {
 export type StagedEdit = {
   date?: string
   type?: TransactionType
+  amount?: number
   category?: string
   comment?: string
   labels?: string
@@ -188,6 +209,15 @@ export const bankingApi = {
   // days narrows the window — the cautious first look before the full 90.
   sync: async (id: number, days?: number): Promise<SyncResult> => {
     const { data } = await client.post<SyncResult>(`/banking/accounts/${id}/sync`, null, {
+      params: days ? { days } : undefined,
+    })
+    return data
+  },
+
+  // Every mapped account on every live connection, in one press. days
+  // narrows the window the same way the per-account sync does.
+  syncAll: async (days?: number): Promise<SyncAllResult> => {
+    const { data } = await client.post<SyncAllResult>('/banking/sync', null, {
       params: days ? { days } : undefined,
     })
     return data

@@ -63,6 +63,13 @@ export const transactionsApi = {
     return data
   },
 
+  // What similar past transactions were labelled. Offered, never applied —
+  // same contract as suggestCategory.
+  suggestLabels: async (params: { type?: string; comment?: string }): Promise<{ labels: string[]; matches: number }> => {
+    const { data } = await client.get('/transactions/suggest-labels', { params })
+    return data
+  },
+
   getComments: async (): Promise<string[]> => {
     const { data } = await client.get<string[]>('/transactions/comments')
     return data

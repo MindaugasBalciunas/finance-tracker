@@ -11,6 +11,7 @@ import TransactionForm from '../components/forms/TransactionForm'
 import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import QueryError from '../components/ui/QueryError'
+import BankInbox from '../components/ui/BankInbox'
 import { formatEuro, formatDate } from '../utils/format'
 import { txLabels } from '../utils/labels'
 import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput, AccountKey } from '../types'
@@ -251,6 +252,10 @@ export default function Transactions() {
           + Add
         </button>
       </div>
+
+      {/* Bank rows waiting to become transactions. Directly under "+ Add"
+          because that is the same job done a different way. */}
+      <BankInbox />
 
       {/* The transaction saved, but no account balance moved — say so rather
           than let the user discover it on the dashboard later. */}

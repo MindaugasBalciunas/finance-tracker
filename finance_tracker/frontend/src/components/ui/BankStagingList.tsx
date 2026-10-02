@@ -9,7 +9,7 @@ import {
   useRestoreStaged,
   useUndoCommit,
 } from '../../hooks/useBanking'
-import StagedEditor from './StagedEditor'
+import StagedReviewModal from './StagedReviewModal'
 
 const verdictStyle: Record<StagedVerdict, { label: string; className: string }> = {
   new: { label: 'new', className: 'bg-emerald-100 text-emerald-700' },
@@ -27,7 +27,6 @@ function StagedCard({
   row,
   selected,
   onToggle,
-  validAccountKeys,
   busy,
   onAdd,
   onDismiss,
@@ -36,14 +35,14 @@ function StagedCard({
   row: StagedTx
   selected: boolean
   onToggle: () => void
-  validAccountKeys: string[]
   busy: boolean
   onAdd: () => void
   onDismiss: () => void
   onRestore: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [showRaw, setShowRaw] = useState(false)
+  // Reviewing one row opens the ordinary transaction form, the same one
+  // "+ Add" and editing a saved row use.
+  const [reviewing, setReviewing] = useState(false)
   const verdict = verdictStyle[row.verdict] ?? verdictStyle.needs_review
   const signed = row.type === 'income' ? row.amount : -row.amount
 
@@ -76,7 +75,11 @@ function StagedCard({
             />
           )}
 
-          <button onClick={() => setOpen((o) => !o)} className="flex-1 min-w-0 text-left">
+          <button
+            onClick={() => row.state === 'staged' && setReviewing(true)}
+            disabled={row.state !== 'staged'}
+            className="flex-1 min-w-0 text-left disabled:cursor-default"
+          >
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-sm font-medium text-gray-900 truncate">
                 {row.comment || row.raw_payee || '(no description)'}
@@ -103,7 +106,6 @@ function StagedCard({
               <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${verdict.className}`}>
                 {verdict.label}
               </span>
-              <span className="text-xs text-gray-300">{open ? '▴' : '▾'}</span>
             </div>
           </button>
         </div>
@@ -129,6 +131,13 @@ function StagedCard({
                 ✓ Add
               </button>
               <button
+                onClick={() => setReviewing(true)}
+                disabled={busy}
+                className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ✎ Review
+              </button>
+              <button
                 onClick={onDismiss}
                 disabled={busy}
                 className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
@@ -150,41 +159,16 @@ function StagedCard({
           )}
         </div>
 
-        {open && (
-          <div className="mt-3 pt-3 border-t border-gray-50 space-y-2">
-            {row.state === 'staged' && (
-              <StagedEditor row={row} validAccountKeys={validAccountKeys} />
-            )}
-
-            <button
-              onClick={() => setShowRaw((s) => !s)}
-              className="text-xs text-gray-400 hover:text-gray-600"
-            >
-              {showRaw ? 'Hide' : 'Show'} raw bank data
-            </button>
-            {showRaw && (
-              <pre className="text-xs bg-gray-50 rounded-lg p-2 overflow-x-auto text-gray-600 whitespace-pre-wrap break-words">
-{`booked:   ${row.booking_date.slice(0, 10)}
-payee:    ${row.raw_payee || '(none)'}
-details:  ${row.raw_details || '(none)'}
-amount:   ${row.raw_amount} ${row.raw_currency} ${row.raw_dk}
-ref:      ${row.external_id}`}
-              </pre>
-            )}
-          </div>
-        )}
+        {reviewing && <StagedReviewModal row={row} onClose={() => setReviewing(false)} />}
       </div>
     </div>
   )
 }
 
-export default function BankStagingList({
-  rows,
-  validAccountKeys,
-}: {
-  rows: StagedTx[]
-  validAccountKeys: string[]
-}) {
+// The account pickers come from the transaction form now, which offers every
+// account the app knows — the same list "+ Add" offers. The server still
+// validates the key on save, so there is nothing for this component to narrow.
+export default function BankStagingList({ rows }: { rows: StagedTx[] }) {
   const commit = useCommitStaged()
   const dismiss = useDismissStaged()
   const restore = useRestoreStaged()
@@ -225,7 +209,7 @@ export default function BankStagingList({
   if (rows.length === 0) {
     return (
       <p className="text-sm text-gray-400 text-center py-8">
-        Nothing waiting for review. Press Sync now on an account above.
+        Nothing here yet.
       </p>
     )
   }
@@ -265,7 +249,6 @@ export default function BankStagingList({
           row={row}
           selected={isSelected(row)}
           onToggle={() => toggle(row)}
-          validAccountKeys={validAccountKeys}
           busy={busy}
           onAdd={() => runCommit([row.id])}
           onDismiss={() => dismiss.mutate([row.id])}

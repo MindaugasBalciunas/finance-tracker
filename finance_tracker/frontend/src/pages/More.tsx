@@ -11,8 +11,8 @@ export default function More() {
   const [dataMode, setDataMode] = useState<'backup' | 'export' | null>(null)
   const [securityOpen, setSecurityOpen] = useState(false)
   const aiOn = useAIAvailable()
-  // The badge is the only nudge that bank rows are waiting — there is no
-  // background sync, so nothing else would mention them.
+  // A second nudge toward the review queue. The Transactions tab carries the
+  // count too; this is for anyone who arrived here looking for "bank".
   const { data: bankSettings } = useBankSettings()
   const { data: staged } = useStagedTransactions({ state: 'staged', page_size: 1 }, !!bankSettings?.configured)
   const pendingBank = staged?.total ?? 0
@@ -86,17 +86,27 @@ export default function More() {
             <span className="block text-sm font-medium text-gray-800">Bank connections</span>
             <span className="block text-xs text-gray-400">
               {bankSettings?.configured
-                ? 'Pull recent transactions straight from Swedbank and SEB'
+                ? 'Connect, map and check consent — syncing lives on Transactions'
                 : 'Not set up — connect a bank to import without CSV files'}
             </span>
           </span>
-          {pendingBank > 0 && (
+          <span className="text-gray-300">›</span>
+        </Link>
+        {/* The queue itself is on Transactions, so the nudge links there
+            rather than badging the settings door it is not behind. */}
+        {pendingBank > 0 && (
+          <Link to="/transactions" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
+            <span className="text-xl">📥</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium text-gray-800">Bank rows to review</span>
+              <span className="block text-xs text-gray-400">Review and add them on Transactions</span>
+            </span>
             <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700">
               {pendingBank}
             </span>
-          )}
-          <span className="text-gray-300">›</span>
-        </Link>
+            <span className="text-gray-300">›</span>
+          </Link>
+        )}
         {/* Always listed, even with AI off — this is a way back to the
             switch. The AI page itself renders the settings panel. */}
         <Link to="/ai" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
