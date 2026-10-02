@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType, AccountKey } from '../../types'
 import { ACCOUNT_LABELS } from '../../types'
 import { CATEGORIES_BY_TYPE, CATEGORY_HINTS } from '../../constants/categories'
 import DateInput from '../ui/DateInput'
-import { useQuery } from '@tanstack/react-query'
-import { transactionsApi } from '../../api/transactions'
-import { useTransactionComments } from '../../hooks/useTransactions'
-import { useLabels, useLabelRules } from '../../hooks/useBudgets'
+import { useLabelRules } from '../../hooks/useBudgets'
 import { ruleCoversComment, commentPatternMatches } from '../../utils/rulePattern'
 import { aiApi } from '../../api/insights'
 import { useAIAvailable } from '../../hooks/useInsights'
 import RuleSuggestion from './RuleSuggestion'
+import LabelEditor from './LabelEditor'
+import CategorySuggestion from './CategorySuggestion'
+import CommentInput from './CommentInput'
+import { AIAssistButton, AIAssistResult, mergeLabels, useAIAssist } from './AIAssist'
 
 interface Props {
   onSubmit: (data: CreateTransactionInput) => void
@@ -50,24 +51,13 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   const selectedType = useWatch({ control, name: 'type' })
   const categories = CATEGORIES_BY_TYPE[selectedType] ?? []
 
-  const { data: allComments = [] } = useTransactionComments()
   const commentValue = watch('comment') ?? ''
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const commentRef = useRef<HTMLDivElement>(null)
-
-  const suggestions = commentValue.length > 0
-    ? allComments.filter(c => c.toLowerCase().includes(commentValue.toLowerCase()) && c !== commentValue).slice(0, 8)
-    : []
 
   // Label suggestions: existing labels as one-tap chips, plus a live preview
   // of labels the saved rules will apply automatically on save.
-  const { data: allLabels = [] } = useLabels()
   const { data: labelRules = [] } = useLabelRules()
   const labelsValue = watch('labels') ?? ''
   const selectedCategory = watch('category') ?? ''
-  // Labels that historically co-occur with the chosen category float to the
-  // front of the chip list (Kids → education/entertainment/food first).
-  const { data: categoryLabels = [] } = useLabels(selectedCategory ? String(selectedCategory) : undefined)
   const currentLabels = labelsValue.split(',').map((l) => l.trim().toLowerCase()).filter(Boolean)
 
   const autoLabels = labelRules
@@ -79,8 +69,6 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
     .map((r) => r.label)
     .filter((l, i, arr) => arr.indexOf(l) === i)
 
-  const [labelDraft, setLabelDraft] = useState('')
-  const [showAllChips, setShowAllChips] = useState(false)
   // Auto labels the user removed from the field — sent as suppressed_labels
   // on save so the matching rules are skipped for this transaction only.
   const [dismissedAuto, setDismissedAuto] = useState<string[]>([])
@@ -88,10 +76,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   // AI assist: labels merged into the field as normal removable chips, the
   // cleaner description offered beside the form (never applied silently).
   const aiConfigured = useAIAvailable()
-  const [assistBusy, setAssistBusy] = useState(false)
-  const [assistNote, setAssistNote] = useState('')
-  const [assistComment, setAssistComment] = useState('')
-  const [assistError, setAssistError] = useState('')
+  const assist = useAIAssist()
 
   // Scan a photo to prefill the whole draft. Reuses the assist note/error
   // display so results surface in the same spot beside the labels.
@@ -100,9 +85,7 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
 
   const runScan = async (file: File) => {
     setScanBusy(true)
-    setAssistError('')
-    setAssistNote('')
-    setAssistComment('')
+    assist.reset()
     try {
       const res = await aiApi.scanTransaction(file)
       // Prefill only fields the scan could actually read; a blank / non-positive
@@ -121,69 +104,24 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
       // screenshot) — prefill so the balance adjusts on save.
       if (res.debit_account) setValue('debit_account', res.debit_account)
       if (res.credit_account) setValue('credit_account', res.credit_account)
-      if (res.note) setAssistNote(res.note)
+      if (res.note) assist.setNote(res.note)
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
-      setAssistError(e.response?.data?.error ?? e.message ?? 'Scan failed')
+      assist.setError(e.response?.data?.error ?? e.message ?? 'Scan failed')
     } finally {
       setScanBusy(false)
     }
   }
 
   const runAssist = async () => {
-    setAssistBusy(true)
-    setAssistError('')
-    setAssistNote('')
-    setAssistComment('')
-    try {
-      const res = await aiApi.assistTransaction({
+    const labels = await assist.run(
+      {
         date: watch('date'), type: watch('type'), category: String(watch('category') ?? ''),
         amount: Number(watch('amount')) || 0, comment: watch('comment') ?? '', labels: watch('labels') ?? '',
-      })
-      const existing = (watch('labels') ?? '').split(',').map((l) => l.trim()).filter(Boolean)
-      const merged = [...existing, ...res.labels.filter((l) => !existing.includes(l))]
-      setValue('labels', merged.join(','))
-      const current = (watch('comment') ?? '').trim()
-      if (res.comment && res.comment !== current) setAssistComment(res.comment)
-      if (res.note) setAssistNote(res.note)
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string }
-      setAssistError(e.response?.data?.error ?? e.message ?? 'Suggestion failed')
-    } finally {
-      setAssistBusy(false)
-    }
-  }
-
-  // All known labels: ones used on transactions plus ones defined by rules
-  // (a fresh rule's label may not exist on any transaction yet).
-  const knownLabels = useMemo(
-    () => [...new Set([...allLabels, ...labelRules.map((r) => r.label)])].sort(),
-    [allLabels, labelRules]
-  )
-
-  // Typing in the labels input filters the chips — that's the autocomplete.
-  // Stable sort: category co-occurring labels first, alphabetical within.
-  // Dismissed auto labels reappear here so they can be re-added manually.
-  const categorySet = useMemo(() => new Set(categoryLabels), [categoryLabels])
-  const labelChips = knownLabels
-    .filter((l) => !currentLabels.includes(l) && (!autoLabels.includes(l) || dismissedAuto.includes(l)))
-    .filter((l) => !labelDraft.trim() || l.includes(labelDraft.trim().toLowerCase()))
-    .sort((a, b) => Number(categorySet.has(b)) - Number(categorySet.has(a)))
-
-  function addLabelChip(label: string) {
-    const l = label.trim().toLowerCase()
-    if (!l || currentLabels.includes(l)) return
-    setDismissedAuto((d) => d.filter((x) => x !== l))
-    setValue('labels', [...currentLabels, l].join(','))
-  }
-
-  function removeLabel(label: string) {
-    setValue('labels', currentLabels.filter((x) => x !== label).join(','))
-  }
-
-  function commitLabelDraft() {
-    if (labelDraft.trim()) addLabelChip(labelDraft)
-    setLabelDraft('')
+      },
+      watch('comment') ?? '',
+    )
+    if (labels.length) setValue('labels', mergeLabels(watch('labels') ?? '', labels))
   }
 
   // A hand-applied label that no saved rule explains is a rule waiting to be
@@ -202,24 +140,8 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
   // to show its confirmation.
   const suggestionLabel = ruleCandidate ?? (createdSuggestion && currentLabels.includes(createdSuggestion) ? createdSuggestion : undefined)
 
-  // Category suggestion from similar historical transactions (debounced).
+  // CategorySuggestion does its own debounced lookup from these.
   const amountValue = watch('amount')
-  const [debounced, setDebounced] = useState({ comment: '', amount: 0 })
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced({ comment: commentValue, amount: Number(amountValue) || 0 }), 400)
-    return () => clearTimeout(t)
-  }, [commentValue, amountValue])
-
-  const { data: suggestion } = useQuery({
-    queryKey: ['suggest-category', selectedType, debounced.comment, debounced.amount],
-    queryFn: () => transactionsApi.suggestCategory({
-      type: selectedType,
-      comment: debounced.comment,
-      amount: debounced.amount,
-    }),
-    enabled: debounced.comment.trim().length >= 3 || debounced.amount > 0,
-    staleTime: 30_000,
-  })
 
   useEffect(() => {
     if (!defaultValues?.category) {
@@ -320,164 +242,51 @@ export default function TransactionForm({ onSubmit, onCancel, isSubmitting, defa
         </div>
       </div>
 
-      {suggestion && suggestion.category && suggestion.category !== String(selectedCategory) && (
-        <p className="text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 -mt-1">
-          💡 {suggestion.matches} similar transaction{suggestion.matches === 1 ? '' : 's'}{' '}
-          ({suggestion.basis === 'amount' ? 'same amount' : 'matching comment'}) are usually{' '}
-          <span className="font-semibold text-gray-800">{suggestion.category}</span>
-          <button
-            type="button"
-            onClick={() => setValue('category', suggestion.category as any)}
-            className="ml-2 text-blue-600 hover:text-blue-800 font-medium"
-          >
-            Use it
-          </button>
-        </p>
-      )}
-
-      <div className="relative" ref={commentRef}>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
-        <input
-          type="text"
-          {...register('comment')}
-          placeholder="Optional description..."
-          autoComplete="off"
-          onFocus={() => setShowSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      <div className="-mt-1">
+        <CategorySuggestion
+          type={selectedType}
+          comment={commentValue}
+          amount={Number(amountValue) || 0}
+          current={String(selectedCategory)}
+          onPick={(c) => setValue('category', c as any)}
         />
-        {showSuggestions && suggestions.length > 0 && (
-          <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-            {suggestions.map((s) => (
-              <li
-                key={s}
-                onMouseDown={() => { setValue('comment', s); setShowSuggestions(false) }}
-                className="px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 cursor-pointer truncate"
-              >
-                {s}
-              </li>
-            ))}
-          </ul>
-        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+        <CommentInput
+          value={commentValue}
+          onChange={(v) => setValue('comment', v)}
+          placeholder="Optional description..."
+        />
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="block text-sm font-medium text-gray-700">Labels</label>
           {aiConfigured && (
-            <button
-              type="button"
+            <AIAssistButton
               onClick={runAssist}
-              disabled={assistBusy || commentValue.trim().length < 3}
-              title="Suggest labels and a cleaner description from your history"
-              className="inline-flex items-center gap-1.5 text-sm font-medium border border-indigo-200 text-indigo-600 bg-indigo-50 rounded-lg px-3 py-1.5 hover:bg-indigo-100 disabled:opacity-40"
-            >
-              <span>✦</span>
-              {assistBusy ? 'Thinking…' : 'AI suggest'}
-            </button>
+              busy={assist.busy}
+              disabled={commentValue.trim().length < 3}
+            />
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
-          {currentLabels.map((l) => (
-            <span key={l} className="inline-flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-md px-2 py-1">
-              {l}
-              <button type="button" onClick={() => removeLabel(l)} className="text-indigo-400 hover:text-indigo-700 text-sm leading-none px-0.5 -mr-0.5" aria-label={`remove ${l}`}>×</button>
-            </span>
-          ))}
-          {/* Labels the saved rules will apply, prefilled in place. Removing
-              one suppresses that rule for this transaction only. */}
-          {autoLabels.filter((l) => !currentLabels.includes(l) && !dismissedAuto.includes(l)).map((l) => (
-            <span
-              key={`auto-${l}`}
-              title="Applied by your label rules on save — remove to skip it this time"
-              className="inline-flex items-center gap-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-md px-2 py-1"
-            >
-              ⚡{l}
-              <button
-                type="button"
-                onClick={() => setDismissedAuto((d) => [...d, l])}
-                className="text-green-500 hover:text-green-800 text-sm leading-none px-0.5 -mr-0.5"
-                aria-label={`skip auto label ${l}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <input
-            type="text"
-            value={labelDraft}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v.includes(',')) {
-                v.split(',').map((part) => part.trim().toLowerCase()).filter(Boolean).forEach(addLabelChip)
-                setLabelDraft('')
-              } else {
-                setLabelDraft(v)
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitLabelDraft()
-              } else if (e.key === 'Tab' && labelDraft.trim() && labelChips.length > 0) {
-                e.preventDefault()
-                addLabelChip(labelChips[0])
-                setLabelDraft('')
-              } else if (e.key === 'Backspace' && labelDraft === '' && currentLabels.length > 0) {
-                removeLabel(currentLabels[currentLabels.length - 1])
-              }
-            }}
-            onBlur={commitLabelDraft}
-            placeholder={currentLabels.length === 0 ? 'Add label — tap a chip or type…' : ''}
-            autoComplete="off"
-            className="flex-1 min-w-28 text-sm focus:outline-none py-0.5"
-          />
-        </div>
-        {labelChips.length > 0 && (
-          <p className="mt-1.5">
-            {(labelDraft.trim() ? labelChips.slice(0, 20) : labelChips.slice(0, showAllChips ? labelChips.length : 12)).map((l) => (
-              <button
-                key={l}
-                type="button"
-                // preventDefault on mousedown keeps focus in the input, so its
-                // onBlur can't commit a half-typed draft before this click.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { addLabelChip(l); setLabelDraft('') }}
-                className="inline-block text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-md px-2 py-1 mr-1.5 mb-1.5 hover:bg-indigo-100 active:bg-indigo-200"
-              >
-                + {l}
-              </button>
-            ))}
-            {!labelDraft.trim() && labelChips.length > 12 && (
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setShowAllChips((s) => !s)}
-                className="inline-block text-xs text-gray-500 underline px-1 py-1 mb-1.5"
-              >
-                {showAllChips ? 'show less' : `+${labelChips.length - 12} more`}
-              </button>
-            )}
-          </p>
-        )}
-        {(assistComment || assistNote || assistError) && (
-          <div className="text-xs rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 space-y-1 mt-1.5">
-            {assistError && <p className="text-red-600">{assistError}</p>}
-            {assistComment && (
-              <p className="text-gray-700">
-                ✦ Clearer description: “{assistComment}”{' '}
-                <button
-                  type="button"
-                  onClick={() => { setValue('comment', assistComment); setAssistComment('') }}
-                  className="font-medium text-indigo-600 hover:underline"
-                >
-                  Use it
-                </button>
-              </p>
-            )}
-            {assistNote && <p className="text-gray-400">{assistNote}</p>}
-          </div>
-        )}
+        <LabelEditor
+          value={labelsValue}
+          onChange={(v) => setValue('labels', v)}
+          category={selectedCategory ? String(selectedCategory) : undefined}
+          autoLabels={autoLabels}
+          dismissedAuto={dismissedAuto}
+          onDismissAuto={(l) => setDismissedAuto((d) => [...d, l])}
+          onRestoreAuto={(l) => setDismissedAuto((d) => d.filter((x) => x !== l))}
+        />
+        <AIAssistResult
+          error={assist.error}
+          note={assist.note}
+          comment={assist.comment}
+          onUseComment={(c) => { setValue('comment', c); assist.setComment('') }}
+        />
         {suggestionLabel && (
           <RuleSuggestion
             key={suggestionLabel}

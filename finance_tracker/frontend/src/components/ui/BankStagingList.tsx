@@ -1,16 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { StagedEdit, StagedTx, StagedVerdict } from '../../api/banking'
-import { ACCOUNT_LABELS, type AccountKey, type TransactionType } from '../../types'
-import { CATEGORIES_BY_TYPE } from '../../constants/categories'
+import type { StagedTx, StagedVerdict } from '../../api/banking'
+import { ACCOUNT_LABELS, type AccountKey } from '../../types'
 import { formatEuro } from '../../utils/format'
 import {
   useCommitStaged,
   useDismissStaged,
   useRestoreStaged,
   useUndoCommit,
-  useUpdateStaged,
 } from '../../hooks/useBanking'
+import StagedEditor from './StagedEditor'
 
 const verdictStyle: Record<StagedVerdict, { label: string; className: string }> = {
   new: { label: 'new', className: 'bg-emerald-100 text-emerald-700' },
@@ -45,11 +44,8 @@ function StagedCard({
 }) {
   const [open, setOpen] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
-  const update = useUpdateStaged()
   const verdict = verdictStyle[row.verdict] ?? verdictStyle.needs_review
   const signed = row.type === 'income' ? row.amount : -row.amount
-
-  const edit = (patch: StagedEdit) => update.mutate({ id: row.id, edit: patch })
 
   return (
     <div
@@ -157,89 +153,7 @@ function StagedCard({
         {open && (
           <div className="mt-3 pt-3 border-t border-gray-50 space-y-2">
             {row.state === 'staged' && (
-              <>
-                <label className="block text-xs text-gray-500">
-                  Description
-                  <input
-                    defaultValue={row.comment}
-                    onBlur={(e) => e.target.value !== row.comment && edit({ comment: e.target.value })}
-                    className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block text-xs text-gray-500">
-                    Type
-                    <select
-                      value={row.type}
-                      onChange={(e) => edit({ type: e.target.value as TransactionType })}
-                      className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-                    >
-                      <option value="expense">Expense</option>
-                      <option value="income">Income</option>
-                      <option value="investment">Investment</option>
-                    </select>
-                  </label>
-                  <label className="block text-xs text-gray-500">
-                    Category
-                    <select
-                      value={row.category}
-                      onChange={(e) => edit({ category: e.target.value })}
-                      className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-                    >
-                      <option value="">Uncategorised</option>
-                      {CATEGORIES_BY_TYPE[row.type].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-xs text-gray-500">
-                    From (debit)
-                    <select
-                      value={row.debit_account}
-                      onChange={(e) => edit({ debit_account: e.target.value })}
-                      className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-                    >
-                      <option value="">—</option>
-                      {validAccountKeys.map((k) => (
-                        <option key={k} value={k}>
-                          {accountLabel(k)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-xs text-gray-500">
-                    To (credit)
-                    <select
-                      value={row.credit_account}
-                      onChange={(e) => edit({ credit_account: e.target.value })}
-                      className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-                    >
-                      <option value="">—</option>
-                      {validAccountKeys.map((k) => (
-                        <option key={k} value={k}>
-                          {accountLabel(k)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className="block text-xs text-gray-500">
-                  Labels
-                  <input
-                    defaultValue={row.labels}
-                    placeholder="comma,separated"
-                    onBlur={(e) => e.target.value !== row.labels && edit({ labels: e.target.value })}
-                    className="block w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5"
-                  />
-                </label>
-                {update.isError && (
-                  <p className="text-xs text-red-600">
-                    {update.error instanceof Error ? update.error.message : 'Could not save that edit'}
-                  </p>
-                )}
-              </>
+              <StagedEditor row={row} validAccountKeys={validAccountKeys} />
             )}
 
             <button

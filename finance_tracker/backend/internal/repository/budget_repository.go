@@ -180,9 +180,16 @@ func (r *budgetRepository) SuggestCategory(txType, comment string, amount float6
 	// Primary signal: same words in the comment (merchant names recur).
 	if len(comment) >= 3 {
 		var res row
+		// Two patterns, OR'd, because SQLite's LOWER() is ASCII-only: it
+		// leaves "Ė" alone while Go's ToLower turns the pattern's into "ė",
+		// so a lowered pattern can never match a Lithuanian merchant name.
+		// LIKE is already case-insensitive for ASCII, so the raw pattern
+		// covers those rows; the lowered one keeps matching history that was
+		// stored lowercase. The union can only find more, never fewer.
 		q := r.db.Model(&domain.Transaction{}).
 			Select("category, COUNT(*) as n").
-			Where("comment != '' AND LOWER(comment) LIKE ?", "%"+strings.ToLower(comment)+"%")
+			Where("comment != '' AND (comment LIKE ? OR LOWER(comment) LIKE ?)",
+				"%"+comment+"%", "%"+strings.ToLower(comment)+"%")
 		if txType != "" {
 			q = q.Where("type = ?", txType)
 		}

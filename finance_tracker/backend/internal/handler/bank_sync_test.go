@@ -56,7 +56,9 @@ func bankTestRouter(t *testing.T, configured bool) *bankTestEnv {
 		require.NoError(t, bankRepo.SaveSettings(s))
 	}
 
-	h := NewBankHandler(bankRepo, txRepo).WithDB(db)
+	// WithLabeling mirrors main.go: the learned signals are part of the
+	// production wiring, so the tests exercise the same handler.
+	h := NewBankHandler(bankRepo, txRepo).WithDB(db).WithLabeling(repository.NewBudgetRepository(db))
 	r := gin.New()
 	v1 := r.Group("/api/v1")
 	h.RegisterRoutes(v1)

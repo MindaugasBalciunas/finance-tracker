@@ -91,6 +91,9 @@ func adaptPSD2(tx openbanking.Transaction, link *domain.BankAccountLink) domain.
 			staged.DebitAccount = ""
 			staged.CreditAccount = link.AccountKey
 		}
+		// Finance is a placeholder here, not a reading of the row — the
+		// enricher may still find a better category in the user's history.
+		staged.CategoryGuessed = true
 		return staged
 	}
 
@@ -117,6 +120,7 @@ func adaptPSD2(tx openbanking.Transaction, link *domain.BankAccountLink) domain.
 	staged.Amount = row.Amount
 	staged.DebitAccount = row.Debit
 	staged.CreditAccount = row.Credit
+	staged.CategoryGuessed = row.Guessed
 	applyAccountRemap(&staged, link.AccountKey)
 	return staged
 }

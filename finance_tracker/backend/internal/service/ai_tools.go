@@ -767,9 +767,11 @@ func (s *insightService) chatBankConnections() (string, error) {
 }
 
 // chatUpdateStaged patches one row's ledger-bound fields. It mirrors the HTTP
-// handler's rules: a row that already left the queue is not editable, and the
+// handler's rules: a row that already left the queue is not editable, the
 // verdict is never re-derived — it answers "have I seen this bank row before",
-// which retyping a comment does not change.
+// which retyping a comment does not change — and the user's label rules
+// re-run afterwards, so an AI correction earns the same automatic labels a
+// correction made in the UI would.
 func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (string, error) {
 	if id == 0 {
 		return "", fmt.Errorf("id is required — take it from get_staged_transactions")
@@ -786,6 +788,7 @@ func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (str
 		return "", fmt.Errorf("row %d has already been %s — it is no longer in the review queue", id, row.State)
 	}
 
+	before := s.matchedStagedRules(row)
 	changed := make([]string, 0, len(patch))
 	for field, v := range patch {
 		v = strings.TrimSpace(v)
@@ -831,6 +834,9 @@ func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (str
 	if len(changed) == 0 {
 		return "", fmt.Errorf("nothing to change — pass at least one field")
 	}
+	if !containsLabel(changed, "labels") {
+		s.reapplyStagedRules(row, before)
+	}
 	if err := s.bankRepo.SaveStaged(row); err != nil {
 		return "", err
 	}
@@ -840,6 +846,44 @@ func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (str
 		"still_awaiting_approval": true,
 		"note":                    "Changed the proposal only. The row is still in the review queue — the user adds it to the ledger by hand.",
 	})
+}
+
+// matchedStagedRules / reapplyStagedRules mirror the HTTP edit path: only a
+// rule that starts matching because of this edit may add its label, so a
+// label the user deliberately removed is not put back by the next correction.
+func (s *insightService) matchedStagedRules(row *domain.BankStagedTx) map[string]bool {
+	out := map[string]bool{}
+	if s.budgetRepo == nil {
+		return out
+	}
+	rules, err := s.budgetRepo.ListRules()
+	if err != nil {
+		return out
+	}
+	probe := &domain.Transaction{Category: row.Category, Comment: row.Comment, Labels: row.Labels}
+	for _, rule := range rules {
+		if rule.Matches(probe) {
+			out[rule.Label+"|"+rule.Category+"|"+rule.CommentMatch] = true
+		}
+	}
+	return out
+}
+
+func (s *insightService) reapplyStagedRules(row *domain.BankStagedTx, before map[string]bool) {
+	if s.budgetRepo == nil {
+		return
+	}
+	rules, err := s.budgetRepo.ListRules()
+	if err != nil {
+		return
+	}
+	probe := &domain.Transaction{Category: row.Category, Comment: row.Comment, Labels: row.Labels}
+	for _, rule := range rules {
+		if rule.Matches(probe) && !before[rule.Label+"|"+rule.Category+"|"+rule.CommentMatch] {
+			probe.AddLabel(rule.Label)
+		}
+	}
+	row.Labels = probe.Labels
 }
 
 func formatDayPtr(t *time.Time) any {

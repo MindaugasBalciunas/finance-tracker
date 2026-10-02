@@ -32,6 +32,13 @@ type swedTx struct {
 	Amount   float64
 	Debit    string
 	Credit   string
+	// Guessed marks the two generic fallbacks — "Entertainment" for any
+	// unrecognised debit, "Reimbursement" for any unrecognised credit. Those
+	// are not classifications, they are placeholders, and the PSD2 path
+	// replaces them with what similar past transactions actually got. The
+	// CSV importer ignores the flag: its rows are already in the ledger and
+	// re-categorising them would break dedup against earlier statements.
+	Guessed bool
 }
 
 var purchaseDateRe = regexp.MustCompile(`(?:PIRKINYS|GRĄŽINIMAS)\s+\d{6}\*+\d{4}\s+(\d{4})\.(\d{2})\.(\d{2})`)
@@ -453,6 +460,7 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 			if base.Comment == "" {
 				base.Comment = details
 			}
+			base.Guessed = true
 		}
 		return base, false
 	}
@@ -525,5 +533,5 @@ func classifySwedbank(date time.Time, payee, details string, amount float64, dk 
 	}
 
 	return swedTx{Date: date, Amount: amount, Type: domain.TransactionTypeExpense,
-		Category: "Entertainment", Comment: describe(payee, details), Debit: "swed"}, false
+		Category: "Entertainment", Comment: describe(payee, details), Debit: "swed", Guessed: true}, false
 }

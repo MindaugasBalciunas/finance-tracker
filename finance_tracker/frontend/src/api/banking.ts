@@ -78,6 +78,10 @@ export type StagedTx = {
   credit_account: string
   verdict: StagedVerdict
   verdict_note: string
+  // Where a learned proposal came from — "category Food — 7 past
+  // transactions matching \"Barbora\"". Empty when the classifier's own
+  // answer stood.
+  enrich_note: string
   matched_tx_id: number | null
   state: 'staged' | 'imported' | 'dismissed'
   imported_tx_id: number | null

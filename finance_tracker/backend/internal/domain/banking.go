@@ -183,6 +183,19 @@ type BankStagedTx struct {
 	DebitAccount  string          `json:"debit_account" gorm:"not null;default:''"`
 	CreditAccount string          `json:"credit_account" gorm:"not null;default:''"`
 
+	// EnrichNote says where a non-obvious proposal came from, in the user's
+	// words: "category from 7 similar transactions", "labels from your
+	// rules". The classifier's hardcoded guesses are silent; only the
+	// learned signals announce themselves, because those are the ones worth
+	// double-checking.
+	EnrichNote string `json:"enrich_note" gorm:"not null;default:''"`
+
+	// CategoryGuessed marks a row whose category is the classifier's generic
+	// fallback rather than a rule hit — the signal enrichment keys on.
+	// Transient: it travels from the adapter to the enricher inside one sync
+	// and is never stored or serialised.
+	CategoryGuessed bool `json:"-" gorm:"-"`
+
 	// Verdict + lifecycle.
 	Verdict string `json:"verdict" gorm:"index"`
 	// VerdictNote names the match in words the user can act on, e.g.

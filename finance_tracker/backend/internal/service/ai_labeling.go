@@ -25,6 +25,11 @@ type TransactionAssistInput struct {
 	Amount   float64 `json:"amount"`
 	Comment  string  `json:"comment"`
 	Labels   string  `json:"labels"`
+	// Context is source material the description was derived from but does
+	// not contain — for a bank row, the raw payee and remittance narrative.
+	// It is what lets the model name the merchant the classifier flattened
+	// into "Entertainment". Shown to the model, never written anywhere.
+	Context string `json:"context"`
 }
 
 // TransactionAssist is the AI's proposal for one transaction.
@@ -100,7 +105,7 @@ func (s *insightService) AssistTransaction(input TransactionAssistInput) (*Trans
 	if err := requireAI(settings); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(input.Comment) == "" {
+	if strings.TrimSpace(input.Comment) == "" && strings.TrimSpace(input.Context) == "" {
 		return nil, errors.New("add a comment first — suggestions are based on the description")
 	}
 
@@ -113,7 +118,12 @@ func (s *insightService) AssistTransaction(input TransactionAssistInput) (*Trans
 	if err != nil {
 		return nil, err
 	}
-	examples := similarExamples(all, input.Comment, input.Category, 12)
+	examples := similarExamples(all, firstNonBlank(input.Comment, input.Context), input.Category, 12)
+
+	rawContext := ""
+	if c := strings.TrimSpace(input.Context); c != "" {
+		rawContext = fmt.Sprintf("\nRAW SOURCE BEHIND THIS ROW (bank narrative — may name the merchant the description lost):\n%q\n", c)
+	}
 
 	prompt := fmt.Sprintf(`You help label personal-finance transactions consistently with the user's own history.
 
@@ -126,12 +136,12 @@ SIMILAR HISTORICAL TRANSACTIONS (how this user labels and describes things):
 TRANSACTION TO TAG:
 date %s | %s €%.2f | category %s | current labels: %q
 description: %q
-
+%s
 Reply as ONE JSON object, nothing else:
 {"labels": ["1-3 labels, lowercase"], "comment": "a cleaner, human-readable description in the user's style — keep merchant names and essential facts, drop card numbers/bank noise; return the original if it is already clear", "note": "one short sentence explaining the suggestion"}`,
 		strings.Join(vocab, ", "),
 		strings.Join(examples, "\n"),
-		input.Date, input.Type, input.Amount, input.Category, input.Labels, input.Comment)
+		input.Date, input.Type, input.Amount, input.Category, input.Labels, input.Comment, rawContext)
 
 	reply, err := callGateway(withSpendKind(context.Background(), "tagging"), settings, []domain.ChatMessage{{Role: "user", Content: prompt}}, 2048)
 	if err != nil {
@@ -144,6 +154,16 @@ Reply as ONE JSON object, nothing else:
 	out.Labels = normalizeSuggested(out.Labels, nil, 3)
 	out.Comment = strings.TrimSpace(out.Comment)
 	return &out, nil
+}
+
+// firstNonBlank picks the first value with something in it.
+func firstNonBlank(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // reindexChunk bounds one gateway call; reindexLimit bounds one API call.

@@ -196,6 +196,11 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 			continue
 		}
 		row := adaptPSD2(t, link)
+		// The classifier knows a fixed merchant list; the user's ledger knows
+		// the rest. Enriching here (not at commit) means the review queue
+		// shows the final proposal, and the user corrects what they can see.
+		// Category and labels only — the dedup key is left untouched.
+		h.enrich(&row)
 		if row.BookingDate.After(newest) {
 			newest = row.BookingDate
 		}
@@ -391,8 +396,9 @@ func (h *BankHandler) CommitStaged(c *gin.Context) {
 	if h.db != nil {
 		err = h.db.Transaction(func(tx *gorm.DB) error {
 			return run(&BankHandler{
-				repo:   repository.NewBankRepository(tx),
-				txRepo: repository.NewTransactionRepository(tx),
+				repo:     repository.NewBankRepository(tx),
+				txRepo:   repository.NewTransactionRepository(tx),
+				labeling: h.labeling,
 			})
 		})
 	} else {
@@ -529,6 +535,11 @@ func shortLabel(t *domain.BankStagedTx) string {
 // retyping the comment does not change the answer, and re-deriving it here
 // would let an edit silently flip a reviewed row back to duplicate. Commit
 // re-verifies against the ledger anyway.
+//
+// It DOES re-run the label rules, the same way editing a saved transaction
+// does: fixing the category to Food is exactly when the "groceries" rule
+// should start applying. Only rules that newly match add a label — see
+// reapplyRules for why that asymmetry matters.
 func (h *BankHandler) UpdateStaged(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -562,6 +573,7 @@ func (h *BankHandler) UpdateStaged(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "only a row still awaiting review can be edited"})
 		return
 	}
+	matchedBefore := h.matchedRules(row)
 	if in.Date != nil {
 		d, err := time.Parse("2006-01-02", strings.TrimSpace(*in.Date))
 		if err != nil {
@@ -601,6 +613,13 @@ func (h *BankHandler) UpdateStaged(c *gin.Context) {
 			return
 		}
 		*f.out = v
+	}
+	// An explicit labels edit is the user's final word on labels — no rule
+	// gets to add to it in the same breath.
+	if in.Labels == nil {
+		h.reapplyRules(row, matchedBefore)
+	} else {
+		row.Labels = domain.NormalizeLabels(row.Labels)
 	}
 	if err := h.repo.SaveStaged(row); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

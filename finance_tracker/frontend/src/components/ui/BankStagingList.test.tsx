@@ -45,6 +45,7 @@ function row(over: Partial<StagedTx> = {}): StagedTx {
     credit_account: '',
     verdict: 'new',
     verdict_note: '',
+    enrich_note: '',
     matched_tx_id: null,
     state: 'staged',
     imported_tx_id: null,

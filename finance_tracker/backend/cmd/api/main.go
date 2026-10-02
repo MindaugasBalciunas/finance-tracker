@@ -85,7 +85,7 @@ func main() {
 	importHandler := handler.NewImportHandler(txRepo, balRepo, stockRepo, assetRepo).WithBudgets(budgetRepo).WithAI(insightRepo).WithDB(db)
 	stockHandler := handler.NewStockHandler(stockSvc)
 	assetHandler := handler.NewAssetHandler(assetSvc)
-	bankHandler := handler.NewBankHandler(bankRepo, txRepo).WithDB(db)
+	bankHandler := handler.NewBankHandler(bankRepo, txRepo).WithDB(db).WithLabeling(budgetRepo)
 
 	r := gin.Default()
 

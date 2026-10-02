@@ -36,6 +36,10 @@ type BankHandler struct {
 	// consentDays is how long a consent is requested for, capped per-bank by
 	// the ASPSP's maximum_consent_validity.
 	consentDays int
+	// labeling supplies the learned signals a hand-typed transaction gets —
+	// the user's label rules and the category similar rows were filed under.
+	// Optional: see WithLabeling in bank_enrich.go.
+	labeling labelingSource
 }
 
 func NewBankHandler(repo repository.BankRepository, txRepo repository.TransactionRepository) *BankHandler {

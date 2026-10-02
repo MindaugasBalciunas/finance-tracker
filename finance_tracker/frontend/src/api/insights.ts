@@ -201,6 +201,9 @@ export const aiApi = {
     amount?: number
     comment?: string
     labels?: string
+    // Raw source behind the row (a bank narrative) — context for the model,
+    // never written anywhere.
+    context?: string
   }): Promise<{ labels: string[]; comment: string; note?: string }> => {
     const { data } = await client.post('/ai/assist-transaction', input)
     if (data && (data as any).error) throw new Error((data as any).error)
