@@ -37,6 +37,14 @@ interface Props {
    * has to be what is saved, or the preview is a promise nothing keeps.
    */
   includeAutoLabels?: boolean
+  /**
+   * A photo to read into the draft as soon as the form opens.
+   *
+   * The picker is opened by the caller, not here: a file dialog needs a real
+   * user gesture, and one fired from an effect after the modal mounts is
+   * blocked on iOS. So the Add menu collects the file and hands it over.
+   */
+  scanFile?: File | null
 }
 
 const ALL_ACCOUNTS = Object.entries(ACCOUNT_LABELS) as [AccountKey, string][]
@@ -68,6 +76,7 @@ export default function TransactionForm({
   submitLabel = 'Save',
   aiContext,
   includeAutoLabels,
+  scanFile,
 }: Props) {
   const today = new Date().toISOString().slice(0, 10)
   // Labels are tied to their fields by id: the form renders inside modals and
@@ -141,6 +150,15 @@ export default function TransactionForm({
       setScanBusy(false)
     }
   }
+
+  // A photo handed in by the Add menu is read once, on open.
+  const scannedRef = useRef<File | null>(null)
+  useEffect(() => {
+    if (!scanFile || scannedRef.current === scanFile) return
+    scannedRef.current = scanFile
+    void runScan(scanFile)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanFile])
 
   const runAssist = async () => {
     const labels = await assist.run(

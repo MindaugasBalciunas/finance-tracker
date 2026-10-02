@@ -181,8 +181,8 @@ func TestBankStageAndCommit(t *testing.T) {
 	assert.Equal(t, 1, out.Imported)
 	assert.Equal(t, 0, out.Skipped)
 	require.Len(t, out.ImportedTxIDs, 1)
-	// The one honest line about what this did not do.
-	assert.Contains(t, out.BalanceNote, "balances were not changed")
+	// With no snapshot to build on, the honest line is why nothing moved.
+	assert.Contains(t, out.BalanceNote, "no balance snapshot exists yet")
 
 	var tx domain.Transaction
 	require.NoError(t, env.db.First(&tx, out.ImportedTxIDs[0]).Error)
@@ -191,9 +191,8 @@ func TestBankStageAndCommit(t *testing.T) {
 	assert.Equal(t, "Utilities", string(tx.Category))
 	assert.Equal(t, "swed", tx.DebitAccount)
 
-	// No balance snapshot was cut — the commit path deliberately avoids
-	// TransactionService.Create, which would plant one step in the net-worth
-	// trend per committed row.
+	// Nothing to clone, so nothing was written — a snapshot invented out of
+	// thin air would be a number nobody observed.
 	var balances int64
 	require.NoError(t, env.db.Table("balances").Count(&balances).Error)
 	assert.Zero(t, balances)
@@ -754,4 +753,108 @@ func TestPendingCountMatchesTheQueue(t *testing.T) {
 	counts, err := env.repo.CountPendingByLink()
 	require.NoError(t, err)
 	assert.Equal(t, int(total), counts[env.link.ID], "the badge counts the whole queue, duplicates included")
+}
+
+// TestCommitSnapshotsBalancesOnce — committing bank rows moves the balance
+// sheet, and moves it once.
+//
+// Per-row snapshots would plant a step in the net-worth trend for every row
+// added; leaving balances alone (the previous behaviour) meant the only way
+// to make the totals follow an import was to edit the last snapshot by hand.
+func TestCommitSnapshotsBalancesOnce(t *testing.T) {
+	env := bankTestRouter(t, true)
+	// Something to build on. Balances are observations — without one there is
+	// nothing to apply a delta to.
+	require.NoError(t, env.db.Create(&domain.Balance{
+		Date: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Swed: 1000, Total: 1000,
+	}).Error)
+
+	env.stage(t, bankFeed())
+	rows := env.staged(t)
+	ids := make([]uint, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": ids})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, 3, out.Imported)
+	assert.Contains(t, out.BalanceNote, "new snapshot")
+
+	var balances []domain.Balance
+	require.NoError(t, env.db.Order("date ASC, id ASC").Find(&balances).Error)
+	require.Len(t, balances, 2, "one new snapshot for the whole commit, not one per row")
+
+	// The seeded snapshot is untouched: history is added to, never rewritten.
+	assert.Equal(t, 1000.0, balances[0].Swed)
+
+	// −23.40 Lidl, −8.12 Ignitis, +2100.00 salary, all on swed.
+	assert.InDelta(t, 1000-23.40-8.12+2100.00, balances[1].Swed, 0.001)
+	// Dated the newest row committed.
+	assert.Equal(t, "2026-09-15", balances[1].Date.Format("2006-01-02"))
+}
+
+// A row with no account names nothing to move, so the balance sheet is left
+// alone and says so rather than cutting a snapshot identical to the last one.
+func TestCommitWithoutAccountsLeavesBalancesAlone(t *testing.T) {
+	env := bankTestRouter(t, true)
+	require.NoError(t, env.db.Create(&domain.Balance{
+		Date: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Swed: 1000, Total: 1000,
+	}).Error)
+
+	env.stage(t, bankFeed())
+	row := env.stagedByComment(t, "UAB IGNITIS")
+	rec := bankJSON(t, env.r, "PUT", stagedPath(row.ID), map[string]any{"debit_account": "", "credit_account": ""})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	rec = bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{row.ID}})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, 1, out.Imported)
+	assert.Contains(t, out.BalanceNote, "none of these rows name an account")
+
+	var n int64
+	require.NoError(t, env.db.Model(&domain.Balance{}).Count(&n).Error)
+	assert.EqualValues(t, 1, n)
+}
+
+// TestCommitSkipsRowsTheSnapshotAlreadyCovers — a sync routinely spans the
+// latest snapshot, so the batch must drop its older rows rather than fold
+// them into the total.
+//
+// Those rows left the account before the snapshot was taken, so the snapshot
+// already shows the money gone. Counting them again would subtract it twice.
+func TestCommitSkipsRowsTheSnapshotAlreadyCovers(t *testing.T) {
+	env := bankTestRouter(t, true)
+	// Taken between the Ignitis row (09-12) and the salary (09-15).
+	require.NoError(t, env.db.Create(&domain.Balance{
+		Date: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC),
+		Swed: 1000, Total: 1000,
+	}).Error)
+
+	env.stage(t, bankFeed())
+	ids := []uint{}
+	for _, r := range env.staged(t) {
+		ids = append(ids, r.ID)
+	}
+
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": ids})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, 3, out.Imported)
+	assert.Contains(t, out.BalanceNote, "left out of the balance")
+
+	var balances []domain.Balance
+	require.NoError(t, env.db.Order("date ASC, id ASC").Find(&balances).Error)
+	require.Len(t, balances, 2)
+	// Only the 09-15 salary lands: the two older card rows are already in the
+	// 09-14 snapshot.
+	assert.InDelta(t, 1000+2100.00, balances[1].Swed, 0.001)
+	assert.Equal(t, "2026-09-15", balances[1].Date.Format("2006-01-02"))
 }

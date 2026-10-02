@@ -518,12 +518,11 @@ func TestBalanceService_SnapshotFromTransaction(t *testing.T) {
 		repo := &mock.BalanceRepository{}
 		svc := newSvc(repo)
 
-		snap := &domain.Balance{ID: 1, Swed: 3000, Total: 3000}
-		repo.On("GetLatest").Return(snap, nil)
-
 		require.NoError(t, svc.SnapshotFromTransaction(&domain.Transaction{
 			Date: snapDate(2026, 6, 14), Type: domain.TransactionTypeExpense, Amount: 50,
 		}))
+		// Nothing to apply means nothing to read, either.
+		repo.AssertNotCalled(t, "GetLatest")
 		repo.AssertNotCalled(t, "Create")
 		repo.AssertExpectations(t)
 	})

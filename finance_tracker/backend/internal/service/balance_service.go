@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -101,6 +102,11 @@ type BalanceService interface {
 	GetLatest(liveBtcPrice float64) (*domain.Balance, error)
 	GetProjected(liveBtcPrice float64) (*domain.Balance, error)
 	SnapshotFromTransaction(tx *domain.Transaction) error
+	// SnapshotFromDeltas applies dated per-account movements as a single new
+	// snapshot. Returns the reason when nothing was adjusted, which is never
+	// an error — the caller says so rather than failing the write that
+	// caused it.
+	SnapshotFromDeltas(deltas []AccountDelta) (string, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -254,36 +260,113 @@ func (s *balanceService) GetProjected(liveBtcPrice float64) (*domain.Balance, er
 // tx.BalanceNote instead of returning nil silently — the skips are all
 // legitimate, but a user who photographed a receipt expecting their balance
 // to follow needs to be told it didn't.
+// AccountDelta is one dated movement on one balance-sheet account. Signed:
+// money leaving an account is negative.
+type AccountDelta struct {
+	Date    time.Time
+	Account string
+	Amount  float64
+}
+
 func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
+	debit, credit := resolveAccounts(tx)
+	var deltas []AccountDelta
+	if debit != "" {
+		deltas = append(deltas, AccountDelta{Date: tx.Date, Account: debit, Amount: -tx.Amount})
+	}
+	if credit != "" {
+		deltas = append(deltas, AccountDelta{Date: tx.Date, Account: credit, Amount: tx.Amount})
+	}
+
 	// Serialize the read-modify-write: two concurrent creates would otherwise
 	// both clone the same "latest" and each lose the other's delta.
 	s.snapMu.Lock()
 	defer s.snapMu.Unlock()
 
+	note, err := s.snapshotLocked(deltas)
+	if err != nil {
+		// Name the side the bad code came from — "unknown debit_account" is
+		// what the create path says, and a mismatch here would send the user
+		// looking at the wrong field.
+		var ua *unknownAccountError
+		if errors.As(err, &ua) {
+			side := "credit_account"
+			if ua.Account == debit {
+				side = "debit_account"
+			}
+			return fmt.Errorf("unknown %s %q — balance not adjusted", side, ua.Account)
+		}
+		return err
+	}
+	tx.BalanceNote = note
+	return nil
+}
+
+// unknownAccountError names a code that matches no balance column, so callers
+// can re-word it for the field the code actually came from.
+type unknownAccountError struct{ Account string }
+
+func (e *unknownAccountError) Error() string {
+	return fmt.Sprintf("unknown account %q — balance not adjusted", e.Account)
+}
+
+// SnapshotFromDeltas is the batch form: one net movement, one new snapshot.
+//
+// A bank import commits several rows at once. Cutting a snapshot per row
+// would plant a step in the net-worth trend for every row added, so the whole
+// commit lands as a single point — which is also what it is: one moment at
+// which the account balance was brought up to date.
+func (s *balanceService) SnapshotFromDeltas(deltas []AccountDelta) (string, error) {
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
+	return s.snapshotLocked(deltas)
+}
+
+// snapshotLocked clones the latest snapshot, applies the per-account deltas
+// and stores the result as a NEW snapshot dated `date`. The existing snapshot
+// is never rewritten: balance history is a series of observations, and
+// editing a past one silently restates what the trend already showed.
+//
+// Callers hold snapMu.
+func (s *balanceService) snapshotLocked(deltas []AccountDelta) (string, error) {
+	if len(deltas) == 0 {
+		return "balance not adjusted: no account was set on this entry", nil
+	}
+
 	latest, err := s.repo.GetLatest()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// No snapshot to base on — legitimate skip.
-			tx.BalanceNote = "no balance snapshot exists yet, so there was nothing to adjust — add one on the Balances page and later entries will follow it"
-			return nil
+			return "no balance snapshot exists yet, so there was nothing to adjust — add one on the Balances page and later entries will follow it", nil
 		}
-		return err
+		return "", err
 	}
 
-	// A backdated transaction must not clone TODAY's balances under a past
-	// date — that cuts a wrong point into the net-worth trend. Balances only
-	// move forward; past entries are already reflected in later snapshots.
-	if tx.Date.Before(latest.Date.Truncate(24 * time.Hour)) {
-		tx.BalanceNote = fmt.Sprintf(
+	// A backdated entry must not clone TODAY's balances under a past date —
+	// that cuts a wrong point into the net-worth trend. Balances only move
+	// forward; past entries are already reflected in later snapshots.
+	//
+	// Per entry, not per batch: a bank import routinely spans the latest
+	// snapshot, and folding its older rows into the total would double-count
+	// money the snapshot already saw leave the account.
+	cutoff := latest.Date.Truncate(24 * time.Hour)
+	net := map[string]float64{}
+	var newest time.Time
+	stale := 0
+	for _, d := range deltas {
+		if d.Date.Before(cutoff) {
+			stale++
+			continue
+		}
+		net[d.Account] += d.Amount
+		if d.Date.After(newest) {
+			newest = d.Date
+		}
+	}
+	if len(net) == 0 {
+		return fmt.Sprintf(
 			"balance not adjusted: this entry is dated %s, before your latest snapshot (%s), which may already include it — update it on the Balances page if it doesn't",
-			tx.Date.Format("2006-01-02"), latest.Date.Format("2006-01-02"))
-		return nil
-	}
-
-	debit, credit := resolveAccounts(tx)
-	if debit == "" && credit == "" {
-		tx.BalanceNote = "balance not adjusted: no account was set on this entry"
-		return nil
+			oldestDate(deltas).Format("2006-01-02"), latest.Date.Format("2006-01-02")), nil
 	}
 
 	snap := *latest
@@ -291,23 +374,60 @@ func (s *balanceService) SnapshotFromTransaction(tx *domain.Transaction) error {
 	// a byte-for-byte clone of the previous one — the balance looks
 	// "adjusted" in the trend while nothing moved. Fail loudly instead; the
 	// caller logs it and the bad linkage becomes visible.
-	if debit != "" && !applyAccountDelta(&snap, debit, -tx.Amount) {
-		return fmt.Errorf("unknown debit_account %q — balance not adjusted", debit)
-	}
-	if credit != "" && !applyAccountDelta(&snap, credit, tx.Amount) {
-		return fmt.Errorf("unknown credit_account %q — balance not adjusted", credit)
+	for _, account := range sortedKeys(net) {
+		if !applyAccountDelta(&snap, account, net[account]) {
+			return "", &unknownAccountError{Account: account}
+		}
 	}
 	roundAllAccounts(&snap)
 
 	btcEur := snap.BtcPrice * (snap.RBTC + snap.MBTC)
 	snap.Total = roundCents(snap.Seb + snap.Swed + snap.SwedETF + snap.SebPen + snap.Luminor + snap.Art + snap.Cash + snap.RevM + snap.RevR + btcEur + snap.RevStocks + snap.IBKRStocks)
 
+	// A fresh row, never an edit of the one it was cloned from.
 	snap.ID = 0
-	snap.Date = tx.Date
+	snap.Date = newest
 	snap.CreatedAt = time.Time{}
 	snap.UpdatedAt = time.Time{}
 
-	return s.repo.Create(&snap)
+	if err := s.repo.Create(&snap); err != nil {
+		return "", err
+	}
+	if stale > 0 {
+		return fmt.Sprintf(
+			"%d entr%s dated before your latest snapshot (%s) were left out of the balance — it already includes them",
+			stale, plural(stale, "y", "ies"), latest.Date.Format("2006-01-02")), nil
+	}
+	return "", nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// oldestDate names the entry the "too old" note is about.
+func oldestDate(deltas []AccountDelta) time.Time {
+	oldest := deltas[0].Date
+	for _, d := range deltas[1:] {
+		if d.Date.Before(oldest) {
+			oldest = d.Date
+		}
+	}
+	return oldest
+}
+
+// sortedKeys keeps the apply order deterministic, so an unknown account code
+// fails the same way every run instead of depending on map iteration.
+func sortedKeys(m map[string]float64) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func resolveAccounts(tx *domain.Transaction) (debit, credit string) {

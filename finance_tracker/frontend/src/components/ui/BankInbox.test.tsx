@@ -135,6 +135,35 @@ describe('BankInbox', () => {
     expect(screen.getByText(/No account is mapped yet/)).toBeInTheDocument()
   })
 
+  // Dismissed and Added moved here from the settings page: putting a row
+  // back is part of reviewing, not part of connecting a bank.
+  it('offers the dismissed and added sections', async () => {
+    const user = userEvent.setup()
+    renderInbox()
+
+    await user.click(await screen.findByText('From your bank'))
+    expect(await screen.findByRole('button', { name: 'Dismissed' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Dismissed' }))
+    await waitFor(() =>
+      expect(api.staged).toHaveBeenCalledWith(expect.objectContaining({ state: 'dismissed' }))
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Added' }))
+    await waitFor(() =>
+      expect(api.staged).toHaveBeenCalledWith(expect.objectContaining({ state: 'imported' }))
+    )
+  })
+
+  // Empty queue still opens — that is where the archive is.
+  it('opens even with nothing waiting', async () => {
+    const user = userEvent.setup()
+    renderInbox()
+
+    await user.click(await screen.findByText('From your bank'))
+    expect(await screen.findByRole('button', { name: /To review/ })).toBeInTheDocument()
+  })
+
   // The queue is the point of the panel: it opens in place, on the
   // transactions page, instead of three taps into the settings menu.
   it('shows the waiting rows in place', async () => {

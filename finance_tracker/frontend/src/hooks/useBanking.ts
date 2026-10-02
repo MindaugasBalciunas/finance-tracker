@@ -131,9 +131,9 @@ export function useCommitStaged() {
     mutationFn: (ids: number[]) => bankingApi.commit(ids),
     onSuccess: () => {
       invalidateBanking(qc)
-      // false: the commit deliberately writes no balance snapshot, so the
-      // stored balances are still correct — only the projection moves.
-      invalidateTransactionQueries(qc, false)
+      // A commit cuts one balance snapshot for everything it added, so the
+      // stored balances, the trend and the allocation all move with it.
+      invalidateTransactionQueries(qc)
     },
   })
 }
@@ -162,7 +162,11 @@ export function useUndoCommit() {
     mutationFn: (ids: number[]) => transactionsApi.deleteBatch(ids),
     onSuccess: () => {
       invalidateBanking(qc)
-      invalidateTransactionQueries(qc, false)
+      // Deleting the transactions does NOT remove the snapshot the commit
+      // cut — balance history is a series of observations, and undoing the
+      // rows does not un-observe it. Refresh anyway so what is shown is what
+      // is stored, and say so in the UI.
+      invalidateTransactionQueries(qc)
     },
   })
 }

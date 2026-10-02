@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/openbanking"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/internal/service"
 	"gorm.io/gorm"
 )
 
@@ -547,6 +549,12 @@ func (h *BankHandler) CommitStaged(c *gin.Context) {
 				repo:     repository.NewBankRepository(tx),
 				txRepo:   repository.NewTransactionRepository(tx),
 				labeling: h.labeling,
+				// Bound to this transaction's handle, so the snapshot lands
+				// with the rows that caused it or not at all.
+				balances: service.NewBalanceService(
+					repository.NewBalanceRepository(tx),
+					repository.NewTransactionRepository(tx),
+				),
 			})
 		})
 	} else {
@@ -560,13 +568,13 @@ func (h *BankHandler) CommitStaged(c *gin.Context) {
 }
 
 func (h *BankHandler) commit(ids []uint) (commitResult, error) {
-	res := commitResult{
-		ImportedTxIDs: []uint{},
-		// Balances are deliberately left alone: a PSD2 row is a flow, and
-		// cutting a snapshot per committed row would plant a step in the
-		// net-worth trend for every transaction added.
-		BalanceNote: "Account balances were not changed — add a balance snapshot if you want the totals to move.",
-	}
+	res := commitResult{ImportedTxIDs: []uint{}}
+	// The whole commit moves the balance sheet once. Per-row snapshots would
+	// plant a step in the net-worth trend for every row added, and a 30-row
+	// import is one moment of bringing the account up to date, not thirty.
+	// The rows stay dated individually so the service can drop the ones the
+	// latest snapshot already covers.
+	var deltas []service.AccountDelta
 	rows, err := h.repo.GetStagedByIDs(ids)
 	if err != nil {
 		return res, err
@@ -650,6 +658,12 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 		}
 		dedup.add(row.Date, row.Type, row.Amount, row.Comment)
 		byExternal[row.ExternalID] = tx.ID
+		if row.DebitAccount != "" {
+			deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.DebitAccount, Amount: -row.Amount})
+		}
+		if row.CreditAccount != "" {
+			deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.CreditAccount, Amount: row.Amount})
+		}
 
 		row.State = domain.StagedStateImported
 		row.ImportedTxID = &tx.ID
@@ -659,7 +673,35 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 		res.Imported++
 		res.ImportedTxIDs = append(res.ImportedTxIDs, tx.ID)
 	}
+
+	res.BalanceNote = h.snapshotCommit(deltas, res.Imported)
 	return res, nil
+}
+
+// snapshotCommit moves the balance sheet for everything just committed, and
+// returns the one honest line about what happened to it.
+//
+// A snapshot failure never fails the commit: the transactions are already
+// written and correct, and refusing the whole import because the balance
+// could not be restated would be a lie about what went in.
+func (h *BankHandler) snapshotCommit(deltas []service.AccountDelta, imported int) string {
+	switch {
+	case imported == 0:
+		return ""
+	case h.balances == nil:
+		return "Account balances were not changed — add a balance snapshot if you want the totals to move."
+	case len(deltas) == 0:
+		return "Account balances were not changed — none of these rows name an account."
+	}
+	note, err := h.balances.SnapshotFromDeltas(deltas)
+	if err != nil {
+		log.Printf("bank commit balance snapshot failed: %v", err)
+		return "Account balances were not changed: " + err.Error()
+	}
+	if note != "" {
+		return note
+	}
+	return "Account balances moved in a new snapshot."
 }
 
 func shortLabel(t *domain.BankStagedTx) string {

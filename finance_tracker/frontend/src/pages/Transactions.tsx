@@ -12,6 +12,9 @@ import Badge from '../components/ui/Badge'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import QueryError from '../components/ui/QueryError'
 import BankInbox from '../components/ui/BankInbox'
+import AddTransactionButton from '../components/ui/AddTransactionButton'
+import { useAIAvailable } from '../hooks/useInsights'
+import { useBankSettings, useStagedTransactions } from '../hooks/useBanking'
 import { formatEuro, formatDate } from '../utils/format'
 import { txLabels } from '../utils/labels'
 import type { Transaction, TransactionFilter, TransactionType, Category, CreateTransactionInput, AccountKey } from '../types'
@@ -63,6 +66,11 @@ export default function Transactions() {
   const { dateRange, setCustomRange } = useDateRange()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showForm, setShowForm] = useState(false)
+  // A photo picked from the Add menu, handed to the form to read on open.
+  const [scanFile, setScanFile] = useState<File | null>(null)
+  // "From your bank" in the Add menu opens the panel below rather than a
+  // fourth modal — the queue is a list, not a form.
+  const [bankOpen, setBankOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   // Set when the server saved the transaction but did NOT move an account
@@ -171,6 +179,16 @@ export default function Transactions() {
     }
     return { expenses, income, investments, count: labelMatches.data.length }
   })()
+  // What the Add menu can offer: typing always, a photo only with AI
+  // configured, the bank only once it is connected.
+  const aiOn = useAIAvailable()
+  const { data: bankSettings } = useBankSettings()
+  const bankConfigured = !!bankSettings?.configured
+  const { data: bankStaged } = useStagedTransactions(
+    { state: 'staged', page_size: 1 },
+    bankConfigured,
+  )
+
   const createMutation = useCreateTransaction()
   const updateMutation = useUpdateTransaction()
   const deleteMutation = useDeleteTransaction()
@@ -196,6 +214,7 @@ export default function Transactions() {
     try {
       const tx = await createMutation.mutateAsync(input)
       setShowForm(false)
+      setScanFile(null)
       setFormError(null)
       // The server says so whenever it declined to move the balance. Saying
       // nothing is how "I scanned a receipt and nothing happened" happens.
@@ -245,17 +264,18 @@ export default function Transactions() {
             {data ? `${data.total} records` : 'All expenses, income and investments'}
           </p>
         )}
-        <button
-          onClick={() => { setShowForm(true); setFormError(null) }}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          + Add
-        </button>
+        <AddTransactionButton
+          scanAvailable={aiOn}
+          bankPending={bankStaged?.total ?? 0}
+          onManual={() => { setScanFile(null); setShowForm(true); setFormError(null) }}
+          onScan={(file) => { setScanFile(file); setShowForm(true); setFormError(null) }}
+          onBank={bankConfigured ? () => setBankOpen(true) : undefined}
+        />
       </div>
 
       {/* Bank rows waiting to become transactions. Directly under "+ Add"
           because that is the same job done a different way. */}
-      <BankInbox />
+      <BankInbox open={bankOpen} onOpenChange={setBankOpen} />
 
       {/* The transaction saved, but no account balance moved — say so rather
           than let the user discover it on the dashboard later. */}
@@ -281,8 +301,9 @@ export default function Transactions() {
             {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <TransactionForm
               onSubmit={handleCreate}
-              onCancel={() => { setShowForm(false); setFormError(null) }}
+              onCancel={() => { setShowForm(false); setFormError(null); setScanFile(null) }}
               isSubmitting={createMutation.isPending}
+              scanFile={scanFile}
             />
           </div>
         </div>

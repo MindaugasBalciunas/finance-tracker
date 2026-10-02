@@ -20,15 +20,40 @@ import LoadingSpinner from './LoadingSpinner'
  * is new and approving it is transaction entry, and belongs here next to
  * "+ Add".
  */
-export default function BankInbox() {
+type Tab = 'staged' | 'dismissed' | 'imported'
+
+const TAB_LABEL: Record<Tab, string> = {
+  staged: 'To review',
+  dismissed: 'Dismissed',
+  imported: 'Added',
+}
+
+export default function BankInbox({
+  open: openProp,
+  onOpenChange,
+}: {
+  /** Controlled from the Add menu's "From your bank" entry. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+} = {}) {
   const { data: settings } = useBankSettings()
   const configured = !!settings?.configured
 
   const connections = useBankConnections(configured)
+  const [tab, setTab] = useState<Tab>('staged')
+  // The queue drives the header count and the nav badge, so it is asked for
+  // regardless of which tab is showing.
   const staged = useStagedTransactions({ state: 'staged' }, configured)
+  const archive = useStagedTransactions({ state: tab }, configured && tab !== 'staged')
+  const list = tab === 'staged' ? staged : archive
   const syncAll = useSyncAllBanks()
   const [report, setReport] = useState<SyncAllResult | null>(null)
-  const [open, setOpen] = useState(false)
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    onOpenChange?.(next)
+  }
 
   const pending = staged.data?.total ?? 0
   // Nothing to do and nothing to connect: a user who never set this up gets
@@ -46,7 +71,10 @@ export default function BankInbox() {
     try {
       const res = await syncAll.mutateAsync(days)
       setReport(res)
-      if (res.totals.staged_new > 0) setOpen(true)
+      if (res.totals.staged_new > 0) {
+        setTab('staged')
+        setOpen(true)
+      }
     } catch {
       // The mutation's own error state renders below.
     }
@@ -60,9 +88,8 @@ export default function BankInbox() {
           390px line without the heading wrapping mid-phrase. */}
       <div className="flex flex-wrap items-center gap-y-2 gap-x-2 p-3 sm:p-4">
         <button
-          onClick={() => setOpen((o) => !o)}
-          disabled={pending === 0}
-          className="w-full sm:flex-1 min-w-0 flex items-center gap-2 text-left disabled:cursor-default"
+          onClick={() => setOpen(!open)}
+          className="w-full sm:flex-1 min-w-0 flex items-center gap-2 text-left"
         >
           <span className="text-lg shrink-0">🔗</span>
           <span className="min-w-0 flex-1">
@@ -73,18 +100,20 @@ export default function BankInbox() {
                   {pending} to review
                 </span>
               )}
+              {/* Next to the title, not floating at the far right of an
+                  otherwise empty row. */}
+              <span className="text-gray-300 text-xs">{open ? '▴' : '▾'}</span>
             </span>
             <span className="block text-xs text-gray-400 truncate">
-              {pending > 0
-                ? open
-                  ? 'Tap to hide'
-                  : 'Tap to review and add them'
-                : mapped === 0
-                  ? 'No account is mapped yet — set one up in Bank connections'
-                  : 'Nothing waiting'}
+              {open
+                ? 'Tap to hide'
+                : pending > 0
+                  ? 'Tap to review and add them'
+                  : mapped === 0
+                    ? 'No account is mapped yet — set one up in Bank connections'
+                    : 'Nothing waiting — tap for what was added or dismissed'}
             </span>
           </span>
-          {pending > 0 && <span className="text-gray-300 shrink-0">{open ? '▴' : '▾'}</span>}
         </button>
 
         <div className="flex items-center gap-2 shrink-0 ml-auto">
@@ -116,12 +145,27 @@ export default function BankInbox() {
 
       {report && <SyncReport report={report} />}
 
-      {open && pending > 0 && (
+      {open && (
         <div className="px-3 sm:px-4 pb-3 border-t border-gray-50 pt-3">
-          {staged.isLoading && <LoadingSpinner />}
-          {staged.data && (
-            <BankStagingList rows={staged.data.transactions} />
-          )}
+          {/* Dismissed and Added live here rather than on the settings page:
+              putting a row back, or checking what a sync actually added, is
+              part of reviewing, not part of connecting a bank. */}
+          <div className="flex items-center gap-1 mb-2 overflow-x-auto">
+            {(['staged', 'dismissed', 'imported'] as Tab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${
+                  tab === t ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {TAB_LABEL[t]}
+                {t === 'staged' && pending > 0 ? ` (${pending})` : ''}
+              </button>
+            ))}
+          </div>
+          {list.isLoading && <LoadingSpinner />}
+          {list.data && <BankStagingList rows={list.data.transactions} />}
         </div>
       )}
     </div>

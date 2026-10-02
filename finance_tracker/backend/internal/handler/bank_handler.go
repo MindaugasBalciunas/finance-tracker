@@ -15,6 +15,7 @@ import (
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/openbanking"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/internal/service"
 	"gorm.io/gorm"
 )
 
@@ -40,6 +41,16 @@ type BankHandler struct {
 	// the user's label rules and the category similar rows were filed under.
 	// Optional: see WithLabeling in bank_enrich.go.
 	labeling labelingSource
+	// balances moves the balance sheet when rows are committed. Built per
+	// database handle so the snapshot lands inside the commit's transaction;
+	// nil disables it (unit tests on fake repositories).
+	balances BalanceSnapshotter
+}
+
+// BalanceSnapshotter applies dated per-account movements as a single new
+// balance snapshot. service.BalanceService satisfies it.
+type BalanceSnapshotter interface {
+	SnapshotFromDeltas(deltas []service.AccountDelta) (string, error)
 }
 
 func NewBankHandler(repo repository.BankRepository, txRepo repository.TransactionRepository) *BankHandler {

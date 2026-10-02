@@ -226,7 +226,11 @@ export default function BankStagingList({ rows }: { rows: StagedTx[] }) {
               onClick={async () => {
                 await undo.mutateAsync(lastImported)
                 setLastImported([])
-                setNote('Undone — the rows are back on the review list.')
+                // The snapshot the commit cut is deliberately left alone:
+                // balance history records what was observed, and undoing the
+                // rows does not un-observe it. Say so rather than let the
+                // totals quietly disagree with the ledger.
+                setNote('Undone — the rows are back on the review list. The balance snapshot it added stays; remove it on the Balances page if you want the totals back.')
               }}
               disabled={undo.isPending}
               className="text-xs font-medium text-emerald-700 underline shrink-0 disabled:opacity-50"
