@@ -125,18 +125,16 @@ function StagedCard({
                 · {row.merge_candidate.date} · {formatEuro(row.merge_candidate.amount)}
               </span>
             </p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <button
-                onClick={() => merge.mutate({ id: row.id, transactionId: row.merge_candidate!.id })}
-                disabled={merge.isPending || busy}
-                className="px-2.5 py-1 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50"
-              >
-                {merge.isPending ? 'Linking…' : 'Link to it'}
-              </button>
-              <span className="text-amber-700/80">
-                Keeps your description and labels; stops it coming back.
-              </span>
-            </div>
+            <p className="text-amber-700/80 mt-1">
+              Keeps your description and labels; stops it coming back.
+            </p>
+            <button
+              onClick={() => merge.mutate({ id: row.id, transactionId: row.merge_candidate!.id })}
+              disabled={merge.isPending || busy}
+              className="mt-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+            >
+              {merge.isPending ? 'Linking…' : 'Link to it'}
+            </button>
             {merge.isError && (
               <p className="text-red-600 mt-1">
                 {merge.error instanceof Error ? merge.error.message : 'Could not link that'}

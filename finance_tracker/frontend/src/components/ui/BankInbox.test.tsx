@@ -142,7 +142,6 @@ describe('BankInbox', () => {
     const user = userEvent.setup()
     renderInbox()
 
-    await user.click(await screen.findByText('From your bank'))
     expect(await screen.findByRole('button', { name: 'Dismissed' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Dismissed' }))
@@ -156,19 +155,15 @@ describe('BankInbox', () => {
     )
   })
 
-  // Empty queue still opens — that is where the archive is.
-  it('opens even with nothing waiting', async () => {
-    const user = userEvent.setup()
+  // The archive is reachable with an empty queue — that is where it lives.
+  it('shows its sections with nothing waiting', async () => {
     renderInbox()
-
-    await user.click(await screen.findByText('From your bank'))
     expect(await screen.findByRole('button', { name: /To review/ })).toBeInTheDocument()
   })
 
-  // The queue is the point of the panel: it opens in place, on the
-  // transactions page, instead of three taps into the settings menu.
+  // The queue is the point: it lives on the transactions page, a tab away,
+  // instead of three taps into the settings menu.
   it('shows the waiting rows in place', async () => {
-    const user = userEvent.setup()
     api.staged.mockResolvedValue({
       transactions: [
         {
@@ -187,8 +182,7 @@ describe('BankInbox', () => {
     })
     renderInbox()
 
-    expect(await screen.findByText('1 to review')).toBeInTheDocument()
-    await user.click(screen.getByText('From your bank'))
+    expect(await screen.findByText('1 waiting to review')).toBeInTheDocument()
     expect(await screen.findByText('Lidl')).toBeInTheDocument()
   })
 })

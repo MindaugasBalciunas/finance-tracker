@@ -95,7 +95,7 @@ export default function More() {
         {/* The queue itself is on Transactions, so the nudge links there
             rather than badging the settings door it is not behind. */}
         {pendingBank > 0 && (
-          <Link to="/transactions" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
+          <Link to="/transactions?tab=bank" className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50">
             <span className="text-xl">📥</span>
             <span className="flex-1 min-w-0">
               <span className="block text-sm font-medium text-gray-800">Bank rows to review</span>

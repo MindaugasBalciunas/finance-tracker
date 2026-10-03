@@ -195,7 +195,7 @@ export default function Banking() {
               on the transactions page now — this page is where a bank gets
               connected, mapped and watched for consent expiry. */}
           <Link
-            to="/transactions"
+            to="/transactions?tab=bank"
             className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 hover:bg-indigo-100"
           >
             <span className="text-lg">📥</span>

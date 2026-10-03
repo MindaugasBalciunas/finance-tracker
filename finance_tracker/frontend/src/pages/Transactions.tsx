@@ -68,9 +68,6 @@ export default function Transactions() {
   const [showForm, setShowForm] = useState(false)
   // A photo picked from the Add menu, handed to the form to read on open.
   const [scanFile, setScanFile] = useState<File | null>(null)
-  // "From your bank" in the Add menu opens the panel below rather than a
-  // fourth modal — the queue is a list, not a form.
-  const [bankOpen, setBankOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   // Set when the server saved the transaction but did NOT move an account
@@ -188,6 +185,19 @@ export default function Transactions() {
     { state: 'staged', page_size: 1 },
     bankConfigured,
   )
+  const bankPending = bankStaged?.total ?? 0
+
+  // The bank queue is a second view of this page, not a panel stacked on top
+  // of it: the ledger is what you came for, and a card above it pushed the
+  // list down on every visit. In the URL so the nudges elsewhere can link
+  // straight to it.
+  const onBankTab = bankConfigured && searchParams.get('tab') === 'bank'
+  const showTab = (tab: 'ledger' | 'bank') => {
+    const next = new URLSearchParams(searchParams)
+    if (tab === 'bank') next.set('tab', 'bank')
+    else next.delete('tab')
+    setSearchParams(next, { replace: true })
+  }
 
   const createMutation = useCreateTransaction()
   const updateMutation = useUpdateTransaction()
@@ -244,7 +254,48 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-nav + Add on one row, so the ledger starts as high up the page
+          as it did before the bank queue existed. */}
       <div className="flex items-center justify-between gap-3">
+        {bankConfigured ? (
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit min-w-0">
+            <button
+              onClick={() => showTab('ledger')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                onBankTab ? 'text-gray-500 hover:text-gray-800' : 'bg-white text-gray-900 shadow-sm'
+              }`}
+            >
+              💸 Transactions
+            </button>
+            <button
+              onClick={() => showTab('bank')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
+                onBankTab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              🔗 From bank
+              {bankPending > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-semibold leading-none rounded-full bg-indigo-600 text-white">
+                  {bankPending}
+                </span>
+              )}
+            </button>
+          </div>
+        ) : (
+          <span />
+        )}
+        <AddTransactionButton
+          scanAvailable={aiOn}
+          bankPending={bankPending}
+          onManual={() => { setScanFile(null); setShowForm(true); setFormError(null) }}
+          onScan={(file) => { setScanFile(file); setShowForm(true); setFormError(null) }}
+          onBank={bankConfigured ? () => showTab('bank') : undefined}
+        />
+      </div>
+
+      {onBankTab && <BankInbox />}
+
+      <div className={onBankTab ? 'hidden' : 'flex items-center justify-between gap-3'}>
         {filter.label && labelTotals ? (
           <p className="text-sm text-gray-500 min-w-0">
             {labelList.map((l, i) => (
@@ -264,18 +315,7 @@ export default function Transactions() {
             {data ? `${data.total} records` : 'All expenses, income and investments'}
           </p>
         )}
-        <AddTransactionButton
-          scanAvailable={aiOn}
-          bankPending={bankStaged?.total ?? 0}
-          onManual={() => { setScanFile(null); setShowForm(true); setFormError(null) }}
-          onScan={(file) => { setScanFile(file); setShowForm(true); setFormError(null) }}
-          onBank={bankConfigured ? () => setBankOpen(true) : undefined}
-        />
       </div>
-
-      {/* Bank rows waiting to become transactions. Directly under "+ Add"
-          because that is the same job done a different way. */}
-      <BankInbox open={bankOpen} onOpenChange={setBankOpen} />
 
       {/* The transaction saved, but no account balance moved — say so rather
           than let the user discover it on the dashboard later. */}
@@ -338,6 +378,11 @@ export default function Transactions() {
           </div>
         </div>
       )}
+
+      {/* The ledger itself. Hidden rather than unmounted on the bank tab, so
+          the filters, the page you were on and the scroll position all
+          survive a trip to the review queue and back. */}
+      <div className={onBankTab ? 'hidden' : 'space-y-6'}>
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
@@ -560,6 +605,7 @@ export default function Transactions() {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }
