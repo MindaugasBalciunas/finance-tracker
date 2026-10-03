@@ -255,6 +255,11 @@ export default function MonthView(p: Props) {
   const ordered = [...spending].sort((a, b) => Number(b.fund) - Number(a.fund) || Number(b.period === 'yearly') - Number(a.period === 'yearly'))
   const safe = report.safe_to_spend
   const funds = spending.filter((l) => l.fund)
+  // The headline is what's left of the month in total: free money plus what
+  // the funds set aside. The ≈/day pace stays on safe-to-spend alone, since
+  // fund money is earmarked for its trip or bill.
+  const setAside = report.fund_contributions > 0.5 ? report.fund_contributions : 0
+  const remaining = safe != null ? safe + setAside : null
   const spentOutsideFunds = report.discretionary_spent - report.fund_spent
 
   const totalSpent = p.monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount.value, 0)
@@ -268,16 +273,25 @@ export default function MonthView(p: Props) {
       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <div>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
+              <p className="text-sm font-medium text-gray-500">
+                {setAside > 0 ? 'Remaining' : 'Safe to spend'} {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}
+              </p>
               {daysLeft != null && safe != null && safe > 0 && (
                 <p className="text-sm text-gray-500">
                   ≈ <span className="font-bold text-green-600">{formatEuro(safe / daysLeft)}</span>/day for the next {daysLeft} day{daysLeft === 1 ? '' : 's'}
                 </p>
               )}
             </div>
-            <p className={`text-3xl sm:text-4xl font-bold mt-1 ${safe != null && safe >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {safe != null ? formatEuro(safe) : '—'}
+            <p className={`text-3xl sm:text-4xl font-bold mt-1 ${remaining != null && remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {remaining != null ? formatEuro(remaining) : '—'}
             </p>
+            {safe != null && setAside > 0 && (
+              <p className="mt-1 text-sm text-gray-500">
+                <span className={`font-semibold ${safe >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatEuro(safe)}</span> safe to spend
+                {' + '}
+                <span className="font-semibold text-teal-700">{formatEuro(setAside)}</span> saved for later
+              </p>
+            )}
             {report.income_base != null && safe != null && (
               <AllocationBar
                 incomeBase={report.income_base}

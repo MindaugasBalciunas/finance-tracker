@@ -25,6 +25,9 @@ export default function BudgetPulseCard() {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const daysLeft = daysInMonth - now.getDate() + 1
   const safe = plan?.safe_to_spend ?? null
+  // Same headline as the budget page: free money plus what funds set aside.
+  const setAside = plan && plan.fund_contributions > 0.5 ? plan.fund_contributions : 0
+  const remaining = safe !== null ? safe + setAside : null
   // Over a monthly cap, or a fund drawn below zero.
   const warnings = (plan?.lines ?? [])
     .filter((l) => l.kind === 'spending')
@@ -48,10 +51,18 @@ export default function BudgetPulseCard() {
         <Link to="/budget" className="text-xs text-blue-600 hover:underline">Details →</Link>
       </div>
 
-      <p className="text-xs text-gray-400 mb-3">Safe to spend after fixed costs, investment targets and what's already gone</p>
-      <p className={`text-3xl font-bold ${safe !== null && safe < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-        {safe !== null ? formatEuro(safe) : '—'}
+      <p className="text-xs text-gray-400 mb-3">
+        {setAside > 0 ? 'Remaining' : 'Safe to spend'} after fixed costs, investment targets and what's already gone
       </p>
+      <p className={`text-3xl font-bold ${remaining !== null && remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+        {remaining !== null ? formatEuro(remaining) : '—'}
+      </p>
+      {safe !== null && setAside > 0 && (
+        <p className="text-xs text-gray-500 mt-0.5">
+          <span className={`font-semibold ${safe < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatEuro(safe)}</span> safe to spend
+          {' + '}<span className="font-semibold text-teal-700">{formatEuro(setAside)}</span> saved for later
+        </p>
+      )}
       {safe !== null && safe > 0 && daysLeft > 0 && (
         <p className="text-xs text-gray-500 mt-0.5">≈ {formatEuro(safe / daysLeft)}/day for the next {daysLeft} days</p>
       )}
