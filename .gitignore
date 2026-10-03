@@ -32,3 +32,4 @@ exports/
 # Stray root DB (guard against cwd-drift artifacts)
 /finance.db
 /*.db
+*.tsbuildinfo
