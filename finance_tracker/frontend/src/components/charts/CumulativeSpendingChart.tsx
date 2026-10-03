@@ -10,6 +10,15 @@ interface Props {
   transactions: Transaction[]
 }
 
+// The running month is the one a decision can still change, so it is drawn
+// in a reserved dark ink on top, thicker, while past months recede.
+const CURRENT_COLOR = '#0f172a'
+
+const currentMonthKey = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
 const MONTH_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
@@ -58,9 +67,10 @@ interface CustomLegendProps {
   latestValues: Record<string, number>
   onToggle: (key: string) => void
   horizontal?: boolean
+  currentKey: string
 }
 
-function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal }: CustomLegendProps) {
+function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal, currentKey }: CustomLegendProps) {
   if (!payload) return null
   return (
     <ul
@@ -73,6 +83,7 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
       {payload.map((entry) => {
         const hidden = hiddenKeys.has(entry.dataKey)
         const latest = latestValues[entry.dataKey]
+        const isCurrent = entry.dataKey === currentKey
         return (
           <li
             key={entry.dataKey}
@@ -81,11 +92,12 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
             style={{ opacity: hidden ? 0.35 : 1 }}
           >
             <span
-              className="inline-block w-5 h-0.5 flex-shrink-0"
+              className={`inline-block w-5 flex-shrink-0 ${isCurrent ? 'h-1 rounded-full' : 'h-0.5'}`}
               style={{ backgroundColor: entry.color }}
             />
-            <span className={hidden ? 'line-through text-gray-400' : 'text-gray-700'}>
+            <span className={hidden ? 'line-through text-gray-400' : isCurrent ? 'text-gray-900 font-semibold' : 'text-gray-700'}>
               {entry.value}
+              {isCurrent && <span className="ml-1 text-[10px] font-semibold uppercase text-white bg-slate-900 rounded px-1">now</span>}
               {latest != null && (
                 <span className="ml-1 text-gray-400">({formatEuro(latest)})</span>
               )}
@@ -321,10 +333,18 @@ const CumulativeSpendingChart = ({ transactions }: Props) => {
     })
   }
 
+  const currentKey = currentMonthKey()
   const lineOpacity = (key: string) => {
     if (hiddenKeys.has(key)) return 0
-    return activeKey === null || activeKey === key ? 1 : 0.15
+    if (activeKey !== null) return activeKey === key ? 1 : 0.15
+    return key === currentKey ? 1 : 0.45
   }
+  const lineWidth = (key: string) => {
+    if (key === currentKey) return 3.5
+    return activeKey === key ? 3 : 1.5
+  }
+  // Last day with data for the running month — where its "today" dot sits.
+  const currentLastIndex = trimmed.reduce((last, row, i) => (row[currentKey] != null ? i : last), -1)
 
   return (
     <ResponsiveContainer width="100%" height={340}>
@@ -337,18 +357,24 @@ const CumulativeSpendingChart = ({ transactions }: Props) => {
           layout={isMobile ? 'horizontal' : 'vertical'}
           align={isMobile ? 'center' : 'right'}
           verticalAlign={isMobile ? 'bottom' : 'middle'}
-          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} horizontal={isMobile} />}
+          content={<CustomLegend hiddenKeys={hiddenKeys} latestValues={latestValues} onToggle={toggleKey} horizontal={isMobile} currentKey={currentKey} />}
         />
+        {/* Keys sort ascending, so the running month renders last — on top. */}
         {monthKeys.map((mk, i) => (
           <Line
             key={mk}
             type="monotone"
             dataKey={mk}
             name={monthLabel(mk)}
-            stroke={MONTH_COLORS[i % MONTH_COLORS.length]}
-            strokeWidth={activeKey === mk ? 3 : 2}
+            stroke={mk === currentKey ? CURRENT_COLOR : MONTH_COLORS[i % MONTH_COLORS.length]}
+            strokeWidth={lineWidth(mk)}
             strokeOpacity={lineOpacity(mk)}
-            dot={false}
+            dot={mk === currentKey && !hiddenKeys.has(mk)
+              ? (props: { cx?: number; cy?: number; index?: number }) =>
+                  props.index === currentLastIndex && props.cx != null && props.cy != null
+                    ? <circle key="today" cx={props.cx} cy={props.cy} r={5} fill={CURRENT_COLOR} stroke="#fff" strokeWidth={2} />
+                    : <g key={props.index} />
+              : false}
             connectNulls={false}
             hide={hiddenKeys.has(mk)}
             isAnimationActive={false}
