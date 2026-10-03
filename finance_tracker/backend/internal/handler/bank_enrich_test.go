@@ -9,6 +9,7 @@ import (
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/openbanking"
+	"github.com/mindaugas/finance-tracker/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -357,4 +358,145 @@ func TestEnrichMergesRulesAndHistory(t *testing.T) {
 	assert.Equal(t, "groceries,barbora", row.Labels)
 	assert.Contains(t, row.EnrichNote, "from your rules")
 	assert.Contains(t, row.EnrichNote, "similar past transactions")
+}
+
+// TestMergeIntoHandEnteredTransaction — the case the live sync hit.
+//
+// A €65.20 Maxima purchase typed in as "Maxima food" and the same purchase
+// arriving from the bank as "MAXIMA" differ in the one field content dedup
+// cannot do without, so the queue offered it as new and the ledger would have
+// got it twice.
+func TestMergeIntoHandEnteredTransaction(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{
+		Date:   time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+		Type:   domain.TransactionTypeExpense,
+		Amount: 65.20, Category: "Food", Comment: "Maxima food",
+		Labels: "maxima,groceries", DebitAccount: "swed",
+	})
+
+	env.stage(t, []openbanking.Transaction{
+		ebRow("m1", "2026-10-02", "65.20", "D", "", "PIRKINYS 516793******2669 02.10.26 17:34 65.20 EUR (134851) MAXIMA/X-787 MAXIMA Vilnius 000LT"),
+	})
+
+	rec := bankJSON(t, env.r, "GET", "/api/v1/banking/staged", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var page struct {
+		Transactions []stagedResponse `json:"transactions"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page))
+	require.Len(t, page.Transactions, 1)
+
+	row := page.Transactions[0]
+	// The merchant was recovered, so this is no longer a "card fee".
+	assert.Equal(t, domain.Category("Food"), row.Category)
+	require.NotNil(t, row.MergeCandidate, "the hand-entered row must be offered")
+	assert.Equal(t, "Maxima food", row.MergeCandidate.Comment)
+
+	// Merging keeps the user's own words and stamps the bank reference on.
+	rec = bankJSON(t, env.r, "POST", stagedPath(row.ID)+"/merge",
+		map[string]any{"transaction_id": row.MergeCandidate.ID})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var tx domain.Transaction
+	require.NoError(t, env.db.First(&tx, row.MergeCandidate.ID).Error)
+	assert.Equal(t, "Maxima food", tx.Comment, "the user's description survives")
+	assert.Equal(t, "maxima,groceries", tx.Labels)
+	assert.Equal(t, row.ExternalID, tx.ExternalID)
+
+	var n int64
+	require.NoError(t, env.db.Model(&domain.Transaction{}).Count(&n).Error)
+	assert.EqualValues(t, 1, n, "merging must not create a second transaction")
+
+	// And the next sync recognises it on the provider id instead of offering
+	// it again — which is the whole point of stamping the reference.
+	res := env.stage(t, []openbanking.Transaction{
+		ebRow("m1", "2026-10-02", "65.20", "D", "", "PIRKINYS 516793******2669 02.10.26 17:34 65.20 EUR (134851) MAXIMA/X-787 MAXIMA Vilnius 000LT"),
+	})
+	assert.Equal(t, 0, res.StagedNew)
+	staged, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	assert.Empty(t, staged)
+}
+
+// A merge is a judgement call made from four fields, so getting it wrong must
+// cost a tap rather than a hand-edit of the database.
+func TestUnmergeReturnsTheRowToTheQueue(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{
+		Date:   time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+		Type:   domain.TransactionTypeExpense,
+		Amount: 65.20, Category: "Food", Comment: "Maxima food", DebitAccount: "swed",
+	})
+	env.stage(t, []openbanking.Transaction{
+		ebRow("m2", "2026-10-02", "65.20", "D", "MAXIMA", "Pirkiniai"),
+	})
+	row := env.staged(t)[0]
+
+	var target domain.Transaction
+	require.NoError(t, env.db.First(&target, "comment = ?", "Maxima food").Error)
+
+	rec := bankJSON(t, env.r, "POST", stagedPath(row.ID)+"/merge", map[string]any{"transaction_id": target.ID})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	rec = bankJSON(t, env.r, "POST", stagedPath(row.ID)+"/unmerge", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	require.NoError(t, env.db.First(&target, target.ID).Error)
+	assert.Empty(t, target.ExternalID, "the ledger row is unlinked again")
+
+	back, err := env.repo.GetStagedByExternalID(row.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StagedStateStaged, back.State)
+}
+
+// Merging must not reach across accounts, amounts or more than a day — and a
+// row that already belongs to another bank row is never re-pointed.
+func TestMergeCandidateIsStrict(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t,
+		// Right amount and day, wrong account.
+		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Elsewhere", DebitAccount: "seb"},
+		// Right account and day, wrong amount.
+		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 66.00, Comment: "Close", DebitAccount: "swed"},
+		// Right account and amount, a week away.
+		domain.Transaction{Date: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Last week", DebitAccount: "swed"},
+	)
+	env.stage(t, []openbanking.Transaction{
+		ebRow("m3", "2026-10-02", "65.20", "D", "MAXIMA", "Pirkiniai"),
+	})
+
+	rows, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	candidates, err := env.h.mergeCandidates(rows)
+	require.NoError(t, err)
+	assert.Empty(t, candidates, "none of those is the same payment")
+}
+
+// A row that looks like something already added must never arrive ticked:
+// content dedup missed it (the descriptions differ), so a batch "Add" would
+// create exactly the duplicate the candidate is warning about.
+func TestMergeCandidateIsNeverPreticked(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{
+		Date:   time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+		Type:   domain.TransactionTypeExpense,
+		Amount: 65.20, Comment: "Maxima food", DebitAccount: "swed",
+	})
+	env.stage(t, []openbanking.Transaction{
+		ebRow("m4", "2026-10-02", "65.20", "D", "MAXIMA", "Pirkiniai"),
+	})
+
+	rec := bankJSON(t, env.r, "GET", "/api/v1/banking/staged", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var page struct {
+		Transactions []stagedResponse `json:"transactions"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page))
+	require.Len(t, page.Transactions, 1)
+	assert.NotNil(t, page.Transactions[0].MergeCandidate)
+	assert.False(t, page.Transactions[0].Preticked)
 }

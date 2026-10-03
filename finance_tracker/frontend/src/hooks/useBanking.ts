@@ -146,6 +146,21 @@ export function useDismissStaged() {
   })
 }
 
+// A merge touches both the review list and the ledger row it links to.
+export function useMergeStaged() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, transactionId }: { id: number; transactionId: number }) =>
+      bankingApi.merge(id, transactionId),
+    onSuccess: () => {
+      invalidateBanking(qc)
+      // false: a merge adds no transaction and moves no money, so the stored
+      // balances are untouched — only the row's external id changed.
+      invalidateTransactionQueries(qc, false)
+    },
+  })
+}
+
 export function useRestoreStaged() {
   const qc = useQueryClient()
   return useMutation({

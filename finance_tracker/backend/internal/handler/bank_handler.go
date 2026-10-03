@@ -81,6 +81,10 @@ func (h *BankHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("/staged/commit", h.CommitStaged)
 	g.POST("/staged/dismiss", h.DismissStaged)
 	g.POST("/staged/restore", h.RestoreStaged)
+	// Link a bank row to a transaction already entered by hand, and back out
+	// again — a merge is a judgement call and has to be reversible.
+	g.POST("/staged/:id/merge", h.MergeStaged)
+	g.POST("/staged/:id/unmerge", h.UnmergeStaged)
 }
 
 // requireConfigured hides the whole feature until credentials are stored.

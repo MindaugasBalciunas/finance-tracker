@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/openbanking"
@@ -32,8 +34,8 @@ import (
 // needs_review / new); dedup against the ledger happens separately, in the
 // caller, which is where the baseline lives.
 func adaptPSD2(tx openbanking.Transaction, link *domain.BankAccountLink) domain.BankStagedTx {
-	payee := psd2Payee(tx)
 	details := psd2Details(tx)
+	payee := psd2Payee(tx, details)
 	dk, dkOK := psd2Indicator(tx)
 	amount, amtErr := strconv.ParseFloat(strings.TrimSpace(tx.TransactionAmount.Amount), 64)
 	// The API signs nothing: direction lives entirely in
@@ -153,7 +155,7 @@ func applyAccountRemap(t *domain.BankStagedTx, accountKey string) {
 // The empty payee is load-bearing: classifySwedbank routes payee == "" into
 // its fee / ATM / Robur branch, so inventing a name here — "Swedbank", say,
 // or the bank transaction code — would silently reroute those rows.
-func psd2Payee(tx openbanking.Transaction) string {
+func psd2Payee(tx openbanking.Transaction, details string) string {
 	var name, iban string
 	if strings.ToUpper(tx.CreditDebitIndicator) == openbanking.IndicatorCredit {
 		name, iban = tx.Debtor.Name, tx.DebtorAccount.IBAN
@@ -163,9 +165,65 @@ func psd2Payee(tx openbanking.Transaction) string {
 	if n := strings.TrimSpace(name); n != "" {
 		return n
 	}
+	// A card purchase arrives over PSD2 with no counterparty at all: this
+	// bank puts the merchant in the narrative and leaves creditor/
+	// creditor_account empty. The CSV had it in the payee column, which is
+	// why classifySwedbank reads an empty payee as "bank fee" — so without
+	// this, every card purchase was filed as a Swedbank card fee.
+	if m := psd2CardMerchant(details); m != "" {
+		return m
+	}
 	// The counterparty IBAN is a weaker identifier but still an identifier —
 	// and the CSV's payee column carries one for plain transfers too.
 	return strings.TrimSpace(iban)
+}
+
+// cardNarrativeRe pulls the merchant tail off a card narrative:
+//
+//	PIRKINYS 516793******2669 02.10.26 17:34 65.20 EUR (134851) MAXIMA/X-787 MAXIMA Vilnius 000LT
+//	                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//
+// Anchored on the authorisation code in brackets, which is the last fixed
+// field before the merchant.
+//
+// PIRKINYS only, deliberately. The empty payee on a fee, an ATM withdrawal or
+// a Robur purchase is load-bearing and must keep routing those to their own
+// branches — and a GRĄŽINIMAS refund is excluded for a sharper reason: the
+// CSV importer produced "Card refund (Swedbank)" for one, so recovering a
+// name here would change the comment and stop a re-synced historical refund
+// from deduping against the row it is already in the ledger as.
+//
+// A purchase has the opposite history: the CSV carried the merchant in its
+// payee column, so recovering it moves PSD2 toward that parity, not away.
+var cardNarrativeRe = regexp.MustCompile(`(?i)^\s*PIRKINYS\b.*\)\s*(\S.*)$`)
+
+// psd2CardMerchant recovers the merchant name a card narrative carries.
+// Returns "" when there is nothing recognisable, so the caller keeps the
+// empty payee the fee/ATM branches depend on.
+func psd2CardMerchant(details string) string {
+	m := cardNarrativeRe.FindStringSubmatch(strings.TrimSpace(details))
+	if m == nil {
+		return ""
+	}
+	tail := strings.TrimSpace(m[1])
+	// "MAXIMA/X-787 MAXIMA Vilnius 000LT" — everything before the terminal id
+	// is the name; the rest is the till, the city and the country code.
+	if i := strings.Index(tail, "/"); i > 0 {
+		tail = strings.TrimSpace(tail[:i])
+	}
+	// Guard against a narrative whose tail is a reference rather than a name:
+	// without at least a couple of letters this is not a merchant, and
+	// inventing one would reroute a row that belongs in the fee branch.
+	letters := 0
+	for _, r := range tail {
+		if unicode.IsLetter(r) {
+			letters++
+		}
+	}
+	if letters < 2 {
+		return ""
+	}
+	return tail
 }
 
 // psd2Details builds the narrative the classifier matches on.
@@ -219,6 +277,15 @@ func psd2PreferredDate(tx openbanking.Transaction, details string, booking time.
 			return d
 		}
 	}
+	// The same purchase over PSD2 writes the date DD.MM.YY rather than the
+	// statement's YYYY.MM.DD — "PIRKINYS 516793******2669 02.10.26 17:34".
+	// transaction_date usually carries it too, but a card row can arrive with
+	// no dates at all except this one.
+	if m := psd2CardDateRe.FindStringSubmatch(details); m != nil {
+		if d, err := time.Parse("06-01-02", m[3]+"-"+m[2]+"-"+m[1]); err == nil {
+			return d
+		}
+	}
 	if m := cashOpDateRe.FindStringSubmatch(details); m != nil {
 		// ATM rows carry DD.MM.YY.
 		if d, err := time.Parse("06-01-02", m[3]+"-"+m[2]+"-"+m[1]); err == nil {
@@ -233,6 +300,10 @@ func psd2PreferredDate(tx openbanking.Transaction, details string, booking time.
 	}
 	return psd2Date(tx.ValueDate)
 }
+
+// psd2CardDateRe reads the DD.MM.YY purchase date out of a PSD2 card
+// narrative, after the masked card number.
+var psd2CardDateRe = regexp.MustCompile(`(?i)(?:PIRKINYS|GR[ĄA]ŽINIMAS|GRAZINIMAS)\s+[\d*]+\s+(\d{2})\.(\d{2})\.(\d{2})\b`)
 
 // psd2Date parses an ISO date. Dates are stored at UTC midnight throughout
 // the ledger, which is what the CSV path produces too.

@@ -115,7 +115,7 @@ export default function StagedReviewModal({
           </button>
           {showRaw && (
             <pre className="text-xs bg-gray-50 rounded-lg p-2 overflow-x-auto text-gray-600 whitespace-pre-wrap break-words">
-{`booked:   ${row.booking_date.slice(0, 10)}
+{`booked:   ${row.booking_date.startsWith('0001') ? '(not stated)' : row.booking_date.slice(0, 10)}
 payee:    ${row.raw_payee || '(none)'}
 details:  ${row.raw_details || '(none)'}
 amount:   ${row.raw_amount} ${row.raw_currency} ${row.raw_dk}

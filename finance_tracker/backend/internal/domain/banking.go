@@ -201,6 +201,11 @@ type BankStagedTx struct {
 	// double-checking.
 	EnrichNote string `json:"enrich_note" gorm:"not null;default:''"`
 
+	// Edited records that a person changed this proposal. It is what lets a
+	// re-sync re-run an improved classifier over rows already in the queue
+	// without overwriting anybody's corrections.
+	Edited bool `json:"edited" gorm:"not null;default:0"`
+
 	// Pending reports that the bank had only reserved this amount, not booked
 	// it. Stored rather than derived from Verdict, which the user's edits and
 	// the dedup pass both rewrite.

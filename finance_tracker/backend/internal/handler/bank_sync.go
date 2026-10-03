@@ -324,6 +324,9 @@ func (h *BankHandler) SyncAll(c *gin.Context) {
 					out.Totals.DuplicateContent += res.DuplicateContent
 					out.Totals.NeedsReview += res.NeedsReview
 					out.Totals.Internal += res.Internal
+					out.Totals.Pending += res.Pending
+					out.Totals.Superseded += res.Superseded
+					out.Totals.Released += res.Released
 					if out.Totals.DateFrom == "" || res.DateFrom < out.Totals.DateFrom {
 						out.Totals.DateFrom = res.DateFrom
 					}
@@ -422,8 +425,14 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 		// Only a booked row may advance the window anchor. A reservation can
 		// carry an empty or optimistic booking date, and letting one push the
 		// anchor forward would skip the rows behind it on the next sync.
-		if !row.Pending && row.BookingDate.After(newest) {
-			newest = row.BookingDate
+		//
+		// Card rows arrive with no booking_date at all over PSD2, so the
+		// resolved transaction date stands in — otherwise the anchor never
+		// moves and every sync re-reads the full 90 days forever.
+		if !row.Pending {
+			if booked := firstNonZeroTime(row.BookingDate, row.Date); booked.After(newest) {
+				newest = booked
+			}
 		}
 
 		// A reservation is never dedup'd against the ledger. It cannot be
@@ -498,11 +507,21 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 			// An imported row stays imported.
 			prev.LastSeenAt = time.Now()
 			if prev.State == domain.StagedStateStaged {
-				// Refresh only the verdict: the editable fields may carry
-				// the user's own corrections, made before they walked away.
-				prev.Verdict = row.Verdict
-				prev.VerdictNote = row.VerdictNote
-				prev.MatchedTxID = row.MatchedTxID
+				if prev.Edited {
+					// Hands off everything but the verdict — the editable
+					// fields carry the user's own corrections, made before
+					// they walked away.
+					prev.Verdict = row.Verdict
+					prev.VerdictNote = row.VerdictNote
+					prev.MatchedTxID = row.MatchedTxID
+				} else {
+					// Nobody has touched it, so re-apply the classifier in
+					// full. Without this a fix only ever reaches rows fetched
+					// after the fix shipped, and a queue full of misread rows
+					// could only be cleared by dismissing them — which is
+					// permanent, so they would never come back corrected.
+					reclassify(prev, &row)
+				}
 			}
 			if err := h.repo.SaveStaged(prev); err != nil {
 				return res, fmt.Errorf("updating staged %s: %w", row.ExternalID, err)
@@ -538,6 +557,25 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 
 // describeMatch names the transaction a staged row collided with, in terms
 // the user can check: "#1234 · 2026-09-12 · Lidl · 23.40".
+// reclassify replaces an untouched proposal with a freshly adapted one,
+// keeping the identity and history of the staged row it replaces.
+func reclassify(prev *domain.BankStagedTx, fresh *domain.BankStagedTx) {
+	id, externalID, firstSeen, lastSeen := prev.ID, prev.ExternalID, prev.FirstSeenAt, prev.LastSeenAt
+	state, importedTxID := prev.State, prev.ImportedTxID
+	*prev = *fresh
+	prev.ID, prev.ExternalID, prev.FirstSeenAt, prev.LastSeenAt = id, externalID, firstSeen, lastSeen
+	prev.State, prev.ImportedTxID = state, importedTxID
+}
+
+func firstNonZeroTime(ts ...time.Time) time.Time {
+	for _, t := range ts {
+		if !t.IsZero() {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 func describeMatch(t *domain.Transaction) string {
 	comment := t.Comment
 	if comment == "" {
@@ -577,9 +615,31 @@ func (h *BankHandler) ListStaged(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// Which staged rows look like something already entered by hand. Computed
+	// here rather than in the browser: it needs the whole ledger, and the
+	// rule has to be the same one the merge endpoint enforces.
+	candidates, err := h.mergeCandidates(rows)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	out := make([]stagedResponse, 0, len(rows))
 	for i := range rows {
-		out = append(out, toStagedResponse(&rows[i]))
+		r := toStagedResponse(&rows[i])
+		if m := candidates[rows[i].ID]; m != nil {
+			// Never arrives ticked. Content dedup missed it — the
+			// descriptions differ — so without this the batch "Add" would
+			// create exactly the duplicate the candidate is warning about.
+			r.Preticked = false
+			r.MergeCandidate = &mergeCandidate{
+				ID:      m.ID,
+				Date:    m.Date.Format("2006-01-02"),
+				Comment: m.Comment,
+				Amount:  m.Amount,
+				Labels:  m.Labels,
+			}
+		}
+		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"transactions": out,
@@ -602,6 +662,19 @@ type stagedResponse struct {
 	// Preticked tells the UI which rows arrive ticked. Computed server-side
 	// so the rule lives in one place.
 	Preticked bool `json:"preticked"`
+	// MergeCandidate names a transaction already in the ledger that this row
+	// is plainly the bank's version of — same amount, account and day, but a
+	// description a person wrote rather than the one the bank sends.
+	MergeCandidate *mergeCandidate `json:"merge_candidate,omitempty"`
+}
+
+// mergeCandidate is just enough of the existing transaction to recognise it.
+type mergeCandidate struct {
+	ID      uint    `json:"id"`
+	Date    string  `json:"date"`
+	Comment string  `json:"comment"`
+	Amount  float64 `json:"amount"`
+	Labels  string  `json:"labels"`
 }
 
 func toStagedResponse(t *domain.BankStagedTx) stagedResponse {
@@ -944,6 +1017,9 @@ func (h *BankHandler) UpdateStaged(c *gin.Context) {
 	} else {
 		row.Labels = domain.NormalizeLabels(row.Labels)
 	}
+	// From here on a re-sync refreshes only this row's verdict: an improved
+	// classifier must not overwrite what a person decided.
+	row.Edited = true
 	if err := h.repo.SaveStaged(row); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

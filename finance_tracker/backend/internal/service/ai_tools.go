@@ -838,6 +838,9 @@ func (s *insightService) chatUpdateStaged(id uint, patch map[string]string) (str
 	if !containsLabel(changed, "labels") {
 		s.reapplyStagedRules(row, before)
 	}
+	// Same contract as the HTTP edit path: a corrected row is no longer
+	// re-classified by later syncs.
+	row.Edited = true
 	if err := s.bankRepo.SaveStaged(row); err != nil {
 		return "", err
 	}

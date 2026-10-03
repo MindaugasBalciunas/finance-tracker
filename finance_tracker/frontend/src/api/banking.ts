@@ -89,6 +89,15 @@ export type StagedTx = {
   pending: boolean
   committable: boolean
   superseded_by: number | null
+  // A transaction already in the ledger that this row is plainly the bank's
+  // version of — same amount, account and day, different description.
+  merge_candidate?: {
+    id: number
+    date: string
+    comment: string
+    amount: number
+    labels: string
+  }
   state: 'staged' | 'imported' | 'dismissed' | 'superseded'
   imported_tx_id: number | null
   preticked: boolean
@@ -255,5 +264,17 @@ export const bankingApi = {
 
   restore: async (ids: number[]): Promise<void> => {
     await client.post('/banking/staged/restore', { ids })
+  },
+
+  // Link a bank row to a transaction already entered by hand. The ledger row
+  // keeps its own description and labels; only the bank reference moves, so
+  // later syncs recognise it instead of offering it again.
+  merge: async (id: number, transactionId: number): Promise<{ merged_into: number; note: string }> => {
+    const { data } = await client.post(`/banking/staged/${id}/merge`, { transaction_id: transactionId })
+    return data
+  },
+
+  unmerge: async (id: number): Promise<void> => {
+    await client.post(`/banking/staged/${id}/unmerge`)
   },
 }

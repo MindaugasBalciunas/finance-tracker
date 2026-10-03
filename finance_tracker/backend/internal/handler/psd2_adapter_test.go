@@ -271,7 +271,41 @@ func TestPSD2EmptyPayeeIsLoadBearing(t *testing.T) {
 		CreditDebitIndicator: openbanking.IndicatorDebit,
 		BankTransactionCode:  openbanking.BankTransactionCode{Description: "Service fee"},
 	}
-	assert.Equal(t, "", psd2Payee(tx))
+	assert.Equal(t, "", psd2Payee(tx, psd2Details(tx)))
+}
+
+// ...but a card purchase arrives over PSD2 with no counterparty at all: this
+// bank puts the merchant in the narrative and leaves creditor empty. Reading
+// an empty payee as "bank fee" filed every live card purchase as a Swedbank
+// card fee.
+func TestPSD2RecoversTheMerchantFromACardNarrative(t *testing.T) {
+	const narrative = "PIRKINYS 516793******2669 02.10.26 17:34 65.20 EUR (134851) MAXIMA/X-787 MAXIMA Vilnius 000LT"
+	tx := openbanking.Transaction{
+		CreditDebitIndicator:  openbanking.IndicatorDebit,
+		TransactionAmount:     openbanking.Amount{Amount: "65.20", Currency: "EUR"},
+		RemittanceInformation: []string{narrative},
+	}
+	assert.Equal(t, "MAXIMA", psd2Payee(tx, psd2Details(tx)))
+
+	// ...and that is enough for the merchant rules to file it properly.
+	row := adaptPSD2(tx, &domain.BankAccountLink{ID: 1, AccountKey: "swed"})
+	assert.Equal(t, domain.Category("Food"), row.Category)
+	assert.NotContains(t, row.Comment, "card fee")
+	// The date lives only in the narrative, as DD.MM.YY.
+	assert.Equal(t, "2026-10-02", row.Date.Format("2006-01-02"))
+}
+
+// The fee / ATM / Robur branches still depend on an empty payee, so a
+// narrative with no merchant tail must not invent one.
+func TestPSD2CardMerchantIgnoresNonCardNarratives(t *testing.T) {
+	for _, details := range []string{
+		"Mokestis už paslaugų planą",
+		"GRYNIEJI 516793******2669 02.10.26",
+		"Mini investicijos SWEDBANK ROBUR",
+		"PIRKINYS 516793******2669 02.10.26 17:34 1.00 EUR (134851) 7788",
+	} {
+		assert.Equal(t, "", psd2CardMerchant(details), details)
+	}
 }
 
 func TestPSD2ExternalIDFallsBackToHash(t *testing.T) {

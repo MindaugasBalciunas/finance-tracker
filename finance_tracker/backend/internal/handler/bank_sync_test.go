@@ -1033,3 +1033,48 @@ func TestReservationDoesNotConsumeLedgerDedup(t *testing.T) {
 	require.Len(t, staged, 1)
 	assert.Equal(t, domain.VerdictDuplicateContent, staged[0].Verdict)
 }
+
+// TestResyncReclassifiesUntouchedRows — a classifier fix has to reach rows
+// already sitting in the queue.
+//
+// Otherwise a fix only ever helps rows fetched after it shipped, and a queue
+// full of misread rows could only be cleared by dismissing them — which is
+// permanent, so they would never come back corrected.
+func TestResyncReclassifiesUntouchedRows(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+
+	row := env.stagedByComment(t, "UAB IGNITIS")
+	// Simulate a row staged by an older, worse classifier.
+	row.Category = "Entertainment"
+	row.Comment = "Swedbank card fee"
+	require.NoError(t, env.repo.SaveStaged(&row))
+
+	env.stage(t, bankFeed())
+
+	fixed, err := env.repo.GetStagedByExternalID(row.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, "UAB IGNITIS", fixed.Comment)
+	assert.Equal(t, domain.Category("Utilities"), fixed.Category)
+	assert.Equal(t, row.ID, fixed.ID, "the staged row keeps its identity")
+}
+
+// ...but a correction a person made is never overwritten by one.
+func TestResyncKeepsUserCorrections(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.stage(t, bankFeed())
+	row := env.stagedByComment(t, "UAB IGNITIS")
+
+	rec := bankJSON(t, env.r, "PUT", stagedPath(row.ID), map[string]any{
+		"category": "Housing", "comment": "Electricity, the cabin",
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	env.stage(t, bankFeed())
+
+	kept, err := env.repo.GetStagedByExternalID(row.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, "Electricity, the cabin", kept.Comment)
+	assert.Equal(t, domain.Category("Housing"), kept.Category)
+	assert.True(t, kept.Edited)
+}

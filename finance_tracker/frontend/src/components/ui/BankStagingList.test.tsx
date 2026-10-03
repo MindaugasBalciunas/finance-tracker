@@ -15,6 +15,7 @@ vi.mock('../../api/banking', () => ({
     dismiss: vi.fn(),
     restore: vi.fn(),
     updateStaged: vi.fn(),
+    merge: vi.fn(),
     staged: vi.fn(),
     connections: vi.fn(),
   },
@@ -241,6 +242,24 @@ describe('BankStagingList', () => {
     )
     // Saving a reservation never reaches the ledger.
     expect(api.commit).not.toHaveBeenCalled()
+  })
+
+  // The live case: a purchase typed in as "Maxima food" and the same purchase
+  // arriving from the bank as "MAXIMA" differ in the one field content dedup
+  // cannot do without, so the queue would have offered it as new.
+  it('offers to link a row to one already entered by hand', async () => {
+    const user = userEvent.setup()
+    api.merge.mockResolvedValue({ merged_into: 56470, note: 'Linked.' })
+    renderList([
+      row({
+        id: 13, comment: 'MAXIMA', preticked: false,
+        merge_candidate: { id: 56470, date: '2026-10-02', comment: 'Maxima food', amount: 65.2, labels: 'maxima,groceries' },
+      }),
+    ])
+
+    expect(screen.getByText('Maxima food')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Link to it' }))
+    await waitFor(() => expect(api.merge).toHaveBeenCalledWith(13, 56470))
   })
 
   it('shows the raw bank data behind a disclosure, not by default', async () => {

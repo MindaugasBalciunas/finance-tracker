@@ -7,6 +7,7 @@ import {
   useCommitStaged,
   useDismissStaged,
   useRestoreStaged,
+  useMergeStaged,
   useUndoCommit,
 } from '../../hooks/useBanking'
 import StagedReviewModal from './StagedReviewModal'
@@ -44,6 +45,7 @@ function StagedCard({
   // Reviewing one row opens the ordinary transaction form, the same one
   // "+ Add" and editing a saved row use.
   const [reviewing, setReviewing] = useState(false)
+  const merge = useMergeStaged()
   const verdict = verdictStyle[row.verdict] ?? verdictStyle.needs_review
   const signed = row.type === 'income' ? row.amount : -row.amount
 
@@ -110,6 +112,38 @@ function StagedCard({
             </div>
           </button>
         </div>
+
+        {/* The same payment, already typed in by hand. Offered rather than
+            applied: it is a judgement made from four fields, and the user is
+            the one who knows whether "Maxima food" was this Maxima. */}
+        {row.merge_candidate && row.state === 'staged' && (
+          <div className="mt-3 text-xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+            <p className="text-amber-900">
+              Looks like one you already added:{' '}
+              <span className="font-semibold">{row.merge_candidate.comment || '(no description)'}</span>{' '}
+              <span className="text-amber-700">
+                · {row.merge_candidate.date} · {formatEuro(row.merge_candidate.amount)}
+              </span>
+            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <button
+                onClick={() => merge.mutate({ id: row.id, transactionId: row.merge_candidate!.id })}
+                disabled={merge.isPending || busy}
+                className="px-2.5 py-1 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50"
+              >
+                {merge.isPending ? 'Linking…' : 'Link to it'}
+              </button>
+              <span className="text-amber-700/80">
+                Keeps your description and labels; stops it coming back.
+              </span>
+            </div>
+            {merge.isError && (
+              <p className="text-red-600 mt-1">
+                {merge.error instanceof Error ? merge.error.message : 'Could not link that'}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* One-by-one is the primary interaction, so the buttons live on the
             row — not only in a batch bar at the bottom of the screen.
