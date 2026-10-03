@@ -36,10 +36,10 @@ function AllocationBar({ incomeBase, fixed, investments, setAside, spent, remain
   const SEGMENTS = [
     { key: 'Fixed', value: fixed, cls: 'bg-slate-500' },
     { key: 'Investments', value: investments, cls: 'bg-blue-500' },
-    { key: 'Into funds', value: setAside, cls: 'bg-teal-500' },
+    { key: 'Saved for later (funds)', value: setAside, cls: 'bg-teal-500' },
     { key: 'Spent', value: spent, cls: 'bg-orange-400' },
     { key: 'Left', value: Math.max(remaining, 0), cls: 'bg-green-500' },
-  ].filter((s) => s.key !== 'Into funds' || s.value > 0)
+  ].filter((s) => s.key !== 'Saved for later (funds)' || s.value > 0)
   return (
     <div className="mt-4">
       <div className="flex h-5 rounded-lg overflow-hidden bg-gray-100">
@@ -254,6 +254,7 @@ export default function MonthView(p: Props) {
   // Funds and yearly lines first: they're the long-horizon picture.
   const ordered = [...spending].sort((a, b) => Number(b.fund) - Number(a.fund) || Number(b.period === 'yearly') - Number(a.period === 'yearly'))
   const safe = report.safe_to_spend
+  const funds = spending.filter((l) => l.fund)
   const spentOutsideFunds = report.discretionary_spent - report.fund_spent
 
   const totalSpent = p.monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount.value, 0)
@@ -287,9 +288,12 @@ export default function MonthView(p: Props) {
                 remaining={safe}
               />
             )}
-            {report.fund_spent > 0.5 && (
+            {report.fund_contributions > 0.5 && (
               <p className="mt-2 text-xs text-teal-700">
-                {formatEuro(report.fund_spent)} paid from funds this month — set aside earlier, so it doesn't count against this month.
+                <span className="font-semibold">Saved for later:</span>{' '}
+                {funds.map((f) => `${formatEuro(f.monthly_share)} ${f.name}`).join(' · ')}
+                {' '}— put aside every month, so a trip or a big bill is paid from savings instead of hitting the month it lands in.
+                {report.fund_spent > 0.5 && <> This month {formatEuro(report.fund_spent)} was paid from these savings and doesn't reduce safe to spend.</>}
               </p>
             )}
             <p className="mt-3 text-xs text-gray-500">
