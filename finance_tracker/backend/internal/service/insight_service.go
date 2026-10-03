@@ -80,6 +80,10 @@ type InsightService interface {
 	// BudgetStatus computes per-budget month-to-date progress (current month
 	// when year/month are zero) — the JSON twin of the report's text section.
 	BudgetStatus(year, month int) (*BudgetStatusReport, error)
+	// Trips summarises every trip:… label and proposes untagged Vacation
+	// runs as new trips; AssignTrip tags/untags exact transactions.
+	Trips() ([]TripSummary, []TripSuggestion, error)
+	AssignTrip(name string, ids []uint, remove bool) (label string, changed int, err error)
 	// AIContext returns the user's CFO-context document; SaveAIContext
 	// replaces it (capped at 32KB).
 	AIContext() (*domain.AIContext, error)

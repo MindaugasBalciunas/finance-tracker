@@ -390,6 +390,14 @@ func handleBudgetStatus(ctx context.Context, req *mcp.CallToolRequest, a budgetS
 	return textResult(body), nil, nil
 }
 
+func handleTrips(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	body, err := apiGET("/budgets/trips", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(body), nil, nil
+}
+
 func handleLabelRules(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 	body, err := apiGET("/labels/rules", nil)
 	if err != nil {
@@ -664,13 +672,18 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_budgets",
-		Description: "The monthly budget plan as configured: fixed obligations, investment targets and spending limits, each with its matcher (label and/or category) and monthly amount. For actual progress against the plan use get_budget_status.",
+		Description: "The budget plan as configured: fixed obligations, investment targets, spending lines and trip budgets with their matchers, amount, period (monthly or yearly) and fund flag. For actual progress against the plan use get_budget_status.",
 	}, handleBudgets)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_budget_status",
-		Description: "Month-to-date progress against every budget line: budgeted vs spent vs remaining, fixed/investment totals, discretionary spending and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
+		Description: "Progress against every budget line for a month. Monthly lines: limit/spent/left this month. Yearly lines (period=yearly): annual amount, spent since 1 January, pace and projection (see `year`). Fund lines (fund=true): money set aside monthly that carries over — budgeted = carried in + this month's share, remaining = available now (see `fund_state`); a big month drawn from a fund is planned, not overspending. Also: 12-month history per line, suggested amounts from the last 12 months, unbudgeted categories, and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
 	}, handleBudgetStatus)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_trips",
+		Description: "Trips: every trip:… label costed as a whole (dates, days, total net of refunds, per day, breakdown by category and label, optional trip budget and what is left), plus untagged Vacation spending grouped by date as suggested trips. Use for 'what did that holiday cost' questions.",
+	}, handleTrips)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_label_rules",

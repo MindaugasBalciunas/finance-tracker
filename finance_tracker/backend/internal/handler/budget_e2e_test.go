@@ -24,7 +24,7 @@ func budgetTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Budget{}, &domain.BudgetAmount{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
 
 	budgetRepo := repository.NewBudgetRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
@@ -304,7 +304,7 @@ func importRouterFor(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIContext{}))
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.StockTrade{}, &domain.Asset{}, &domain.Budget{}, &domain.BudgetAmount{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIContext{}))
 	r := gin.New()
 	NewImportHandler(
 		repository.NewTransactionRepository(db),

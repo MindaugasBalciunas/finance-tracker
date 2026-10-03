@@ -40,7 +40,7 @@ func bankTestRouter(t *testing.T, configured bool) *bankTestEnv {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.Budget{},
+	require.NoError(t, db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.Budget{}, &domain.BudgetAmount{},
 		&domain.LabelRule{}, &domain.BudgetSettings{}, &domain.BankSettings{},
 		&domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}))
 

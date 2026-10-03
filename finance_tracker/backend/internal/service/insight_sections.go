@@ -85,8 +85,9 @@ Projected month-end spend: €%.0f (%s)`,
 		income, expenses, invested, income-expenses-invested, perDay, projected, projNote)
 }
 
-// budgetStatusSection mirrors the frontend computeMonthPlan: per-budget
-// spent-vs-target for the current month, plus the safe-to-spend figure.
+// budgetStatusSection renders the budget engine's month for the AI report:
+// per-line progress (funds and yearly lines in their own terms), plus the
+// safe-to-spend figure.
 func (s *insightService) budgetStatusSection(allTxs []domain.Transaction, summary *domain.TransactionSummary, now time.Time) string {
 	if s.budgetRepo == nil {
 		return ""
@@ -95,115 +96,71 @@ func (s *insightService) budgetStatusSection(allTxs []domain.Transaction, summar
 	if err != nil || len(budgets) == 0 {
 		return ""
 	}
-	settings, _ := s.budgetRepo.GetSettings()
+	amounts, _ := s.budgetRepo.ListAmounts()
+	plan := s.budgetPlanWith(budgets, amounts, allTxs, ymOf(now), now, summary)
 
-	y, m := now.Year(), int(now.Month())
-	var monthTxs []domain.Transaction
-	for _, tx := range allTxs {
-		if tx.Date.Year() == y && int(tx.Date.Month()) == m {
-			monthTxs = append(monthTxs, tx)
-		}
+	byKind := map[string][]BudgetLineStatus{}
+	for _, l := range plan.Lines {
+		byKind[l.Kind] = append(byKind[l.Kind], l)
 	}
-
-	var fixed, investment, spending []domain.Budget
-	for _, b := range budgets {
-		switch b.Kind {
-		case "fixed":
-			fixed = append(fixed, b)
-		case "investment":
-			investment = append(investment, b)
-		case "spending":
-			spending = append(spending, b)
-		}
-	}
-
-	// Discretionary = this month's expenses not already claimed by a fixed
-	// obligation (loan/alimony/pension etc. are commitments, not choices).
-	isFixedTx := func(tx domain.Transaction) bool {
-		for _, b := range fixed {
-			if budgetMatchesTx(b, tx) {
-				return true
-			}
-		}
-		return false
-	}
-	var discretionary []domain.Transaction
-	var discretionarySpent float64
-	for _, tx := range monthTxs {
-		if tx.Type == domain.TransactionTypeExpense && !isFixedTx(tx) {
-			discretionary = append(discretionary, tx)
-			discretionarySpent += tx.Amount
-		}
-	}
-
-	spent := func(b domain.Budget) float64 {
-		var wantTypes []domain.TransactionType
-		switch b.Kind {
-		case "investment":
-			wantTypes = []domain.TransactionType{domain.TransactionTypeInvestment}
-		case "fixed":
-			// Pension/leasing land as investments but are still fixed costs.
-			wantTypes = []domain.TransactionType{domain.TransactionTypeExpense, domain.TransactionTypeInvestment}
-		default:
-			wantTypes = []domain.TransactionType{domain.TransactionTypeExpense}
-		}
-		pool := monthTxs
-		if b.Kind == "spending" {
-			pool = discretionary
-		}
-		var total float64
-		for _, tx := range pool {
-			if containsType(wantTypes, tx.Type) && budgetMatchesTx(b, tx) {
-				total += tx.Amount
-			}
-		}
-		return total
-	}
-
 	var lines []string
-	var fixedPlanned, investmentPlanned float64
-	if len(fixed) > 0 {
+	if ls := byKind["fixed"]; len(ls) > 0 {
 		lines = append(lines, "Fixed obligations:")
-		for _, b := range fixed {
-			fixedPlanned += b.Amount
-			paid := spent(b)
+		for _, l := range ls {
 			state := "pending"
-			if paid >= b.Amount*0.95 {
+			if l.Spent >= l.Budgeted*0.95 {
 				state = "paid"
 			}
-			lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%s)", b.Name, paid, b.Amount, state))
+			lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%s)", l.Name, l.Spent, l.Budgeted, state))
 		}
 	}
-	if len(investment) > 0 {
+	if ls := byKind["investment"]; len(ls) > 0 {
 		lines = append(lines, "Investment targets:")
-		for _, b := range investment {
-			investmentPlanned += b.Amount
-			got := spent(b)
+		for _, l := range ls {
 			state := "in progress"
-			if got >= b.Amount*0.95 {
+			if l.Spent >= l.Budgeted*0.95 {
 				state = "reached"
 			}
-			lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%s)", b.Name, got, b.Amount, state))
+			lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%s)", l.Name, l.Spent, l.Budgeted, state))
 		}
 	}
-	if len(spending) > 0 {
+	if ls := byKind["spending"]; len(ls) > 0 {
 		lines = append(lines, "Spending limits:")
-		for _, b := range spending {
-			used := spent(b)
-			pct := 0.0
-			if b.Amount > 0 {
-				pct = used / b.Amount * 100
+		for _, l := range ls {
+			switch {
+			case l.FundState != nil:
+				f := l.FundState
+				lines = append(lines, fmt.Sprintf("  - %s (fund, €%.0f/mo since %s): €%.0f available — spent €%.0f this month, carried in €%.0f",
+					l.Name, l.MonthlyShare, f.StartMonth, f.Available, f.Spent, f.Opening))
+			case l.Year != nil:
+				y := l.Year
+				lines = append(lines, fmt.Sprintf("  - %s (yearly €%.0f): €%.0f spent in %d, pace €%.0f, projected €%.0f",
+					l.Name, y.Budget, y.Spent, y.Year, y.Pace, y.Projected))
+			default:
+				pct := 0.0
+				if l.Budgeted > 0 {
+					pct = l.Spent / l.Budgeted * 100
+				}
+				lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%.0f%%)", l.Name, l.Spent, l.Budgeted, pct))
 			}
-			lines = append(lines, fmt.Sprintf("  - %s: €%.0f / €%.0f (%.0f%%)", b.Name, used, b.Amount, pct))
+		}
+	}
+	if len(plan.Unbudgeted) > 0 {
+		var parts []string
+		for _, u := range plan.Unbudgeted {
+			if u.Spent >= 0.5 {
+				parts = append(parts, fmt.Sprintf("%s €%.0f", u.Category, u.Spent))
+			}
+		}
+		if len(parts) > 0 {
+			lines = append(lines, "Unbudgeted this month: "+strings.Join(parts, ", "))
 		}
 	}
 
-	incomeBase, baseLabel := s.incomeBase(settings, summary, now)
 	header := "=== BUDGET STATUS (this month) ==="
-	if incomeBase > 0 {
-		safe := incomeBase - fixedPlanned - investmentPlanned - discretionarySpent
-		lines = append([]string{fmt.Sprintf("Income base: €%.0f (%s)", incomeBase, baseLabel)}, lines...)
-		lines = append(lines, fmt.Sprintf("Safe to spend the rest of the month: €%.0f", safe))
+	if plan.SafeToSpend != nil {
+		lines = append([]string{fmt.Sprintf("Income base: €%.0f (%s)", plan.IncomeBase, plan.IncomeBaseSource)}, lines...)
+		lines = append(lines, fmt.Sprintf("Safe to spend the rest of the month: €%.0f", *plan.SafeToSpend))
 	}
 	return header + "\n" + strings.Join(lines, "\n")
 }

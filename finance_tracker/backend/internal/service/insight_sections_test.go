@@ -38,7 +38,7 @@ func TestCurrentMonthSection(t *testing.T) {
 func TestBudgetStatusSection(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&domain.Budget{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
+	require.NoError(t, db.AutoMigrate(&domain.Budget{}, &domain.BudgetAmount{}, &domain.LabelRule{}, &domain.BudgetSettings{}))
 	budgetRepo := repository.NewBudgetRepository(db)
 	require.NoError(t, db.Create(&domain.Budget{Name: "Loan payments", Kind: "fixed", Label: "loan", Amount: 1285}).Error)
 	require.NoError(t, db.Create(&domain.Budget{Name: "VWCE / ETF", Kind: "investment", Category: "Stocks & ETF", Amount: 1000}).Error)

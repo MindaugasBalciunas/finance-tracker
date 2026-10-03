@@ -121,11 +121,14 @@ func chatTools() []gatewayTool {
 			"Every label's footprint: transaction count, EUR volume, rules/budget usage, first/last use.",
 			obj(map[string]any{"limit": num("max labels, default 100")})),
 		mkTool("get_budgets",
-			"The monthly budget plan as configured: fixed obligations, investment targets and spending limits with their matchers and amounts. For actual progress against the plan use get_budget_status.",
+			"The budget plan as configured: fixed obligations, investment targets, spending lines and trip budgets with their matchers, amount, period (monthly or yearly) and fund flag. For actual progress against the plan use get_budget_status.",
 			obj(map[string]any{})),
 		mkTool("get_budget_status",
-			"Month-to-date progress against every budget line: budgeted vs spent vs remaining, fixed/investment totals, discretionary spending and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
+			"Progress against every budget line for a month. Monthly lines: limit/spent/left this month. Yearly lines (period=yearly): annual amount, spent since 1 January, pace and projection (see `year`). Fund lines (fund=true): money set aside monthly that carries over — budgeted = carried in + this month's share, remaining = available now (see `fund_state`); a big month drawn from a fund is planned, not overspending. Also: 12-month history per line, suggested amounts from the last 12 months, unbudgeted categories, and safe-to-spend. THE tool for 'am I on budget' and 'how much can I still spend' questions.",
 			obj(map[string]any{"month": str("YYYY-MM (default: current month)")})),
+		mkTool("get_trips",
+			"Trips: every trip:… label costed as a whole (dates, days, total net of refunds, per day, breakdown by category and label, optional trip budget and what is left), plus untagged Vacation spending grouped by date as suggested trips. Use for 'what did that holiday cost' questions.",
+			obj(map[string]any{})),
 		mkTool("get_label_rules",
 			"The auto-labeling rules: each rule applies its label to transactions whose comment contains the pattern (^ anchors to the start) and category matches. Explains WHY rows carry a label.",
 			obj(map[string]any{})),
@@ -412,6 +415,13 @@ func (s *insightService) runChatTool(name string, rawArgs string) (string, error
 			return "", err
 		}
 		return marshalToolResult(status)
+
+	case "get_trips":
+		trips, suggestions, err := s.Trips()
+		if err != nil {
+			return "", err
+		}
+		return marshalToolResult(map[string]any{"trips": trips, "suggestions": suggestions})
 
 	case "get_label_rules":
 		if s.budgetRepo == nil {

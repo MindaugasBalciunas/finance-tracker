@@ -640,9 +640,22 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			}
 			// Budgets from old exports may target retired categories.
 			cat, _ := domain.CanonicalCategory("", domain.Category(row.Category))
-			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: string(cat), Amount: row.Amount}
+			b := domain.Budget{Name: row.Name, Kind: row.Kind, Label: row.Label, Category: string(cat), Amount: row.Amount,
+				Period: domain.PeriodMonthly, Fund: row.Fund && row.Kind == "spending", StartMonth: row.StartMonth}
+			if row.Period == domain.PeriodYearly {
+				b.Period = domain.PeriodYearly
+			}
 			if err := h.budgetRepo.SaveBudget(&b); err != nil {
 				return result, fmt.Errorf("restoring budget %q: %w", row.Name, err)
+			}
+			// v6 amount history: past months keep the limit they had.
+			for _, step := range row.Amounts {
+				if step.Amount <= 0 {
+					continue
+				}
+				if err := h.budgetRepo.AddAmount(&domain.BudgetAmount{BudgetID: b.ID, FromMonth: step.FromMonth, Amount: step.Amount}); err != nil {
+					return result, fmt.Errorf("restoring budget %q history: %w", row.Name, err)
+				}
 			}
 			budgetSeen[b.Name+"|"+b.Kind] = true
 			result.Imported.Budgets++

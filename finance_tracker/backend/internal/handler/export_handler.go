@@ -48,8 +48,19 @@ func (h *ExportHandler) budgetRows() ([]budgetExportRow, []labelRuleExportRow) {
 	}
 	var bRows []budgetExportRow
 	if budgets, err := h.budgetRepo.ListBudgets(); err == nil {
+		steps := map[uint][]budgetAmountExportRow{}
+		if amounts, err := h.budgetRepo.ListAmounts(); err == nil {
+			for _, a := range amounts {
+				steps[a.BudgetID] = append(steps[a.BudgetID], budgetAmountExportRow{FromMonth: a.FromMonth, Amount: a.Amount})
+			}
+		}
 		for _, b := range budgets {
-			bRows = append(bRows, budgetExportRow{Name: b.Name, Kind: b.Kind, Label: b.Label, Category: b.Category, Amount: b.Amount})
+			row := budgetExportRow{Name: b.Name, Kind: b.Kind, Label: b.Label, Category: b.Category, Amount: b.Amount,
+				Fund: b.Fund, StartMonth: b.StartMonth, Amounts: steps[b.ID]}
+			if b.Period != domain.PeriodMonthly {
+				row.Period = b.Period
+			}
+			bRows = append(bRows, row)
 		}
 	}
 	var rRows []labelRuleExportRow
@@ -248,7 +259,8 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //	v4 — ai_context (the user's CFO briefing travels with the backup)
 //	v5 — transactions carry external_id (PSD2 bank-row id, the bank sync's
 //	     first dedup layer), ai_settings carry provider + enabled
-const exportSchemaVersion = 5
+//	v6 — budgets carry period, fund, start_month and their amount history
+const exportSchemaVersion = 6
 
 type financeExport struct {
 	SchemaVersion   int                  `json:"schema_version,omitempty"`
@@ -287,11 +299,21 @@ type budgetSettingsRow struct {
 }
 
 type budgetExportRow struct {
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	Label    string  `json:"label,omitempty"`
-	Category string  `json:"category,omitempty"`
-	Amount   float64 `json:"amount"`
+	Name       string                  `json:"name"`
+	Kind       string                  `json:"kind"`
+	Label      string                  `json:"label,omitempty"`
+	Category   string                  `json:"category,omitempty"`
+	Amount     float64                 `json:"amount"`
+	Period     string                  `json:"period,omitempty"` // omitted = monthly
+	Fund       bool                    `json:"fund,omitempty"`
+	StartMonth string                  `json:"start_month,omitempty"`
+	Amounts    []budgetAmountExportRow `json:"amounts,omitempty"`
+}
+
+// budgetAmountExportRow is one dated step of a line's amount history.
+type budgetAmountExportRow struct {
+	FromMonth string  `json:"from_month"`
+	Amount    float64 `json:"amount"`
 }
 
 type labelRuleExportRow struct {

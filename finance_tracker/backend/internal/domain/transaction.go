@@ -347,24 +347,62 @@ func (r *LabelRule) Matches(t *Transaction) bool {
 	return r.Category != "" || r.CommentMatch != ""
 }
 
-// Budget is a monthly financial plan line. Kind semantics:
+// Budget is a financial plan line. Kind semantics:
 //   - fixed: a known obligation (loan, alimony) — tracked as paid/pending
 //   - investment: a monthly contribution target to reach
-//   - spending: a monthly limit for discretionary spending
+//   - spending: a limit for discretionary spending
+//   - trip: a one-off budget for one trip, matched by its trip:… label;
+//     outside the monthly plan (the Vacation line already carries it)
+//
+// Period says what Amount covers: a month, or a calendar year. A Fund line
+// (spending only) accrues its monthly share from StartMonth on, spending
+// draws it down and whatever is left carries over — the shape lumpy costs
+// like holidays need, where a monthly cap is wrong eleven months a year.
 //
 // Matching: transactions with Label (when set), otherwise by Category.
 // Label may be a comma-separated list ("restaurant,fast food,delivery") —
 // a transaction carrying any of them matches, so label groups can share
 // one budget.
 type Budget struct {
-	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name      string    `json:"name" gorm:"not null"`
-	Kind      string    `json:"kind" gorm:"not null"`
-	Label     string    `json:"label" gorm:"not null;default:''"`
-	Category  string    `json:"category" gorm:"not null;default:''"`
-	Amount    float64   `json:"amount" gorm:"not null"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID       uint    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name     string  `json:"name" gorm:"not null"`
+	Kind     string  `json:"kind" gorm:"not null"`
+	Label    string  `json:"label" gorm:"not null;default:''"`
+	Category string  `json:"category" gorm:"not null;default:''"`
+	Amount   float64 `json:"amount" gorm:"not null"`
+	Period   string  `json:"period" gorm:"not null;default:'monthly'"`
+	Fund     bool    `json:"fund" gorm:"not null;default:false"`
+	// StartMonth ("YYYY-MM") is when a fund starts accruing. Empty = the
+	// month the line was created.
+	StartMonth string    `json:"start_month" gorm:"not null;default:''"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// Budget periods.
+const (
+	PeriodMonthly = "monthly"
+	PeriodYearly  = "yearly"
+)
+
+// MonthlyShare is what the line claims of one month's income.
+func (b *Budget) MonthlyShare(amount float64) float64 {
+	if b.Period == PeriodYearly {
+		return amount / 12
+	}
+	return amount
+}
+
+// BudgetAmount is one step of a line's amount history: Amount applies from
+// FromMonth ("YYYY-MM") until the next step. Changing a budget adds a step
+// instead of rewriting the line, so past months stay judged against the
+// limit they actually had. A line with no steps uses Budget.Amount
+// everywhere; FromMonth "" is the open-ended first step.
+type BudgetAmount struct {
+	ID        uint    `json:"id" gorm:"primaryKey;autoIncrement"`
+	BudgetID  uint    `json:"budget_id" gorm:"not null;index"`
+	FromMonth string  `json:"from_month" gorm:"not null;default:''"`
+	Amount    float64 `json:"amount" gorm:"not null"`
 }
 
 // BudgetSettings is a single-row table configuring the Budget page's income
@@ -391,7 +429,10 @@ func IsValidIncomeMode(m string) bool {
 	return false
 }
 
-var ValidBudgetKinds = []string{"fixed", "investment", "spending"}
+var ValidBudgetKinds = []string{"fixed", "investment", "spending", "trip"}
+
+// TripLabelPrefix marks the labels that group one trip's transactions.
+const TripLabelPrefix = "trip:"
 
 func IsValidBudgetKind(k string) bool {
 	for _, v := range ValidBudgetKinds {

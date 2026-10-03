@@ -78,7 +78,8 @@ export interface UpdateTransactionInput {
   credit_account?: string
 }
 
-export type BudgetKind = 'fixed' | 'investment' | 'spending'
+export type BudgetKind = 'fixed' | 'investment' | 'spending' | 'trip'
+export type BudgetPeriod = 'monthly' | 'yearly'
 
 export interface Budget {
   id: number
@@ -87,8 +88,118 @@ export interface Budget {
   label: string
   category: string
   amount: number
+  period: BudgetPeriod
+  // Fund lines accrue their monthly share and carry what's unspent.
+  fund: boolean
+  start_month: string
   created_at: string
   updated_at: string
+}
+
+// --- Budget engine (GET /budgets/status) ---
+
+export interface BudgetMonthCell {
+  month: string
+  budget: number
+  spent: number
+  fund_end?: number
+}
+
+export interface BudgetSuggestion {
+  amount: number
+  median: number
+  p75: number
+  mean: number
+  max: number
+  months: number
+  lumpy: boolean
+  basis: string
+}
+
+export interface BudgetLineStatus {
+  id: number
+  name: string
+  kind: BudgetKind
+  label?: string
+  category?: string
+  period: BudgetPeriod
+  fund: boolean
+  amount: number
+  monthly_share: number
+  // monthly: limit/spend/left this month · yearly: annual/spend YTD/left ·
+  // fund: available before this month's spend / this month's spend / available now
+  budgeted: number
+  spent: number
+  remaining: number
+  month_spent: number
+  year?: { year: number; budget: number; spent: number; pace: number; projected: number; elapsed: number }
+  fund_state?: {
+    start_month: string
+    opening: number
+    contribution: number
+    spent: number
+    available: number
+    contributed: number
+    drawn: number
+  }
+  history: BudgetMonthCell[]
+  suggestion?: BudgetSuggestion
+}
+
+export interface UnbudgetedCategory {
+  category: string
+  spent: number
+  year_spent: number
+  history: BudgetMonthCell[]
+  suggestion?: BudgetSuggestion
+}
+
+export interface BudgetStatusReport {
+  month: string
+  months: string[]
+  income_base?: number
+  income_base_source?: string
+  lines: BudgetLineStatus[]
+  fixed_planned: number
+  investment_planned: number
+  spending_planned: number
+  discretionary_spent: number
+  fund_contributions: number
+  fund_spent: number
+  safe_to_spend?: number
+  unbudgeted: UnbudgetedCategory[]
+}
+
+export interface NamedAmount {
+  name: string
+  amount: number
+}
+
+export interface TripSummary {
+  label: string
+  name: string
+  from: string
+  to: string
+  days: number
+  count: number
+  total: number
+  per_day: number
+  by_category: NamedAmount[]
+  by_label: NamedAmount[]
+  budget_id?: number
+  budget?: number
+  remaining?: number
+}
+
+export interface TripSuggestion {
+  from: string
+  to: string
+  days: number
+  count: number
+  total: number
+  tx_ids: number[]
+  suggested_label: string
+  top_comments: string[]
 }
 
 export type IncomeMode = 'median' | 'manual' | 'gross'
@@ -115,6 +226,12 @@ export interface BudgetInput {
   label?: string
   category?: string
   amount: number
+  period?: BudgetPeriod
+  fund?: boolean
+  start_month?: string
+  // Update only: the month a changed amount applies from (YYYY-MM, default
+  // this month), or 'all' to correct every month.
+  amount_from?: string
 }
 
 export interface PaginatedTransactions {

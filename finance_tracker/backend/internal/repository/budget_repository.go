@@ -15,6 +15,21 @@ type BudgetRepository interface {
 	SaveBudget(b *domain.Budget) error
 	DeleteBudget(id uint) error
 
+	// ListAmounts returns every line's amount history, oldest step first.
+	ListAmounts() ([]domain.BudgetAmount, error)
+	// SetAmount records that the line's amount is `amount` from `fromMonth`
+	// on. The line's previous amount becomes the open-ended first step if
+	// it had no history yet; a step at the same month is replaced, and
+	// later steps are dropped (the new amount supersedes them).
+	SetAmount(b *domain.Budget, fromMonth string, amount float64) error
+	// ResetAmounts discards a line's history: one amount for every month.
+	ResetAmounts(budgetID uint) error
+	// AddAmount stores one history step as-is (backup restore).
+	AddAmount(a *domain.BudgetAmount) error
+	// SetLabelOnTransactions adds (or with remove, strips) one label on
+	// exactly the given transactions. Returns how many changed.
+	SetLabelOnTransactions(label string, ids []uint, remove bool) (int, error)
+
 	ListRules() ([]domain.LabelRule, error)
 	SaveRule(r *domain.LabelRule) error
 	DeleteRule(id uint) error
@@ -80,7 +95,82 @@ func (r *budgetRepository) SaveBudget(b *domain.Budget) error {
 }
 
 func (r *budgetRepository) DeleteBudget(id uint) error {
-	return r.db.Delete(&domain.Budget{}, id).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("budget_id = ?", id).Delete(&domain.BudgetAmount{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&domain.Budget{}, id).Error
+	})
+}
+
+func (r *budgetRepository) ListAmounts() ([]domain.BudgetAmount, error) {
+	var rows []domain.BudgetAmount
+	if err := r.db.Order("budget_id ASC, from_month ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func (r *budgetRepository) SetAmount(b *domain.Budget, fromMonth string, amount float64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Model(&domain.BudgetAmount{}).Where("budget_id = ?", b.ID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 && fromMonth != "" {
+			if err := tx.Create(&domain.BudgetAmount{BudgetID: b.ID, FromMonth: "", Amount: b.Amount}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("budget_id = ? AND from_month >= ?", b.ID, fromMonth).Delete(&domain.BudgetAmount{}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&domain.BudgetAmount{BudgetID: b.ID, FromMonth: fromMonth, Amount: amount}).Error
+	})
+}
+
+func (r *budgetRepository) AddAmount(a *domain.BudgetAmount) error {
+	a.ID = 0
+	return r.db.Create(a).Error
+}
+
+func (r *budgetRepository) ResetAmounts(budgetID uint) error {
+	return r.db.Where("budget_id = ?", budgetID).Delete(&domain.BudgetAmount{}).Error
+}
+
+func (r *budgetRepository) SetLabelOnTransactions(label string, ids []uint, remove bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var txs []domain.Transaction
+	if err := r.db.Where("id IN ?", ids).Find(&txs).Error; err != nil {
+		return 0, err
+	}
+	changed := 0
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		for i := range txs {
+			t := &txs[i]
+			has := t.HasLabel(label)
+			if has == !remove {
+				continue
+			}
+			var parts []string
+			for _, l := range strings.Split(t.Labels, ",") {
+				if l != "" && l != label {
+					parts = append(parts, l)
+				}
+			}
+			if !remove {
+				parts = append(parts, label)
+			}
+			if err := tx.Model(t).Update("labels", domain.NormalizeLabels(strings.Join(parts, ","))).Error; err != nil {
+				return err
+			}
+			changed++
+		}
+		return nil
+	})
+	return changed, err
 }
 
 func (r *budgetRepository) ListRules() ([]domain.LabelRule, error) {

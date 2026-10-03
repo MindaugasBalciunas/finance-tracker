@@ -52,7 +52,7 @@ func TestBackupRoundtrip_V5Fields(t *testing.T) {
 	body := v5Export(t, src, "/api/v1/export/finances.json")
 	var payload financeExport
 	require.NoError(t, json.Unmarshal(body, &payload))
-	assert.Equal(t, 5, payload.SchemaVersion)
+	assert.Equal(t, 6, payload.SchemaVersion)
 
 	dstRouter, dst := importRouterFor(t)
 	v5Import(t, dstRouter, body)

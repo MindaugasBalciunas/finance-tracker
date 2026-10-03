@@ -1,6 +1,6 @@
 import client from './client'
 import type {
-  Budget, BudgetInput, BudgetSettings, BudgetSettingsInput,
+  Budget, BudgetInput, BudgetSettings, BudgetSettingsInput, BudgetStatusReport, TripSummary, TripSuggestion,
   LabelStat, LabelSuggestion, RelabelResult,
 } from '../types'
 
@@ -22,6 +22,22 @@ export const budgetsApi = {
 
   delete: async (id: number): Promise<void> => {
     await client.delete(`/budgets/${id}`)
+  },
+
+  // The budget engine's evaluation of one month (YYYY-MM; default current).
+  status: async (month?: string): Promise<BudgetStatusReport> => {
+    const { data } = await client.get<BudgetStatusReport>('/budgets/status', { params: month ? { month } : {} })
+    return data
+  },
+
+  trips: async (): Promise<{ trips: TripSummary[]; suggestions: TripSuggestion[] }> => {
+    const { data } = await client.get<{ trips: TripSummary[]; suggestions: TripSuggestion[] }>('/budgets/trips')
+    return data
+  },
+
+  assignTrip: async (input: { name: string; tx_ids: number[]; remove?: boolean }): Promise<{ label: string; changed: number }> => {
+    const { data } = await client.post<{ label: string; changed: number }>('/budgets/trips/assign', input)
+    return data
   },
 
   getSettings: async (): Promise<BudgetSettings> => {

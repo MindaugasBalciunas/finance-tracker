@@ -837,7 +837,7 @@ func TestRepairBtcTotals(t *testing.T) {
 	d := func(day int) time.Time { return time.Date(2026, 9, day, 0, 0, 0, 0, time.UTC) }
 
 	priced := domain.Balance{Date: d(1), Swed: 100, RBTC: 0.01, BtcPrice: 70000, Total: 800}
-	zero := domain.Balance{Date: d(2), Swed: 90, RBTC: 0.01, Total: 90}          // price feed hadn't loaded
+	zero := domain.Balance{Date: d(2), Swed: 90, RBTC: 0.01, Total: 90}           // price feed hadn't loaded
 	eurBtc := domain.Balance{Date: d(3), Swed: 50, RBTC: 966, MBTC: 4, Total: 50} // BTC entered as EUR
 	noCoins := domain.Balance{Date: d(4), Swed: 10, Total: 10}
 	for _, b := range []*domain.Balance{&priced, &zero, &eurBtc, &noCoins} {

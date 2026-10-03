@@ -4,10 +4,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/repository"
+	"github.com/mindaugas/finance-tracker/internal/service"
 )
 
 type BudgetHandler struct {
@@ -54,6 +56,64 @@ type budgetInput struct {
 	Label    string  `json:"label"`
 	Category string  `json:"category"`
 	Amount   float64 `json:"amount" binding:"required,gt=0"`
+	// Period "monthly" (default) or "yearly"; Fund carries unspent money
+	// over (spending lines only), accruing from StartMonth (YYYY-MM).
+	Period     string `json:"period"`
+	Fund       bool   `json:"fund"`
+	StartMonth string `json:"start_month"`
+	// AmountFrom (update only) is the month a changed amount applies from:
+	// "YYYY-MM", default the current month — earlier months keep the amount
+	// they had. "all" rewrites the amount for every month (a correction).
+	AmountFrom string `json:"amount_from"`
+}
+
+// applyBudgetInput validates the input and copies it onto b.
+func applyBudgetInput(b *domain.Budget, input budgetInput) string {
+	if !domain.IsValidBudgetKind(input.Kind) {
+		return "kind must be fixed, investment, spending or trip"
+	}
+	label := domain.NormalizeLabels(input.Label)
+	if input.Kind == "trip" {
+		if label == "" {
+			label = input.Name
+		}
+		l, err := service.NormalizeTripLabel(label)
+		if err != nil {
+			return err.Error()
+		}
+		label = l
+	}
+	if label == "" && input.Category == "" {
+		return "either label or category is required"
+	}
+	period := input.Period
+	if period == "" {
+		period = domain.PeriodMonthly
+	}
+	if period != domain.PeriodMonthly && period != domain.PeriodYearly {
+		return "period must be monthly or yearly"
+	}
+	if input.Fund && input.Kind != "spending" {
+		return "only spending lines can be funds"
+	}
+	if input.StartMonth != "" {
+		if _, err := time.Parse("2006-01", input.StartMonth); err != nil {
+			return "start_month must be YYYY-MM"
+		}
+	}
+	b.Name = input.Name
+	b.Kind = input.Kind
+	// NormalizeLabels handles multi-label budgets ("restaurant,fast food"):
+	// lowercase, trimmed, deduplicated.
+	b.Label = label
+	b.Category = input.Category
+	b.Period = period
+	b.Fund = input.Fund
+	b.StartMonth = input.StartMonth
+	if b.Fund && b.StartMonth == "" {
+		b.StartMonth = time.Now().Format("2006-01")
+	}
+	return ""
 }
 
 func (h *BudgetHandler) List(c *gin.Context) {
@@ -71,22 +131,10 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	if !domain.IsValidBudgetKind(input.Kind) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "kind must be fixed, investment or spending"})
+	b := &domain.Budget{Amount: input.Amount}
+	if msg := applyBudgetInput(b, input); msg != "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg})
 		return
-	}
-	if input.Label == "" && input.Category == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "either label or category is required"})
-		return
-	}
-	b := &domain.Budget{
-		Name: input.Name,
-		Kind: input.Kind,
-		// NormalizeLabels handles multi-label budgets ("restaurant,fast food"):
-		// lowercase, trimmed, deduplicated.
-		Label:    domain.NormalizeLabels(input.Label),
-		Category: input.Category,
-		Amount:   input.Amount,
 	}
 	if err := h.repo.SaveBudget(b); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -111,15 +159,33 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	if !domain.IsValidBudgetKind(input.Kind) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "kind must be fixed, investment or spending"})
+	if msg := applyBudgetInput(b, input); msg != "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg})
 		return
 	}
-	b.Name = input.Name
-	b.Kind = input.Kind
-	b.Label = domain.NormalizeLabels(input.Label)
-	b.Category = input.Category
-	b.Amount = input.Amount
+	// A changed amount becomes a dated step so past months keep the limit
+	// they were judged against; "all" is a correction across history.
+	if input.Amount != b.Amount {
+		switch from := input.AmountFrom; from {
+		case "all":
+			if err := h.repo.ResetAmounts(b.ID); err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+				return
+			}
+		default:
+			if from == "" {
+				from = time.Now().Format("2006-01")
+			} else if _, err := time.Parse("2006-01", from); err != nil {
+				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "amount_from must be YYYY-MM or all"})
+				return
+			}
+			if err := h.repo.SetAmount(b, from, input.Amount); err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+				return
+			}
+		}
+		b.Amount = input.Amount
+	}
 	if err := h.repo.SaveBudget(b); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

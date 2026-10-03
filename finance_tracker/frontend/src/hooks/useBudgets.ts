@@ -12,11 +12,44 @@ export function useBudgets() {
   })
 }
 
+// Keyed under transactions so every transaction write (which invalidates
+// that prefix) refreshes the plan too.
+const BUDGET_STATUS_KEY = [TRANSACTIONS_KEY, 'budget-status']
+const TRIPS_KEY = [TRANSACTIONS_KEY, 'budget-trips']
+
+function invalidateBudgetWorld(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: [BUDGETS_KEY] })
+  qc.invalidateQueries({ queryKey: BUDGET_STATUS_KEY })
+  qc.invalidateQueries({ queryKey: TRIPS_KEY })
+}
+
+export function useBudgetStatus(month?: string) {
+  return useQuery({
+    queryKey: [...BUDGET_STATUS_KEY, month ?? 'current'],
+    queryFn: () => budgetsApi.status(month),
+  })
+}
+
+export function useTrips() {
+  return useQuery({
+    queryKey: TRIPS_KEY,
+    queryFn: () => budgetsApi.trips(),
+  })
+}
+
+export function useAssignTrip() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { name: string; tx_ids: number[]; remove?: boolean }) => budgetsApi.assignTrip(input),
+    onSuccess: () => invalidateLabelWorld(qc),
+  })
+}
+
 export function useCreateBudget() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: BudgetInput) => budgetsApi.create(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGETS_KEY] }),
+    onSuccess: () => invalidateBudgetWorld(qc),
   })
 }
 
@@ -24,7 +57,7 @@ export function useUpdateBudget() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: number; input: BudgetInput }) => budgetsApi.update(id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGETS_KEY] }),
+    onSuccess: () => invalidateBudgetWorld(qc),
   })
 }
 
@@ -32,7 +65,7 @@ export function useDeleteBudget() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => budgetsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGETS_KEY] }),
+    onSuccess: () => invalidateBudgetWorld(qc),
   })
 }
 
@@ -65,7 +98,7 @@ export function useSaveBudgetSettings() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: BudgetSettingsInput) => budgetsApi.saveSettings(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [BUDGET_SETTINGS_KEY] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [BUDGET_SETTINGS_KEY] }); qc.invalidateQueries({ queryKey: BUDGET_STATUS_KEY }) },
   })
 }
 

@@ -1,44 +1,15 @@
-import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { useAllTransactions, useTransactionSummary } from '../../hooks/useTransactions'
-import { useBudgets, useBudgetSettings } from '../../hooks/useBudgets'
-import { computeMonthPlan, medianMonthlyIncome } from '../../utils/budget'
-import { ltNetSalary } from '../../utils/ltSalary'
+import { useBudgets, useBudgetStatus } from '../../hooks/useBudgets'
 import { formatEuro } from '../../utils/format'
-
-function currentMonthRange() {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth()
-  const first = `${y}-${String(m + 1).padStart(2, '0')}-01`
-  const last = new Date(y, m + 1, 0)
-  const lastStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
-  return { date_from: first, date_to: lastStr }
-}
 
 // The home-page answer to "what can I still spend this month?" — always the
 // CURRENT month regardless of the global date filter, since that's the only
 // month a budget decision can still change.
 export default function BudgetPulseCard() {
   const { data: budgets } = useBudgets()
-  const { data: settings } = useBudgetSettings()
-  const { data: monthTxs } = useAllTransactions(currentMonthRange())
-  const { data: allTimeSummary } = useTransactionSummary({})
+  const { data: plan } = useBudgetStatus()
 
-  const incomeBase = useMemo(() => {
-    if (settings?.income_mode === 'manual' && settings.manual_income > 0) return settings.manual_income
-    if (settings?.income_mode === 'gross' && settings.gross_salary > 0) {
-      return ltNetSalary(settings.gross_salary, settings.monthly_deductions).netAfterDeductions
-    }
-    return medianMonthlyIncome(allTimeSummary?.by_month ?? [], new Date())
-  }, [settings, allTimeSummary])
-
-  const plan = useMemo(
-    () => computeMonthPlan(budgets ?? [], monthTxs?.data ?? [], incomeBase),
-    [budgets, monthTxs, incomeBase]
-  )
-
-  if (!budgets || budgets.length === 0) {
+  if (!budgets || budgets.filter((b) => b.kind !== 'trip').length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 flex flex-col justify-center">
         <h3 className="text-base font-semibold text-gray-900 mb-1">🎯 Budget</h3>
@@ -53,10 +24,19 @@ export default function BudgetPulseCard() {
   const now = new Date()
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const daysLeft = daysInMonth - now.getDate() + 1
-  const safe = plan.safeToSpend
-  const overBudget = plan.spending
-    .filter((s) => s.budget.amount > 0 && s.actual > s.budget.amount)
-    .sort((a, b) => b.actual / b.budget.amount - a.actual / a.budget.amount)
+  const safe = plan?.safe_to_spend ?? null
+  // Over a monthly cap, or a fund drawn below zero.
+  const warnings = (plan?.lines ?? [])
+    .filter((l) => l.kind === 'spending')
+    .map((l) => {
+      if (l.fund) return l.remaining < -0.5 ? { id: l.id, text: `${l.name} fund ${formatEuro(l.remaining)}`, ratio: 99 } : null
+      if (l.period === 'yearly') return l.remaining < -0.5 ? { id: l.id, text: `${l.name} over the year`, ratio: 98 } : null
+      return l.budgeted > 0 && l.spent > l.budgeted
+        ? { id: l.id, text: `${l.name} +${Math.round((l.spent / l.budgeted - 1) * 100)}%`, ratio: l.spent / l.budgeted }
+        : null
+    })
+    .filter((w): w is { id: number; text: string; ratio: number } => w != null)
+    .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 3)
 
   return (
@@ -82,23 +62,23 @@ export default function BudgetPulseCard() {
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         <div className="bg-gray-50 rounded-lg py-1.5">
           <p className="text-[11px] text-gray-400">Fixed</p>
-          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan.fixedPlanned)}</p>
+          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan?.fixed_planned ?? 0)}</p>
         </div>
         <div className="bg-gray-50 rounded-lg py-1.5">
           <p className="text-[11px] text-gray-400">Investing</p>
-          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan.investmentPlanned)}</p>
+          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan?.investment_planned ?? 0)}</p>
         </div>
         <div className="bg-gray-50 rounded-lg py-1.5">
           <p className="text-[11px] text-gray-400">Spent free</p>
-          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan.discretionarySpent)}</p>
+          <p className="text-sm font-semibold text-gray-700">{formatEuro(plan?.discretionary_spent ?? 0)}</p>
         </div>
       </div>
 
-      {overBudget.length > 0 && (
+      {warnings.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {overBudget.map((s) => (
-            <span key={s.budget.id} className="text-[11px] font-medium bg-red-50 text-red-700 border border-red-200 rounded-full px-2 py-0.5">
-              ⚠ {s.budget.name} +{Math.round((s.actual / s.budget.amount - 1) * 100)}%
+          {warnings.map((w) => (
+            <span key={w.id} className="text-[11px] font-medium bg-red-50 text-red-700 border border-red-200 rounded-full px-2 py-0.5">
+              ⚠ {w.text}
             </span>
           ))}
         </div>

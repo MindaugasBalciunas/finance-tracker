@@ -1,26 +1,6 @@
 import type { Transaction, Budget, MonthlySummary } from '../types'
 import { txLabels } from './labels'
 
-export interface BudgetStatus {
-  budget: Budget
-  actual: number // matched amount this month
-}
-
-export interface MonthPlan {
-  fixed: BudgetStatus[]
-  investments: BudgetStatus[]
-  spending: BudgetStatus[]
-  fixedPlanned: number
-  investmentPlanned: number
-  // Sum of all spending limits — the "if I spend every limit in full" total,
-  // needed to judge whether the plan itself fits inside the income base.
-  spendingPlanned: number
-  discretionarySpent: number // expenses not matched by fixed budgets
-  unbudgeted: { category: string; spent: number }[] // discretionary categories without a spending budget
-  safeToSpend: number | null // income base − fixed − investment targets − discretionary spent
-  incomeBase: number | null
-}
-
 export function txHasLabel(tx: Transaction, label: string): boolean {
   if (!label) return false
   return txLabels(tx).includes(label)
@@ -56,74 +36,4 @@ export function medianMonthlyIncome(byMonth: MonthlySummary[], now: Date): numbe
   const sorted = complete.map((m) => m.income).sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-}
-
-// Computes the month's plan status from the month's transactions.
-export function computeMonthPlan(
-  budgets: Budget[],
-  monthTxs: Transaction[],
-  incomeBase: number | null
-): MonthPlan {
-  const fixed = budgets.filter((b) => b.kind === 'fixed')
-  const investments = budgets.filter((b) => b.kind === 'investment')
-  const spending = budgets.filter((b) => b.kind === 'spending')
-
-  const isFixedTx = (tx: Transaction) => fixed.some((b) => budgetMatches(b, tx))
-  const discretionaryTxs = monthTxs.filter((tx) => tx.type === 'expense' && !isFixedTx(tx))
-  const discretionarySpent = discretionaryTxs.reduce((s, tx) => s + tx.amount.value, 0)
-
-  const status = (b: Budget): BudgetStatus => {
-    // Fixed obligations accept investment-type payments too: pension
-    // contributions and leasing instalments are recorded as investments
-    // but are still fixed monthly commitments.
-    const wantTypes: string[] =
-      b.kind === 'investment' ? ['investment'] : b.kind === 'fixed' ? ['expense', 'investment'] : ['expense']
-    // Spending limits measure choices, so fixed obligations don't count
-    // against them (alimony matches the Kids category but is not kids
-    // discretionary spending — it has its own fixed budget).
-    const pool = b.kind === 'spending' ? discretionaryTxs : monthTxs
-    const actual = pool
-      .filter((tx) => wantTypes.includes(tx.type) && budgetMatches(b, tx))
-      .reduce((s, tx) => s + tx.amount.value, 0)
-    return { budget: b, actual }
-  }
-
-  const fixedStatus = fixed.map(status)
-  const investmentStatus = investments.map(status)
-  const spendingStatus = spending.map(status)
-
-  // Unbudgeted = discretionary spend no spending budget matches, grouped by
-  // category. Matching per transaction (not per category) lets label-scoped
-  // budgets (e.g. gift) cover their slice of a category without hiding the
-  // rest of it.
-  const byCategory: Record<string, number> = {}
-  for (const tx of discretionaryTxs) {
-    if (spending.some((b) => budgetMatches(b, tx))) continue
-    const cat = tx.category as string
-    byCategory[cat] = (byCategory[cat] ?? 0) + tx.amount.value
-  }
-  const unbudgeted = Object.entries(byCategory)
-    .map(([category, spent]) => ({ category, spent }))
-    .sort((a, b) => b.spent - a.spent)
-
-  const fixedPlanned = fixed.reduce((s, b) => s + b.amount, 0)
-  const investmentPlanned = investments.reduce((s, b) => s + b.amount, 0)
-  const spendingPlanned = spending.reduce((s, b) => s + b.amount, 0)
-
-  const safeToSpend = incomeBase != null
-    ? incomeBase - fixedPlanned - investmentPlanned - discretionarySpent
-    : null
-
-  return {
-    fixed: fixedStatus,
-    investments: investmentStatus,
-    spending: spendingStatus,
-    fixedPlanned,
-    investmentPlanned,
-    spendingPlanned,
-    discretionarySpent,
-    unbudgeted,
-    safeToSpend,
-    incomeBase,
-  }
 }

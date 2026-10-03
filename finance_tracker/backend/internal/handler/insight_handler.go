@@ -82,6 +82,44 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	// plain arithmetic over the user's own budgets — so the switch doesn't
 	// gate it.
 	rg.GET("/budgets/status", h.BudgetStatus)
+	rg.GET("/budgets/trips", h.Trips)
+	rg.POST("/budgets/trips/assign", h.AssignTrip)
+}
+
+// Trips lists every tagged trip with its cost breakdown, plus untagged
+// Vacation runs proposed as trips.
+func (h *InsightHandler) Trips(c *gin.Context) {
+	trips, suggestions, err := h.svc.Trips()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if suggestions == nil {
+		suggestions = []service.TripSuggestion{}
+	}
+	c.JSON(http.StatusOK, gin.H{"trips": trips, "suggestions": suggestions})
+}
+
+type assignTripInput struct {
+	Name   string `json:"name" binding:"required"`
+	TxIDs  []uint `json:"tx_ids" binding:"required,min=1"`
+	Remove bool   `json:"remove"`
+}
+
+// AssignTrip tags exactly the given transactions with trip:<name> (or
+// removes it with remove=true).
+func (h *InsightHandler) AssignTrip(c *gin.Context) {
+	var in assignTripInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	label, n, err := h.svc.AssignTrip(in.Name, in.TxIDs, in.Remove)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"label": label, "changed": n})
 }
 
 // requireEnabled blocks every AI surface while the master switch is off, so

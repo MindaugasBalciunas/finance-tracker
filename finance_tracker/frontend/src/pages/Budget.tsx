@@ -1,197 +1,18 @@
 import { useMemo, useState } from 'react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAllTransactions, useTransactionSummary } from '../hooks/useTransactions'
-import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings, useLabels } from '../hooks/useBudgets'
-import { computeMonthPlan, medianMonthlyIncome } from '../utils/budget'
-import type { MonthPlan } from '../utils/budget'
+import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget, useApplyLabel, useReapplyRules, useBudgetSettings, useSaveBudgetSettings, useBudgetStatus } from '../hooks/useBudgets'
+import { medianMonthlyIncome } from '../utils/budget'
 import { ltNetSalary } from '../utils/ltSalary'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import CategoryTransactionsModal from '../components/ui/CategoryTransactionsModal'
 import LabelRulesModal from '../components/ui/LabelRulesModal'
+import MonthView from '../components/budget/MonthView'
+import YearGrid from '../components/budget/YearGrid'
+import TripsView from '../components/budget/TripsView'
+import BudgetFormModal from '../components/budget/BudgetFormModal'
+import { monthLabel, monthRange, shiftMonth, ym } from '../components/budget/budgetUi'
 import { formatEuro } from '../utils/format'
-import { CATEGORIES } from '../constants/categories'
-import type { Budget, BudgetInput, BudgetKind, BudgetSettings, IncomeMode } from '../types'
-
-function ym(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
-function monthRange(month: string): { date_from: string; date_to: string } {
-  const [y, m] = month.split('-').map(Number)
-  const last = new Date(y, m, 0).getDate()
-  return { date_from: `${month}-01`, date_to: `${month}-${String(last).padStart(2, '0')}` }
-}
-
-function monthLabel(month: string): string {
-  const [y, m] = month.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleDateString('en', { month: 'long', year: 'numeric' })
-}
-
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split('-').map(Number)
-  return ym(new Date(y, m - 1 + delta))
-}
-
-// Stacked bar showing how the month's income base is allocated.
-function AllocationBar({ incomeBase, fixed, investments, spent, remaining }: {
-  incomeBase: number
-  fixed: number
-  investments: number
-  spent: number
-  remaining: number
-}) {
-  const total = Math.max(incomeBase, fixed + investments + spent)
-  if (total <= 0) return null
-  const w = (v: number) => `${Math.max((v / total) * 100, 0)}%`
-  const SEGMENTS = [
-    { key: 'Fixed', value: fixed, cls: 'bg-slate-500' },
-    { key: 'Investments', value: investments, cls: 'bg-blue-500' },
-    { key: 'Spent', value: spent, cls: 'bg-orange-400' },
-    { key: 'Left', value: Math.max(remaining, 0), cls: 'bg-green-500' },
-  ]
-  return (
-    <div className="mt-4">
-      <div className="flex h-5 rounded-lg overflow-hidden bg-gray-100">
-        {SEGMENTS.filter((s) => s.value > 0).map((s) => (
-          <div key={s.key} className={s.cls} style={{ width: w(s.value) }} title={`${s.key}: ${formatEuro(s.value)}`} />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
-        {SEGMENTS.map((s) => (
-          <span key={s.key} className="inline-flex items-center gap-1.5 text-xs">
-            <span className={`w-2.5 h-2.5 rounded-sm ${s.cls}`} />
-            <span className="text-gray-500">{s.key}</span>
-            <span className="font-semibold text-gray-800">{formatEuro(s.key === 'Left' ? remaining : s.value)}</span>
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const PLAN_COLORS = ['#f97316', '#eab308', '#14b8a6', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e']
-
-// Donut of the month's plan: fixed as one prominent slice, investments,
-// each spending limit, and whatever income stays unallocated.
-// PlanCheckCard answers "do the amounts I set actually fit my income?":
-// income base − fixed − investment targets − the SUM of spending limits.
-// A positive result means even spending every limit in full keeps the month
-// cash-positive (income covers spending + investments); negative means the
-// plan itself overshoots income. It also compares what the limits still
-// allow right now against what income actually affords.
-function PlanCheckCard({ plan, daysLeft }: { plan: MonthPlan; daysLeft: number | null }) {
-  if (plan.incomeBase == null) return null
-  const planned = plan.fixedPlanned + plan.investmentPlanned + plan.spendingPlanned
-  const unallocated = plan.incomeBase - planned
-  const fits = unallocated >= 0
-  const limitLeft = plan.spending.reduce((s, { budget, actual }) => s + Math.max(budget.amount - actual, 0), 0)
-  const safe = plan.safeToSpend ?? 0
-  const looseLimits = limitLeft > Math.max(safe, 0) + 0.5
-
-  const row = (label: string, value: number, cls = 'text-gray-700') => (
-    <div className="flex items-baseline justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className={`font-medium tabular-nums ${cls}`}>{formatEuro(value)}</span>
-    </div>
-  )
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-        <h3 className="text-base font-semibold text-gray-900">Does the plan fit your income?</h3>
-        <span className={`text-sm font-semibold ${fits ? 'text-green-600' : 'text-red-600'}`}>
-          {fits
-            ? `✓ Fits — ${formatEuro(unallocated)} unallocated`
-            : `⚠ Over income by ${formatEuro(-unallocated)}`}
-        </span>
-      </div>
-      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1">
-        <div className="space-y-1">
-          {row('Income base', plan.incomeBase)}
-          {row('− Fixed obligations', -plan.fixedPlanned, 'text-slate-600')}
-          {row('− Investment targets', -plan.investmentPlanned, 'text-blue-600')}
-          {row('− All spending limits', -plan.spendingPlanned, 'text-orange-600')}
-          <div className="border-t border-gray-100 pt-1">
-            {row('= Month end, if every limit is spent in full', unallocated, fits ? 'text-green-600' : 'text-red-600')}
-          </div>
-        </div>
-        <div className="space-y-1 sm:border-l sm:border-gray-100 sm:pl-8">
-          {row('Still allowed by your limits', limitLeft, 'text-orange-600')}
-          {row('Actually affordable (safe to spend)', Math.max(safe, 0), safe >= 0 ? 'text-green-600' : 'text-red-600')}
-          <p className={`text-xs pt-1 ${looseLimits ? 'text-yellow-700' : 'text-gray-400'}`}>
-            {looseLimits
-              ? `Your limits allow ${formatEuro(limitLeft - Math.max(safe, 0))} more than income covers — spending to every limit ends the month ${fits ? 'thinner than planned' : 'in the red'}.`
-              : 'Your limits are within what income covers — spend to the limit and the month still balances.'}
-            {daysLeft != null && limitLeft > 0 && <> {' '}(~{formatEuro(limitLeft / daysLeft)}/day within limits)</>}
-          </p>
-        </div>
-      </div>
-      <p className="text-[11px] text-gray-400 mt-2">
-        Use the left column when sizing budget amounts: raising a limit lowers "unallocated" — keep it ≥ €0 to stay
-        cash-equal or better after investments.
-      </p>
-    </div>
-  )
-}
-
-function PlanPie({ plan }: { plan: MonthPlan }) {
-  const slices: { name: string; value: number; color: string }[] = []
-  if (plan.fixedPlanned > 0) slices.push({ name: 'Fixed obligations', value: plan.fixedPlanned, color: '#475569' })
-  if (plan.investmentPlanned > 0) slices.push({ name: 'Investments', value: plan.investmentPlanned, color: '#3b82f6' })
-  plan.spending.forEach(({ budget }, i) => {
-    slices.push({ name: budget.name, value: budget.amount, color: PLAN_COLORS[i % PLAN_COLORS.length] })
-  })
-  if (plan.incomeBase != null) {
-    const allocated = slices.reduce((s, x) => s + x.value, 0)
-    const free = plan.incomeBase - allocated
-    if (free > 0.5) slices.push({ name: 'Unallocated', value: free, color: '#22c55e' })
-    // A plan that exceeds income must be visible, not silently normalized.
-    if (free < -0.5) slices.push({ name: 'Over income', value: -free, color: '#ef4444' })
-  }
-  if (slices.length === 0) return null
-  const total = slices.reduce((s, x) => s + x.value, 0)
-
-  return (
-    <div>
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Plan composition</p>
-      <ResponsiveContainer width="100%" height={215}>
-        <PieChart>
-          <Pie
-            data={slices}
-            cx="50%" cy="50%"
-            innerRadius={44} outerRadius={72}
-            dataKey="value" nameKey="name"
-            label={({ percent }) => (percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : '')}
-            labelLine={false}
-            isAnimationActive={false}
-          >
-            {slices.map((sl, i) => (
-              <Cell key={i} fill={sl.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(v: number, name: string) => [formatEuro(v), name]} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 xl:grid-cols-1 mt-1">
-        {slices.map((sl) => (
-          <div key={sl.name} className="flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-1.5 text-gray-500 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: sl.color }} />
-              <span className="truncate">{sl.name}</span>
-            </span>
-            <span className="text-gray-700 font-medium whitespace-nowrap">{formatEuro(sl.value)} <span className="text-gray-400 font-normal">{((sl.value / total) * 100).toFixed(0)}%</span></span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const KIND_INFO: Record<BudgetKind, { title: string; hint: string }> = {
-  fixed: { title: 'Fixed obligations', hint: 'Known monthly payments — tracked as paid / pending' },
-  investment: { title: 'Investment targets', hint: 'Monthly contributions you aim to reach' },
-  spending: { title: 'Spending limits', hint: 'Caps for discretionary categories' },
-}
+import type { Budget, BudgetInput, BudgetLineStatus, BudgetSettings, IncomeMode } from '../types'
 
 // Suggested setup matching this database: loan + alimony as labeled fixed
 // costs, VWCE and Artea as investment targets.
@@ -202,12 +23,21 @@ const SUGGESTED = [
   { budget: { name: 'Artea 3rd pillar', kind: 'investment', category: 'Pension', amount: 200 }, rule: null },
 ] as const
 
+type Tab = 'month' | 'year' | 'trips'
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'month', label: 'Month' },
+  { id: 'year', label: '12 months' },
+  { id: 'trips', label: 'Trips' },
+]
+
 export default function Budget() {
   const [month, setMonth] = useState(() => ym(new Date()))
+  const [tab, setTab] = useState<Tab>('month')
   const [rulesOpen, setRulesOpen] = useState(false)
   const range = monthRange(month)
 
   const { data: budgets, isLoading: budgetsLoading } = useBudgets()
+  const { data: report } = useBudgetStatus(month)
   const { data: monthTxs } = useAllTransactions(range)
   const { data: allTimeSummary } = useTransactionSummary({})
   const { data: settings } = useBudgetSettings()
@@ -224,14 +54,26 @@ export default function Budget() {
   const [settingUp, setSettingUp] = useState(false)
   const [prefill, setPrefill] = useState<BudgetInput | null>(null)
   const [viewing, setViewing] = useState<{ title: string; type: 'expense' | 'investment'; category?: string; label?: string } | null>(null)
+  const [showIncomeSettings, setShowIncomeSettings] = useState(false)
 
-  function viewBudget(b: Budget) {
+  const byId = useMemo(() => new Map((budgets ?? []).map((b) => [b.id, b])), [budgets])
+
+  function viewLine(l: BudgetLineStatus) {
     setViewing({
-      title: b.name,
-      type: b.kind === 'investment' ? 'investment' : 'expense',
-      category: b.label ? undefined : b.category,
-      label: b.label || undefined,
+      title: l.name,
+      type: l.kind === 'investment' ? 'investment' : 'expense',
+      category: l.label ? undefined : l.category,
+      label: l.label || undefined,
     })
+  }
+
+  function editLine(l: BudgetLineStatus) {
+    const b = byId.get(l.id)
+    if (!b) return
+    setEditing(b)
+    setPrefill(null)
+    setShowForm(true)
+    setFormError(null)
   }
 
   async function handleReapply() {
@@ -245,29 +87,30 @@ export default function Budget() {
     }
   }
 
+  // One-tap suggestion: update the line (or create one for an unbudgeted
+  // category) and say what changed.
+  async function applySuggestion(l: BudgetLineStatus | null, input: BudgetInput, note: string) {
+    setNotice(null)
+    setFormError(null)
+    try {
+      if (l) await updateMutation.mutateAsync({ id: l.id, input })
+      else await createMutation.mutateAsync(input)
+      setNotice(note)
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
+  }
+
   const medianBase = useMemo(
     () => medianMonthlyIncome(allTimeSummary?.by_month ?? [], new Date()),
     [allTimeSummary]
   )
 
-  // Income base: configured projected salary wins over the historical median.
-  const { incomeBase, incomeSource } = useMemo(() => {
-    if (settings?.income_mode === 'manual' && settings.manual_income > 0) {
-      return { incomeBase: settings.manual_income, incomeSource: 'projected (manual)' }
-    }
-    if (settings?.income_mode === 'gross' && settings.gross_salary > 0) {
-      const net = ltNetSalary(settings.gross_salary, settings.monthly_deductions).netAfterDeductions
-      return { incomeBase: net, incomeSource: `from ${formatEuro(settings.gross_salary)} gross − LT tax` }
-    }
-    return { incomeBase: medianBase, incomeSource: 'median month' }
-  }, [settings, medianBase])
-
-  const [showIncomeSettings, setShowIncomeSettings] = useState(false)
-
-  const plan = useMemo(
-    () => computeMonthPlan(budgets ?? [], monthTxs?.data ?? [], incomeBase),
-    [budgets, monthTxs, incomeBase]
-  )
+  const incomeSourceNote = useMemo(() => {
+    if (settings?.income_mode === 'manual' && settings.manual_income > 0) return 'projected (manual)'
+    if (settings?.income_mode === 'gross' && settings.gross_salary > 0) return `from ${formatEuro(settings.gross_salary)} gross − LT tax`
+    return 'median month'
+  }, [settings])
 
   const isCurrentMonth = month === ym(new Date())
 
@@ -305,29 +148,31 @@ export default function Budget() {
       setEditing(null)
       setShowForm(false)
       setFormError(null)
+      setPrefill(null)
     } catch (err) {
       setFormError((err as Error).message)
     }
   }
 
-  async function handleDelete(id: number) {
-    if (confirm('Delete this budget?')) {
-      await deleteMutation.mutateAsync(id)
+  async function handleDelete(l: BudgetLineStatus) {
+    if (confirm(`Delete the ${l.name} budget?`)) {
+      await deleteMutation.mutateAsync(l.id)
     }
   }
 
   if (budgetsLoading) return <LoadingSpinner />
 
-  const hasBudgets = (budgets ?? []).length > 0
+  const hasBudgets = (budgets ?? []).some((b) => b.kind !== 'trip')
+  const vacationFund = report?.lines.find((l) => l.fund && (l.category === 'Vacation' || (l.label ?? '').split(',').includes('vacation')))
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Budget</h2>
-          <p className="text-sm text-gray-500 mt-1">Fixed costs, investment targets and spending limits</p>
+          <p className="text-sm text-gray-500 mt-1">Monthly limits, yearly amounts and funds that carry over</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setRulesOpen(true)}
             title="View and delete label rules"
@@ -345,19 +190,38 @@ export default function Budget() {
               {reapplyRules.isPending ? 'Re-labeling…' : '↻ Re-apply rules'}
             </button>
           )}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button onClick={() => setMonth(shiftMonth(month, -1))} className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md">‹</button>
-            <span className="px-2 text-sm font-medium text-gray-800 whitespace-nowrap">{monthLabel(month)}</span>
-            <button
-              onClick={() => setMonth(shiftMonth(month, 1))}
-              disabled={isCurrentMonth}
-              className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md disabled:opacity-30"
-            >
-              ›
-            </button>
-          </div>
+          {tab !== 'trips' && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md">‹</button>
+              <span className="px-2 text-sm font-medium text-gray-800 whitespace-nowrap">{monthLabel(month)}</span>
+              <button
+                onClick={() => setMonth(shiftMonth(month, 1))}
+                disabled={isCurrentMonth}
+                aria-label="Next month"
+                className="px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-md disabled:opacity-30"
+              >
+                ›
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {hasBudgets && (
+        <div className="grid grid-cols-3 gap-1 bg-gray-100 rounded-lg p-1 max-w-sm" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {formError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>
@@ -389,251 +253,29 @@ export default function Budget() {
             </button>
           </div>
         </div>
+      ) : tab === 'trips' ? (
+        <TripsView vacationFund={vacationFund} />
+      ) : !report ? (
+        <LoadingSpinner />
+      ) : tab === 'year' ? (
+        <YearGrid report={report} />
       ) : (
-        <>
-          {/* Safe to spend */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr,320px] gap-6">
-            <div>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
-              {daysLeft != null && plan.safeToSpend != null && plan.safeToSpend > 0 && (
-                <p className="text-sm text-gray-500">
-                  ≈ <span className="font-bold text-green-600">{formatEuro(plan.safeToSpend / daysLeft)}</span>/day for the next {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                </p>
-              )}
-            </div>
-            <p className={`text-3xl sm:text-4xl font-bold mt-1 ${plan.safeToSpend != null && plan.safeToSpend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {plan.safeToSpend != null ? formatEuro(plan.safeToSpend) : '—'}
-            </p>
-            {plan.incomeBase != null && plan.safeToSpend != null && (
-              <AllocationBar
-                incomeBase={plan.incomeBase}
-                fixed={plan.fixedPlanned}
-                investments={plan.investmentPlanned}
-                spent={plan.discretionarySpent}
-                remaining={plan.safeToSpend}
-              />
-            )}
-            {(() => {
-              const txs = monthTxs?.data ?? []
-              const totalSpent = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount.value, 0)
-              const totalIncome = txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount.value, 0)
-              const pct = totalIncome > 0 ? (totalSpent / totalIncome) * 100 : null
-              return (
-                <p className="mt-3 text-xs text-gray-500">
-                  This month: spent <span className={`font-semibold ${pct != null && pct > 100 ? 'text-red-600' : 'text-gray-700'}`}>{formatEuro(totalSpent)}</span>
-                  {' '}· income received <span className="font-semibold text-gray-700">{formatEuro(totalIncome)}</span>
-                  {pct != null && <span className={pct > 100 ? 'text-red-500 font-medium' : 'text-gray-400'}> ({pct.toFixed(0)}% of income)</span>}
-                </p>
-              )
-            })()}
-            <p className="mt-1 text-xs text-gray-500">
-              Income base <span className="font-semibold text-gray-700">{plan.incomeBase != null ? formatEuro(plan.incomeBase) : '—'}</span>{' '}
-              <span className="text-gray-400">({incomeSource})</span>
-              <button
-                onClick={() => setShowIncomeSettings(true)}
-                className="ml-1.5 text-blue-600 hover:text-blue-800 font-medium"
-              >
-                ✎ edit
-              </button>
-            </p>
-            </div>
-            <PlanPie plan={plan} />
-            </div>
-          </div>
-
-          <PlanCheckCard plan={plan} daysLeft={daysLeft} />
-
-          {/* Desktop: spending limits as the main 2/3 column, fixed +
-              investments as a status sidebar. Mobile: status cards first. */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 items-start">
-          <div className="space-y-4 sm:space-y-6 xl:order-2">
-          {plan.fixed.length > 0 && (() => {
-            const totalPaid = plan.fixed.reduce((s, f) => s + Math.min(f.actual, f.budget.amount), 0)
-            const totalOutstanding = Math.max(plan.fixedPlanned - totalPaid, 0)
-            return (
-              <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                  <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.fixed.title}</h3>
-                  <span className="text-sm">
-                    {totalOutstanding > 0.5
-                      ? <span className="font-semibold text-yellow-600">{formatEuro(totalOutstanding)} still outstanding</span>
-                      : <span className="font-semibold text-green-600">✓ All paid</span>}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mb-3">{KIND_INFO.fixed.hint}</p>
-                <div className="space-y-3">
-                  {plan.fixed.map(({ budget, actual }) => {
-                    const paid = actual >= budget.amount * 0.95
-                    const pct = Math.min((actual / budget.amount) * 100, 100)
-                    const outstanding = Math.max(budget.amount - actual, 0)
-                    return (
-                      <div key={budget.id}>
-                        <div className="flex items-center justify-between gap-3 mb-1">
-                          <button onClick={() => viewBudget(budget)} className="text-sm font-medium text-gray-800 min-w-0 truncate text-left hover:text-blue-700">{budget.name}</button>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-semibold whitespace-nowrap ${paid ? 'text-green-600' : 'text-gray-600'}`}>
-                              {paid ? `✓ Paid ${formatEuro(actual)}` : `${formatEuro(actual)} / ${formatEuro(budget.amount)}`}
-                            </span>
-                            <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
-                          </div>
-                        </div>
-                        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${paid ? 'bg-green-500' : 'bg-slate-400'}`} style={{ width: `${pct}%` }} />
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {budget.label ? `label: ${budget.label}` : budget.category}
-                          {!paid && <> · paid <span className="font-medium text-gray-600">{formatEuro(actual)}</span> · <span className="text-yellow-600 font-medium">{formatEuro(outstanding)} outstanding</span></>}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Investment targets */}
-          {plan.investments.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.investment.title}</h3>
-                {(() => {
-                  const invested = plan.investments.reduce((s, i) => s + Math.min(i.actual, i.budget.amount), 0)
-                  const toGo = Math.max(plan.investmentPlanned - invested, 0)
-                  return (
-                    <span className="text-sm">
-                      {toGo > 0.5
-                        ? <span className="font-semibold text-blue-700">{formatEuro(toGo)} left to invest</span>
-                        : <span className="font-semibold text-green-600">✓ All targets reached</span>}
-                    </span>
-                  )
-                })()}
-              </div>
-              <p className="text-xs text-gray-400 mb-3">{KIND_INFO.investment.hint}</p>
-              <div className="space-y-3">
-                {plan.investments.map(({ budget, actual }) => {
-                  const pct = Math.min((actual / budget.amount) * 100, 100)
-                  const reached = actual >= budget.amount
-                  return (
-                    <div key={budget.id}>
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <button onClick={() => viewBudget(budget)} className="text-sm font-medium text-gray-800 text-left hover:text-blue-700">{budget.name}</button>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-sm font-semibold ${reached ? 'text-green-600' : 'text-blue-700'}`}>
-                            {formatEuro(actual)} / {formatEuro(budget.amount)}
-                          </span>
-                          <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
-                        </div>
-                      </div>
-                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${reached ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Invested <span className="font-medium text-gray-600">{formatEuro(actual)}</span>
-                        {reached ? ' · ✓ Target reached' : <> · <span className="font-medium text-blue-700">{formatEuro(budget.amount - actual)} to go</span></>}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-          </div>
-
-          {/* Spending limits */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 xl:order-1 xl:col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-base font-semibold text-gray-900">{KIND_INFO.spending.title}</h3>
-              <button
-                onClick={() => { setEditing(null); setShowForm(true); setFormError(null) }}
-                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-              >
-                + Add budget
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mb-3">{KIND_INFO.spending.hint}</p>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-10">
-            <div>
-            {plan.spending.length === 0 && (
-              <p className="text-sm text-gray-400 py-2">No spending limits yet — add one, or pick a category from the unbudgeted list.</p>
-            )}
-            <div className="space-y-3">
-              {plan.spending.map(({ budget, actual }) => {
-                const usedPct = budget.amount > 0 ? (actual / budget.amount) * 100 : 0
-                const over = actual > budget.amount
-                const near = !over && actual > budget.amount * 0.8
-                return (
-                  <div key={budget.id} className={over ? 'bg-red-50 border border-red-200 rounded-lg p-3 -mx-1' : ''}>
-                    <div className="flex items-center justify-between gap-3 mb-1">
-                      <button onClick={() => viewBudget(budget)} className={`text-sm font-medium text-left hover:text-blue-700 ${over ? 'text-red-800' : 'text-gray-800'}`}>
-                        {over && '⚠ '}{budget.name}
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${over ? 'text-red-600' : near ? 'text-yellow-600' : 'text-gray-700'}`}>
-                          {formatEuro(actual)} / {formatEuro(budget.amount)}
-                          <span className={`ml-1.5 text-xs font-bold ${over ? 'text-red-600' : near ? 'text-yellow-600' : 'text-gray-400'}`}>
-                            {usedPct.toFixed(0)}%
-                          </span>
-                        </span>
-                        <BudgetRowActions onEdit={() => { setEditing(budget); setShowForm(true); setFormError(null) }} onDelete={() => handleDelete(budget.id)} />
-                      </div>
-                    </div>
-                    {over ? (
-                      // Full bar = actual spend; light part is the limit, dark red is the overflow.
-                      <div className="flex h-2.5 rounded-full overflow-hidden bg-red-100">
-                        <div className="h-full bg-red-400" style={{ width: `${(budget.amount / actual) * 100}%` }} />
-                        <div className="h-full bg-red-700" style={{ width: `${(1 - budget.amount / actual) * 100}%` }} />
-                      </div>
-                    ) : (
-                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${near ? 'bg-yellow-400' : 'bg-green-500'}`} style={{ width: `${Math.min(usedPct, 100)}%` }} />
-                      </div>
-                    )}
-                    <p className="text-xs mt-1 text-gray-400">
-                      Spent <span className="font-medium text-gray-600">{formatEuro(actual)}</span>
-                      {over
-                        ? <> · <span className="text-red-600 font-semibold">{formatEuro(actual - budget.amount)} over (+{(usedPct - 100).toFixed(0)}%)</span></>
-                        : <> · <span className={`font-medium ${near ? 'text-yellow-600' : 'text-green-600'}`}>{formatEuro(budget.amount - actual)} left ({Math.max(100 - usedPct, 0).toFixed(0)}%)</span>{daysLeft != null && ` · ${formatEuro((budget.amount - actual) / daysLeft)}/day`}</>}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-            </div>
-
-            {/* Unbudgeted categories */}
-            {plan.unbudgeted.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-100 xl:mt-0 xl:pt-0 xl:border-t-0 xl:border-l xl:border-gray-100 xl:pl-10">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Unbudgeted spending this month</p>
-                <div className="space-y-1">
-                  {plan.unbudgeted.map(({ category, spent }) => (
-                    <div key={category} className="flex items-center justify-between text-sm py-1">
-                      <button onClick={() => setViewing({ title: category, type: 'expense', category })} className="text-gray-600 text-left hover:text-blue-700">{category}</button>
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-gray-800">{formatEuro(spent)}</span>
-                        <button
-                          onClick={() => {
-                            setEditing(null)
-                            setShowForm(true)
-                            setFormError(null)
-                            setPrefill({ name: category, kind: 'spending', category, amount: Math.ceil(spent / 50) * 50 })
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          + limit
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            </div>
-          </div>
-          </div>
-        </>
+        <MonthView
+          report={report}
+          month={month}
+          isCurrentMonth={isCurrentMonth}
+          daysLeft={daysLeft}
+          monthTxs={monthTxs?.data ?? []}
+          incomeSourceNote={incomeSourceNote}
+          onEditIncome={() => setShowIncomeSettings(true)}
+          onView={viewLine}
+          onViewCategory={(category) => setViewing({ title: category, type: 'expense', category })}
+          onEdit={editLine}
+          onDelete={handleDelete}
+          onAdd={(pf) => { setEditing(null); setPrefill(pf); setShowForm(true); setFormError(null) }}
+          onApply={applySuggestion}
+          applying={createMutation.isPending || updateMutation.isPending}
+        />
       )}
 
       {showForm && (
@@ -778,125 +420,6 @@ function IncomeSettingsModal({ settings, medianBase, onClose }: {
               className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40"
             >
               {save.isPending ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function BudgetRowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
-  return (
-    <div className="flex items-center">
-      <button onClick={onEdit} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
-      <button onClick={onDelete} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
-    </div>
-  )
-}
-
-function BudgetFormModal({ budget, prefill, error, onSave, onClose }: {
-  budget: Budget | null
-  prefill: BudgetInput | null
-  error: string | null
-  onSave: (input: BudgetInput) => void
-  onClose: () => void
-}) {
-  const initial: BudgetInput = budget
-    ? { name: budget.name, kind: budget.kind, label: budget.label, category: budget.category, amount: budget.amount }
-    : prefill ?? { name: '', kind: 'spending', category: '', label: '', amount: 0 }
-
-  const [form, setForm] = useState<BudgetInput>(initial)
-  // Existing labels for autocomplete — a typo here ("lease" vs "leasing")
-  // silently creates a budget that never matches anything.
-  const { data: allLabels = [] } = useLabels()
-
-  const valid = form.name.trim() !== '' && form.amount > 0 &&
-    ((form.label ?? '').trim() !== '' || (form.category ?? '') !== '')
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">{budget ? 'Edit Budget' : 'New Budget'}</h3>
-        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</p>}
-        <div className="space-y-3">
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Name (e.g. Food)"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-          />
-          <div className="grid grid-cols-3 gap-1 bg-gray-100 rounded-lg p-1">
-            {(['spending', 'fixed', 'investment'] as BudgetKind[]).map((k) => (
-              <button
-                key={k}
-                onClick={() => setForm({ ...form, kind: k })}
-                className={`px-2 py-1.5 text-xs font-medium rounded-md capitalize ${form.kind === k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-              >
-                {k}
-              </button>
-            ))}
-          </div>
-          {/* Rule-style matching: category, labels, or both (both = the
-              transaction must be in the category AND carry a label). */}
-          <select
-            value={form.category ?? ''}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white"
-          >
-            <option value="">Any category</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={form.label ?? ''}
-            onChange={(e) => setForm({ ...form, label: e.target.value.toLowerCase() })}
-            placeholder="Label(s) — e.g. restaurant, fast food (optional)"
-            list="budget-label-options"
-            autoComplete="off"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-          />
-          <datalist id="budget-label-options">
-            {allLabels.map((l) => (
-              <option key={l} value={l} />
-            ))}
-          </datalist>
-          <p className="text-[11px] text-gray-400 -mt-1">
-            Comma-separate for a label group (any of them counts). Set a category too and only
-            transactions in that category carrying one of the labels count.
-          </p>
-          {(() => {
-            const unknown = (form.label ?? '')
-              .split(',')
-              .map((l) => l.trim())
-              .filter((l) => l !== '' && !allLabels.includes(l))
-            return unknown.length > 0 ? (
-              <p className="text-[11px] text-amber-600 -mt-1">
-                “{unknown.join('”, “')}” do{unknown.length === 1 ? 'es' : ''}n't match any existing label yet — that part of the budget will stay at €0 until transactions carry it.
-              </p>
-            ) : null
-          })()}
-          <input
-            type="number"
-            inputMode="decimal"
-            value={form.amount || ''}
-            onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
-            placeholder="Monthly amount (€)"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-          />
-          <div className="flex gap-2 pt-1">
-            <button
-              disabled={!valid}
-              onClick={() => onSave(form)}
-              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40"
-            >
-              {budget ? 'Save' : 'Create'}
             </button>
             <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
               Cancel
