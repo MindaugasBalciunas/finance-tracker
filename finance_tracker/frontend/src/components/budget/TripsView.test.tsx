@@ -49,3 +49,14 @@ describe('TripsView rename', () => {
     confirmSpy.mockRestore()
   })
 })
+
+describe('TripsView year count', () => {
+  it('counts a trip booked last year but taken this year', async () => {
+    const y = new Date().getFullYear()
+    const early: TripSummary = { ...trip('italy-spring', `${y - 1}-11-19`), to: `${y}-03-22` }
+    vi.mocked(budgetsApi.trips).mockResolvedValue({ trips: [early, trip('egypt', `${y}-08-17`), { ...trip('old', `${y - 1}-05-01`) }], suggestions: [] })
+    renderView()
+    expect(await screen.findByText(`Trips in ${y}`)).toBeInTheDocument()
+    expect(screen.getByText('2', { selector: 'p' })).toBeInTheDocument()
+  })
+})

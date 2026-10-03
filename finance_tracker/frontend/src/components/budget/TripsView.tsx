@@ -213,7 +213,9 @@ export default function TripsView({ vacationFund }: { vacationFund?: BudgetLineS
   const tripNames = trips.map((t) => t.name)
   const taken = trips.filter((t) => t.from)
   const year = String(new Date().getFullYear())
-  const thisYear = taken.filter((t) => t.from.startsWith(year))
+  // A trip belongs to the year it ends in — when you travel. Flights booked
+  // the November before must not push a March trip into last year.
+  const thisYear = taken.filter((t) => t.to.startsWith(year))
   const yearTotal = thisYear.reduce((s, t) => s + t.total, 0)
 
   return (
