@@ -91,7 +91,13 @@ export default function BudgetFormModal({ budget, prefill, error, onSave, onClos
                 <input
                   type="checkbox"
                   checked={form.fund ?? false}
-                  onChange={(e) => setForm({ ...form, fund: e.target.checked, start_month: e.target.checked ? form.start_month || defaultFundStart() : form.start_month })}
+                  onChange={(e) => {
+                    setForm({ ...form, fund: e.target.checked, start_month: e.target.checked ? form.start_month || defaultFundStart() : form.start_month })
+                    // Turning a line into a fund: its amount should count from
+                    // the fund's start, or the months before keep accruing
+                    // the old limit (Health went −€2,246 that way).
+                    if (e.target.checked && budget && !budget.fund) setCorrectAll(true)
+                  }}
                   className="mt-0.5"
                 />
                 <span>
@@ -183,9 +189,15 @@ export default function BudgetFormModal({ budget, prefill, error, onSave, onClos
                 />
               </label>
               <p className="text-[11px] text-gray-400 pl-6 -mt-1">Earlier months keep {formatEuro(budget!.amount)}.</p>
+              {form.fund && !correctAll && (
+                <p className="text-[11px] text-amber-700 pl-6 -mt-1">
+                  This fund counts from {form.start_month || defaultFundStart()}: months before {amountFrom} will only have put in {formatEuro(budget!.amount)} each,
+                  so the balance can start deep in the red. Usually you want “Correct every month”.
+                </p>
+              )}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" checked={correctAll} onChange={() => setCorrectAll(true)} />
-                <span className="text-gray-700">Correct every month (the old amount was a mistake)</span>
+                <span className="text-gray-700">{form.fund ? `Use ${formatEuro(form.amount)} for every month since the fund started` : 'Correct every month (the old amount was a mistake)'}</span>
               </label>
             </div>
           )}
