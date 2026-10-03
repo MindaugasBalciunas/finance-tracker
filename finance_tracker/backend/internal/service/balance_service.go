@@ -145,6 +145,17 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 		IBKRStocks: input.IBKRStocks,
 	}
 
+	// The form sends the live BTC price, or 0 when the price feed hasn't
+	// answered — a snapshot holding BTC at price 0 stores a total missing
+	// the coins (2026-09-29 lost ~€1.9k this way). Carry the previous
+	// snapshot's price instead; it is the best observation available.
+	if b.BtcPrice < minValidBtcPrice && b.RBTC+b.MBTC > 0 {
+		if prev, err := s.repo.GetLatest(); err == nil && prev.BtcPrice >= minValidBtcPrice {
+			b.BtcPrice = prev.BtcPrice
+			b.Total = 0 // the client's total was computed without the coins
+		}
+	}
+
 	if b.Total == 0 {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
 		b.Total = roundCents(b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks)

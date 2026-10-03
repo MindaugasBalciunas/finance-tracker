@@ -105,10 +105,11 @@ func (h *ExportHandler) aiSettingsRow() *aiSettingsExportRow {
 		return nil
 	}
 	s, err := h.insightRepo.GetAISettings()
-	if err != nil || (s.APIKey == "" && s.Model == "") {
+	if err != nil || (s.APIKey == "" && s.Model == "" && !s.Disabled) {
 		return nil
 	}
-	return &aiSettingsExportRow{GatewayURL: s.GatewayURL, Model: s.Model, APIKey: s.APIKey}
+	enabled := s.Enabled()
+	return &aiSettingsExportRow{GatewayURL: s.GatewayURL, Model: s.Model, APIKey: s.APIKey, Provider: s.Provider, Enabled: &enabled}
 }
 
 func (h *ExportHandler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -149,7 +150,7 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
 
 	w := csv.NewWriter(c.Writer)
-	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment", "labels"})
+	_ = w.Write([]string{"id", "date", "type", "amount", "category", "comment", "labels", "debit_account", "credit_account"})
 	for _, tx := range transactions {
 		_ = w.Write([]string{
 			strconv.FormatUint(uint64(tx.ID), 10),
@@ -159,6 +160,8 @@ func (h *ExportHandler) ExportTransactions(c *gin.Context) {
 			string(tx.Category),
 			csvSafe(tx.Comment),
 			csvSafe(tx.Labels),
+			tx.DebitAccount,
+			tx.CreditAccount,
 		})
 	}
 	w.Flush()
@@ -243,7 +246,9 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //	v3 — ai_settings (gateway URL, model and API key travel with the backup,
 //	     so a wipe-and-restore doesn't lose the AI configuration)
 //	v4 — ai_context (the user's CFO briefing travels with the backup)
-const exportSchemaVersion = 4
+//	v5 — transactions carry external_id (PSD2 bank-row id, the bank sync's
+//	     first dedup layer), ai_settings carry provider + enabled
+const exportSchemaVersion = 5
 
 type financeExport struct {
 	SchemaVersion   int                  `json:"schema_version,omitempty"`
@@ -268,6 +273,10 @@ type aiSettingsExportRow struct {
 	GatewayURL string `json:"gateway_url,omitempty"`
 	Model      string `json:"model,omitempty"`
 	APIKey     string `json:"api_key,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	// Enabled is a pointer so a pre-v5 backup (field absent) leaves the
+	// local master switch alone instead of reading as "off".
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 type budgetSettingsRow struct {
@@ -302,6 +311,7 @@ type txExportRow struct {
 	DebitAccount  string  `json:"debit_account,omitempty"`
 	CreditAccount string  `json:"credit_account,omitempty"`
 	SourceAccount string  `json:"source_account,omitempty"`
+	ExternalID    string  `json:"external_id,omitempty"`
 }
 
 type balExportRow struct {
@@ -379,6 +389,7 @@ func toTxExportRows(transactions []domain.Transaction) []txExportRow {
 			DebitAccount:  tx.DebitAccount,
 			CreditAccount: tx.CreditAccount,
 			SourceAccount: tx.SourceAccount,
+			ExternalID:    tx.ExternalID,
 		}
 	}
 	return rows
@@ -648,7 +659,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		return
 	}
 
-	balances, err := h.balSvc.List(domain.BalanceFilter{DateFrom: since}, 0)
+	balances, err := h.balSvc.List(domain.BalanceFilter{CreatedFrom: since}, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

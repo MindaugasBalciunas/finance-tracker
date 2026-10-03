@@ -90,7 +90,7 @@ func TestAIContextBackupRoundtrip(t *testing.T) {
 	exportRouter.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code)
 	assert.Contains(t, rec.Body.String(), "VWCE-only core", "backup carries the context")
-	assert.Contains(t, rec.Body.String(), `"schema_version":4`)
+	assert.Contains(t, rec.Body.String(), `"schema_version":5`)
 
 	importRouter, dstDB := importRouterFor(t)
 	var buf bytes.Buffer

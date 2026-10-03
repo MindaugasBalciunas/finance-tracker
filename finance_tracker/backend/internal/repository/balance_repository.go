@@ -144,5 +144,8 @@ func applyBalanceFilters(query *gorm.DB, filter domain.BalanceFilter) *gorm.DB {
 	if filter.DateTo != nil {
 		query = query.Where("date <= ?", filter.DateTo)
 	}
+	if filter.CreatedFrom != nil {
+		query = query.Where("created_at >= ?", filter.CreatedFrom)
+	}
 	return query
 }

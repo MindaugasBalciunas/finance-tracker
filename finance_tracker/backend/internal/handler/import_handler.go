@@ -372,7 +372,11 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 		return result, fmt.Errorf("reading existing transactions for dedup: %w", err)
 	}
 	contentSeen := make(map[string]bool, len(existingTxs))
+	externalSeen := make(map[string]bool)
 	for _, t := range existingTxs {
+		if t.ExternalID != "" {
+			externalSeen[t.ExternalID] = true
+		}
 		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category, t.Comment)] = true
 	}
 
@@ -396,6 +400,13 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 		labels := row.Labels
 		for _, l := range legacyLabels {
 			labels += "," + l
+		}
+		// Bank rows (v5) carry the provider row id under a unique index: a
+		// row already committed here — under any local ID — is the same
+		// bank transaction, and inserting it again would fail the restore.
+		if row.ExternalID != "" && externalSeen[row.ExternalID] {
+			result.Skipped.Transactions++
+			continue
 		}
 		if row.ID > 0 {
 			// ID-based dedup: skip if this exact record is already present.
@@ -422,6 +433,10 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			DebitAccount:  row.DebitAccount,
 			CreditAccount: row.CreditAccount,
 			SourceAccount: row.SourceAccount,
+			ExternalID:    row.ExternalID,
+		}
+		if row.ExternalID != "" {
+			externalSeen[row.ExternalID] = true
 		}
 		if row.ID > 0 {
 			tx.ID = row.ID // preserve original ID so re-imports are idempotent
@@ -688,6 +703,15 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 				}
 				if payload.AISettings.APIKey != "" {
 					cur.APIKey = payload.AISettings.APIKey
+				}
+				// v5: auth dialect and master switch. Absent in older
+				// backups, so those leave the local values alone.
+				switch payload.AISettings.Provider {
+				case domain.ProviderAnthropic, domain.ProviderGateway:
+					cur.Provider = payload.AISettings.Provider
+				}
+				if payload.AISettings.Enabled != nil {
+					cur.Disabled = !*payload.AISettings.Enabled
 				}
 				if err := h.insightRepo.SaveAISettings(cur); err != nil {
 					return result, fmt.Errorf("restoring AI settings: %w", err)

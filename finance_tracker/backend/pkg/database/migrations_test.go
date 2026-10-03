@@ -829,3 +829,33 @@ func TestApplyCreditRepaymentFix(t *testing.T) {
 	require.NoError(t, db.First(&cc, "comment = 'Credit repayment'").Error)
 	assert.Equal(t, "credit card", cc.Labels)
 }
+
+func TestRepairBtcTotals(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Balance{}))
+	d := func(day int) time.Time { return time.Date(2026, 9, day, 0, 0, 0, 0, time.UTC) }
+
+	priced := domain.Balance{Date: d(1), Swed: 100, RBTC: 0.01, BtcPrice: 70000, Total: 800}
+	zero := domain.Balance{Date: d(2), Swed: 90, RBTC: 0.01, Total: 90}          // price feed hadn't loaded
+	eurBtc := domain.Balance{Date: d(3), Swed: 50, RBTC: 966, MBTC: 4, Total: 50} // BTC entered as EUR
+	noCoins := domain.Balance{Date: d(4), Swed: 10, Total: 10}
+	for _, b := range []*domain.Balance{&priced, &zero, &eurBtc, &noCoins} {
+		require.NoError(t, db.Create(b).Error)
+	}
+
+	for i := 0; i < 2; i++ { // second pass must be a no-op
+		repairBtcTotals(db)
+		get := func(id uint) domain.Balance {
+			var b domain.Balance
+			require.NoError(t, db.First(&b, id).Error)
+			return b
+		}
+		assert.Equal(t, 800.0, get(priced.ID).Total)
+		z := get(zero.ID)
+		assert.Equal(t, 70000.0, z.BtcPrice)
+		assert.Equal(t, 790.0, z.Total)
+		assert.Equal(t, 1020.0, get(eurBtc.ID).Total)
+		assert.Equal(t, 10.0, get(noCoins.ID).Total)
+	}
+}

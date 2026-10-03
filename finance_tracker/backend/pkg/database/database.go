@@ -639,6 +639,39 @@ func scrubBankFee(db *gorm.DB) {
 func applyBalanceBackfills(db *gorm.DB) {
 	backfillCashBuffer(db)
 	backfillSebPension(db)
+	repairBtcTotals(db)
+}
+
+// balanceComponentsSQL sums every non-BTC account column of a snapshot.
+const balanceComponentsSQL = `COALESCE(seb,0)+COALESCE(swed,0)+COALESCE(swed_etf,0)+COALESCE(seb_pen,0)+
+	COALESCE(luminor,0)+COALESCE(art,0)+COALESCE(cash,0)+COALESCE(rev_m,0)+COALESCE(rev_r,0)+
+	COALESCE(rev_stocks,0)+COALESCE(ibkr_stocks,0)`
+
+// repairBtcTotals fixes stored totals that leave the BTC holding out, which
+// is what exports and backups carry (the UI re-prices on read and hid it):
+//
+//   - Snapshots holding coins at btc_price 0, saved while the form's live
+//     price hadn't loaded: they inherit the nearest earlier snapshot's price.
+//   - Feb–Mar 2026 snapshots that recorded BTC as EUR values (rbtc ≥ 1, no
+//     price): the read path counts those as EUR, so the total does too.
+//
+// Both only touch rows whose total disagrees by more than a cent. Idempotent.
+func repairBtcTotals(db *gorm.DB) {
+	db.Exec(`UPDATE balances SET btc_price = (
+			SELECT p.btc_price FROM balances p
+			WHERE p.btc_price >= 100 AND (p.date < balances.date OR (p.date = balances.date AND p.id < balances.id))
+			ORDER BY p.date DESC, p.id DESC LIMIT 1)
+		WHERE COALESCE(btc_price,0) < 100
+		  AND COALESCE(rbtc,0) + COALESCE(mbtc,0) > 0
+		  AND COALESCE(rbtc,0) < 1 AND COALESCE(mbtc,0) < 1
+		  AND EXISTS (SELECT 1 FROM balances p WHERE p.btc_price >= 100
+		      AND (p.date < balances.date OR (p.date = balances.date AND p.id < balances.id)))`)
+	db.Exec(`UPDATE balances SET total = ROUND(` + balanceComponentsSQL + ` + btc_price*(COALESCE(rbtc,0)+COALESCE(mbtc,0)), 2)
+		WHERE btc_price >= 100 AND COALESCE(rbtc,0) + COALESCE(mbtc,0) > 0
+		  AND ABS(total - (` + balanceComponentsSQL + ` + btc_price*(COALESCE(rbtc,0)+COALESCE(mbtc,0)))) > 0.01`)
+	db.Exec(`UPDATE balances SET total = ROUND(` + balanceComponentsSQL + ` + COALESCE(rbtc,0) + COALESCE(mbtc,0), 2)
+		WHERE COALESCE(btc_price,0) < 100 AND (COALESCE(rbtc,0) >= 1 OR COALESCE(mbtc,0) >= 1)
+		  AND ABS(total - (` + balanceComponentsSQL + ` + COALESCE(rbtc,0) + COALESCE(mbtc,0))) > 0.01`)
 }
 
 // backfillCashBuffer: the physical cash pocket was ~€750 around Sept 2020

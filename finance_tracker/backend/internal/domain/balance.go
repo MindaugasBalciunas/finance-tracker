@@ -37,6 +37,10 @@ type Balance struct {
 type BalanceFilter struct {
 	DateFrom *time.Time
 	DateTo   *time.Time
+	// CreatedFrom selects snapshots ADDED since a point (created_at), which
+	// is what incremental exports need — a backdated snapshot entered today
+	// has an old date but must still land in the next partial export.
+	CreatedFrom *time.Time
 }
 
 // BalanceTrend holds time-series data for charting
