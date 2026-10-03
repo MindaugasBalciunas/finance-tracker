@@ -192,3 +192,55 @@ func TestBackupRoundtrip_BudgetV6(t *testing.T) {
 	assert.Equal(t, got.ID, steps[1].BudgetID)
 	assert.EqualValues(t, 450, steps[1].Amount)
 }
+
+// Renaming a trip relabels its rows and its budget; renaming onto another
+// trip merges them, budgets included.
+func TestTrips_RenameAndMerge(t *testing.T) {
+	r, db := budgetV2Router(t)
+	d := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	deposit := domain.Transaction{Date: d.AddDate(0, -2, 0), Type: "expense", Amount: 220, Category: "Vacation", Labels: "vacation,trip:2026-08"}
+	stay := domain.Transaction{Date: d, Type: "expense", Amount: 880, Category: "Vacation", Labels: "trip:2026-10,hotel"}
+	require.NoError(t, db.Create(&deposit).Error)
+	require.NoError(t, db.Create(&stay).Error)
+	for _, b := range []map[string]any{
+		{"name": "2026-08", "kind": "trip", "amount": 300},
+		{"name": "2026-10", "kind": "trip", "amount": 1000},
+	} {
+		w := budgetDoJSON(r, "POST", "/api/v1/budgets", b)
+		require.Equal(t, 201, w.Code, w.Body.String())
+	}
+
+	// Plain rename.
+	w := budgetDoJSON(r, "POST", "/api/v1/budgets/trips/rename", map[string]any{"from": "trip:2026-10", "to": "Egypt 2026"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"label":"trip:egypt-2026"`)
+	require.NoError(t, db.First(&stay, stay.ID).Error)
+	assert.Equal(t, "trip:egypt-2026,hotel", stay.Labels)
+	var b domain.Budget
+	require.NoError(t, db.Where("kind = ? AND label = ?", "trip", "trip:egypt-2026").First(&b).Error)
+	assert.Equal(t, "egypt-2026", b.Name)
+
+	// Merge the deposit's group into it.
+	w = budgetDoJSON(r, "POST", "/api/v1/budgets/trips/rename", map[string]any{"from": "trip:2026-08", "to": "egypt-2026"})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var trips []domain.Budget
+	require.NoError(t, db.Where("kind = ?", "trip").Find(&trips).Error)
+	require.Len(t, trips, 1)
+	assert.EqualValues(t, 1300, trips[0].Amount)
+
+	w = budgetDoJSON(r, "GET", "/api/v1/budgets/trips", nil)
+	var res struct {
+		Trips []struct {
+			Label string  `json:"label"`
+			Total float64 `json:"total"`
+		} `json:"trips"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
+	require.Len(t, res.Trips, 1)
+	assert.InDelta(t, 1100, res.Trips[0].Total, 0.01)
+
+	w = budgetDoJSON(r, "POST", "/api/v1/budgets/trips/rename", map[string]any{"from": "groceries", "to": "x"})
+	assert.Equal(t, 400, w.Code)
+	w = budgetDoJSON(r, "POST", "/api/v1/budgets/trips/rename", map[string]any{"from": "trip:nowhere", "to": "x"})
+	assert.Equal(t, 400, w.Code, "renaming a trip that doesn't exist is an error, not a silent no-op")
+}

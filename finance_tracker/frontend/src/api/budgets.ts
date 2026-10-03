@@ -35,6 +35,12 @@ export const budgetsApi = {
     return data
   },
 
+  // Renames a trip everywhere; onto an existing trip's name it merges them.
+  renameTrip: async (input: { from: string; to: string }): Promise<{ label: string }> => {
+    const { data } = await client.post<{ label: string }>('/budgets/trips/rename', input)
+    return data
+  },
+
   assignTrip: async (input: { name: string; tx_ids: number[]; remove?: boolean }): Promise<{ label: string; changed: number }> => {
     const { data } = await client.post<{ label: string; changed: number }>('/budgets/trips/assign', input)
     return data

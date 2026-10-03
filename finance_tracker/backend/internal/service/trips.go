@@ -289,3 +289,66 @@ func (s *insightService) AssignTrip(name string, ids []uint, remove bool) (strin
 	n, err := s.budgetRepo.SetLabelOnTransactions(label, ids, remove)
 	return label, n, err
 }
+
+// RenameTrip renames a trip everywhere: its transactions' label and its
+// trip budget. Renaming onto an existing trip merges the two (a deposit
+// paid weeks ahead joining its holiday); when both had a budget the
+// amounts are added and one line remains.
+func (s *insightService) RenameTrip(from, toName string) (string, domain.RelabelResult, error) {
+	if s.budgetRepo == nil {
+		return "", domain.RelabelResult{}, errors.New("budgets unavailable")
+	}
+	from = strings.ToLower(strings.TrimSpace(from))
+	if !strings.HasPrefix(from, domain.TripLabelPrefix) {
+		return "", domain.RelabelResult{}, errors.New("not a trip label")
+	}
+	to, err := NormalizeTripLabel(toName)
+	if err != nil {
+		return "", domain.RelabelResult{}, err
+	}
+	if to == from {
+		return to, domain.RelabelResult{}, nil
+	}
+	budgets, err := s.budgetRepo.ListBudgets()
+	if err != nil {
+		return "", domain.RelabelResult{}, err
+	}
+	var src, dst *domain.Budget
+	for i := range budgets {
+		b := &budgets[i]
+		if b.Kind != "trip" {
+			continue
+		}
+		switch b.Label {
+		case from:
+			src = b
+		case to:
+			dst = b
+		}
+	}
+	res, err := s.budgetRepo.RenameLabel(from, to)
+	if err != nil {
+		return "", res, err
+	}
+	if res.Transactions == 0 && src == nil {
+		return "", res, fmt.Errorf("no trip named %q", strings.TrimPrefix(from, domain.TripLabelPrefix))
+	}
+	name := strings.TrimPrefix(to, domain.TripLabelPrefix)
+	switch {
+	case src != nil && dst != nil:
+		dst.Amount += src.Amount
+		if err := s.budgetRepo.SaveBudget(dst); err != nil {
+			return "", res, err
+		}
+		if err := s.budgetRepo.DeleteBudget(src.ID); err != nil {
+			return "", res, err
+		}
+	case src != nil:
+		src.Name = name
+		src.Label = to
+		if err := s.budgetRepo.SaveBudget(src); err != nil {
+			return "", res, err
+		}
+	}
+	return to, res, nil
+}

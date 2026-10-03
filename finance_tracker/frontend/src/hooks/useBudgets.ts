@@ -45,6 +45,14 @@ export function useAssignTrip() {
   })
 }
 
+export function useRenameTrip() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { from: string; to: string }) => budgetsApi.renameTrip(input),
+    onSuccess: () => invalidateLabelWorld(qc),
+  })
+}
+
 export function useCreateBudget() {
   const qc = useQueryClient()
   return useMutation({

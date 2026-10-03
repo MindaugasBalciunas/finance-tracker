@@ -84,6 +84,8 @@ type InsightService interface {
 	// runs as new trips; AssignTrip tags/untags exact transactions.
 	Trips() ([]TripSummary, []TripSuggestion, error)
 	AssignTrip(name string, ids []uint, remove bool) (label string, changed int, err error)
+	// RenameTrip renames (or, onto an existing name, merges) a trip.
+	RenameTrip(from, toName string) (label string, res domain.RelabelResult, err error)
 	// AIContext returns the user's CFO-context document; SaveAIContext
 	// replaces it (capped at 32KB).
 	AIContext() (*domain.AIContext, error)

@@ -84,6 +84,27 @@ func (h *InsightHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/budgets/status", h.BudgetStatus)
 	rg.GET("/budgets/trips", h.Trips)
 	rg.POST("/budgets/trips/assign", h.AssignTrip)
+	rg.POST("/budgets/trips/rename", h.RenameTrip)
+}
+
+type renameTripInput struct {
+	From string `json:"from" binding:"required"` // trip:old-name
+	To   string `json:"to" binding:"required"`   // new name (trip: prefix optional)
+}
+
+// RenameTrip renames a trip everywhere; onto an existing trip it merges.
+func (h *InsightHandler) RenameTrip(c *gin.Context) {
+	var in renameTripInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	label, res, err := h.svc.RenameTrip(in.From, in.To)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"label": label, "result": res})
 }
 
 // Trips lists every tagged trip with its cost breakdown, plus untagged

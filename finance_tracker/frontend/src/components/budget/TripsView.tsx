@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAssignTrip, useCreateBudget, useDeleteBudget, useTrips, useUpdateBudget } from '../../hooks/useBudgets'
+import { useAssignTrip, useCreateBudget, useDeleteBudget, useRenameTrip, useTrips, useUpdateBudget } from '../../hooks/useBudgets'
 import type { BudgetLineStatus, TripSuggestion, TripSummary } from '../../types'
 import { formatEuro } from '../../utils/format'
 import LoadingSpinner from '../ui/LoadingSpinner'
@@ -18,7 +18,30 @@ function dateSpan(from: string, to: string): string {
   return `${day(from, !sameYear)} – ${day(to, true)}`
 }
 
-function TripCard({ trip, onView }: { trip: TripSummary; onView: () => void }) {
+// Mirrors the backend's NormalizeTripLabel: "Zakopane 2025" → "zakopane-2025".
+function tripSlug(name: string): string {
+  return name.toLowerCase().trim().replace(/^trip:/, '').replace(/,/g, ' ').split(/\s+/).filter(Boolean).join('-')
+}
+
+function TripCard({ trip, otherNames, onView }: { trip: TripSummary; otherNames: string[]; onView: () => void }) {
+  const renameTrip = useRenameTrip()
+  const [renaming, setRenaming] = useState(false)
+  const [newName, setNewName] = useState(trip.name)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const slug = tripSlug(newName)
+  const mergesInto = slug !== trip.name && otherNames.includes(slug)
+
+  async function rename() {
+    setRenameError(null)
+    if (mergesInto && !confirm(`Merge "${trip.name}" into "${slug}"? Their transactions and budgets become one trip.`)) return
+    try {
+      await renameTrip.mutateAsync({ from: trip.label, to: newName })
+      setRenaming(false)
+    } catch (err) {
+      setRenameError((err as Error).message)
+    }
+  }
+
   const createBudget = useCreateBudget()
   const updateBudget = useUpdateBudget()
   const deleteBudget = useDeleteBudget()
@@ -38,10 +61,41 @@ function TripCard({ trip, onView }: { trip: TripSummary; onView: () => void }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <button onClick={onView} disabled={!trip.from} className="text-sm font-semibold text-gray-900 hover:text-blue-700 text-left truncate max-w-full">
-            {trip.name}
-          </button>
+        <div className="min-w-0 flex-1">
+          {renaming ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && slug) rename(); if (e.key === 'Escape') setRenaming(false) }}
+                  list="trip-names"
+                  aria-label="New trip name"
+                  className="min-w-0 flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                />
+                <button disabled={!slug || renameTrip.isPending} onClick={rename}
+                  className="px-2.5 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40">
+                  {mergesInto ? 'Merge' : 'Save'}
+                </button>
+                <button onClick={() => { setRenaming(false); setNewName(trip.name); setRenameError(null) }} className="text-xs text-gray-500 px-1">✕</button>
+              </div>
+              {slug && slug !== trip.name && (
+                <p className={`text-[11px] ${mergesInto ? 'text-amber-700' : 'text-gray-400'}`}>
+                  {mergesInto ? `Joins the existing trip "${slug}"` : `Saved as "${slug}"`}
+                </p>
+              )}
+              {renameError && <p className="text-[11px] text-red-600">{renameError}</p>}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 min-w-0">
+              <button onClick={onView} disabled={!trip.from} className="text-sm font-semibold text-gray-900 hover:text-blue-700 text-left truncate">
+                {trip.name}
+              </button>
+              <button onClick={() => { setNewName(trip.name); setRenaming(true) }} aria-label={`Rename ${trip.name}`} title="Rename or merge"
+                className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 flex-shrink-0">✎</button>
+            </div>
+          )}
           <p className="text-xs text-gray-400">
             {dateSpan(trip.from, trip.to)}{trip.days > 0 && <> · {trip.days} day{trip.days === 1 ? '' : 's'} · {trip.count} transactions</>}
           </p>
@@ -208,10 +262,14 @@ export default function TripsView({ vacationFund }: { vacationFund?: BudgetLineS
         </div>
       </div>
 
+      <datalist id="trip-names">
+        {tripNames.map((n) => <option key={n} value={n} />)}
+      </datalist>
+
       {trips.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {trips.map((t) => (
-            <TripCard key={t.label} trip={t} onView={() => setViewing(t)} />
+            <TripCard key={t.label} trip={t} otherNames={tripNames.filter((n) => n !== t.name)} onView={() => setViewing(t)} />
           ))}
         </div>
       )}
@@ -223,9 +281,6 @@ export default function TripsView({ vacationFund }: { vacationFund?: BudgetLineS
             Vacation transactions grouped by date. Name each group to turn it into a trip — reuse a name to join a
             booking paid weeks ahead to its trip.
           </p>
-          <datalist id="trip-names">
-            {tripNames.map((n) => <option key={n} value={n} />)}
-          </datalist>
           {data.suggestions.slice(0, shown).map((s) => (
             <SuggestionRow key={`${s.from}-${s.tx_ids[0]}`} s={s} tripNames={tripNames} />
           ))}

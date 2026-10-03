@@ -60,7 +60,9 @@ function AllocationBar({ incomeBase, fixed, investments, setAside, spent, remain
   )
 }
 
-const PLAN_COLORS = ['#f97316', '#eab308', '#14b8a6', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e']
+// 12 distinct hues for spending lines; slate, blue and green stay reserved
+// for fixed, investments and unallocated so no line is mistaken for them.
+const PLAN_COLORS = ['#f97316', '#eab308', '#14b8a6', '#a855f7', '#ec4899', '#06b6d4', '#f43f5e', '#6366f1', '#a16207', '#d946ef', '#78716c', '#0284c7']
 
 // Donut of the month's plan: fixed, investments, each spending line's
 // monthly share, and whatever income stays unallocated.
@@ -81,35 +83,56 @@ function PlanPie({ report }: { report: BudgetStatusReport }) {
   if (slices.length === 0) return null
   const total = slices.reduce((s, x) => s + x.value, 0)
 
+  const planned = slices.filter((x) => x.name !== 'Unallocated' && x.name !== 'Over income').reduce((s, x) => s + x.value, 0)
+
   return (
-    <div>
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Plan composition (per month)</p>
-      <ResponsiveContainer width="100%" height={215}>
-        <PieChart>
-          <Pie
-            data={slices}
-            cx="50%" cy="50%"
-            innerRadius={44} outerRadius={72}
-            dataKey="value" nameKey="name"
-            label={({ percent }) => (percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : '')}
-            labelLine={false}
-            isAnimationActive={false}
-          >
-            {slices.map((sl, i) => (
-              <Cell key={i} fill={sl.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(v: number, name: string) => [formatEuro(v), name]} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 xl:grid-cols-1 mt-1">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 h-full">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-base font-semibold text-gray-900">Plan composition</h3>
+        <span className="text-xs text-gray-400">per month · a yearly line counts a twelfth</span>
+      </div>
+      <div className="relative mx-auto w-full max-w-[340px] aspect-square mt-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={slices}
+              cx="50%" cy="50%"
+              innerRadius="58%" outerRadius="92%"
+              paddingAngle={slices.length > 1 ? 0.8 : 0}
+              dataKey="value" nameKey="name"
+              labelLine={false}
+              isAnimationActive={false}
+              stroke="#fff"
+              strokeWidth={1}
+            >
+              {slices.map((sl, i) => (
+                <Cell key={i} fill={sl.color} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v: number, name: string) => [`${formatEuro(v)} · ${((v / total) * 100).toFixed(0)}%`, name]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+          </PieChart>
+        </ResponsiveContainer>
+        {/* Centre: what the plan claims of the income base. */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">Planned</span>
+          <span className="text-xl sm:text-2xl font-bold text-gray-900 tabular-nums">{formatEuro(planned)}</span>
+          {report.income_base != null && (
+            <span className="text-xs text-gray-500">
+              of {formatEuro(report.income_base)} · {((planned / report.income_base) * 100).toFixed(0)}%
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-1 mt-4">
         {slices.map((sl) => (
-          <div key={sl.name} className="flex items-center justify-between text-xs gap-2">
-            <span className="inline-flex items-center gap-1.5 text-gray-500 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: sl.color }} />
+          <div key={sl.name} className="flex items-center justify-between text-sm gap-2">
+            <span className="inline-flex items-center gap-2 text-gray-600 min-w-0">
+              <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: sl.color }} />
               <span className="truncate">{sl.name}</span>
             </span>
-            <span className="text-gray-700 font-medium whitespace-nowrap">{formatEuro(sl.value)} <span className="text-gray-400 font-normal">{((sl.value / total) * 100).toFixed(0)}%</span></span>
+            <span className="text-gray-800 font-medium whitespace-nowrap tabular-nums">
+              {formatEuro(sl.value)} <span className="text-gray-400 font-normal text-xs">{((sl.value / total) * 100).toFixed(0)}%</span>
+            </span>
           </div>
         ))}
       </div>
@@ -148,7 +171,7 @@ function PlanCheckCard({ report, daysLeft }: { report: BudgetStatusReport; daysL
           {fits ? `✓ Fits — ${formatEuro(unallocated)} unallocated` : `⚠ Over income by ${formatEuro(-unallocated)}`}
         </span>
       </div>
-      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2 gap-x-8 gap-y-3">
         <div className="space-y-1">
           {row('Income base', report.income_base)}
           {row('− Fixed obligations', -report.fixed_planned, 'text-slate-600')}
@@ -158,7 +181,7 @@ function PlanCheckCard({ report, daysLeft }: { report: BudgetStatusReport; daysL
             {row('= Month end, if every line is used in full', unallocated, fits ? 'text-green-600' : 'text-red-600')}
           </div>
         </div>
-        <div className="space-y-1 sm:border-l sm:border-gray-100 sm:pl-8">
+        <div className="space-y-1 sm:border-l sm:border-gray-100 sm:pl-8 lg:border-l-0 lg:pl-0 lg:border-t lg:pt-3 2xl:border-t-0 2xl:pt-0 2xl:border-l 2xl:pl-8">
           {row('Still allowed by monthly limits', limitLeft, 'text-orange-600')}
           {row('Actually affordable (safe to spend)', Math.max(safe, 0), safe >= 0 ? 'text-green-600' : 'text-red-600')}
           <p className={`text-xs pt-1 ${looseLimits ? 'text-yellow-700' : 'text-gray-400'}`}>
@@ -239,8 +262,9 @@ export default function MonthView(p: Props) {
 
   return (
     <>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
+      <div className="space-y-4 sm:space-y-6">
       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr,320px] gap-6">
           <div>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-medium text-gray-500">Safe to spend {isCurrentMonth ? 'this month' : `in ${monthLabel(month)}`}</p>
@@ -279,11 +303,11 @@ export default function MonthView(p: Props) {
               <button onClick={p.onEditIncome} className="ml-1.5 text-blue-600 hover:text-blue-800 font-medium">✎ edit</button>
             </p>
           </div>
-          <PlanPie report={report} />
-        </div>
       </div>
-
       <PlanCheckCard report={report} daysLeft={daysLeft} />
+      </div>
+      <PlanPie report={report} />
+      </div>
 
       {/* Desktop: spending as the main 2/3 column, fixed + investments as a
           status sidebar. Mobile: status cards first. */}
