@@ -45,6 +45,16 @@ interface Props {
    * blocked on iOS. So the Add menu collects the file and hands it over.
    */
   scanFile?: File | null
+  /**
+   * Whether the form carries its own "Scan photo" button.
+   *
+   * False wherever the caller already made that choice for the user: the Add
+   * menu offers scanning as its own entry, so repeating it inside a form the
+   * user opened by picking "Enter manually" is offering a decision they have
+   * already made. Editing a saved transaction has no such menu, so there it
+   * stays — it is the only way to read a receipt into an existing row.
+   */
+  showScan?: boolean
 }
 
 const ALL_ACCOUNTS = Object.entries(ACCOUNT_LABELS) as [AccountKey, string][]
@@ -77,6 +87,7 @@ export default function TransactionForm({
   aiContext,
   includeAutoLabels,
   scanFile,
+  showScan = true,
 }: Props) {
   const today = new Date().toISOString().slice(0, 10)
   // Labels are tied to their fields by id: the form renders inside modals and
@@ -211,7 +222,7 @@ export default function TransactionForm({
       })}
       className="space-y-4"
     >
-      {aiConfigured && (
+      {aiConfigured && showScan && (
         <div className="flex justify-end -mb-1">
           {/* capture=environment hints the phone camera; accept keeps the
               desktop file picker working. */}

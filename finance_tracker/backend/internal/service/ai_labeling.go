@@ -121,7 +121,9 @@ func (s *insightService) AssistTransaction(input TransactionAssistInput) (*Trans
 	examples := similarExamples(all, firstNonBlank(input.Comment, input.Context), input.Category, 12)
 
 	rawContext := ""
-	if c := strings.TrimSpace(input.Context); c != "" {
+	// Account and card numbers are stripped before this leaves the machine —
+	// they are a third party's banking details and tell the model nothing.
+	if c := redactIdentifiers(strings.TrimSpace(input.Context)); c != "" {
 		rawContext = fmt.Sprintf("\nRAW SOURCE BEHIND THIS ROW (bank narrative — may name the merchant the description lost):\n%q\n", c)
 	}
 

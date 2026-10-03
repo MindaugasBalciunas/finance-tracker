@@ -304,6 +304,10 @@ export default function Transactions() {
               onCancel={() => { setShowForm(false); setFormError(null); setScanFile(null) }}
               isSubmitting={createMutation.isPending}
               scanFile={scanFile}
+              // The Add menu already asked how this transaction gets entered.
+              // "Enter manually" means no camera; arriving here with a photo
+              // keeps the button, so a misread scan can be retried.
+              showScan={!!scanFile}
             />
           </div>
         </div>

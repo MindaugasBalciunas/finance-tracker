@@ -122,6 +122,10 @@ ref:      ${row.external_id}`}
           isSubmitting={update.isPending || commit.isPending}
           submitLabel="Add transaction"
           aiContext={bankContext}
+          // A photo would overwrite the date and amount the bank stated,
+          // which are the two fields this row exists to keep faithful. AI
+          // assist already reads the bank narrative for the description.
+          showScan={false}
           // The queue stores labels verbatim, so the ⚡ preview chips have to
           // be saved as well — nothing downstream re-applies the rules.
           includeAutoLabels

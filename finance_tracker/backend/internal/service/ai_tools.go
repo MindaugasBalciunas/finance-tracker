@@ -715,7 +715,8 @@ func marshalToolResult(v any) (string, error) {
 
 // chatStagedRows renders the review queue compactly. The raw bank narrative is
 // included — it is what a model needs to tell a misread row from a correct
-// one, and it is the only place a card merchant's name survives.
+// one, and it is the only place a card merchant's name survives. Account and
+// card numbers inside it are not: see redactIdentifiers.
 func (s *insightService) chatStagedRows(state, verdict string, limit int) (string, error) {
 	rows, total, err := s.bankRepo.ListStaged(repository.StagedFilter{
 		State: state, Verdict: verdict, Page: 1, PageSize: limit,
@@ -731,7 +732,7 @@ func (s *insightService) chatStagedRows(state, verdict string, limit int) (strin
 			"comment": r.Comment, "labels": r.Labels,
 			"debit_account": r.DebitAccount, "credit_account": r.CreditAccount,
 			"verdict": r.Verdict, "verdict_note": r.VerdictNote,
-			"raw_payee": r.RawPayee, "raw_details": r.RawDetails,
+			"raw_payee": redactIdentifiers(r.RawPayee), "raw_details": redactIdentifiers(r.RawDetails),
 			"raw_direction": r.RawDK, "currency": r.RawCurrency,
 		})
 	}
