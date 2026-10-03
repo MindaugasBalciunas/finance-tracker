@@ -30,9 +30,9 @@ export default function StagedReviewModal({
   // place a merchant it failed to recognise is still named.
   const bankContext = [row.raw_payee, row.raw_details].filter(Boolean).join(' · ')
 
-  // Saving and adding are one action here. The queue is the draft — there is
-  // no second place to keep an edit, and "save without adding" is what
-  // Dismiss on the card already means.
+  // Saving and adding are one action — except on a reservation, which cannot
+  // be added at all. There the form saves the corrections and closes; they
+  // are carried onto the booked row when the bank settles it.
   const submit = async (data: CreateTransactionInput) => {
     setError(null)
     try {
@@ -49,6 +49,10 @@ export default function StagedReviewModal({
           credit_account: data.credit_account ?? '',
         },
       })
+      if (!row.committable) {
+        onClose()
+        return
+      }
       const res = await commit.mutateAsync([row.id])
       if (res.imported === 0) {
         // The commit re-verifies against the ledger, and it can decline —
@@ -66,7 +70,9 @@ export default function StagedReviewModal({
     <div className="fixed inset-0 bg-black/40 flex items-start sm:items-center justify-center z-50 overflow-y-auto py-8">
       <div className="bg-white rounded-xl shadow-xl p-5 sm:p-6 w-full max-w-lg mx-4">
         <div className="flex items-start justify-between gap-2 mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Add from your bank</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            {row.committable ? 'Add from your bank' : 'Reserved at your bank'}
+          </h3>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -82,6 +88,12 @@ export default function StagedReviewModal({
           {row.verdict === 'duplicate_content' && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
               ⚠️ {row.verdict_note || 'Matches a transaction already in your ledger.'}
+            </p>
+          )}
+          {row.pending && (
+            <p className="text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-2">
+              🕓 {row.verdict_note || 'Reserved by the bank, not booked yet.'} It cannot be added until
+              it books — file it now and the category, labels and accounts carry over.
             </p>
           )}
           {row.verdict === 'needs_review' && row.verdict_note && (
@@ -120,7 +132,7 @@ ref:      ${row.external_id}`}
           onSubmit={submit}
           onCancel={onClose}
           isSubmitting={update.isPending || commit.isPending}
-          submitLabel="Add transaction"
+          submitLabel={row.committable ? 'Add transaction' : 'Save for when it books'}
           aiContext={bankContext}
           // A photo would overwrite the date and amount the bank stated,
           // which are the two fields this row exists to keep faithful. AI

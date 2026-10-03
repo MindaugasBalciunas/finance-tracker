@@ -47,7 +47,9 @@ func adaptPSD2(tx openbanking.Transaction, link *domain.BankAccountLink) domain.
 	date := psd2PreferredDate(tx, details, booking)
 
 	raw, _ := json.Marshal(tx)
+	pending := strings.EqualFold(strings.TrimSpace(tx.Status), openbanking.StatusPending)
 	staged := domain.BankStagedTx{
+		Pending:     pending,
 		LinkID:      link.ID,
 		ExternalID:  psd2ExternalID(tx, link.ID),
 		Raw:         string(raw),

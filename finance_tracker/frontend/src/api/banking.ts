@@ -56,6 +56,7 @@ export type StagedVerdict =
   | 'duplicate_content'
   | 'internal'
   | 'needs_review'
+  | 'pending'
 
 export type StagedTx = {
   id: number
@@ -83,7 +84,12 @@ export type StagedTx = {
   // answer stood.
   enrich_note: string
   matched_tx_id: number | null
-  state: 'staged' | 'imported' | 'dismissed'
+  // A card reservation: authorised by the bank, not booked. Visible days
+  // early, editable, never committable — the amount can still change.
+  pending: boolean
+  committable: boolean
+  superseded_by: number | null
+  state: 'staged' | 'imported' | 'dismissed' | 'superseded'
   imported_tx_id: number | null
   preticked: boolean
   first_seen_at: string
@@ -99,6 +105,9 @@ export type SyncResult = {
   duplicate_content: number
   needs_review: number
   internal: number
+  pending: number
+  superseded: number
+  released: number
   date_from: string
   date_to: string
 }

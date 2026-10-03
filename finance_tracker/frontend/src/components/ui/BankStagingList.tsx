@@ -17,6 +17,7 @@ const verdictStyle: Record<StagedVerdict, { label: string; className: string }> 
   duplicate_content: { label: 'looks like a duplicate', className: 'bg-amber-100 text-amber-800' },
   internal: { label: 'own transfer', className: 'bg-blue-100 text-blue-700' },
   needs_review: { label: 'needs a look', className: 'bg-purple-100 text-purple-700' },
+  pending: { label: 'reserved', className: 'bg-sky-100 text-sky-700' },
 }
 
 function accountLabel(key: string): string {
@@ -65,7 +66,7 @@ function StagedCard({
 
       <div className="p-3 sm:p-4">
         <div className="flex items-start gap-3">
-          {row.state === 'staged' && (
+          {row.state === 'staged' && row.committable && (
             <input
               type="checkbox"
               checked={selected}
@@ -119,23 +120,32 @@ function StagedCard({
         <div className="flex items-center gap-2 mt-3">
           {row.state === 'staged' ? (
             <>
-              <button
-                onClick={onAdd}
-                disabled={busy}
-                className={`flex-1 px-3 py-2 text-sm rounded-lg disabled:opacity-50 ${
-                  row.preticked
-                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    : 'border border-indigo-200 text-indigo-700 hover:bg-indigo-50'
-                }`}
-              >
-                ✓ Add
-              </button>
+              {/* A reservation has no Add button at all. Offering one that
+                  always refuses would be worse than not offering it — the row
+                  is here to be seen and filed, not committed. */}
+              {row.committable ? (
+                <button
+                  onClick={onAdd}
+                  disabled={busy}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg disabled:opacity-50 ${
+                    row.preticked
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'border border-indigo-200 text-indigo-700 hover:bg-indigo-50'
+                  }`}
+                >
+                  ✓ Add
+                </button>
+              ) : (
+                <span className="flex-1 text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+                  Waiting for the bank to book it
+                </span>
+              )}
               <button
                 onClick={() => setReviewing(true)}
                 disabled={busy}
                 className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
-                ✎ Review
+                {row.committable ? '✎ Review' : '✎ File it'}
               </button>
               <button
                 onClick={onDismiss}
@@ -178,7 +188,12 @@ export default function BankStagingList({ rows }: { rows: StagedTx[] }) {
   const [lastImported, setLastImported] = useState<number[]>([])
   const [note, setNote] = useState('')
 
-  const stagedRows = useMemo(() => rows.filter((r) => r.state === 'staged'), [rows])
+  // Batch actions only ever reach rows that could actually be added — a
+  // reservation has no checkbox, so it must not be counted by "Add N" either.
+  const stagedRows = useMemo(
+    () => rows.filter((r) => r.state === 'staged' && r.committable),
+    [rows]
+  )
 
   // Until the user touches a checkbox, the selection is whatever the server
   // pre-ticked: new rows in, likely duplicates out. That rule lives in one

@@ -198,9 +198,13 @@ function SyncReport({ report }: { report: SyncAllResult }) {
     `${totals.fetched} fetched from ${synced} account${synced === 1 ? '' : 's'}`,
     `${totals.staged_new} new to review`,
   ]
+  if (totals.pending) summary.push(`${totals.pending} reserved, not booked yet`)
+  if (totals.superseded) summary.push(`${totals.superseded} reservation${totals.superseded === 1 ? '' : 's'} booked`)
+  if (totals.released) summary.push(`${totals.released} released by the bank`)
   if (totals.unchanged) summary.push(`${totals.unchanged} already seen`)
-  // auto_skipped counts one thing only: rows the bank has not booked yet.
-  if (totals.auto_skipped) summary.push(`${totals.auto_skipped} still pending at the bank`)
+  // Whatever the bank reported as neither booked nor reserved — rejected or
+  // cancelled rows, which never moved money.
+  if (totals.auto_skipped) summary.push(`${totals.auto_skipped} not money movements`)
 
   return (
     <div className="px-3 sm:px-4 pb-3 space-y-1">

@@ -62,6 +62,9 @@ function row(over: Partial<StagedTx> = {}): StagedTx {
     verdict: 'new',
     verdict_note: '',
     enrich_note: '',
+    pending: false,
+    committable: true,
+    superseded_by: null,
     matched_tx_id: null,
     state: 'staged',
     imported_tx_id: null,
@@ -208,6 +211,36 @@ describe('BankStagingList', () => {
       }))
     )
     await waitFor(() => expect(api.commit).toHaveBeenCalledWith([11]))
+  })
+
+  // A card reservation is visible days early, but it is not a transaction
+  // yet: its amount can still move and the bank re-issues it under a new
+  // reference when it books.
+  it('offers no Add button on a reservation', async () => {
+    renderList([row({ id: 12, comment: 'Circle K', pending: true, committable: false, preticked: false, verdict: 'pending' })])
+
+    expect(screen.getByText('reserved')).toBeInTheDocument()
+    expect(screen.getByText('Waiting for the bank to book it')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  // ...but it can still be filed, so the corrections carry onto the booking.
+  it('lets a reservation be filed ahead of its booking', async () => {
+    const user = userEvent.setup()
+    renderList([row({ id: 12, comment: 'Circle K', pending: true, committable: false, preticked: false, verdict: 'pending' })])
+
+    await user.click(screen.getByRole('button', { name: /File it/ }))
+    expect(await screen.findByRole('button', { name: 'Save for when it books' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'Transport')
+    await user.click(screen.getByRole('button', { name: 'Save for when it books' }))
+
+    await waitFor(() =>
+      expect(api.updateStaged).toHaveBeenCalledWith(12, expect.objectContaining({ category: 'Transport' }))
+    )
+    // Saving a reservation never reaches the ledger.
+    expect(api.commit).not.toHaveBeenCalled()
   })
 
   it('shows the raw bank data behind a disclosure, not by default', async () => {

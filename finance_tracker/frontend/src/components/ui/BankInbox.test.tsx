@@ -37,6 +37,7 @@ const api = vi.mocked(bankingApi)
 const emptySync = {
   fetched: 0, staged_new: 0, unchanged: 0, auto_skipped: 0,
   duplicate_exact: 0, duplicate_content: 0, needs_review: 0, internal: 0,
+  pending: 0, superseded: 0, released: 0,
   date_from: '2026-09-01', date_to: '2026-09-30',
 }
 
@@ -178,6 +179,7 @@ describe('BankInbox', () => {
           type: 'expense', category: 'Food', comment: 'Lidl', labels: '',
           debit_account: 'swed', credit_account: '', verdict: 'new', verdict_note: '',
           enrich_note: '', matched_tx_id: null, state: 'staged', imported_tx_id: null,
+          pending: false, committable: true, superseded_by: null,
           preticked: true, first_seen_at: '', last_seen_at: '',
         },
       ],

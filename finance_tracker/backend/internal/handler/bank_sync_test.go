@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -353,19 +354,43 @@ func TestBankUndoRestoresStagedRow(t *testing.T) {
 	}
 }
 
-// TestBankStagesOnlyBookedRows — a pending row is re-issued with a different
-// entry_reference once it books, so staging it would stage it twice.
-func TestBankStagesOnlyBookedRows(t *testing.T) {
+// TestBankStagesReservationsSeparately — a card reservation is staged so the
+// spend is visible days early, but it is marked, never pre-ticked and never
+// committable: the amount is not final and the bank re-issues the row under a
+// new reference when it books.
+func TestBankStagesReservationsSeparately(t *testing.T) {
 	env := bankTestRouter(t, true)
-	feed := bankFeed()
-	feed = append(feed, func() openbanking.Transaction {
-		p := ebRow("7004", "2026-09-16", "4.20", "D", "Caffeine", "Kava")
-		p.Status = openbanking.StatusPending
-		return p
-	}())
-	res := env.stage(t, feed)
+	res := env.stage(t, append(bankFeed(), pendingRow("7004", "2026-09-16", "4.20", "D", "Caffeine", "Kava")))
+
+	assert.Equal(t, 0, res.AutoSkipped)
+	assert.Equal(t, 4, res.StagedNew)
+	assert.Equal(t, 1, res.Pending)
+
+	hold := env.stagedByComment(t, "Caffeine (Kava)")
+	assert.True(t, hold.Pending)
+	assert.Equal(t, domain.VerdictPending, hold.Verdict)
+	assert.False(t, hold.Preticked(), "a reservation never arrives ticked")
+	assert.False(t, hold.Committable())
+
+	// Committing one is refused, with a reason rather than a silent skip.
+	rec := bankJSON(t, env.r, "POST", "/api/v1/banking/staged/commit", map[string]any{"ids": []uint{hold.ID}})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out commitResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, 0, out.Imported)
+	assert.Equal(t, 1, out.Skipped)
+	assert.Contains(t, strings.Join(out.Notes, " "), "still only reserved")
+}
+
+// A status that is neither booked nor reserved never moved money.
+func TestBankSkipsRejectedRows(t *testing.T) {
+	env := bankTestRouter(t, true)
+	rejected := ebRow("7009", "2026-09-16", "4.20", "D", "Caffeine", "Kava")
+	rejected.Status = "RJCT"
+
+	res := env.stage(t, []openbanking.Transaction{rejected})
 	assert.Equal(t, 1, res.AutoSkipped)
-	assert.Equal(t, 3, res.StagedNew)
+	assert.Equal(t, 0, res.StagedNew)
 }
 
 // TestBankInternalRowsStagedNotDropped — the classifier's own-account verdict
@@ -857,4 +882,154 @@ func TestCommitSkipsRowsTheSnapshotAlreadyCovers(t *testing.T) {
 	// 09-14 snapshot.
 	assert.InDelta(t, 1000+2100.00, balances[1].Swed, 0.001)
 	assert.Equal(t, "2026-09-15", balances[1].Date.Format("2006-01-02"))
+}
+
+// pendingRow builds a card reservation.
+func pendingRow(ref, date, amount, dk, payee, details string) openbanking.Transaction {
+	t := ebRow(ref, date, amount, dk, payee, details)
+	t.Status = openbanking.StatusPending
+	return t
+}
+
+// TestReservationSupersededByItsBooking — the whole point of the lifecycle.
+//
+// The bank re-issues a card purchase under a NEW entry_reference when it
+// books, with a later date and often a different amount. Without pairing the
+// two, the queue would offer the same coffee twice.
+func TestReservationSupersededByItsBooking(t *testing.T) {
+	env := bankTestRouter(t, true)
+
+	// Day one: only the hold exists.
+	res := env.stage(t, []openbanking.Transaction{
+		pendingRow("hold-1", "2026-09-16", "20.00", "D", "CIRCLE K VILNIUS", "Kuras"),
+	})
+	require.Equal(t, 1, res.Pending)
+
+	hold := env.stagedByComment(t, "CIRCLE K VILNIUS (Kuras)")
+	// The user files it while it is still a hold.
+	rec := bankJSON(t, env.r, "PUT", stagedPath(hold.ID), map[string]any{
+		"category": "Transport", "labels": "fuel",
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// Day three: it books, for the real amount, under a new reference.
+	res = env.stage(t, []openbanking.Transaction{
+		ebRow("booked-1", "2026-09-18", "17.43", "D", "CIRCLE K VILNIUS", "Kuras"),
+	})
+	assert.Equal(t, 1, res.Superseded)
+	assert.Equal(t, 1, res.StagedNew)
+
+	staged, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	require.Len(t, staged, 1, "the hold and its booking must not both be offered")
+
+	booked := staged[0]
+	assert.False(t, booked.Pending)
+	assert.True(t, booked.Committable())
+	assert.Equal(t, 17.43, booked.Amount, "the booked amount wins, not the hold")
+	// The correction made while it was pending carried over — which is what
+	// makes reviewing a reservation early worth doing.
+	assert.Equal(t, domain.Category("Transport"), booked.Category)
+	assert.Equal(t, "fuel", booked.Labels)
+
+	// The hold is retired, not deleted, and points at what replaced it.
+	closed, err := env.repo.GetStagedByExternalID(hold.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StagedStateSuperseded, closed.State)
+	require.NotNil(t, closed.SupersededBy)
+	assert.Equal(t, booked.ID, *closed.SupersededBy)
+}
+
+// A hold the bank stops reporting was released, not booked — a hotel hold
+// coming off, a pre-auth reversed. Leaving it on the queue forever is how a
+// review list fills with things that never happened.
+func TestReleasedReservationIsClosedOut(t *testing.T) {
+	env := bankTestRouter(t, true)
+
+	res := env.stage(t, []openbanking.Transaction{
+		pendingRow("hold-2", "2026-09-16", "150.00", "D", "HOTEL BALTIJA", "Rezervacija"),
+	})
+	require.Equal(t, 1, res.Pending)
+	hold := env.stagedByComment(t, "HOTEL BALTIJA (Rezervacija)")
+
+	// The next sync re-reads the same window and the bank no longer has it.
+	res = env.stage(t, []openbanking.Transaction{})
+	assert.Equal(t, 1, res.Released)
+
+	closed, err := env.repo.GetStagedByExternalID(hold.ExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StagedStateSuperseded, closed.State)
+	assert.Nil(t, closed.SupersededBy)
+	assert.Contains(t, closed.VerdictNote, "released")
+}
+
+// Two holds at one merchant must be resolved by two bookings, not collapse
+// onto one — otherwise a purchase silently disappears.
+func TestTwoReservationsResolveToTwoBookings(t *testing.T) {
+	env := bankTestRouter(t, true)
+
+	env.stage(t, []openbanking.Transaction{
+		pendingRow("hold-a", "2026-09-16", "4.00", "D", "CAFFEINE", "Kava"),
+		pendingRow("hold-b", "2026-09-16", "9.00", "D", "CAFFEINE", "Kava"),
+	})
+
+	res := env.stage(t, []openbanking.Transaction{
+		ebRow("book-a", "2026-09-17", "4.20", "D", "CAFFEINE", "Kava"),
+		ebRow("book-b", "2026-09-17", "9.30", "D", "CAFFEINE", "Kava"),
+	})
+	assert.Equal(t, 2, res.Superseded)
+
+	staged, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	assert.Len(t, staged, 2, "two purchases in, two purchases out")
+}
+
+// A booking that resolves nothing is just a new row. Pairing must not reach
+// across merchants, directions or months.
+func TestBookingDoesNotClaimAnUnrelatedReservation(t *testing.T) {
+	env := bankTestRouter(t, true)
+
+	env.stage(t, []openbanking.Transaction{
+		pendingRow("hold-3", "2026-09-16", "20.00", "D", "CIRCLE K VILNIUS", "Kuras"),
+	})
+	res := env.stage(t, []openbanking.Transaction{
+		// The bank still reports the hold, and books something else that
+		// happens to share its amount and sit a day later.
+		pendingRow("hold-3", "2026-09-16", "20.00", "D", "CIRCLE K VILNIUS", "Kuras"),
+		ebRow("book-3", "2026-09-17", "20.00", "D", "LIDL SNIPISKES", "Pirkiniai"),
+	})
+	assert.Equal(t, 0, res.Superseded)
+	assert.Equal(t, 0, res.Released)
+
+	staged, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	assert.Len(t, staged, 2, "the hold is still waiting for its own booking")
+}
+
+// A reservation is never dedup'd against the ledger: it cannot be committed,
+// so a consuming content match would spend the ledger row its own booking has
+// to claim days later.
+func TestReservationDoesNotConsumeLedgerDedup(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{
+		Date:   time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC),
+		Type:   domain.TransactionTypeExpense,
+		Amount: 4.20, Category: "Food", Comment: "CAFFEINE (Kava)",
+	})
+
+	// The hold must not take the ledger match...
+	env.stage(t, []openbanking.Transaction{
+		pendingRow("hold-4", "2026-09-16", "4.20", "D", "CAFFEINE", "Kava"),
+	})
+	hold := env.stagedByComment(t, "CAFFEINE (Kava)")
+	assert.Equal(t, domain.VerdictPending, hold.Verdict)
+
+	// ...so its booking still sees it and is flagged as the duplicate it is.
+	env.stage(t, []openbanking.Transaction{
+		ebRow("book-4", "2026-09-16", "4.20", "D", "CAFFEINE", "Kava"),
+	})
+	staged, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	require.Len(t, staged, 1)
+	assert.Equal(t, domain.VerdictDuplicateContent, staged[0].Verdict)
 }

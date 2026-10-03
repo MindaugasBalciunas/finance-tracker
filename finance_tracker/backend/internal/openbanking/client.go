@@ -267,9 +267,13 @@ func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 
 // TxQuery is one page request against one account.
 type TxQuery struct {
-	AccountUID         string
-	DateFrom           time.Time
-	DateTo             time.Time
+	AccountUID string
+	DateFrom   time.Time
+	DateTo     time.Time
+	// TransactionStatus asks the bank for one status only (BOOK or PDNG).
+	// Empty means whatever the ASPSP returns by default, which is booked
+	// rows at most banks — reservations have to be asked for by name.
+	TransactionStatus  string
 	ContinuationKey    string
 	PSU                PSU
 	RequiredPSUHeaders []string
@@ -290,6 +294,9 @@ func (c *Client) Transactions(ctx context.Context, q TxQuery) (*TxPage, error) {
 	}
 	if !q.DateTo.IsZero() {
 		v.Set("date_to", q.DateTo.Format("2006-01-02"))
+	}
+	if q.TransactionStatus != "" {
+		v.Set("transaction_status", q.TransactionStatus)
 	}
 	if q.ContinuationKey != "" {
 		v.Set("continuation_key", q.ContinuationKey)

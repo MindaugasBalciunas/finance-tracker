@@ -45,6 +45,12 @@ const (
 	// VerdictNeedsReview — non-EUR, or an unparseable credit/debit indicator.
 	// Staged rather than dropped: a row we cannot read is still a row.
 	VerdictNeedsReview = "needs_review"
+	// VerdictPending — a card reservation the bank has authorised but not
+	// booked. The money is effectively gone, so it is worth seeing days
+	// early, but the amount can still move (fuel pre-auths, tips, FX) and
+	// the bank re-issues the row under a new entry_reference once it books.
+	// Shown and editable, never committable: see SupersededBy.
+	VerdictPending = "pending"
 )
 
 // Staged-row lifecycle. A dismissed row stays dismissed forever — that
@@ -54,6 +60,11 @@ const (
 	StagedStateStaged    = "staged"
 	StagedStateImported  = "imported"
 	StagedStateDismissed = "dismissed"
+	// StagedStateSuperseded — a reservation that has resolved: the bank
+	// booked it (and the booked row carries the corrections made here), or
+	// released it without ever booking. Kept rather than deleted, because
+	// "where did that row go" deserves an answer.
+	StagedStateSuperseded = "superseded"
 )
 
 // ValidAccountKeys are the account codes the balance sheet understands. This
@@ -190,6 +201,14 @@ type BankStagedTx struct {
 	// double-checking.
 	EnrichNote string `json:"enrich_note" gorm:"not null;default:''"`
 
+	// Pending reports that the bank had only reserved this amount, not booked
+	// it. Stored rather than derived from Verdict, which the user's edits and
+	// the dedup pass both rewrite.
+	Pending bool `json:"pending" gorm:"not null;default:0"`
+	// SupersededBy names the staged row that replaced this reservation once
+	// the bank booked it. Empty on a reservation the bank simply released.
+	SupersededBy *uint `json:"superseded_by"`
+
 	// CategoryGuessed marks a row whose category is the classifier's generic
 	// fallback rather than a rule hit — the signal enrichment keys on.
 	// Transient: it travels from the adapter to the enricher inside one sync
@@ -213,7 +232,19 @@ type BankStagedTx struct {
 
 // Preticked reports whether this row should arrive with its checkbox ticked.
 // Only an unambiguously new row does; every duplicate verdict, every internal
-// row and everything needing review starts unticked.
+// row, everything needing review and every unbooked reservation starts
+// unticked.
 func (t *BankStagedTx) Preticked() bool {
-	return t.State == StagedStateStaged && t.Verdict == VerdictNew
+	return t.State == StagedStateStaged && t.Verdict == VerdictNew && !t.Pending
+}
+
+// Committable reports whether this row may become a transaction.
+//
+// A reservation may not. Its amount is not final — a fuel pre-auth is a round
+// number, a restaurant adds the tip after you leave — and the bank re-issues
+// it under a new entry_reference when it books, which neither dedup layer
+// would match. Committing one buys a few days of accuracy and pays for it
+// with a wrong amount and a duplicate.
+func (t *BankStagedTx) Committable() bool {
+	return t.State == StagedStateStaged && !t.Pending
 }

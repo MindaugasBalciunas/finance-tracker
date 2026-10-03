@@ -38,16 +38,23 @@ func (h *BankHandler) WithDB(db *gorm.DB) *BankHandler {
 }
 
 type syncResult struct {
-	Fetched          int    `json:"fetched"`
-	StagedNew        int    `json:"staged_new"`
-	Unchanged        int    `json:"unchanged"`
-	AutoSkipped      int    `json:"auto_skipped"`
-	DuplicateExact   int    `json:"duplicate_exact"`
-	DuplicateContent int    `json:"duplicate_content"`
-	NeedsReview      int    `json:"needs_review"`
-	Internal         int    `json:"internal"`
-	DateFrom         string `json:"date_from"`
-	DateTo           string `json:"date_to"`
+	Fetched          int `json:"fetched"`
+	StagedNew        int `json:"staged_new"`
+	Unchanged        int `json:"unchanged"`
+	AutoSkipped      int `json:"auto_skipped"`
+	DuplicateExact   int `json:"duplicate_exact"`
+	DuplicateContent int `json:"duplicate_content"`
+	NeedsReview      int `json:"needs_review"`
+	Internal         int `json:"internal"`
+	// Pending counts card reservations — authorised, not booked. Shown days
+	// before the booked row exists; never committable.
+	Pending int `json:"pending"`
+	// Superseded counts reservations the bank booked during this sync.
+	Superseded int `json:"superseded"`
+	// Released counts reservations the bank dropped without booking.
+	Released int    `json:"released"`
+	DateFrom string `json:"date_from"`
+	DateTo   string `json:"date_to"`
 }
 
 // SyncAccount pulls recent transactions for one mapped account and stages
@@ -147,13 +154,16 @@ func (h *BankHandler) fetchWindow(
 	w := window{to: time.Now()}
 	w.from = syncWindow(link, w.to, days)
 
-	txs, err := cl.AllTransactions(c.Request.Context(), openbanking.TxQuery{
+	headers := h.requiredPSUHeaders(c, cl, conn)
+	base := openbanking.TxQuery{
 		AccountUID:         link.UID,
 		DateFrom:           w.from,
 		DateTo:             w.to,
 		PSU:                psuFrom(c),
-		RequiredPSUHeaders: h.requiredPSUHeaders(c, cl, conn),
-	})
+		RequiredPSUHeaders: headers,
+	}
+
+	txs, err := cl.AllTransactions(c.Request.Context(), base)
 	if err != nil {
 		// AllTransactions returns what it collected alongside the error, but
 		// a partial window would make "staged_new == 0" meaningless on the
@@ -166,7 +176,56 @@ func (h *BankHandler) fetchWindow(
 		}
 		return nil, w, err
 	}
-	return txs, w, nil
+
+	// Card reservations, asked for by name.
+	//
+	// Most ASPSPs return booked rows only unless transaction_status says
+	// otherwise, so a reservation is invisible until it books — two or three
+	// days during which the money is gone and the app says nothing. This is a
+	// second call because the parameter takes one status.
+	//
+	// Deliberately best-effort: a bank that rejects the parameter, or does
+	// not serve pending rows at all, must not fail a sync whose booked half
+	// succeeded. Booked rows are the ledger; reservations are a preview.
+	pending, perr := cl.AllTransactions(c.Request.Context(), withStatus(base, openbanking.StatusPending))
+	if perr != nil {
+		log.Printf("bank sync: reservations unavailable for account %d: %v", link.ID, perr)
+		return txs, w, nil
+	}
+	return mergeByReference(txs, pending), w, nil
+}
+
+func withStatus(q openbanking.TxQuery, status string) openbanking.TxQuery {
+	q.TransactionStatus = status
+	q.ContinuationKey = ""
+	return q
+}
+
+// mergeByReference appends rows the first call did not already return.
+//
+// Some banks ignore transaction_status and answer both calls with everything,
+// so the same row can arrive twice. Keying on the provider's own reference
+// (plus the status, since the pending and booked forms of one purchase are
+// different rows) keeps the fetched count honest.
+func mergeByReference(booked, pending []openbanking.Transaction) []openbanking.Transaction {
+	seen := make(map[string]bool, len(booked))
+	key := func(t openbanking.Transaction) string {
+		return strings.ToUpper(t.Status) + "|" + firstNonEmpty(t.EntryReference, t.TransactionID)
+	}
+	for _, t := range booked {
+		if ref := firstNonEmpty(t.EntryReference, t.TransactionID); ref != "" {
+			seen[key(t)] = true
+		}
+	}
+	out := booked
+	for _, t := range pending {
+		ref := firstNonEmpty(t.EntryReference, t.TransactionID)
+		if ref != "" && seen[key(t)] {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // ── sync all ────────────────────────────────────────────────────────
@@ -336,27 +395,48 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 		}
 	}
 
+	// Reservations already on the queue, so a booking can claim the one it
+	// resolves and anything the bank stopped reporting can be closed out.
+	reservations, err := h.openReservations(link.ID)
+	if err != nil {
+		return res, err
+	}
+	seen := map[string]bool{}
+
 	var newest time.Time
 	for _, t := range txs {
-		// Only booked rows. A pending row is re-issued with a different
-		// entry_reference once it books, so staging it would stage it twice;
-		// supporting pending needs its own supersede lifecycle.
-		if st := strings.ToUpper(strings.TrimSpace(t.Status)); st != "" && st != openbanking.StatusBooked {
+		// Anything that is neither booked nor a reservation (rejected,
+		// cancelled) is still not stageable — it never moved money.
+		st := strings.ToUpper(strings.TrimSpace(t.Status))
+		if st != "" && st != openbanking.StatusBooked && st != openbanking.StatusPending {
 			res.AutoSkipped++
 			continue
 		}
 		row := adaptPSD2(t, link)
+		seen[row.ExternalID] = true
 		// The classifier knows a fixed merchant list; the user's ledger knows
 		// the rest. Enriching here (not at commit) means the review queue
 		// shows the final proposal, and the user corrects what they can see.
 		// Category and labels only — the dedup key is left untouched.
 		h.enrich(&row)
-		if row.BookingDate.After(newest) {
+		// Only a booked row may advance the window anchor. A reservation can
+		// carry an empty or optimistic booking date, and letting one push the
+		// anchor forward would skip the rows behind it on the next sync.
+		if !row.Pending && row.BookingDate.After(newest) {
 			newest = row.BookingDate
 		}
 
-		// Layer 1 — provider id. Cheap and certain.
-		if match, ok := byExternal[row.ExternalID]; ok {
+		// A reservation is never dedup'd against the ledger. It cannot be
+		// committed, so a consuming content match would spend a ledger row
+		// that the booked version has to claim a few days later.
+		if row.Pending {
+			if row.Verdict != domain.VerdictNeedsReview {
+				row.Verdict = domain.VerdictPending
+				row.VerdictNote = "reserved by the bank, not booked yet — the amount can still change"
+			}
+			res.Pending++
+		} else if match, ok := byExternal[row.ExternalID]; ok {
+			// Layer 1 — provider id. Cheap and certain.
 			row.Verdict = domain.VerdictDuplicateExact
 			row.MatchedTxID = &match.ID
 			row.VerdictNote = describeMatch(match)
@@ -394,8 +474,19 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 			row.State = domain.StagedStateStaged
 			row.FirstSeenAt = time.Now()
 			row.LastSeenAt = row.FirstSeenAt
+			// A booking claims the reservation it resolves, inheriting any
+			// correction made while it was still pending — which is what
+			// makes reviewing a reservation early worth the effort.
+			claimed := reservations.claim(&row)
 			if err := h.repo.SaveStaged(&row); err != nil {
 				return res, fmt.Errorf("staging %s: %w", row.ExternalID, err)
+			}
+			if claimed != nil {
+				if err := h.closeReservation(claimed, &row.ID,
+					fmt.Sprintf("booked by the bank on %s", row.BookingDate.Format("2006-01-02"))); err != nil {
+					return res, err
+				}
+				res.Superseded++
 			}
 			res.StagedNew++
 		case gerr != nil:
@@ -418,6 +509,20 @@ func (h *BankHandler) stage(txs []openbanking.Transaction, link *domain.BankAcco
 			}
 			res.Unchanged++
 		}
+	}
+
+	// A reservation the bank has stopped reporting, inside a window we just
+	// re-read, was released rather than booked — a hotel hold coming off, a
+	// pre-auth reversed. Leaving it on the queue forever is how a review list
+	// fills with things that never happened.
+	for _, r := range reservations.remaining() {
+		if seen[r.ExternalID] || r.Date.Before(from) {
+			continue
+		}
+		if err := h.closeReservation(r, nil, "the bank released this reservation without booking it"); err != nil {
+			return res, err
+		}
+		res.Released++
 	}
 
 	now := time.Now()
@@ -487,6 +592,10 @@ func (h *BankHandler) ListStaged(c *gin.Context) {
 
 type stagedResponse struct {
 	domain.BankStagedTx
+	// Committable tells the UI whether this row can become a transaction.
+	// Computed server-side for the same reason Preticked is: one rule, one
+	// place, so the button and the endpoint cannot disagree.
+	Committable bool `json:"committable"`
 	// AmountMoney mirrors how transactions are serialised everywhere else,
 	// so the UI formats one shape rather than two.
 	AmountMoney domain.Money `json:"amount_money"`
@@ -498,6 +607,7 @@ type stagedResponse struct {
 func toStagedResponse(t *domain.BankStagedTx) stagedResponse {
 	return stagedResponse{
 		BankStagedTx: *t,
+		Committable:  t.Committable(),
 		AmountMoney:  domain.Money{Value: t.Amount, Currency: domain.CurrencyEUR},
 		Preticked:    t.Preticked(),
 	}
@@ -596,6 +706,17 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 		if row.State != domain.StagedStateStaged {
 			res.Skipped++
 			res.Notes = append(res.Notes, fmt.Sprintf("%s was already %s", shortLabel(row), row.State))
+			continue
+		}
+		// A reservation is not a transaction yet. Its amount is not final and
+		// the bank will re-issue it under a new reference when it books, so
+		// committing one buys a few days of accuracy and pays for it with a
+		// wrong amount and a duplicate. The corrections made here are kept
+		// and carried onto the booked row.
+		if !row.Committable() {
+			res.Skipped++
+			res.Notes = append(res.Notes, fmt.Sprintf(
+				"%s is still only reserved by the bank — it can be added once it books", shortLabel(row)))
 			continue
 		}
 		// Re-verify inside the commit: the review list may have been open for
