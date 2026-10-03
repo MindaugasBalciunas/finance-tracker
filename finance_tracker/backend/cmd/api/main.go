@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
 	"github.com/mindaugas/finance-tracker/internal/handler"
@@ -89,12 +88,13 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS — allow all origins for self-hosted deployment (nginx + local network access)
-	r.Use(cors.New(cors.Config{
-		AllowAllOrigins: true,
-		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:    []string{"Origin", "Content-Type", "Accept"},
-	}))
+	// No CORS headers on purpose: the SPA is served same-origin (nginx in the
+	// add-on, Vite's proxy in dev), so the browser's same-origin policy keeps
+	// other sites from reading responses — with the lock off, a permissive
+	// policy let any visited page read the whole ledger and the backup export.
+	// CrossOriginGuard additionally blocks cross-site WRITES, which the
+	// same-origin policy alone does not stop (form posts, no-cors fetches).
+	r.Use(handler.CrossOriginGuard())
 
 	// Cap request bodies so a stray or malicious client can't exhaust
 	// memory/disk; imports and the image-scan upload get a larger allowance

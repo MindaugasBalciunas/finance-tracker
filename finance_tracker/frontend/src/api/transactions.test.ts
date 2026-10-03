@@ -42,7 +42,7 @@ describe('transactionsApi.listAll', () => {
   it('fetches and concatenates every page when results exceed one page', async () => {
     const total = 2500
     mockedGet.mockImplementation(async (_url, config) => {
-      const p = config?.params?.page as number
+      const p = (config?.params as { page: number }).page
       const size = p === 3 ? 500 : 1000
       const rows = Array.from({ length: size }, (_, i) =>
         tx((p - 1) * 1000 + i + 1, '2025-06-01')
@@ -60,7 +60,7 @@ describe('transactionsApi.listAll', () => {
 
   it('passes the date filter through to every page request', async () => {
     mockedGet.mockImplementation(async (_url, config) => {
-      const p = config?.params?.page as number
+      const p = (config?.params as { page: number }).page
       return page([tx(p, '2024-03-01')], p, 1500, 1000)
     })
 

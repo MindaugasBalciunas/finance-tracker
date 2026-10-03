@@ -1,5 +1,5 @@
 # Stage 1 — build Go backend (natively on build runner, cross-compile to target arch)
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS backend-builder
 ARG TARGETARCH
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
@@ -8,7 +8,7 @@ COPY backend/ .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o finance-tracker ./cmd/api/main.go
 
 # Stage 2 — build React frontend (natively on build runner, output is arch-independent)
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
