@@ -242,7 +242,8 @@ func (s *Server) ledgerRoutes() {
 		if err := ledger.Insert(s.DB, &t); err != nil {
 			return nil, err
 		}
-		return t, nil
+		moved := s.moveBalances(t, 1)
+		return map[string]any{"transaction": t, "balances_moved": moved}, nil
 	})
 	s.handle("PUT /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := idParam(r, "id")
@@ -261,16 +262,31 @@ func (s *Server) ledgerRoutes() {
 		if err := ledger.Validate(s.DB, &in); err != nil {
 			return nil, err
 		}
-		return in, ledger.Update(s.DB, &in)
+		if err := ledger.Update(s.DB, &in); err != nil {
+			return nil, err
+		}
+		if cur.Date != in.Date || cur.Amount != in.Amount || cur.AccountID != in.AccountID || cur.ToAccountID != in.ToAccountID || cur.Kind != in.Kind {
+			s.moveBalances(cur, -1)
+			s.moveBalances(in, 1)
+		}
+		return in, nil
 	})
 	s.handle("DELETE /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := idParam(r, "id")
 		if err != nil {
 			return nil, err
 		}
+		cur, err := ledger.Get(s.DB, id)
+		if err != nil {
+			return nil, notFound("transaction not found")
+		}
 		// A deleted bank row goes back to the inbox rather than vanishing.
 		s.DB.Exec(`UPDATE bank_inbox SET state='open', imported_tx_id=NULL, matched_tx_id=NULL, verdict='new' WHERE imported_tx_id=?`, id)
-		return map[string]bool{"ok": true}, ledger.Delete(s.DB, id)
+		if err := ledger.Delete(s.DB, id); err != nil {
+			return nil, err
+		}
+		s.moveBalances(cur, -1)
+		return map[string]bool{"ok": true}, nil
 	})
 	s.handle("POST /api/transactions/bulk", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {
@@ -504,6 +520,22 @@ func (s *Server) ledgerRoutes() {
 		}
 		return nil, notFound("rule not found")
 	})
+}
+
+// moveBalances applies (sign=1) or reverses (sign=-1) a hand-entered
+// transaction's effect on account balances. Bank rows never move balances:
+// the bank states its own balance on every sync.
+func (s *Server) moveBalances(t ledger.Tx, sign money.Cents) []string {
+	if t.Source == "bank" || t.Source == "import" || t.SplitOf != 0 {
+		return nil
+	}
+	var moved []string
+	for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
+		if ok, err := wealth.ApplyDelta(s.DB, acct, t.Date, delta*sign); err == nil && ok {
+			moved = append(moved, acct)
+		}
+	}
+	return moved
 }
 
 // ── wealth ──────────────────────────────────────────────────────────
@@ -1112,6 +1144,16 @@ func (s *Server) aiRoutes() {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, s.AI.SaveContext(in.Content)
+	})
+	s.handle("GET /api/ai/notes", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return map[string]string{"content": s.AI.Notes()}, nil
+	})
+	s.handle("PUT /api/ai/notes", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct{ Content string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, s.AI.SaveNotes(in.Content)
 	})
 	s.handle("GET /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.AI.History(200) })
 	s.handle("DELETE /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) {

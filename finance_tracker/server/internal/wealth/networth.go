@@ -206,3 +206,56 @@ func DeleteBalance(e interface {
 	_, err := e.Exec(`DELETE FROM balances WHERE account_id=? AND date=?`, account, date)
 	return err
 }
+
+// ApplyDelta moves an account's balance for a manual transaction, as v1 did:
+// a transaction dated on or after the latest recorded value shifts it (a
+// new point on the transaction's date); one dated earlier is already
+// inside that recorded value and changes nothing. Bank-synced accounts are
+// left alone — the bank's own balance is the truth there. Returns whether
+// the balance moved.
+func ApplyDelta(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, account, date string, delta money.Cents) (bool, error) {
+	if account == "" || delta == 0 {
+		return false, nil
+	}
+	var synced int
+	d.QueryRow(`SELECT COUNT(*) FROM bank_accounts WHERE account_id=? AND uid != ''`, account).Scan(&synced)
+	if synced > 0 {
+		return false, nil
+	}
+	var kind string
+	if d.QueryRow(`SELECT kind FROM accounts WHERE id=?`, account).Scan(&kind) != nil {
+		return false, nil
+	}
+	switch kind {
+	case "property", "vehicle", "crypto":
+		return false, nil
+	}
+	var lastDate string
+	var lastVal int64
+	if err := d.QueryRow(`SELECT date, value FROM balances WHERE account_id=? ORDER BY date DESC LIMIT 1`, account).Scan(&lastDate, &lastVal); err != nil {
+		return false, nil // never recorded: nothing to move
+	}
+	if date < lastDate {
+		return false, nil
+	}
+	return true, SetBalance(d, account, date, money.Cents(lastVal)+delta, nil, nil, "manual")
+}
+
+// TxDeltas lists the balance moves a transaction implies.
+func TxDeltas(kind, account, to string, amount money.Cents) map[string]money.Cents {
+	out := map[string]money.Cents{}
+	switch kind {
+	case "expense":
+		out[account] -= amount
+	case "income":
+		out[account] += amount
+	case "transfer":
+		out[account] -= amount
+		out[to] += amount
+	}
+	delete(out, "")
+	return out
+}

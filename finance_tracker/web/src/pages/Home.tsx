@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useOverview } from '../lib/hooks'
 import { eur, eurk, monthLabel, pct, shortDate, signed } from '../lib/format'
-import { Card, Delta, ErrorBox, Loading, Meter, Stat } from '../components/ui'
+import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat } from '../components/ui'
 import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
@@ -88,7 +88,7 @@ export default function Home() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card title="Plan this month" action={<Link to="/plan" className="text-sm text-accent">Open plan</Link>}>
+        <Card title="Plan this month" action={<div className="flex items-center gap-1"><AskCFO q="Give me a short briefing on this month: spending vs plan, anything unusual, and what to watch before month end." label="Brief me" /><Link to="/plan" className="text-sm text-accent">Open plan</Link></div>}>
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span className="text-ink2">Spending budgets</span>
             <span className="tnum"><b>{eur(o.plan.spent)}</b> <span className="text-muted">of {eur(o.plan.budgeted)}</span></span>

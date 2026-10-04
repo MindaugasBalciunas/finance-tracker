@@ -88,12 +88,47 @@ Changing data: create_transaction, update_transaction, add_rule, delete_rule, re
 func (a *Assistant) system(now time.Time) []block {
 	var parts []block
 	parts = append(parts, block{Type: "text", Text: fmt.Sprintf(systemPrompt, now.Format("Monday 2 January 2006"))})
+	if n := strings.TrimSpace(a.Notes()); n != "" {
+		parts = append(parts, block{Type: "text", Text: "Decisions and preferences you were asked to remember (newest last):\n" + n})
+	}
 	if c := strings.TrimSpace(a.Context()); c != "" {
 		parts = append(parts, block{Type: "text", Text: "The owner's standing brief (who they are, their framework and rules). Never quote numbers from it — pull them live:\n\n" + c})
 	}
 	// One cache breakpoint covers tools + system, the stable prefix.
 	parts[len(parts)-1].CacheControl = &cacheControl{Type: "ephemeral"}
 	return parts
+}
+
+// Notes are facts the assistant was asked to remember across chats, the MCP
+// server and the app — one dated line each, newest last, capped.
+func (a *Assistant) Notes() string {
+	var raw string
+	if a.DB.QueryRow(`SELECT value FROM settings WHERE key='ai_notes'`).Scan(&raw) != nil {
+		return ""
+	}
+	var s string
+	json.Unmarshal([]byte(raw), &s)
+	return s
+}
+
+func (a *Assistant) Remember(note string) error {
+	lines := strings.Split(strings.TrimSpace(a.Notes()), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+	lines = append(lines, time.Now().Format("2006-01-02")+": "+strings.ReplaceAll(strings.TrimSpace(note), "\n", " "))
+	if len(lines) > 60 {
+		lines = lines[len(lines)-60:]
+	}
+	raw, _ := json.Marshal(strings.Join(lines, "\n"))
+	_, err := a.DB.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('ai_notes',?)`, string(raw))
+	return err
+}
+
+func (a *Assistant) SaveNotes(s string) error {
+	raw, _ := json.Marshal(s)
+	_, err := a.DB.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('ai_notes',?)`, string(raw))
+	return err
 }
 
 type ChatMessage struct {
@@ -345,8 +380,9 @@ Never invent a merchant or amount — say so in remark when unreadable.`, string
 	if c, ok := cm[raw.Category]; ok && c.Kind == out.Kind {
 		out.Category = raw.Category
 	}
+	// Only an account money is actually paid from — never property or a loan.
 	for _, ac := range accts {
-		if ac.ID == raw.AccountID {
+		if ac.ID == raw.AccountID && !ac.Archived && (ac.Kind == "checking" || ac.Kind == "savings" || ac.Kind == "cash") {
 			out.AccountID = ac.ID
 		}
 	}

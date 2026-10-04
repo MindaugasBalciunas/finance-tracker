@@ -14,8 +14,7 @@ import (
 
 	"ft/internal/api"
 	"ft/internal/db"
-	"ft/internal/importv1"
-	"ft/internal/ledger"
+	"ft/internal/boot"
 )
 
 var version = "dev"
@@ -23,49 +22,11 @@ var version = "dev"
 func main() {
 	path := envOr("DB_PATH", "finance-v2.db")
 	legacy := envOr("V1_DB_PATH", filepath.Join(filepath.Dir(path), "finance.db"))
-	_, statErr := os.Stat(path)
-	fresh := os.IsNotExist(statErr)
-
-	d, err := db.Open(path)
+	d, _, err := boot.Open(path, legacy)
 	if err != nil {
-		log.Fatalf("opening database: %v", err)
+		log.Fatalf("starting: %v", err)
 	}
 	defer d.Close()
-
-	if fresh {
-		// First start of v2. If a v1 database sits next to us, convert it;
-		// the v1 file is only read, so reinstalling v1 rolls back cleanly.
-		if _, err := os.Stat(legacy); err == nil && legacy != path {
-			log.Printf("first start: converting v1 database %s", legacy)
-			src, err := importv1.ReadDB(legacy)
-			if err != nil {
-				os.Remove(path)
-				log.Fatalf("reading v1 database: %v", err)
-			}
-			rep, err := importv1.Convert(d, src)
-			if err != nil {
-				d.Close()
-				os.Remove(path)
-				log.Fatalf("converting v1 database: %v", err)
-			}
-			log.Printf("converted: %d transactions, %d balance points, %d accounts, %d rules, %d budgets, %d trades, %d inbox rows",
-				rep.Transactions, rep.BalanceRows, rep.Accounts, rep.Rules, rep.Budgets, rep.Trades, rep.InboxRows)
-			for _, w := range rep.Warnings {
-				log.Printf("  note: %s", w)
-			}
-			ver := importv1.Verify(d, src)
-			for _, c := range ver.Checks {
-				log.Printf("  verify %v: %s — %s", c.OK, c.Name, c.Detail)
-			}
-			if !ver.OK {
-				d.Close()
-				os.Remove(path)
-				log.Fatalf("conversion verification failed — v1 data left untouched, v2 database removed")
-			}
-		} else if err := ledger.SeedCategories(d); err != nil {
-			log.Fatalf("seeding categories: %v", err)
-		}
-	}
 
 	go nightly(d, path)
 

@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { useQuery } from '@tanstack/react-query'
 import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
 import { catColor, useCats } from '../lib/categories'
 import { dayLabel, eurc, todayISO } from '../lib/format'
@@ -103,6 +104,17 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     { value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfer' },
   ]
   const remark = (draft as any)._remark as string | undefined
+  const [splitOpen, setSplitOpen] = useState(false)
+  const refresh = useRefresh()
+  const { data: detail } = useQuery({ queryKey: ['tx', t.id], queryFn: () => api.get<{ transaction: Tx; parts: Tx[] | null }>(`/transactions/${t.id}`), enabled: !!t.id })
+  const parts = detail?.parts ?? []
+  const unsplit = async () => {
+    await api.post(`/transactions/${t.id}/unsplit`)
+    toast('Parts merged back', 'good')
+    refresh()
+    onClose()
+  }
+  if (splitOpen && t.id) return <SplitSheet tx={{ ...(t as Tx), amount: parseFloat(amount) || (t.amount as number) }} onClose={() => setSplitOpen(false)} onDone={onClose} />
   return (
     <Sheet open onClose={onClose} title={isNew ? 'New transaction' : 'Edit transaction'}
       footer={<>
@@ -143,7 +155,59 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           }} />
         </Field>
         {t.external_id && <div className="text-xs text-muted">From the bank · {t.external_id}</div>}
+        {!isNew && !t.split_of && (
+          <div className="rounded-xl border border-line p-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium">{parts.length ? `Split into ${parts.length + 1} parts` : 'Shared or mixed purchase?'}</span>
+              <div className="flex gap-1">
+                {parts.length > 0 && <button className="btn-ghost h-8 text-xs" onClick={unsplit}>Unsplit</button>}
+                <button className="btn-outline h-8 text-xs" onClick={() => setSplitOpen(true)}>{parts.length ? 'Add part' : 'Split'}</button>
+              </div>
+            </div>
+            {parts.map((p) => <div key={p.id} className="mt-1 flex justify-between text-xs text-ink2"><span>{cats.path(p.category)}{p.tags.find((x) => x.startsWith('owed:')) ? ` · ${p.tags.find((x) => x.startsWith('owed:'))!.slice(5)} owes` : ''}</span><span className="tnum">{eurc(p.amount)}</span></div>)}
+          </div>
+        )}
+        {!!t.split_of && <div className="text-xs text-muted">Part of a split transaction #{t.split_of}</div>}
         <ErrorBox error={save.error || del.error} />
+      </div>
+    </Sheet>
+  )
+}
+
+function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDone: () => void }) {
+  const [parts, setParts] = useState([{ amount: '', category: tx.category, note: '', owed_by: '' }])
+  const refresh = useRefresh()
+  const toast = useToast()
+  const cats = useCats()
+  const used = parts.reduce((a, p) => a + (parseFloat(p.amount) || 0), 0)
+  const save = async () => {
+    try {
+      await api.post(`/transactions/${tx.id}/split`, { parts: parts.filter((p) => parseFloat(p.amount) > 0).map((p) => ({ ...p, amount: parseFloat(p.amount) })) })
+      toast('Split saved', 'good')
+      refresh()
+      onDone()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    }
+  }
+  return (
+    <Sheet open onClose={onClose} title={`Split ${tx.merchant || cats.name(tx.category)} · ${eurc(tx.amount)}`} footer={<>
+      <button className="btn-ghost" onClick={onClose}>Back</button>
+      <button className="btn-primary" onClick={save} disabled={used <= 0 || used >= tx.amount}>Save split</button>
+    </>}>
+      <div className="space-y-3">
+        <div className="text-sm text-muted">Carve parts off this transaction. The original keeps the remainder (<b className="text-ink tnum">{eurc(tx.amount - used)}</b>), so totals and balances don't change. Mark a part as owed when someone will pay you back.</div>
+        {parts.map((p, i) => (
+          <div key={i} className="space-y-2 rounded-xl border border-line p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <input className="input tnum" inputMode="decimal" placeholder="Amount €" value={p.amount} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
+              <input className="input" placeholder="Owed by (optional)" value={p.owed_by} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, owed_by: e.target.value } : x)))} />
+            </div>
+            <CategoryPicker value={p.category} kind={tx.kind} onChange={(id) => setParts(parts.map((x, j) => (j === i ? { ...x, category: id } : x)))} />
+            <input className="input" placeholder="Note" value={p.note} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} />
+          </div>
+        ))}
+        <button className="btn-outline" onClick={() => setParts([...parts, { amount: '', category: tx.category, note: '', owed_by: '' }])}><Icon name="plus" size={16} />Another part</button>
       </div>
     </Sheet>
   )

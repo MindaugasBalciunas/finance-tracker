@@ -8,7 +8,7 @@ import { useCashflow } from '../lib/hooks'
 import { catColor, CORE, useCats } from '../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Flow, Recurring, Tx } from '../lib/types'
-import { Card, Empty, Loading, PageHeader, Segmented, Stat, Tabs } from '../components/ui'
+import { AskCFO, Card, Empty, Loading, PageHeader, Segmented, Stat, Tabs } from '../components/ui'
 import { axisProps, gridProps, Legend, ShareBar, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
@@ -24,7 +24,7 @@ export default function Insights() {
   const tab = loc.pathname.split('/')[2] || 'cashflow'
   return (
     <div>
-      <PageHeader title="Insights" />
+      <PageHeader title="Insights" actions={<AskCFO q={`Review my ${TABS.find((t) => t.value === tab)?.label.toLowerCase() ?? 'finances'}: what stands out, what changed, and one or two concrete actions.`} />} />
       <Tabs value={tab} onChange={(v) => nav(`/insights/${v}`)} tabs={TABS} />
       <Routes>
         <Route path="/" element={<CashFlow />} />

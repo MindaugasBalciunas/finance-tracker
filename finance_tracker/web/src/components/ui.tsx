@@ -201,3 +201,12 @@ export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; on
     </div>
   )
 }
+
+/** Opens the CFO chat with a question about what is on screen. */
+export function AskCFO({ q, label = 'Ask CFO' }: { q: string; label?: string }) {
+  return (
+    <a href={`#/ai?q=${encodeURIComponent(q)}`} className="btn-ghost h-8 px-2.5 text-xs text-accent">
+      <Icon name="spark" size={15} />{label}
+    </a>
+  )
+}

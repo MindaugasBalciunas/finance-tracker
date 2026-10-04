@@ -127,7 +127,7 @@ func Verify(d *sql.DB, src *Data) *Verification {
 				continue
 			}
 			checked++
-			if !ok || math.Abs(p.Value.Float()-want) > 0.011 {
+			if !ok || p.Value != money.FromFloat(want) {
 				mismatch++
 				if len(bsample) < 5 {
 					bsample = append(bsample, fmt.Sprintf("%s %s v1 %.2f v2 %s", MapAccount(k), date, want, p.Value))

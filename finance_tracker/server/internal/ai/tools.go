@@ -31,7 +31,7 @@ func arr(d string) map[string]any {
 }
 
 // writeTools change data; the system prompt requires explicit confirmation.
-var writeTools = map[string]bool{"create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
+var writeTools = map[string]bool{"remember": true, "create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
 	"rename_tag": true, "update_inbox_row": true}
 
 func toolDefs() []tool {
@@ -69,6 +69,8 @@ func toolDefs() []tool {
 		{Name: "add_rule", Description: "Add a categorisation rule (applies to future rows; set apply_to_history to also fix existing ones). ONLY after approval.",
 			InputSchema: obj(map[string]any{"pattern": str("text in merchant/note, '^' anchors to the start"), "when_category": str("only rows in this category"),
 				"set_category": str("category id"), "set_merchant": str("merchant"), "add_tags": arr("tags"), "apply_to_history": map[string]any{"type": "boolean"}})},
+		{Name: "remember", Description: "Save a durable note about the owner's decisions or preferences (e.g. 'decided to keep VWCE as core, no new satellites until 2027'). Use when the owner states a decision or asks you to remember something.",
+			InputSchema: obj(map[string]any{"note": str("one short sentence")}, "note")},
 		{Name: "delete_rule", Description: "Delete a rule by id. ONLY after approval.", InputSchema: obj(map[string]any{"id": num("rule id")}, "id")},
 		{Name: "rename_tag", Description: "Rename a tag everywhere (empty 'to' removes it). ONLY after approval.", InputSchema: obj(map[string]any{"from": str("tag"), "to": str("new tag")}, "from")},
 		{Name: "update_inbox_row", Description: "Improve a bank inbox proposal (category, merchant, note, tags). Cannot accept it into the ledger — the user does that.",
@@ -310,7 +312,13 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		if err := ledger.Insert(a.DB, &t); err != nil {
 			return "", err
 		}
-		return jsonOut(map[string]any{"created": t})
+		var moved []string
+		for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
+			if ok, _ := wealth.ApplyDelta(a.DB, acct, t.Date, delta); ok {
+				moved = append(moved, acct)
+			}
+		}
+		return jsonOut(map[string]any{"created": t, "balances_moved": moved})
 	case "update_transaction":
 		t, err := ledger.Get(a.DB, int64(args.f("id")))
 		if err != nil {
@@ -355,6 +363,15 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 			res["history_rows_changed"] = n
 		}
 		return jsonOut(res)
+	case "remember":
+		note := args.s("note")
+		if note == "" {
+			return "", errors.New("nothing to remember")
+		}
+		if err := a.Remember(note); err != nil {
+			return "", err
+		}
+		return `{"remembered":true}`, nil
 	case "delete_rule":
 		return `{"deleted":true}`, ledger.DeleteRule(a.DB, int64(args.f("id")))
 	case "rename_tag":

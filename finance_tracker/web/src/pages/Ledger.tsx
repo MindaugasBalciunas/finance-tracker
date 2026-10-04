@@ -141,6 +141,7 @@ function Transactions() {
         </div>
       )}
 
+      <Owed />
       {data && (
         <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
           <div className="card px-2 py-2"><div className="text-muted">In</div><div className="tnum text-sm font-semibold text-good">{eur(data.income)}</div></div>
@@ -193,6 +194,26 @@ function Transactions() {
 
       <FilterSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} sp={sp} setSp={setSp} />
       <BulkSheet open={bulkOpen} ids={[...selected]} onClose={() => setBulkOpen(false)} onDone={() => { setBulkOpen(false); setSelected(new Set()) }} />
+    </div>
+  )
+}
+
+function Owed() {
+  const { data } = useQuery({ queryKey: ['owed'], queryFn: () => api.get<Record<string, number>>('/owed') })
+  const editor = useTxEditor()
+  const open = Object.entries(data ?? {}).filter(([, v]) => Math.abs(v) >= 0.01)
+  if (!open.length) return null
+  return (
+    <div className="card mb-3 p-3">
+      <div className="section-title mb-1.5">Owed to you</div>
+      <div className="flex flex-wrap gap-2">
+        {open.map(([who, v]) => (
+          <span key={who} className="chip">
+            <span className="capitalize text-ink">{who}</span> <span className="tnum">{eurc(v)}</span>
+            <button className="text-accent" onClick={() => editor.open({ kind: 'income', category: 'refunds', amount: Math.abs(v), merchant: who, tags: [`owed:${who}`], note: 'Repayment' })}>record repayment</button>
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

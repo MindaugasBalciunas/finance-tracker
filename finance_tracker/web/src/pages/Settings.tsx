@@ -389,12 +389,27 @@ function AISettings() {
           <div><div className="text-xs text-muted">Calls</div><div className="font-semibold">{s.spend.calls}</div></div>
         </div>
       </Card>
+      <Notes />
       <Card title="Your brief for the assistant">
         <div className="mb-2 text-xs text-muted">Who you are, your rules and how you want to be advised. Numbers belong in the data, not here.</div>
         <textarea className="input h-80 py-2 text-xs leading-relaxed" value={context ?? ctx?.content ?? ''} onChange={(e) => setContext(e.target.value)} />
         <button className="btn-primary mt-2" disabled={context == null} onClick={async () => { await api.put('/ai/context', { content: context }); toast('Saved', 'good'); setContext(null); qc.invalidateQueries({ queryKey: ['ai-context'] }) }}>Save brief</button>
       </Card>
     </div>
+  )
+}
+
+function Notes() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { data } = useQuery({ queryKey: ['ai-notes'], queryFn: () => api.get<any>('/ai/notes') })
+  const [v, setV] = useState<string | null>(null)
+  return (
+    <Card title="Remembered decisions">
+      <div className="mb-2 text-xs text-muted">Things you told the assistant to remember. It adds to this list itself; edit or prune freely.</div>
+      <textarea className="input h-32 py-2 text-xs" value={v ?? data?.content ?? ''} onChange={(e) => setV(e.target.value)} placeholder="Nothing yet" />
+      <button className="btn-outline mt-2" disabled={v == null} onClick={async () => { await api.put('/ai/notes', { content: v }); toast('Saved', 'good'); setV(null); qc.invalidateQueries({ queryKey: ['ai-notes'] }) }}>Save</button>
+    </Card>
   )
 }
 

@@ -37,7 +37,43 @@ func New(d *sql.DB, dbPath, version string) *Server {
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return s.recoverer(s.authenticate(s.mux)) }
+// Handler is the full middleware chain: panic recovery → cross-site write
+// guard → body limits → lock/token auth → routes.
+func (s *Server) Handler() http.Handler {
+	return s.recoverer(crossOriginGuard(limitBodies(s.authenticate(s.mux))))
+}
+
+// crossOriginGuard rejects state-changing requests a browser sent on behalf
+// of another site (CSRF). It trusts Sec-Fetch-Site and falls back to Origin
+// vs Host; requests with neither header (curl, the MCP server) are not
+// browser requests and pass. This matters most when the app lock is off.
+func crossOriginGuard(next http.Handler) http.Handler {
+	cop := http.NewCrossOriginProtection()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := cop.Check(r); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin request blocked"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+const (
+	maxBody       = 2 << 20   // ordinary JSON
+	maxUploadBody = 200 << 20 // restores, imports, images
+)
+
+func limitBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := int64(maxBody)
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/api/import/") || p == "/api/ai/chat" || p == "/api/ai/scan" {
+			limit = maxUploadBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		next.ServeHTTP(w, r)
+	})
+}
 
 func (s *Server) handle(pattern string, h func(w http.ResponseWriter, r *http.Request) (any, error)) {
 	s.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +127,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func decode(r *http.Request, v any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 32<<20))
+	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(v); err != nil {
 		return bad("invalid request body: " + err.Error())
 	}
@@ -143,16 +179,23 @@ const sessionCookie = "ft_session"
 // exports or the chat.
 var tokenReadPrefixes = []string{"/api/health", "/api/overview", "/api/transactions", "/api/categories", "/api/accounts", "/api/tags",
 	"/api/merchants", "/api/rules", "/api/networth", "/api/balances", "/api/loans", "/api/portfolio", "/api/trades", "/api/market",
-	"/api/plan", "/api/budgets", "/api/trips", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context"}
+	"/api/plan", "/api/budgets", "/api/trips", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed"}
 
 // Writes a read-write token may make: improve the data, never move money
-// into the ledger from the bank or touch settings.
+// into the ledger from the bank, delete in bulk or touch settings.
+// PUT /api/transactions/{id} is the only sub-path write — the split/bulk
+// POST routes under /api/transactions/ stay closed.
 var tokenWriteRoutes = []struct{ method, prefix string }{
-	{"PUT", "/api/transactions/"}, {"POST", "/api/rules"}, {"PUT", "/api/rules/"}, {"DELETE", "/api/rules/"},
+	{"POST", "/api/transactions$"}, {"PUT", "/api/transactions/"}, {"POST", "/api/rules"}, {"PUT", "/api/rules/"}, {"DELETE", "/api/rules/"},
 	{"POST", "/api/tags/rename"}, {"PUT", "/api/bank/inbox/"},
 }
 
+// pathUnder matches a route prefix on segment boundaries; a trailing "$"
+// demands an exact path, a trailing "/" any sub-path.
 func pathUnder(p, prefix string) bool {
+	if exact, ok := strings.CutSuffix(prefix, "$"); ok {
+		return p == exact
+	}
 	if strings.HasSuffix(prefix, "/") {
 		return strings.HasPrefix(p, prefix)
 	}
@@ -174,7 +217,14 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		// Bearer token, or X-API-Token when nginx basic auth already owns the
+		// Authorization header.
+		bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok {
+			bearer = r.Header.Get("X-API-Token")
+			ok = bearer != ""
+		}
+		if ok {
 			scope := s.Auth.TokenScope(strings.TrimSpace(bearer))
 			if scope == "" {
 				writeJSON(w, 401, map[string]string{"error": "invalid API token"})

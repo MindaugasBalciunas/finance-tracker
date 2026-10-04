@@ -256,12 +256,7 @@ func Convert(d *sql.DB, src *Data) (*Report, error) {
 				addAccount(ledger.Account{ID: a, Name: a, Kind: "other", Liquid: true, Sort: 900})
 			}
 		}
-		created := now
-		if len(t.CreatedAt) >= 19 {
-			if ct, err := time.Parse("2006-01-02 15:04:05", t.CreatedAt[:19]); err == nil {
-				created = ct.UTC().Format(time.RFC3339)
-			}
-		}
+		created := firstNonEmpty(ts(t.CreatedAt), now)
 		source := "import"
 		if t.ExternalID != "" {
 			source = "bank"
@@ -343,7 +338,10 @@ func Convert(d *sql.DB, src *Data) (*Report, error) {
 			acct = "ibkr"
 		}
 		if !accounts[acct] {
-			acct = ""
+			def := builtinAccounts[acct]
+			if err := addAccount(ledger.Account{ID: acct, Name: def.name, Institution: def.institution, Kind: def.kind, Liquid: true, Sort: def.sort}); err != nil {
+				return nil, err
+			}
 		}
 		tx.Exec(`INSERT INTO trades(date,account_id,action,ticker,shares,price,currency,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
 			t.Date, nullStr(acct), strings.ToLower(t.Action), strings.ToUpper(t.Ticker), t.Shares, t.Price, firstNonEmpty(t.Currency, "USD"), t.Notes, now)

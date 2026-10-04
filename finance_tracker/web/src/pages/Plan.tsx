@@ -8,7 +8,7 @@ import { usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth } from '../lib/format'
 import type { Budget, PlanLine, PlanReport } from '../lib/types'
-import { Card, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { CategoryPicker, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -19,7 +19,7 @@ export default function Plan() {
   const tab = loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
-      <PageHeader title="Plan" />
+      <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'month' ? '/plan' : `/plan/${v}`)}
         tabs={[{ value: 'month', label: 'Budget' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>

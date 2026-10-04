@@ -479,6 +479,13 @@ func RenameTag(d *sql.DB, from, to string) (int, error) {
 			return 0, err
 		}
 	}
+	// A budget counting this tag follows the rename; one whose tag is
+	// removed is archived rather than left matching nothing.
+	if to != "" {
+		tx.Exec(`UPDATE budgets SET tag=? WHERE tag=?`, to, from)
+	} else {
+		tx.Exec(`UPDATE budgets SET archived=1 WHERE tag=? AND category=''`, from)
+	}
 	if _, err := tx.Exec(`UPDATE rules SET add_tags = TRIM(REPLACE(','||add_tags||',', ','||?||',', ','||?||','), ',') WHERE add_tags LIKE ?`, from, to, "%"+from+"%"); err != nil {
 		return 0, err
 	}

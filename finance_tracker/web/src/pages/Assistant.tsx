@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -34,6 +35,7 @@ export default function Assistant() {
   const end = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const msgs = [...(history ?? []), ...local]
+  const [sp, setSp] = useSearchParams()
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth' })
   }, [msgs.length, busy])
@@ -63,6 +65,15 @@ export default function Assistant() {
       setBusy(false)
     }
   }
+  // "Ask CFO about this" buttons elsewhere land here with ?q=.
+  useEffect(() => {
+    const q = sp.get('q')
+    if (q && !isLoading && !busy) {
+      setSp({}, { replace: true })
+      send(q)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp, isLoading])
   const clear = async () => {
     if (!confirm('Clear the conversation?')) return
     await api.del('/ai/chat')

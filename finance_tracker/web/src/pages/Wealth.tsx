@@ -8,7 +8,7 @@ import { useAccounts, useNetWorthHistory, useRefresh } from '../lib/hooks'
 import { GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
 import type { Account } from '../lib/types'
-import { Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
 
@@ -18,7 +18,7 @@ export default function Wealth() {
   const tab = loc.pathname.split('/')[2] || 'overview'
   return (
     <div>
-      <PageHeader title="Wealth" />
+      <PageHeader title="Wealth" actions={<AskCFO q="Review my balance sheet: allocation across cash, investments, pension, crypto and property, against my framework. What should I change?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'overview' ? '/wealth' : `/wealth/${v}`)}
         tabs={[{ value: 'overview', label: 'Net worth' }, { value: 'investments', label: 'Investments' }, { value: 'loans', label: 'Loans' }]} />
       <Routes>
