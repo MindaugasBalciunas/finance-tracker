@@ -170,6 +170,7 @@ function SyncReport({ report }: { report: SyncAllResult }) {
   if (totals.pending) summary.push(`${totals.pending} reserved, not booked yet`)
   if (totals.superseded) summary.push(`${totals.superseded} reservation${totals.superseded === 1 ? '' : 's'} booked`)
   if (totals.released) summary.push(`${totals.released} released by the bank`)
+  if (report.auto_linked) summary.push(`${report.auto_linked} linked to transactions you already entered`)
   if (totals.unchanged) summary.push(`${totals.unchanged} already seen`)
   // Whatever the bank reported as neither booked nor reserved — rejected or
   // cancelled rows, which never moved money.

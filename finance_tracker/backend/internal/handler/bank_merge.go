@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
+	"github.com/mindaugas/finance-tracker/internal/repository"
 )
 
 // Matching a bank row to a transaction the user already entered by hand.
@@ -163,18 +164,7 @@ func (h *BankHandler) MergeStaged(c *gin.Context) {
 		return
 	}
 
-	tx.ExternalID = row.ExternalID
-	if err := h.txRepo.Update(tx); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	row.State = domain.StagedStateImported
-	row.ImportedTxID = &tx.ID
-	row.Verdict = domain.VerdictDuplicateExact
-	row.MatchedTxID = &tx.ID
-	row.VerdictNote = "merged into " + describeMatch(tx)
-	if err := h.repo.SaveStaged(row); err != nil {
+	if err := h.mergeInto(row, tx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -253,4 +243,101 @@ func (h *BankHandler) mergeCandidates(rows []domain.BankStagedTx) (map[uint]*dom
 		}
 	}
 	return out, nil
+}
+
+// mergeInto stamps the bank row's id onto the ledger transaction and closes
+// the staged row as imported. The ledger row keeps every field the user wrote.
+func (h *BankHandler) mergeInto(row *domain.BankStagedTx, tx *domain.Transaction) error {
+	tx.ExternalID = row.ExternalID
+	if err := h.txRepo.Update(tx); err != nil {
+		return err
+	}
+	row.State = domain.StagedStateImported
+	row.ImportedTxID = &tx.ID
+	row.Verdict = domain.VerdictDuplicateExact
+	row.MatchedTxID = &tx.ID
+	row.VerdictNote = "merged into " + describeMatch(tx)
+	return h.repo.SaveStaged(row)
+}
+
+// autoLinkDayWindow and autoLinkRivalWindow bound the automatic link: the
+// match itself within a day, and nothing else that could be it within three.
+const (
+	autoLinkDayWindow   = 1
+	autoLinkRivalWindow = 3
+)
+
+// autoLinkSafe links staged rows to hand-entered transactions when there is
+// no doubt they are the same payment, so the review queue only holds what
+// needs a decision. "No doubt" is stricter than a suggestion:
+//
+//   - same type, same amount to the cent, same account(s), dates ≤ 1 day apart;
+//   - the ledger has no other unlinked row of that amount and direction
+//     within three days, and no other waiting bank row could claim it.
+//
+// Anything looser stays a suggestion for the user ("Link to it"). Returns how
+// many rows were linked; a failure stops the pass but never the sync.
+func (h *BankHandler) autoLinkSafe() (int, error) {
+	rows, _, err := h.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	if err != nil {
+		return 0, err
+	}
+	existing, err := h.txRepo.ListAll()
+	if err != nil {
+		return 0, err
+	}
+	var open []*domain.BankStagedTx
+	for i := range rows {
+		r := &rows[i]
+		if !r.Pending && r.MatchedTxID == nil && r.Amount > 0 {
+			open = append(open, r)
+		}
+	}
+	near := func(a, b time.Time, days int) bool {
+		d := a.Sub(b)
+		if d < 0 {
+			d = -d
+		}
+		return d <= time.Duration(days)*24*time.Hour
+	}
+	sameMoney := func(a, b float64) bool { return math.Abs(a-b) <= amountMatchEpsilon }
+
+	linked := 0
+	used := map[uint]bool{}
+	for _, r := range open {
+		var match *domain.Transaction
+		rivals := 0
+		for i := range existing {
+			t := &existing[i]
+			if t.ExternalID != "" || used[t.ID] || !sameMoney(t.Amount, r.Amount) || !sameDirection(t.Type, r.Type) {
+				continue
+			}
+			if !near(t.Date, r.Date, autoLinkRivalWindow) {
+				continue
+			}
+			rivals++
+			if t.Type == r.Type && sameAccounts(t, r) && near(t.Date, r.Date, autoLinkDayWindow) {
+				match = t
+			}
+		}
+		if match == nil || rivals != 1 {
+			continue
+		}
+		competing := 0
+		for _, o := range open {
+			if o.ID != r.ID && o.State == domain.StagedStateStaged && sameMoney(o.Amount, r.Amount) &&
+				sameDirection(o.Type, r.Type) && near(o.Date, match.Date, autoLinkRivalWindow) {
+				competing++
+			}
+		}
+		if competing > 0 {
+			continue
+		}
+		if err := h.mergeInto(r, match); err != nil {
+			return linked, err
+		}
+		used[match.ID] = true
+		linked++
+	}
+	return linked, nil
 }

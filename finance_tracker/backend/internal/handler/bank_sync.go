@@ -59,6 +59,9 @@ type syncResult struct {
 	// Balances reports the balance-sheet accounts set to the bank's own
 	// figure by this sync.
 	Balances []bankBalanceResult `json:"balances,omitempty"`
+	// AutoLinked counts rows linked to transactions already entered by hand
+	// because there was no doubt they were the same payment.
+	AutoLinked int `json:"auto_linked,omitempty"`
 }
 
 // SyncAccount pulls recent transactions for one mapped account and stages
@@ -113,7 +116,18 @@ func (h *BankHandler) SyncAccount(c *gin.Context) {
 		return
 	}
 	res.Balances = h.applyBankBalances([]string{link.AccountKey})
+	res.AutoLinked = h.runAutoLink()
 	c.JSON(http.StatusOK, res)
+}
+
+// runAutoLink links the safe matches after a sync. Best-effort: the rows are
+// staged either way, and a failure only leaves them for manual review.
+func (h *BankHandler) runAutoLink() int {
+	n, err := h.autoLinkSafe()
+	if err != nil {
+		log.Printf("bank sync: auto-link stopped after %d: %v", n, err)
+	}
+	return n
 }
 
 // requestedDays reads an explicit, narrower window off the query string. The
@@ -406,6 +420,9 @@ type syncAllResult struct {
 	// Balances is applied once for the whole run — one snapshot, not one per
 	// account — after every account has reported its balance.
 	Balances []bankBalanceResult `json:"balances,omitempty"`
+	// AutoLinked counts rows linked to hand-entered transactions (see
+	// autoLinkSafe) across all accounts.
+	AutoLinked int `json:"auto_linked,omitempty"`
 }
 
 type accountSyncResult struct {
@@ -506,6 +523,7 @@ func (h *BankHandler) SyncAll(c *gin.Context) {
 		}
 	}
 	out.Balances = h.applyBankBalances(sortedAccountKeys(synced))
+	out.AutoLinked = h.runAutoLink()
 	c.JSON(http.StatusOK, out)
 }
 

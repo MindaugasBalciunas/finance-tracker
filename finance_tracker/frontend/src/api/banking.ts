@@ -133,6 +133,7 @@ export type SyncResult = {
   date_from: string
   date_to: string
   balances?: BankBalanceResult[]
+  auto_linked?: number
 }
 
 // One line per mapped account, plus the totals. Per-account detail stays
@@ -154,6 +155,7 @@ export type SyncAllResult = {
   skipped: number
   failed: number
   balances?: BankBalanceResult[]
+  auto_linked?: number
 }
 
 export type CommitResult = {

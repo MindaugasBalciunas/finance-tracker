@@ -560,3 +560,65 @@ func TestMergeCandidateIsNeverPreticked(t *testing.T) {
 	assert.NotNil(t, page.Transactions[0].MergeCandidate)
 	assert.False(t, page.Transactions[0].Preticked)
 }
+
+// The automatic link: certain matches only. Everything else stays a
+// suggestion the user confirms.
+func TestAutoLinkSafeOnlyLinksCertainMatches(t *testing.T) {
+	env := bankTestRouter(t, true)
+	d := func(day int) time.Time { return time.Date(2026, 9, day, 0, 0, 0, 0, time.UTC) }
+	ids := env.seedHistory(t,
+		// 0: certain — same type, account, amount, one day later.
+		domain.Transaction{Date: d(16), Type: "expense", Amount: 13.66, Comment: "Lidl", DebitAccount: "swed"},
+		// 1: two days off — suggestion only.
+		domain.Transaction{Date: d(12), Type: "expense", Amount: 8.41, Comment: "Apollo", DebitAccount: "swed"},
+		// 2: investment vs bank expense — suggestion only.
+		domain.Transaction{Date: d(10), Type: "investment", Amount: 200, Comment: "Artea", DebitAccount: "swed"},
+		// 3+4: two identical candidates — ambiguous, never auto.
+		domain.Transaction{Date: d(20), Type: "expense", Amount: 5.20, Comment: "Patreon", DebitAccount: "swed"},
+		domain.Transaction{Date: d(21), Type: "expense", Amount: 5.20, Comment: "Bar", DebitAccount: "swed"},
+	)
+	env.stage(t, []openbanking.Transaction{
+		ebRow("x1", "2026-09-15", "13.66", "D", "LIDL", "Pirkiniai"),
+		ebRow("x2", "2026-09-10", "8.41", "D", "APOLLO KINAS", "Pirkiniai"),
+		ebRow("x3", "2026-09-10", "200.00", "D", "Artea Ambicingas 16+", "Imoka"),
+		ebRow("x4", "2026-09-20", "5.20", "D", "UAB SPARTA BAR", "Pirkiniai"),
+	})
+
+	n, err := env.h.autoLinkSafe()
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	var lidl domain.Transaction
+	require.NoError(t, env.db.First(&lidl, ids[0]).Error)
+	assert.NotEmpty(t, lidl.ExternalID, "the certain match is linked")
+	assert.Equal(t, "Lidl", lidl.Comment, "the user's description is kept")
+	for _, id := range ids[1:] {
+		var tx domain.Transaction
+		require.NoError(t, env.db.First(&tx, id).Error)
+		assert.Empty(t, tx.ExternalID, "transaction %d (%s) is left for the user", id, tx.Comment)
+	}
+
+	rows, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	assert.Len(t, rows, 3, "three still wait for review")
+
+	// A second pass changes nothing.
+	n, err = env.h.autoLinkSafe()
+	require.NoError(t, err)
+	assert.Zero(t, n)
+}
+
+// Two waiting bank rows that could both be the same hand-entered payment:
+// neither is linked automatically.
+func TestAutoLinkSafeSkipsCompetingBankRows(t *testing.T) {
+	env := bankTestRouter(t, true)
+	env.seedHistory(t, domain.Transaction{Date: time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC),
+		Type: "expense", Amount: 5.00, Comment: "Judu", DebitAccount: "swed"})
+	env.stage(t, []openbanking.Transaction{
+		ebRow("j1", "2026-09-16", "5.00", "D", "JUDU APP", "Pirkiniai"),
+		ebRow("j2", "2026-09-16", "5.00", "D", "JUDU APP", "Pirkiniai"),
+	})
+	n, err := env.h.autoLinkSafe()
+	require.NoError(t, err)
+	assert.Zero(t, n)
+}
