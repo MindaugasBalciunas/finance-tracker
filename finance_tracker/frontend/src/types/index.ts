@@ -299,6 +299,9 @@ export interface Balance {
   extra?: Record<string, number>
   // extra summed per group (cash, investments, pensions, crypto, other).
   extra_groups?: Record<string, number>
+  // Every account summed by its current group (built-ins included, BTC not).
+  // Absent from older servers — the group helpers fall back then.
+  groups?: Record<string, number>
 }
 
 export type AccountGroup = 'cash' | 'investments' | 'pensions' | 'crypto' | 'other'

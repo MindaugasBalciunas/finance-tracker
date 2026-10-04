@@ -203,7 +203,7 @@ func (s *insightService) forecastFacts() (forecastCurrent, string, error) {
 		return cur, "", errors.New("no balance snapshot yet — add balances before forecasting")
 	}
 	cur.TotalEur = latest.Total
-	cur.FreeCash = latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR + latest.ExtraGroups["cash"]
+	cur.FreeCash = latest.FreeCash()
 	cur.Investments = latest.SwedETF + latest.RevStocks + latest.IBKRStocks
 	cur.Pensions = latest.SebPen + latest.Art
 	cur.Crypto = latest.RBTC + latest.MBTC

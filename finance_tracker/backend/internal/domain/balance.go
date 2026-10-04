@@ -37,6 +37,10 @@ type Balance struct {
 	// ExtraGroups sums Extra by account group (cash, investments, …), so a
 	// reader can place added accounts without knowing them. Read path only.
 	ExtraGroups map[string]float64 `json:"extra_groups,omitempty" gorm:"-"`
+	// Groups sums every account — built-in columns and Extra — by its current
+	// group, so a regrouped account moves with it. BTC holdings are not in
+	// it: they are priced live and always count as crypto. Read path only.
+	Groups map[string]float64 `json:"groups,omitempty" gorm:"-"`
 }
 
 // BalanceFilter holds filtering options for querying balances

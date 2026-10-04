@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useAccountLabels, useAccountName, useAccounts, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
+import { useAccountGroupOf, useAccountLabels, useAccountName, useAccounts, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
 import { useBankConnections, useBankSettings, useMapBankAccount } from '../../hooks/useBanking'
 import type { BankAccountLink, BankConnection } from '../../api/banking'
 import { Link } from 'react-router-dom'
@@ -57,18 +57,19 @@ export default function AccountsManager({ balance, embedded = false }: { balance
   const { data: allAccounts } = useAccounts()
   const byKey = useMemo(() => new Map((allAccounts ?? []).map((a) => [a.key, a])), [allAccounts])
   const name = useAccountName()
+  const groupOf = useAccountGroupOf()
   const bankLinks = useMemo(
     () => (bank?.connections ?? []).flatMap((c) => (c.accounts ?? []).map((link) => ({ conn: c, link }))),
     [bank],
   )
 
   const sections = useMemo(() => {
-    const { groups, other } = withAddedAccounts(active, name)
+    const { groups, other } = withAddedAccounts(active, name, groupOf)
     return [
       ...groups.map((g) => ({ group: g.group, title: g.key, accounts: g.accounts })),
       { group: 'other' as AccountGroup, title: 'Other', accounts: other },
     ]
-  }, [active, name])
+  }, [active, name, groupOf])
 
   const count = sections.reduce((n, s) => n + s.accounts.length, 0)
 
@@ -284,7 +285,7 @@ function AccountEditor({ account, bankLinks, onDone }: {
     if (!label.trim()) return
     if (!dirty) { onDone(); return }
     setError(null)
-    update.mutate({ id: account.id, input: account.builtin ? { label: label.trim() } : { label: label.trim(), group } }, {
+    update.mutate({ id: account.id, input: { label: label.trim(), group } }, {
       onSuccess: () => onDone(),
       onError: (err) => setError(errorText(err, 'Could not save')),
     })
@@ -314,10 +315,9 @@ function AccountEditor({ account, bankLinks, onDone }: {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Counts as</label>
-          {account.builtin ? (
-            <p className="text-sm text-gray-500 py-1.5">{ACCOUNT_GROUP_LABELS[account.group]} <span className="text-xs text-gray-400">· fixed for built-in accounts</span></p>
-          ) : (
-            <GroupSelect value={group} onChange={setGroup} />
+          <GroupSelect value={group} onChange={setGroup} />
+          {group !== account.group && (
+            <p className="text-xs text-gray-400 mt-1">Moves its money to {ACCOUNT_GROUP_LABELS[group]} in every snapshot, past ones too.</p>
           )}
         </div>
       </div>
@@ -334,7 +334,7 @@ function AccountEditor({ account, bankLinks, onDone }: {
         <span className="flex-1" />
         <button type="button" onClick={() => onDone()} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">Close</button>
         <button type="submit" disabled={!dirty || !label.trim() || update.isPending} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg disabled:opacity-50">
-          Save name
+          Save
         </button>
       </div>
     </form>

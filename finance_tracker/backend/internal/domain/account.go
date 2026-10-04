@@ -164,3 +164,42 @@ func (v AccountValues) Clone() AccountValues {
 	}
 	return out
 }
+
+// BuiltinValue reads a built-in account's column by key.
+func BuiltinValue(b *Balance, key string) (float64, bool) {
+	switch key {
+	case "seb":
+		return b.Seb, true
+	case "swed":
+		return b.Swed, true
+	case "swed_etf":
+		return b.SwedETF, true
+	case "seb_pen":
+		return b.SebPen, true
+	case "luminor":
+		return b.Luminor, true
+	case "art":
+		return b.Art, true
+	case "rev_m":
+		return b.RevM, true
+	case "rev_r":
+		return b.RevR, true
+	case "rev_stocks":
+		return b.RevStocks, true
+	case "ibkr_stocks":
+		return b.IBKRStocks, true
+	case "cash":
+		return b.Cash, true
+	}
+	return 0, false
+}
+
+// FreeCash is the money in accounts grouped as cash. With Groups filled (any
+// balance read through the repository) it follows each account's current
+// group; otherwise the original fixed set.
+func (b *Balance) FreeCash() float64 {
+	if b.Groups != nil {
+		return b.Groups[string(AccountGroupCash)]
+	}
+	return b.Seb + b.Swed + b.Luminor + b.Cash + b.RevM + b.RevR + b.ExtraGroups[string(AccountGroupCash)]
+}

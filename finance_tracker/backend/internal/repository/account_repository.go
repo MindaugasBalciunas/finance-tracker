@@ -42,14 +42,14 @@ func (r *accountRepository) GetByKey(key string) (*domain.Account, error) {
 func (r *accountRepository) Create(a *domain.Account) error { return r.db.Create(a).Error }
 func (r *accountRepository) Save(a *domain.Account) error   { return r.db.Save(a).Error }
 
-// accountGroups maps added-account keys to their group. A missing table
-// (fake databases in tests) reads as "no added accounts".
+// accountGroups maps every account key to its group. A missing table (fake
+// databases in tests) reads as nil: callers then leave Groups unset.
 func accountGroups(db *gorm.DB) map[string]string {
 	var accs []domain.Account
 	if !db.Migrator().HasTable(&domain.Account{}) {
 		return nil
 	}
-	if err := db.Where("builtin = ?", false).Find(&accs).Error; err != nil {
+	if err := db.Find(&accs).Error; err != nil {
 		return nil
 	}
 	out := make(map[string]string, len(accs))
@@ -59,20 +59,38 @@ func accountGroups(db *gorm.DB) map[string]string {
 	return out
 }
 
-// annotateExtraGroups fills ExtraGroups from Extra. An added account whose
-// row is gone counts as "other" — its money is still money.
+// annotateExtraGroups fills ExtraGroups (added accounts only, kept for older
+// readers) and Groups (every account) by each account's current group. An
+// added account whose row is gone counts as "other" — its money is still
+// money; a built-in with no row keeps its original group.
 func annotateExtraGroups(groups map[string]string, bs ...*domain.Balance) {
+	if groups == nil {
+		return
+	}
+	defaults := map[string]string{}
+	for _, a := range domain.BuiltinAccounts {
+		defaults[a.Key] = string(a.Group)
+	}
 	for _, b := range bs {
-		if len(b.Extra) == 0 {
-			continue
+		b.Groups = map[string]float64{}
+		for _, a := range domain.BuiltinAccounts {
+			v, _ := domain.BuiltinValue(b, a.Key)
+			g := groups[a.Key]
+			if g == "" {
+				g = defaults[a.Key]
+			}
+			b.Groups[g] += v
 		}
-		b.ExtraGroups = map[string]float64{}
+		if len(b.Extra) > 0 {
+			b.ExtraGroups = map[string]float64{}
+		}
 		for k, v := range b.Extra {
 			g := groups[k]
 			if g == "" {
 				g = string(domain.AccountGroupOther)
 			}
 			b.ExtraGroups[g] += v
+			b.Groups[g] += v
 		}
 	}
 }

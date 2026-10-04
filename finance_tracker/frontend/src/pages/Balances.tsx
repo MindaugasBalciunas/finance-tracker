@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useAccountName, useAddedAccounts } from '../hooks/useAccounts'
+import { useAccountGroupOf, useAccountName, useAddedAccounts } from '../hooks/useAccounts'
 import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useProjectedBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
-import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
+import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle, withAddedAccounts } from '../utils/balanceGroups'
 import { useDateRange } from '../context/DateRangeContext'
 import BalanceForm from '../components/forms/BalanceForm'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
@@ -67,6 +67,13 @@ export default function Balances() {
   // Added accounts with history get a column / row in the snapshot list.
   const addedAccounts = useAddedAccounts()
   const accountName = useAccountName()
+  const groupOf = useAccountGroupOf()
+  // Which accounts make up a group right now, for the stat card subtitles.
+  const groupSubtitle = (g: 'cash' | 'investments' | 'pensions') => {
+    const def = withAddedAccounts(addedAccounts.filter((a) => !a.archived), accountName, groupOf).groups.find((x) => x.group === g)
+    const names = (def?.accounts ?? []).filter((a) => !latest || a.value(latest) !== 0).map((a) => a.label)
+    return names.length > 4 ? `${names.slice(0, 3).join(' + ')} + ${names.length - 3} more` : names.join(' + ') || undefined
+  }
 
   const { dateRange } = useDateRange()
   const { price: liveBtcPrice } = useBtcEur()
@@ -232,19 +239,19 @@ export default function Balances() {
           <StatCard
             title="Free Cash"
             value={formatEuro(freeCash(latest))}
-            subtitle="Banks + Cash + Revolut"
+            subtitle={groupSubtitle('cash')}
             color="green"
           />
           <StatCard
             title="Investments"
             value={formatEuro(investments(latest))}
-            subtitle="ETF + Revolut + IBKR"
+            subtitle={groupSubtitle('investments')}
             color="blue"
           />
           <StatCard
             title="Pensions"
             value={formatEuro(pensions(latest))}
-            subtitle="2nd + 3rd Pillar"
+            subtitle={groupSubtitle('pensions')}
             color="purple"
           />
           <StatCard

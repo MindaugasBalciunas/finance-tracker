@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { accountsApi, type AccountInput } from '../api/accounts'
+import { BALANCES_KEY, BALANCE_ALLOCATION_KEY, BALANCE_LATEST_KEY, BALANCE_PROJECTED_KEY } from './useBalances'
 import { ACCOUNT_LABELS, type Account, type AccountGroup } from '../types'
 
 export const ACCOUNTS_KEY = 'accounts'
@@ -34,6 +35,16 @@ export function useAccountName(): AccountNamer {
   }, [data])
 }
 
+// useAccountGroupOf returns where each account counts now — what a built-in
+// the user moved to another group needs on the per-account lists.
+export function useAccountGroupOf(): (key: string) => AccountGroup | undefined {
+  const { data } = useAccounts()
+  return useMemo(() => {
+    const byKey = new Map((data ?? []).map((a) => [a.key, a.group]))
+    return (key: string) => byKey.get(key)
+  }, [data])
+}
+
 // Every account key → display name: built-ins (renamed or not) plus added.
 export function useAccountLabels(): Record<string, string> {
   const { data } = useAccounts()
@@ -50,6 +61,11 @@ function useInvalidateAccounts() {
   const qc = useQueryClient()
   return () => {
     qc.invalidateQueries({ queryKey: [ACCOUNTS_KEY] })
+    // Moving or renaming an account changes every balance's group sums and
+    // the allocation names — refetch them, or the cards show the old split.
+    for (const k of [BALANCES_KEY, BALANCE_LATEST_KEY, BALANCE_PROJECTED_KEY, BALANCE_ALLOCATION_KEY]) {
+      qc.invalidateQueries({ queryKey: [k] })
+    }
     // Bank mapping offers added accounts as targets.
     qc.invalidateQueries({ queryKey: ['bank-connections'] })
   }

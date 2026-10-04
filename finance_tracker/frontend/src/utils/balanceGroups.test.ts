@@ -31,4 +31,18 @@ describe('added accounts', () => {
     expect(row.value(base)).toBe(0)
     expect(other.map((a) => a.key)).toContain('acc_house')
   })
+
+  it('server groups win once present — a moved built-in moves its money', () => {
+    const b = { ...base, groups: { cash: 35, investments: 0 } }
+    expect(freeCash(b)).toBe(35)
+    expect(investments(b)).toBe(0)
+  })
+
+  it('a moved built-in shows under its new group', () => {
+    const { groups } = withAddedAccounts([], undefined, (k) => (k === 'swed_etf' ? 'cash' : undefined))
+    const cash = groups.find((g) => g.group === 'cash')!.accounts.map((a) => a.key)
+    const inv = groups.find((g) => g.group === 'investments')!.accounts.map((a) => a.key)
+    expect(cash).toContain('swed_etf')
+    expect(inv).not.toContain('swed_etf')
+  })
 })

@@ -71,13 +71,12 @@ func TestAccountKeyFromLabelIsStableAndUnique(t *testing.T) {
 	assert.Equal(t, a.Key, got.Key)
 }
 
-func TestBuiltinAccountsCanOnlyBeRenamed(t *testing.T) {
+func TestBuiltinAccountsRenameAndRegroupButNeverArchive(t *testing.T) {
 	e := accountTestEnv(t)
 	var swed domain.Account
 	require.NoError(t, e.db.Where("key = ?", "swed").First(&swed).Error)
 	url := "/api/v1/accounts/" + fmt.Sprint(swed.ID)
 	assert.Equal(t, http.StatusBadRequest, bankJSON(t, e.r, http.MethodPut, url, map[string]any{"archived": true}).Code)
-	assert.Equal(t, http.StatusBadRequest, bankJSON(t, e.r, http.MethodPut, url, map[string]any{"group": "investments"}).Code)
 
 	rec := bankJSON(t, e.r, http.MethodPut, url, map[string]any{"label": "Swedbank main", "group": "cash"})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -187,6 +186,7 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	require.NoError(t, src.Create(&domain.Account{Key: "acc_paysera", Label: "Paysera", Group: domain.AccountGroupCash}).Error)
 	require.NoError(t, src.Create(&domain.Account{Key: "swed", Label: "Swedbank main", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	require.NoError(t, src.Create(&domain.Account{Key: "seb", Label: "SEB", Group: domain.AccountGroupCash, Builtin: true}).Error)
+	require.NoError(t, src.Create(&domain.Account{Key: "swed_etf", Label: "Swed ETF", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	require.NoError(t, src.Create(&domain.Balance{Date: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Swed: 10, Total: 60,
 		Extra: domain.AccountValues{"acc_paysera": 50}}).Error)
 
@@ -204,6 +204,7 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	_, dst := importRouterFor(t)
 	require.NoError(t, dst.AutoMigrate(&domain.Account{}))
 	require.NoError(t, dst.Create(&domain.Account{Key: "swed", Label: "Swedbank", Group: domain.AccountGroupCash, Builtin: true}).Error)
+	require.NoError(t, dst.Create(&domain.Account{Key: "swed_etf", Label: "Swed ETF", Group: domain.AccountGroupInvestments, Builtin: true}).Error)
 	imp := gin.New()
 	NewImportHandler(repository.NewTransactionRepository(dst), repository.NewBalanceRepository(dst),
 		repository.NewStockRepository(dst), repository.NewAssetRepository(dst)).WithDB(dst).
@@ -219,9 +220,42 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	assert.Equal(t, "Swedbank main", swed.Label, "a renamed built-in keeps its name through a restore")
 	var n int64
 	dst.Model(&domain.Account{}).Count(&n)
-	assert.EqualValues(t, 2, n, "an unrenamed built-in is not exported, a renamed one is not duplicated")
+	assert.EqualValues(t, 3, n, "an unchanged built-in is not exported, a changed one is not duplicated")
+	var etf domain.Account
+	require.NoError(t, dst.Where("key = ?", "swed_etf").First(&etf).Error)
+	assert.Equal(t, domain.AccountGroupCash, etf.Group, "a regrouped built-in keeps its group through a restore")
 	var b domain.Balance
 	require.NoError(t, dst.First(&b).Error)
 	assert.Equal(t, 50.0, b.Extra["acc_paysera"])
 	assert.Equal(t, 60.0, b.Total)
+}
+
+// Moving a built-in to another group moves its money there — in every
+// snapshot, so history and today agree — and backend free cash follows.
+func TestRegroupedBuiltinMovesItsMoney(t *testing.T) {
+	e := accountTestEnv(t)
+	require.NoError(t, e.db.Create(&domain.Balance{Date: time.Now().AddDate(0, -1, 0), Swed: 100, SwedETF: 40, Seb: 10, Total: 150}).Error)
+	latest, err := e.balSvc.GetLatest(0)
+	require.NoError(t, err)
+	assert.Equal(t, 110.0, latest.Groups["cash"])
+	assert.Equal(t, 40.0, latest.Groups["investments"])
+	assert.Equal(t, 110.0, latest.FreeCash())
+
+	var etf domain.Account
+	require.NoError(t, e.db.Where("key = ?", "swed_etf").First(&etf).Error)
+	rec := bankJSON(t, e.r, http.MethodPut, "/api/v1/accounts/"+fmt.Sprint(etf.ID), map[string]any{"group": "cash"})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	latest, err = e.balSvc.GetLatest(0)
+	require.NoError(t, err)
+	assert.Equal(t, 150.0, latest.Groups["cash"])
+	assert.Zero(t, latest.Groups["investments"])
+	assert.Equal(t, 150.0, latest.FreeCash())
+	assert.Equal(t, 150.0, latest.Total, "the total never changes")
+}
+
+// Without account rows (fake databases) the original fixed free cash stands.
+func TestFreeCashWithoutGroups(t *testing.T) {
+	b := domain.Balance{Seb: 1, Swed: 2, Cash: 3, RevM: 4, RevR: 5, SwedETF: 100}
+	assert.Equal(t, 15.0, b.FreeCash())
 }

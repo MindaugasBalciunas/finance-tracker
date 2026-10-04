@@ -99,14 +99,14 @@ func (h *ExportHandler) accountRows() []accountExportRow {
 		return nil
 	}
 	var out []accountExportRow
-	defaults := map[string]string{}
+	defaults := map[string]domain.Account{}
 	for _, b := range domain.BuiltinAccounts {
-		defaults[b.Key] = b.Label
+		defaults[b.Key] = b
 	}
 	for _, a := range accs {
-		// A built-in travels only when renamed — its name is the one thing
-		// about it the user can change.
-		if a.Builtin && a.Label == defaults[a.Key] {
+		// A built-in travels only when the user changed it — its name and
+		// group are the things about it they can change.
+		if d := defaults[a.Key]; a.Builtin && a.Label == d.Label && a.Group == d.Group {
 			continue
 		}
 		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder, Builtin: a.Builtin})
@@ -319,7 +319,8 @@ type accountExportRow struct {
 	Group     string `json:"group"`
 	Archived  bool   `json:"archived,omitempty"`
 	SortOrder int    `json:"sort_order,omitempty"`
-	// Builtin marks a renamed built-in account: only its label is restored.
+	// Builtin marks a changed built-in account: its label and group are
+	// restored onto the seeded row.
 	Builtin bool `json:"builtin,omitempty"`
 }
 

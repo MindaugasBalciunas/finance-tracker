@@ -270,7 +270,7 @@ func (s *insightService) snapshotLines(latest *domain.Balance) string {
 	if latest == nil {
 		return "No balance snapshot available."
 	}
-	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR + latest.ExtraGroups["cash"]
+	freeCash := latest.FreeCash()
 	investments := latest.SwedETF + latest.RevStocks + latest.IBKRStocks
 	pensions := latest.SebPen + latest.Art
 	cryptoEur := latest.RBTC + latest.MBTC

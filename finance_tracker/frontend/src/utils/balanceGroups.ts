@@ -1,19 +1,23 @@
 import type { Account, AccountGroup, Balance } from '../types'
 
 export function freeCash(b: Balance): number {
+  if (b.groups) return b.groups.cash ?? 0
   return b.seb + b.swed + b.cash + b.rev_m + b.rev_r + (b.extra_groups?.cash ?? 0)
 }
 
 export function investments(b: Balance): number {
+  if (b.groups) return b.groups.investments ?? 0
   return b.swed_etf + b.rev_stocks + b.ibkr_stocks + (b.extra_groups?.investments ?? 0)
 }
 
 export function pensions(b: Balance): number {
+  if (b.groups) return b.groups.pensions ?? 0
   return b.seb_pen + b.art + (b.extra_groups?.pensions ?? 0)
 }
 
 export function cryptoEur(b: Balance): number {
-  return (b.r_btc_eur ?? 0) + (b.m_btc_eur ?? 0) + (b.extra_groups?.crypto ?? 0)
+  const accounts = b.groups ? b.groups.crypto ?? 0 : b.extra_groups?.crypto ?? 0
+  return (b.r_btc_eur ?? 0) + (b.m_btc_eur ?? 0) + accounts
 }
 
 export interface AccountDef {
@@ -84,21 +88,27 @@ export function cryptoSubtitle(b: Balance, btcPrice: number | null): string {
     : `${totalBtc} BTC`
 }
 
-// withAddedAccounts places added accounts in their group's breakdown, and
-// "other" ones next to the closed built-ins. Group totals already include
-// them (via extra_groups); this is only the per-account list.
-// name (optional) renames built-in rows the user has renamed.
+// withAddedAccounts builds the per-account breakdown: added accounts join
+// their group, a built-in the user moved goes to its new group (groupOf),
+// and renamed ones show their new name. Group totals already follow the same
+// rules on the server (Balance.groups); this is only the per-account list.
 export function withAddedAccounts(
   added: Account[],
   name?: (key: string, fallback?: string) => string,
+  groupOf?: (key: string) => AccountGroup | undefined,
 ): { groups: GroupDef[]; other: AccountDef[] } {
   const def = (a: Account): AccountDef => ({ key: a.key, label: a.label, value: (b) => b.extra?.[a.key] ?? 0 })
   const rename = (a: AccountDef): AccountDef => (name ? { ...a, label: name(a.key, a.label) } : a)
+  const builtins: { def: AccountDef; group: AccountGroup }[] = [
+    ...GROUPS.flatMap((g) => g.accounts.map((a) => ({ def: a, group: g.group }))),
+    ...OTHER_ACCOUNTS.map((a) => ({ def: a, group: 'other' as AccountGroup })),
+  ].map((x) => ({ def: rename(x.def), group: groupOf?.(x.def.key) ?? x.group }))
+  const inGroup = (g: AccountGroup) => [
+    ...builtins.filter((x) => x.group === g).map((x) => x.def),
+    ...added.filter((a) => a.group === g).map(def),
+  ]
   return {
-    groups: GROUPS.map((g) => ({
-      ...g,
-      accounts: [...g.accounts.map(rename), ...added.filter((a) => a.group === g.group).map(def)],
-    })),
-    other: [...OTHER_ACCOUNTS.map(rename), ...added.filter((a) => a.group === 'other').map(def)],
+    groups: GROUPS.map((g) => ({ ...g, accounts: inGroup(g.group) })),
+    other: inGroup('other'),
   }
 }

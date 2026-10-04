@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { Balance } from '../../types'
 import { OTHER_COLOR, withAddedAccounts } from '../../utils/balanceGroups'
-import { useAccountName, useAddedAccounts } from '../../hooks/useAccounts'
+import { useAccountGroupOf, useAccountName, useAddedAccounts } from '../../hooks/useAccounts'
 import { formatEuro } from '../../utils/format'
 
 interface Props {
@@ -15,8 +15,9 @@ interface Props {
 export default function WhereMoneySits({ balance }: Props) {
   const added = useAddedAccounts()
   const name = useAccountName()
+  const groupOf = useAccountGroupOf()
   const { groups, maxAccount, total } = useMemo(() => {
-    const { groups: GROUPS, other: OTHER_ACCOUNTS } = withAddedAccounts(added, name)
+    const { groups: GROUPS, other: OTHER_ACCOUNTS } = withAddedAccounts(added, name, groupOf)
     const groups = GROUPS.map((g) => ({
       key: g.key,
       color: g.color,
@@ -42,7 +43,7 @@ export default function WhereMoneySits({ balance }: Props) {
 
     const maxAccount = Math.max(...groups.flatMap((g) => g.accounts.map((a) => a.amount)), 1)
     return { groups, maxAccount, total: balance.total }
-  }, [balance, added, name])
+  }, [balance, added, name, groupOf])
 
   if (total <= 0) return null
 

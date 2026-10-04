@@ -463,10 +463,13 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			if strings.TrimSpace(row.Label) == "" {
 				continue
 			}
-			// A renamed built-in: restore its name onto the seeded row.
+			// A changed built-in: restore its name and group onto the seeded row.
 			if !domain.IsCustomAccountKey(row.Key) {
 				if existing, err := accRepo.GetByKey(row.Key); err == nil && existing.Builtin {
 					existing.Label = strings.TrimSpace(row.Label)
+					if g := domain.AccountGroup(row.Group); domain.IsValidAccountGroup(g) {
+						existing.Group = g
+					}
 					if err := accRepo.Save(existing); err != nil {
 						return result, fmt.Errorf("restoring account name %s: %w", row.Key, err)
 					}

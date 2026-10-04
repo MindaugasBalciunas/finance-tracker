@@ -13,7 +13,7 @@ import (
 )
 
 // AccountHandler manages balance-sheet accounts. Built-in ones can be
-// renamed; added ones can also be regrouped and archived. Nothing is ever
+// renamed and regrouped; added ones can also be archived. Nothing is ever
 // deleted — an account's history lives in every snapshot that held it.
 type AccountHandler struct {
 	repo repository.AccountRepository
@@ -106,10 +106,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	// A built-in account can be renamed, nothing more: its group is wired
-	// into the net-worth cards and its column can never be hidden.
-	if a.Builtin && ((in.Group != "" && in.Group != a.Group) || in.Archived != nil) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "a built-in account can only be renamed"})
+	// A built-in account can be renamed and regrouped, never archived: its
+	// column is always part of every snapshot.
+	if a.Builtin && in.Archived != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "a built-in account cannot be archived"})
 		return
 	}
 	if l := strings.TrimSpace(in.Label); l != "" {
