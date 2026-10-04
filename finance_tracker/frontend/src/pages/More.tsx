@@ -18,6 +18,7 @@ export default function More() {
   const pendingBank = staged?.total ?? 0
 
   const pageLinks = [
+    { to: '/review', icon: '🗓️', title: 'Month review', hint: 'How last month went and what needs attention' },
     { to: '/assets', icon: '🏠', title: 'Assets', hint: 'Property, vehicles and loans' },
     {
       to: '/labels', icon: '🏷️', title: 'Labels',

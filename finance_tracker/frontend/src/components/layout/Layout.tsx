@@ -23,6 +23,7 @@ const navItems = [
   { to: '/assets', label: 'Assets', short: 'Assets', icon: '🏠' },
   { to: '/budget', label: 'Budget', short: 'Budget', icon: '🎯' },
   { to: '/reports', label: 'Reports', short: 'Reports', icon: '📈' },
+  { to: '/review', label: 'Review', short: 'Review', icon: '🗓️' },
   { to: '/labels', label: 'Labels', short: 'Labels', icon: '🏷️' },
   { to: '/ai', label: 'AI', short: 'AI', icon: '✦' },
 ]
@@ -163,6 +164,8 @@ export default function Layout() {
               <DateRangeFilter className="flex-wrap" />
             </div>
             <div className="border-t border-gray-100 pt-2 grid grid-cols-2 gap-1.5">
+              <NavLink to="/review" onClick={() => setDateMenuOpen(false)}
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🗓️ Month review</NavLink>
               <NavLink to="/assets" onClick={() => setDateMenuOpen(false)}
                 className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">🏠 Assets</NavLink>
               <NavLink to="/labels" onClick={() => setDateMenuOpen(false)}

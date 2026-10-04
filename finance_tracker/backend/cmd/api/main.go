@@ -123,6 +123,7 @@ func main() {
 	balHandler.RegisterRoutes(v1)
 	handler.NewAccountHandler(accountRepo).RegisterRoutes(v1)
 	handler.NewSplitHandler(db).RegisterRoutes(v1)
+	handler.NewReviewHandler(txRepo, balRepo, assetRepo, bankRepo, insightSvc).RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
 	exportHandler.RegisterRoutes(v1)
 	importHandler.RegisterRoutes(v1)

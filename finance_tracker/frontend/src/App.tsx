@@ -24,6 +24,7 @@ const AIOverview = lazy(() => import('./pages/AIOverview'))
 const AIAbout = lazy(() => import('./pages/AIAbout'))
 const More = lazy(() => import('./pages/More'))
 const Banking = lazy(() => import('./pages/Banking'))
+const Review = lazy(() => import('./pages/Review'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +62,7 @@ export default function App() {
               <Route path="ai/about" element={<Suspense fallback={<LoadingSpinner />}><AIAbout /></Suspense>} />
               <Route path="more" element={<Suspense fallback={<LoadingSpinner />}><More /></Suspense>} />
               <Route path="banking" element={<Suspense fallback={<LoadingSpinner />}><Banking /></Suspense>} />
+              <Route path="review" element={<Suspense fallback={<LoadingSpinner />}><Review /></Suspense>} />
             </Route>
           </Routes>
         </HashRouter>
