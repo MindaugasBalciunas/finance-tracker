@@ -5,8 +5,8 @@ import { eur, eurk, monthLabel, pct, shortDate, signed } from '../lib/format'
 import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat, Toggle } from '../components/ui'
 import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
-import { Icon } from '../components/Icon'
-import { useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
+import { Icon, IconTile } from '../components/Icon'
+import { catIcon, useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { Checks } from './Insights'
 
 export default function Home() {
@@ -107,19 +107,19 @@ export default function Home() {
 
       {/* This month */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={`Spent in ${monthLabel(m.period || o.date.slice(0, 7))}`} value={eur(m.spending)}
+        <Stat icon="bag" color="var(--s2)" label={`Spent in ${monthLabel(m.period || o.date.slice(0, 7))}`} value={eur(m.spending)}
           sub={<>typical month {eur(avg.spending)} · {pct(o.month_progress)} through</>}
           tone={spendPace > 1.15 ? 'bad' : undefined} onClick={() => nav('/insights/spending')} />
-        <Stat label="Saved this month" value={eur(m.saved)} sub={m.income > 0 ? `${pct(m.savings_rate)} of income · avg ${pct(avg.savings_rate)}` : 'no income booked yet'}
+        <Stat icon="piggy" color="var(--s6)" label="Saved this month" value={eur(m.saved)} sub={m.income > 0 ? `${pct(m.savings_rate)} of income · avg ${pct(avg.savings_rate)}` : 'no income booked yet'}
           tone={m.saved < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-        <Stat label="Safe to spend" value={eur(o.plan.safe_to_spend)} sub={`of ${eur(o.plan.income_base)} income base`}
+        <Stat icon="wallet" color="var(--s1)" label="Safe to spend" value={eur(o.plan.safe_to_spend)} sub={`of ${eur(o.plan.income_base)} income base`}
           tone={o.plan.safe_to_spend < 0 ? 'bad' : 'good'} onClick={() => nav('/plan')} />
-        <Stat label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} cash · target ${o.emergency.target_months} mo`}
+        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} cash · target ${o.emergency.target_months} mo`}
           tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/insights/fi')} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card title="Plan this month" action={<div className="flex items-center gap-1"><AskCFO q="Give me a short briefing on this month: spending vs plan, anything unusual, and what to watch before month end." label="Brief me" /><Link to="/plan" className="text-sm text-accent">Open plan</Link></div>}>
+        <Card icon="target" color="var(--s3)" title="Plan this month" action={<div className="flex items-center gap-1"><AskCFO q="Give me a short briefing on this month: spending vs plan, anything unusual, and what to watch before month end." label="Brief me" /><Link to="/plan" className="text-sm text-accent">Open plan</Link></div>}>
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span className="text-ink2">Spending budgets</span>
             <span className="tnum"><b>{eur(o.plan.spent)}</b> <span className="text-muted">of {eur(o.plan.budgeted)}</span></span>
@@ -151,16 +151,17 @@ export default function Home() {
           )}
         </Card>
 
-        <Card title="Coming up" action={<Link to="/insights/recurring" className="text-sm text-accent">All recurring</Link>}>
+        <Card icon="calendar" color="var(--s4)" title="Coming up" action={<Link to="/insights/recurring" className="text-sm text-accent">All recurring</Link>}>
           {(o.upcoming ?? []).length === 0 ? (
             <div className="text-sm text-muted">No recurring charges expected in the next two weeks.</div>
           ) : (
             <div className="divide-y divide-line">
               {o.upcoming!.slice(0, 6).map((r) => (
-                <div key={r.merchant} className="flex items-center justify-between py-2 text-sm">
-                  <div className="min-w-0">
+                <div key={r.merchant} className="flex items-center gap-3 py-2 text-sm">
+                  <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={32} round />
+                  <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{r.merchant}</div>
-                    <div className="text-xs text-muted">{shortDate(r.next)} · {cats.path(r.category)}</div>
+                    <div className="truncate text-xs text-muted">{[shortDate(r.next), r.category && cats.path(r.category)].filter(Boolean).join(' · ')}</div>
                   </div>
                   <div className="tnum">{eur(r.amount)}</div>
                 </div>
@@ -184,7 +185,7 @@ export default function Home() {
 
       <Checks checks={(o.checks ?? []).filter((c) => !c.link.startsWith('/ledger/inbox'))} />
 
-      <Card pad={false} title="Recent" action={
+      <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
         <div className="flex gap-1">
           <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
           <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>

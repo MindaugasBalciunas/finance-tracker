@@ -14,6 +14,19 @@ export const catColor = (id: string) => {
   return s ? slotColor(s) : 'var(--s-other)'
 }
 
+// Icon + tint for every top-level category. Core categories use their chart
+// slot; the rest borrow a palette hue (icons always sit next to a label, so
+// sharing a hue with a chart series is harmless). Income is green.
+const CAT_ICON: Record<string, [string, string]> = {
+  housing: ['home', 'var(--s1)'], food: ['utensils', 'var(--s2)'], utilities: ['bolt', 'var(--s3)'], travel: ['plane', 'var(--s4)'],
+  kids: ['baby', 'var(--s5)'], shopping: ['bag', 'var(--s6)'], health: ['pulse', 'var(--s7)'], transport: ['car', 'var(--s8)'],
+  leisure: ['ticket', 'var(--s4)'], dating: ['heart', 'var(--s8)'], gifts: ['gift', 'var(--s5)'], subscriptions: ['repeat', 'var(--s7)'],
+  finance: ['percent', 'var(--s3)'], salary: ['briefcase', 'var(--s6)'], side_income: ['key', 'var(--s6)'], benefits: ['shield', 'var(--s6)'],
+  investment_income: ['trend', 'var(--s6)'], other_income: ['coins', 'var(--s6)'], refunds: ['undo', 'var(--s6)'],
+  transfer: ['swap', 'var(--s-other)'], other: ['dots', 'var(--s-other)'],
+}
+export const catIcon = (id: string): [string, string] => CAT_ICON[(id || '').split('.')[0]] ?? ['dots', 'var(--s-other)']
+
 export const GROUPS: { id: string; name: string; slot: number }[] = [
   { id: 'cash', name: 'Cash', slot: 1 },
   { id: 'investments', name: 'Investments', slot: 2 },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -9,8 +9,9 @@ import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
 import type { Account } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
-import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
-import { Icon } from '../components/Icon'
+import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
+import { Icon, IconTile } from '../components/Icon'
+import { accountColors, accountIcon, bankOf, brandColor, volatility } from '../lib/brand'
 import { AccountSelect } from '../components/pickers'
 
 export default function Wealth() {
@@ -150,78 +151,100 @@ function Overview() {
   )
 }
 
-/** Where the money is, account by account: stacked balances over the chosen
- *  range plus today's split, with a switch per account. */
+/** Where the money is: stacked balances over the chosen range plus today's
+ *  split, by account or by bank. Bank colours; the steadiest money forms the
+ *  base of the stack and each bank's accounts sit together. */
 function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, SHORT.includes(range) ? 'week' : 'month', true)
   const { prefs, set } = usePrefs()
+  const [view, setView] = usePeriod('wmi-view', 'accounts', ['accounts', 'banks'])
   const [allShown, setAllShown] = useState(false)
   const off = new Set(prefs.hidden_accounts ?? [])
-  const toggle = (id: string) => {
+  const toggle = (ids: string[]) => {
     const next = new Set(off)
-    next.has(id) ? next.delete(id) : next.add(id)
+    const allOff = ids.every((id) => next.has(id))
+    for (const id of ids) allOff ? next.delete(id) : next.add(id)
     set({ hidden_accounts: [...next] })
   }
-  // Colours are ranked within the view (all assets, or liquid only) so the
-  // seven hues go to what is on screen; switching an account off keeps them.
-  const { colors, eligible } = useMemo(() => {
-    const eligible = accounts.filter((a) => a.kind !== 'loan' && !a.archived && (a.balance ?? 0) > 0 && (!liquidOnly || LIQUID_GROUPS.includes(a.group)))
-      .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
-    const colors: Record<string, string> = {}
-    eligible.slice(0, 7).forEach((a, i) => { colors[a.id] = `var(--s${i + 1})` })
-    return { colors, eligible }
-  }, [accounts, liquidOnly])
-  const shown = eligible.filter((a) => !off.has(a.id))
-  const named = shown.filter((a) => colors[a.id])
-  const others = shown.filter((a) => !colors[a.id])
-  const series = useMemo(() => (hist ?? []).map((h) => {
+  const eligible = useMemo(() => accounts.filter((a) => a.kind !== 'loan' && !a.archived && (a.balance ?? 0) > 0 && (!liquidOnly || LIQUID_GROUPS.includes(a.group))), [accounts, liquidOnly])
+  const colors = useMemo(() => accountColors(eligible), [eligible])
+
+  // Series: one per account, or one per bank. Order by stability (steadiest
+  // first = bottom of the stack); accounts grouped under their bank.
+  const series = useMemo(() => {
+    const vals = (ids: string[]) => (hist ?? []).map((h) => ids.reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0))
+    const banks = new Map<string, Account[]>()
+    for (const a of eligible) banks.set(bankOf(a), [...(banks.get(bankOf(a)) ?? []), a])
+    const bankList = [...banks.entries()].map(([name, accts]) => ({ name, accts, vol: volatility(vals(accts.map((x) => x.id))) })).sort((x, y) => x.vol - y.vol)
+    if (view === 'banks') {
+      return bankList.map((b) => {
+        const lead = [...b.accts].sort((x, y) => (y.balance ?? 0) - (x.balance ?? 0))[0]
+        return { key: 'bank:' + b.name, name: b.name, ids: b.accts.map((x) => x.id), color: brandColor(lead) ?? colors[lead.id], value: b.accts.reduce((t, x) => t + (x.balance ?? 0), 0), bank: b.name, icon: accountIcon(lead) }
+      })
+    }
+    return bankList.flatMap((b) => b.accts.map((x) => ({ a: x, vol: volatility(vals([x.id])) })).sort((x, y) => x.vol - y.vol)
+      .map(({ a }) => ({ key: a.id, name: a.name, ids: [a.id], color: colors[a.id], value: a.balance ?? 0, bank: b.name, icon: accountIcon(a) })))
+  }, [hist, eligible, colors, view])
+
+  // Amounts count only switched-on accounts, so the total is the same in both views.
+  const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, a.balance ?? 0])), [eligible])
+  const valueOf = (x: { ids: string[] }) => x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + (bal[id] ?? 0), 0)
+  const shown = series.filter((x) => !x.ids.every((id) => off.has(id)))
+  const rows = useMemo(() => (hist ?? []).map((h) => {
     const row: any = { date: h.date }
-    for (const a of named) row[a.id] = Math.max(0, h.by_account?.[a.id] ?? 0)
-    row.other = others.reduce((t, a) => t + Math.max(0, h.by_account?.[a.id] ?? 0), 0)
+    for (const x of shown) row[x.key] = x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0)
     return row
-  }), [hist, named, others])
+  }), [hist, shown, off])
   if (isLoading) return <Card title="Where my money is"><Loading /></Card>
   if (!eligible.length) return null
-  const slices: Slice[] = foldSlices([...named.map((a) => ({ key: a.id, label: a.name, value: a.balance ?? 0, color: colors[a.id] })),
-    ...(others.length ? [{ key: 'other', label: `Other (${others.length})`, value: others.reduce((t, a) => t + (a.balance ?? 0), 0), color: 'var(--s-other)' }] : [])])
-  const keys = [...named.map((a) => ({ id: a.id, name: a.name, color: colors[a.id] })), ...(others.length ? [{ id: 'other', name: 'Other', color: 'var(--s-other)' }] : [])]
-  const total = shown.reduce((t, a) => t + (a.balance ?? 0), 0)
+  const total = shown.reduce((t, x) => t + valueOf(x), 0)
+  const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color }))
+  const limit = view === 'banks' ? 99 : 8
+  const visible = allShown ? series : series.slice(0, limit)
   return (
-    <Card title="Where my money is" action={<span className="text-xs text-muted">{liquidOnly ? 'liquid' : 'all assets'} · {shown.length} of {eligible.length} accounts</span>}>
-      {/* The legend is the switchboard: amount and share of what is shown; tap to leave an account out. */}
+    <Card title="Where my money is" action={<Segmented size="sm" value={view} onChange={setView} options={[{ value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} />}>
+      <div className="mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts · same total in both views · steadiest at the base · tap to leave one out</div>
+      {/* The legend is the switchboard: amount and share of what is shown. */}
       <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-        {(allShown ? eligible : eligible.slice(0, 7)).map((a) => {
-          const on = !off.has(a.id)
-          const v = a.balance ?? 0
+        {visible.map((x, i) => {
+          const on = !x.ids.every((id) => off.has(id))
+          const onCount = x.ids.filter((id) => !off.has(id)).length
+          const v = on ? valueOf(x) : x.value
+          const newBank = view === 'accounts' && (i === 0 || visible[i - 1].bank !== x.bank)
           return (
-            <button key={a.id} type="button" onClick={() => toggle(a.id)} aria-pressed={on}
-              className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
-              <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: on ? colors[a.id] ?? 'var(--s-other)' : 'transparent', border: on ? undefined : '1px solid rgb(var(--axis))' }} />
-              <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>{a.name}</span>
-              <span className="tnum font-medium text-ink">{eurk(v)}</span>
-              <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
-            </button>
+            <Fragment key={x.key}>
+              {newBank && <div className="col-span-full mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted first:mt-0">{x.bank}</div>}
+              <button type="button" onClick={() => toggle(x.ids)} aria-pressed={on}
+                className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
+                <IconTile name={x.icon} color={on ? x.color : 'var(--s-other)'} size={24} />
+                <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>
+                  {x.name}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length}` : x.ids.length}</span>}
+                </span>
+                <span className="tnum font-medium text-ink">{eurk(v)}</span>
+                <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
+              </button>
+            </Fragment>
           )
         })}
-        {eligible.length > 7 && (
+        {series.length > limit && (
           <button type="button" className="btn-ghost h-8 justify-start px-2.5 text-xs" onClick={() => setAllShown(!allShown)}>
-            <Icon name="chevronD" size={14} className={clsx('transition', allShown && 'rotate-180')} />{allShown ? 'Fewer' : `+${eligible.length - 7} more`}
+            <Icon name="chevronD" size={14} className={clsx('transition', allShown && 'rotate-180')} />{allShown ? 'Fewer' : `+${series.length - limit} more`}
           </button>
         )}
       </div>
-      {!shown.length ? <div className="py-8 text-center text-sm text-muted">Every account is switched off — tap one above.</div> : (
+      {!shown.length ? <div className="py-8 text-center text-sm text-muted">Everything is switched off — tap one above.</div> : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_minmax(0,320px)]">
           <div className="h-56 sm:h-64">
             <ResponsiveContainer>
-              <AreaChart data={series} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+              <AreaChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
                 <YAxis {...axisProps} tickFormatter={eurk} width={48} />
                 <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                  <TooltipBox title={shortDate(label)} rows={[...keys.filter((k) => payload[0].payload[k.id] > 0).map((k) => ({ color: k.color, label: k.name, value: eur(payload[0].payload[k.id]) })).reverse(),
-                    { label: 'Total', value: eur(keys.reduce((t, k) => t + (payload[0].payload[k.id] ?? 0), 0)), bold: true }]} />) : null} />
-                {keys.map((k) => (
-                  <Area key={k.id} type="monotone" dataKey={k.id} name={k.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={k.color} fillOpacity={0.85} isAnimationActive={false} />
+                  <TooltipBox title={shortDate(label)} rows={[...shown.filter((x) => payload[0].payload[x.key] > 0).map((x) => ({ color: x.color, label: x.name, value: eur(payload[0].payload[x.key]) })).reverse(),
+                    { label: 'Total', value: eur(shown.reduce((t, x) => t + (payload[0].payload[x.key] ?? 0), 0)), bold: true }]} />) : null} />
+                {shown.map((x) => (
+                  <Area key={x.key} type="monotone" dataKey={x.key} name={x.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={x.color} fillOpacity={0.9} isAnimationActive={false} />
                 ))}
               </AreaChart>
             </ResponsiveContainer>
@@ -282,6 +305,7 @@ function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
   const stale = age > 45 && !['property', 'vehicle', 'loan'].includes(a.kind) && !!a.balance
   return (
     <button onClick={onClick} className={clsx('flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/50', a.archived && 'opacity-50')}>
+      <IconTile name={accountIcon(a)} color={brandColor(a) ?? `var(--s${GROUPS.find((g) => g.id === a.group)?.slot ?? 1})`} size={34} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.name}</div>
         <div className={clsx('truncate text-xs', stale ? 'text-warn' : 'text-muted')}>

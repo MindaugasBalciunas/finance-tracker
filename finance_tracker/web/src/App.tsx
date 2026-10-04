@@ -27,12 +27,14 @@ const qc = new QueryClient({
 })
 
 const NAV = [
-  { to: '/', label: 'Home', icon: 'home' },
-  { to: '/ledger', label: 'Ledger', icon: 'list' },
-  { to: '/plan', label: 'Plan', icon: 'target' },
-  { to: '/wealth', label: 'Wealth', icon: 'bank' },
-  { to: '/insights', label: 'Insights', icon: 'chart' },
+  { to: '/', label: 'Home', icon: 'home', color: 'var(--s1)' },
+  { to: '/ledger', label: 'Ledger', icon: 'list', color: 'var(--s2)' },
+  { to: '/plan', label: 'Plan', icon: 'target', color: 'var(--s3)' },
+  { to: '/wealth', label: 'Wealth', icon: 'bank', color: 'var(--s7)' },
+  { to: '/insights', label: 'Insights', icon: 'chart', color: 'var(--s5)' },
 ]
+// Each section has its own hue when active (tinted pill on desktop, coloured icon on mobile).
+const activeStyle = (color: string) => ({ color: `color-mix(in oklab, ${color} 85%, rgb(var(--ink)))`, background: `color-mix(in oklab, ${color} var(--tint), transparent)` })
 
 export function applyTheme() {
   let t: string | null = null
@@ -65,15 +67,15 @@ function Shell() {
         <div className="flex h-16 items-center gap-2 px-5 text-base font-semibold"><span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-white text-sm">€</span> Finance</div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.to === '/'}
-              className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? 'bg-accent/10 text-accent' : 'text-ink2 hover:bg-sunken')}>
+            <NavLink key={n.to} to={n.to} end={n.to === '/'} style={({ isActive }) => (isActive ? activeStyle(n.color) : undefined)}
+              className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? '' : 'text-ink2 hover:bg-sunken')}>
               <Icon name={n.icon} />
               {n.label}
               {n.to === '/ledger' && !!inbox && <span className="ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{inbox}</span>}
             </NavLink>
           ))}
           <div className="my-2 border-t border-line" />
-          <NavLink to="/ai" className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? 'bg-accent/10 text-accent' : 'text-ink2 hover:bg-sunken')}>
+          <NavLink to="/ai" style={({ isActive }) => (isActive ? activeStyle('var(--s4)') : undefined)} className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? '' : 'text-ink2 hover:bg-sunken')}>
             <Icon name="spark" /> Ask CFO
           </NavLink>
         </nav>
@@ -120,10 +122,12 @@ function Shell() {
         <div className="grid grid-cols-5">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}
-              className={({ isActive }) => clsx('relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-accent' : 'text-muted')}>
-              <Icon name={n.icon} size={22} />
-              {n.label}
-              {n.to === '/ledger' && !!inbox && <span className="absolute right-[22%] top-1.5 rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">{inbox}</span>}
+              className={({ isActive }) => clsx('relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
+              {({ isActive }) => (<>
+                <span className="grid h-7 w-12 place-items-center rounded-full transition" style={isActive ? activeStyle(n.color) : undefined}><Icon name={n.icon} size={20} /></span>
+                {n.label}
+                {n.to === '/ledger' && !!inbox && <span className="absolute right-[22%] top-1.5 rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">{inbox}</span>}
+              </>)}
             </NavLink>
           ))}
         </div>

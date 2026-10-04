@@ -5,14 +5,14 @@ import clsx from 'clsx'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../lib/api'
 import { useCashflow, usePeriod, useRefresh } from '../lib/hooks'
-import { catColor, CORE, useCats } from '../lib/categories'
+import { catColor, catIcon, CORE, useCats } from '../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Flow, Recurring, Tx } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Stat, Tabs, useToast } from '../components/ui'
 import { CategoryPicker } from '../components/pickers'
 import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
-import { Icon } from '../components/Icon'
+import { Icon, IconTile } from '../components/Icon'
 
 const TABS = [
   { value: 'cashflow', label: 'Cash flow' }, { value: 'spending', label: 'Spending' }, { value: 'trends', label: 'Trends' },
@@ -61,10 +61,10 @@ function CashFlow() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Income · last 12 months" value={eur(inc)} sub={`${eur(inc / 12)}/month`} />
-        <Stat label="Spending · last 12 months" value={eur(sp)} sub={`${eur(sp / 12)}/month`} />
-        <Stat label="Savings rate" value={pct(inc ? (inc - sp) / inc : 0)} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
-        <Stat label="Invested & principal" value={eur(sum('invested'))} sub={`incl. ${eur(sum('principal'))} mortgage principal`} />
+        <Stat icon="briefcase" color="var(--s6)" label="Income · last 12 months" value={eur(inc)} sub={`${eur(inc / 12)}/month`} />
+        <Stat icon="bag" color="var(--s2)" label="Spending · last 12 months" value={eur(sp)} sub={`${eur(sp / 12)}/month`} />
+        <Stat icon="piggy" color="var(--s3)" label="Savings rate" value={pct(inc ? (inc - sp) / inc : 0)} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
+        <Stat icon="trend" color="var(--s7)" label="Invested & principal" value={eur(sum('invested'))} sub={`incl. ${eur(sum('principal'))} mortgage principal`} />
       </div>
       <Card title="Income vs spending" action={<Segmented size="sm" value={span} onChange={setSpan} options={SPANS} />}>
         <div className="h-64">
@@ -150,13 +150,13 @@ function Spending() {
       <PaceCard />
       <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the same length before</div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card pad={false} title="By category" className="lg:col-span-2">
+        <Card pad={false} icon="bag" color="var(--s2)" title="By category" className="lg:col-span-2">
           <div className="divide-y divide-line border-t border-line">
             {data.categories.map((c: any) => (
               <div key={c.category}>
                 <button className="w-full px-4 py-2.5 text-left hover:bg-sunken/40" onClick={() => setOpen(open === c.category ? null : c.category)}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-medium"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(c.category) }} />{cats.name(c.category)}</span>
+                    <span className="flex items-center gap-2 text-sm font-medium"><IconTile name={catIcon(c.category)[0]} color={catIcon(c.category)[1]} size={26} />{cats.name(c.category)}</span>
                     <span className="tnum text-sm"><b>{eur(c.total)}</b> <span className="text-xs text-muted">{pct(c.share)}</span></span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-3">
@@ -183,10 +183,10 @@ function Spending() {
           </div>
         </Card>
         <div className="space-y-4">
-          <Card title="Where it went">
+          <Card icon="pie" color="var(--s2)" title="Where it went">
             <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub="spent" />
           </Card>
-          <Card pad={false} title="Top merchants">
+          <Card pad={false} icon="utensils" color="var(--s4)" title="Top merchants">
             <div className="divide-y divide-line border-t border-line">
               {data.merchants.slice(0, 12).map((m: any) => (
                 <a key={m.name} href={`#/ledger?merchant=${encodeURIComponent(m.name)}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between px-4 py-2 text-sm hover:bg-sunken/40">
@@ -324,7 +324,7 @@ function RecurringView() {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
-        <Stat label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.length} merchants`} />
+        <Stat icon="repeat" color="var(--s7)" label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.length} merchants`} />
         <button className="btn-primary shrink-0" onClick={() => setEdit('new')}><Icon name="plus" size={16} />Add</button>
       </div>
       {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance or anything billed on a schedule.</Empty> : (
@@ -332,6 +332,7 @@ function RecurringView() {
           <div className="divide-y divide-line">
             {data.items.map((r) => (
               <button key={r.merchant} onClick={() => setEdit(r)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
+                <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 truncate text-sm font-medium">
                     <span className="truncate">{r.merchant}</span>

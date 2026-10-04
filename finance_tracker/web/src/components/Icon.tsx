@@ -7,6 +7,33 @@ const P: Record<string, string> = {
   chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   spark: 'M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
+  // Categories and account kinds (coloured tiles).
+  utensils: 'M7 3v8a2 2 0 0 0 2 2v8M11 3v8a2 2 0 0 1-2 2M9 3v7M17 21V3c-2.2 1.2-3 4-3 7 0 1.6 1 2.5 3 2.5',
+  bolt: 'M13 2 4.5 13.5H11L10 22l8.5-11.5H12z',
+  baby: 'M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM9.5 11.5h.01M14.5 11.5h.01M9.5 15a3.5 3.5 0 0 0 5 0M12 5c0-1.2.8-2 2-2',
+  bag: 'M5 8h14l-1.2 13H6.2zM9 10V6.5a3 3 0 0 1 6 0V10',
+  heart: 'M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z',
+  pulse: 'M3 12h4l2.2-5.5 4 11L15.5 12H21',
+  car: 'M4.5 16.5v-5l2-5h11l2 5v5M4 11.5h16M4.5 16.5h15M6 16.5V19M18 16.5V19M8 14h.01M16 14h.01',
+  gift: 'M4 11h16v10H4zM3 7h18v4H3zM12 7v14M12 7S10.5 3 8 3.5 7.5 7 12 7zM12 7s1.5-4 4-3.5S16.5 7 12 7z',
+  ticket: 'M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4zM14.5 7v10',
+  percent: 'M19 5 5 19M7 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17 19.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  repeat: 'M17 2.5 20 5.5l-3 3M4 11.5v-2a4 4 0 0 1 4-4h12M7 21.5l-3-3 3-3M20 12.5v2a4 4 0 0 1-4 4H4',
+  briefcase: 'M3 8h18v12H3zM8.5 8V5h7v3M3 13h18',
+  key: 'M8 16.5a4.5 4.5 0 1 1 4.1-6.5H21v3h-2v2.5h-3V13h-3.9A4.5 4.5 0 0 1 8 16.5zM7 12h.01',
+  shield: 'M12 3l7.5 3v6c0 4.8-3.3 7.8-7.5 9-4.2-1.2-7.5-4.2-7.5-9V6z',
+  trend: 'M3 17l6-6 4 4 8-8M15 7h6v6',
+  undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
+  coins: 'M15 11c3.3 0 6-1.3 6-3s-2.7-3-6-3-6 1.3-6 3 2.7 3 6 3zM9 8v4c0 1.7 2.7 3 6 3s6-1.3 6-3V8M3 13c0 1.7 2.7 3 6 3M3 13v4c0 1.7 2.7 3 6 3 1.3 0 2.5-.2 3.5-.6M3 13c0-1.4 1.8-2.5 4.4-2.9',
+  swap: 'M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  dots: 'M5 12h.01M12 12h.01M19 12h.01',
+  piggy: 'M4 4.5h16v14H4zM12 15a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM12 8v1.2M15.5 11.5h-1.2M6 18.5V20M18 18.5V20',
+  umbrella: 'M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v6.5a2 2 0 0 0 4 0',
+  bitcoin: 'M8 5.5h6a3 3 0 0 1 0 6H8zM8 11.5h7a3 3 0 0 1 0 6H8zM8 5.5v12M10 3.5v2M13.5 3.5v2M10 17.5v2M13.5 17.5v2M6 5.5h2M6 17.5h2',
+  card: 'M3 6h18v12H3zM3 10h18M7 15h3',
+  calendar: 'M4 6h16v15H4zM4 10h16M8 3v4M16 3v4',
+  pie: 'M12 3v9h9a9 9 0 1 1-9-9zM15 3.5A9 9 0 0 1 20.5 9H15z',
+  sun2: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
   plus: 'M12 5v14M5 12h14',
   copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
   share: 'M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7',
@@ -43,5 +70,16 @@ export function Icon({ name, size = 20, className = '' }: { name: keyof typeof P
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       <path d={P[name] ?? ''} />
     </svg>
+  )
+}
+
+/** A coloured icon on a soft tint of the same colour. Colour carries
+ *  identity (category, account, section); the label always sits beside it. */
+export function IconTile({ name, color, size = 36, round = false, className = '' }: { name: string; color: string; size?: number; round?: boolean; className?: string }) {
+  return (
+    <span className={`grid shrink-0 place-items-center ${round ? 'rounded-full' : 'rounded-xl'} ${className}`}
+      style={{ width: size, height: size, background: `color-mix(in oklab, ${color} var(--tint), transparent)`, color: `color-mix(in oklab, ${color} 82%, rgb(var(--ink)))` }}>
+      <Icon name={name} size={Math.round(size * 0.52)} />
+    </span>
   )
 }

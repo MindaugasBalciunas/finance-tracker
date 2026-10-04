@@ -3,12 +3,12 @@ import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
-import { catColor, useCats } from '../lib/categories'
+import { catIcon, useCats } from '../lib/categories'
 import { dayLabel, eurc, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
-import { Icon } from './Icon'
+import { Icon, IconTile } from './Icon'
 
 type Draft = Partial<Tx> & { kind: Kind }
 type Ctx = { open: (t?: Partial<Tx>) => void; scan: () => void }
@@ -277,9 +277,7 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t:
           <Icon name="check" size={16} />
         </button>
       ) : (
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-semibold text-white" style={{ background: t.kind === 'income' ? 'var(--s6)' : t.kind === 'transfer' ? 'var(--s-other)' : catColor(t.category) }}>
-          {(title || '?').trim().charAt(0).toUpperCase()}
-        </div>
+        <IconTile name={catIcon(t.category)[0]} color={t.kind === 'transfer' ? 'var(--s-other)' : catIcon(t.category)[1]} size={36} round />
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-ink">{title}</div>

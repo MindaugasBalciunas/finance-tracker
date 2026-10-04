@@ -1,14 +1,14 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Icon } from './Icon'
+import { Icon, IconTile } from './Icon'
 import { eur, signed } from '../lib/format'
 
-export function Card({ children, className = '', title, action, pad = true }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean }) {
+export function Card({ children, className = '', title, action, pad = true, icon, color = 'rgb(var(--accent))' }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
   return (
     <section className={clsx('card', pad && 'p-4', className)}>
       {(title || action) && (
         <div className={clsx('flex items-center justify-between gap-2', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
-          {title && <h2 className="text-sm font-semibold text-ink">{title}</h2>}
+          {title && <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">{icon && <IconTile name={icon} color={color} size={26} />}{title}</h2>}
           {action}
         </div>
       )}
@@ -18,11 +18,11 @@ export function Card({ children, className = '', title, action, pad = true }: { 
 }
 
 /** A KPI tile: label, headline figure, optional context line. */
-export function Stat({ label, value, sub, tone, onClick }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void }) {
+export function Stat({ label, value, sub, tone, onClick, icon, color = 'rgb(var(--accent))' }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; icon?: string; color?: string }) {
   const C = onClick ? 'button' : 'div'
   return (
     <C onClick={onClick} className={clsx('card p-3.5 text-left min-w-0', onClick && 'hover:bg-sunken/50 transition')}>
-      <div className="text-xs text-ink2 truncate">{label}</div>
+      <div className="flex items-center gap-2 text-xs text-ink2 min-w-0">{icon && <IconTile name={icon} color={color} size={28} />}<span className="truncate">{label}</span></div>
       <div className={clsx('mt-1 text-xl font-semibold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted truncate">{sub}</div>}
     </C>
