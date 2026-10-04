@@ -54,6 +54,18 @@ type reviewNetWorth struct {
 	EndDate   string  `json:"end_date"`
 	End       float64 `json:"end"`
 	Change    float64 `json:"change"`
+	// Points is the last snapshot of each day, from the opening one on.
+	Points []reviewPoint `json:"points"`
+}
+
+type reviewPoint struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+}
+
+type reviewMonth struct {
+	Month string `json:"month"`
+	reviewTotals
 }
 
 type reviewCategory struct {
@@ -80,6 +92,8 @@ type reviewBudgetLine struct {
 type reviewBudget struct {
 	Over        []reviewBudgetLine `json:"over"`
 	WithinCount int                `json:"within_count"`
+	// Lines is every monthly line judged, over or not, fullest first.
+	Lines       []reviewBudgetLine `json:"lines"`
 	SafeToSpend *float64           `json:"safe_to_spend,omitempty"`
 }
 
@@ -103,6 +117,13 @@ type monthReview struct {
 	Budget      *reviewBudget    `json:"budget,omitempty"`
 	OwedToYou   float64          `json:"owed_to_you"`
 	Checks      []reviewCheck    `json:"checks"`
+	// Trend is the twelve months ending with this one, oldest first.
+	Trend []reviewMonth `json:"trend"`
+	// ByCategory is every expense category this month (or in the average),
+	// largest first.
+	ByCategory []reviewCategory `json:"by_category"`
+	// Daily is spending per calendar day of the month.
+	Daily []reviewPoint `json:"daily"`
 }
 
 func (h *ReviewHandler) Get(c *gin.Context) {
@@ -277,6 +298,42 @@ func buildMonthReview(in reviewInput) monthReview {
 		}
 		out.Categories = append(out.Categories, reviewCategory{Category: k, Spent: r2(catCur[k]), Average: r2(avg), Delta: r2(d)})
 	}
+	out.ByCategory = []reviewCategory{}
+	for k := range seen {
+		avg := 0.0
+		if n > 0 {
+			avg = catSum[k] / float64(n)
+		}
+		if catCur[k] < 0.005 && avg < 0.005 {
+			continue
+		}
+		out.ByCategory = append(out.ByCategory, reviewCategory{Category: k, Spent: r2(catCur[k]), Average: r2(avg), Delta: r2(catCur[k] - avg)})
+	}
+	sort.Slice(out.ByCategory, func(i, j int) bool {
+		if out.ByCategory[i].Spent != out.ByCategory[j].Spent {
+			return out.ByCategory[i].Spent > out.ByCategory[j].Spent
+		}
+		if out.ByCategory[i].Average != out.ByCategory[j].Average {
+			return out.ByCategory[i].Average > out.ByCategory[j].Average
+		}
+		return out.ByCategory[i].Category < out.ByCategory[j].Category
+	})
+
+	out.Trend = make([]reviewMonth, 0, 12)
+	for i := 11; i >= 0; i-- {
+		mm := m.AddDate(0, -i, 0).Format("2006-01")
+		out.Trend = append(out.Trend, reviewMonth{Month: mm, reviewTotals: totalsOf(byMonth[mm])})
+	}
+
+	daily := map[int]float64{}
+	for _, x := range expenses {
+		daily[x.Date.Day()] += x.Amount
+	}
+	out.Daily = []reviewPoint{}
+	for d := m; d.Before(end); d = d.AddDate(0, 0, 1) {
+		out.Daily = append(out.Daily, reviewPoint{Date: d.Format("2006-01-02"), Value: r2(daily[d.Day()])})
+	}
+
 	sort.Slice(out.Categories, func(i, j int) bool {
 		if math.Abs(out.Categories[i].Delta) != math.Abs(out.Categories[j].Delta) {
 			return math.Abs(out.Categories[i].Delta) > math.Abs(out.Categories[j].Delta)
@@ -313,23 +370,48 @@ func buildMonthReview(in reviewInput) monthReview {
 		out.NetWorth = &reviewNetWorth{
 			StartDate: startB.Date.Format("2006-01-02"), Start: r2(startB.Total),
 			EndDate: endB.Date.Format("2006-01-02"), End: r2(endB.Total), Change: r2(endB.Total - startB.Total),
+			Points: []reviewPoint{{Date: startB.Date.Format("2006-01-02"), Value: r2(startB.Total)}},
+		}
+		// Last snapshot per day inside the month.
+		lastOfDay := map[string]*domain.Balance{}
+		for i := range in.balances {
+			b := &in.balances[i]
+			if b.Date.Before(m) || !b.Date.Before(end) {
+				continue
+			}
+			k := b.Date.Format("2006-01-02")
+			if cur, ok := lastOfDay[k]; !ok || b.Date.After(cur.Date) || (b.Date.Equal(cur.Date) && b.ID > cur.ID) {
+				lastOfDay[k] = b
+			}
+		}
+		days := make([]string, 0, len(lastOfDay))
+		for k := range lastOfDay {
+			days = append(days, k)
+		}
+		sort.Strings(days)
+		for _, k := range days {
+			out.NetWorth.Points = append(out.NetWorth.Points, reviewPoint{Date: k, Value: r2(lastOfDay[k].Total)})
 		}
 	}
 
 	if in.budget != nil {
-		rb := &reviewBudget{Over: []reviewBudgetLine{}, SafeToSpend: in.budget.SafeToSpend}
+		rb := &reviewBudget{Over: []reviewBudgetLine{}, Lines: []reviewBudgetLine{}, SafeToSpend: in.budget.SafeToSpend}
 		for _, l := range in.budget.Lines {
 			// Monthly, non-fund lines only: a yearly line or a fund is judged
 			// over its own horizon, not by one month's spend.
 			if l.Period != domain.PeriodMonthly || l.Fund || l.Kind == "investment" || l.Amount <= 0 {
 				continue
 			}
+			rb.Lines = append(rb.Lines, reviewBudgetLine{Name: l.Name, Budgeted: r2(l.Amount), Spent: r2(l.MonthSpent)})
 			if l.MonthSpent > l.Amount+0.5 {
 				rb.Over = append(rb.Over, reviewBudgetLine{Name: l.Name, Budgeted: r2(l.Amount), Spent: r2(l.MonthSpent)})
 			} else {
 				rb.WithinCount++
 			}
 		}
+		sort.SliceStable(rb.Lines, func(i, j int) bool {
+			return rb.Lines[i].Spent/rb.Lines[i].Budgeted > rb.Lines[j].Spent/rb.Lines[j].Budgeted
+		})
 		sort.Slice(rb.Over, func(i, j int) bool {
 			return rb.Over[i].Spent-rb.Over[i].Budgeted > rb.Over[j].Spent-rb.Over[j].Budgeted
 		})

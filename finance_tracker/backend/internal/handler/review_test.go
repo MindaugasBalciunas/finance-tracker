@@ -81,6 +81,23 @@ func TestMonthReviewTotalsAndComparisons(t *testing.T) {
 	assert.Equal(t, 1, r.Budget.WithinCount)
 
 	assert.Equal(t, 30.0, r.OwedToYou)
+
+	// Visual series.
+	require.Len(t, r.Trend, 12)
+	assert.Equal(t, "2025-10", r.Trend[0].Month)
+	assert.Equal(t, "2026-09", r.Trend[11].Month)
+	assert.Equal(t, 1300.0, r.Trend[11].Spending)
+	assert.Equal(t, 600.0, r.Trend[10].Spending)
+	require.Len(t, r.Daily, 30)
+	assert.Equal(t, 400.0, r.Daily[2].Value, "Sept 3")
+	assert.Zero(t, r.Daily[10].Value, "the owed share on Sept 11 is not spending")
+	require.Len(t, r.ByCategory, 2)
+	assert.Equal(t, "Vacation", r.ByCategory[0].Category)
+	assert.Equal(t, 400.0, r.ByCategory[1].Average, "Food over Jul+Aug")
+	require.NotNil(t, r.NetWorth)
+	assert.Equal(t, []reviewPoint{{"2026-08-31", 10000}, {"2026-09-30", 11500}}, r.NetWorth.Points)
+	require.Len(t, r.Budget.Lines, 2)
+	assert.Equal(t, "Food", r.Budget.Lines[0].Name, "fullest first")
 }
 
 func TestMonthReviewChecks(t *testing.T) {
