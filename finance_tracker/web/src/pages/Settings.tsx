@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Route, Routes, useSearchParams } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
@@ -19,12 +19,20 @@ const SECTIONS = [
   { to: 'ai', label: 'AI' }, { to: 'security', label: 'Security' }, { to: 'data', label: 'Data & backup' }, { to: 'appearance', label: 'Appearance' },
 ]
 
+// A stray deep path (e.g. an old link that stacked sections) lands on its
+// last known section instead of a blank page.
+function UnknownSection() {
+  const rest = useParams()['*'] || ''
+  const last = rest.split('/').reverse().find((seg) => SECTIONS.some((s) => s.to === seg))
+  return <Navigate to={`/settings/${last || 'categories'}`} replace />
+}
+
 export default function Settings() {
   return (
     <div>
       <PageHeader title="Settings" />
       <div className="no-scrollbar -mx-4 mb-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        {SECTIONS.map((s) => <NavLink key={s.to} to={s.to} className={({ isActive }) => (isActive ? 'chip-on' : 'chip')}>{s.label}</NavLink>)}
+        {SECTIONS.map((s) => <NavLink key={s.to} to={`/settings/${s.to}`} className={({ isActive }) => (isActive ? 'chip-on' : 'chip')}>{s.label}</NavLink>)}
       </div>
       <Routes>
         <Route path="/" element={<Categories />} />
@@ -36,6 +44,7 @@ export default function Settings() {
         <Route path="security" element={<Security />} />
         <Route path="data" element={<Data />} />
         <Route path="appearance" element={<Appearance />} />
+        <Route path="*" element={<UnknownSection />} />
       </Routes>
     </div>
   )
