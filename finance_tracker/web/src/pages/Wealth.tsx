@@ -7,6 +7,7 @@ import { api } from '../lib/api'
 import { useAccounts, useNetWorthHistory, usePeriod, usePrefs, useRefresh } from '../lib/hooks'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
+import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../lib/periods'
 import type { Account } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
@@ -32,25 +33,12 @@ export default function Wealth() {
   )
 }
 
-const RANGES = [{ value: '3m', label: '3M' }, { value: '6m', label: '6M' }, { value: 'ytd', label: 'YTD' }, { value: '1y', label: '1Y' }, { value: '3y', label: '3Y' }, { value: '5y', label: '5Y' }, { value: 'all', label: 'All' }]
-const SHORT = ['3m', '6m', 'ytd']
-function rangeFrom(r: string) {
-  if (r === 'all') return ''
-  const d = new Date()
-  if (r === 'ytd') return `${d.getFullYear() - 1}-12-31`
-  if (r.endsWith('m')) d.setMonth(d.getMonth() - Number(r.slice(0, -1)))
-  else d.setFullYear(d.getFullYear() - Number(r.slice(0, -1)))
-  return d.toISOString().slice(0, 10)
-}
-const rangeLabel = (r: string) => (r === 'all' ? 'since records began' : r === 'ytd' ? 'this year' : `over ${r.toUpperCase()}`)
-const rangeTick = (r: string) => (d: string) => (r === '5y' || r === 'all' ? d.slice(0, 4) : new Date(d).toLocaleDateString('en-GB', SHORT.includes(r) ? { day: 'numeric', month: 'short' } : { month: 'short', year: '2-digit' }))
-
 function Overview() {
   const [range, setRange] = usePeriod('wealth', '3y', RANGES.map((r) => r.value))
   const { prefs, set: setPrefs } = usePrefs()
   const liquidOnly = prefs.liquid_only
   const setLiquidOnly = (v: boolean) => setPrefs({ liquid_only: v })
-  const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range), SHORT.includes(range) ? 'week' : 'month')
+  const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range), rangeStep(range))
   const { data: accounts } = useAccounts()
   const [sp, setSp] = useSearchParams()
   const [updateOpen, setUpdateOpen] = useState(sp.get('update') === '1')
@@ -156,7 +144,7 @@ function Overview() {
  *  the base in that order, other holdings follow steadiest-first, and each
  *  bank's accounts sit together (steadiest first within the bank). */
 function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
-  const { data: hist, isLoading } = useNetWorthHistory(from, SHORT.includes(range) ? 'week' : 'month', true)
+  const { data: hist, isLoading } = useNetWorthHistory(from, rangeStep(range), true)
   const { prefs, set } = usePrefs()
   const [view, setView] = usePeriod('wmi-view', 'accounts', ['accounts', 'banks'])
   const [allShown, setAllShown] = useState(false)

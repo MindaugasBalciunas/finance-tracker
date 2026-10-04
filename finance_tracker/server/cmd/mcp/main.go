@@ -207,7 +207,7 @@ func main() {
 	if apiURL == "" || apiToken == "" {
 		log.Fatal("set FT_API_URL (…/api) and FT_API_TOKEN (Settings → Security → API tokens)")
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "finance-tracker", Version: "2.4.3"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "finance-tracker", Version: "2.4.4"}, nil)
 
 	mcp.AddTool(s, &mcp.Tool{Name: "get_user_context", Description: "The owner's own brief (who they are, framework, standing rules, how to advise them) plus decisions they asked to remember. Call FIRST and follow it."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {

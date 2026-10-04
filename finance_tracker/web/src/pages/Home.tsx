@@ -1,8 +1,9 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { useOverview, usePrefs } from '../lib/hooks'
+import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
+import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, pct, shortDate, signed } from '../lib/format'
-import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat, Toggle } from '../components/ui'
+import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Segmented, Stat, Toggle } from '../components/ui'
 import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon, IconTile } from '../components/Icon'
@@ -16,6 +17,9 @@ export default function Home() {
   const cats = useCats()
   const { prefs, set: setPrefs } = usePrefs()
   const liquid = prefs.liquid_only
+  // The chart's period, remembered like every other chart's.
+  const [range, setRange] = usePeriod('home', '1y', RANGES.map((r) => r.value))
+  const { data: hist } = useNetWorthHistory(rangeFrom(range), rangeStep(range))
   if (isLoading) return <Loading />
   if (error || !o) return <ErrorBox error={error} />
 
@@ -26,7 +30,8 @@ export default function Home() {
   const assetTotal = assets.reduce((a, g) => a + g.v, 0)
   // Lowest and highest points of the chart, marked with value and month.
   const key = liquid ? 'liquid' : 'value'
-  const spark = o.spark ?? []
+  const spark = hist?.length ? hist.map((h) => ({ date: h.date, value: h.net_worth, liquid: h.liquid })) : (o.spark ?? [])
+  const periodChange = spark.length > 1 ? spark[spark.length - 1][key] - spark[0][key] : 0
   const pick = (better: (a: number, b: number) => boolean) => spark.reduce<{ i: number; p: (typeof spark)[number] } | null>((m, p, i) => (!m || better(p[key], m.p[key]) ? { i, p } : m), null)
   const hi = pick((a, b) => a > b)
   const lo = pick((a, b) => a < b)
@@ -39,7 +44,7 @@ export default function Home() {
     return (
       <text x={x} y={y} textAnchor={anchor(m.i)} fontSize={11} fill="var(--chart-text)">
         <tspan fontWeight={600} fill="rgb(var(--ink))">{eurk(m.p[key])}</tspan>
-        <tspan dx={4}>{monthLabel(m.p.date.slice(0, 7))}</tspan>
+        <tspan dx={4}>{SHORT.includes(range) ? shortDate(m.p.date) : monthLabel(m.p.date.slice(0, 7))}</tspan>
       </text>
     )
   }
@@ -70,9 +75,13 @@ export default function Home() {
           </div>
           </div>
         </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
+          <span className="text-xs text-muted">{rangeLabel(range)} <Delta value={periodChange} /></span>
+          <Segmented size="sm" value={range} onChange={setRange} options={RANGES} />
+        </div>
         <div className="h-36 sm:h-44">
           <ResponsiveContainer>
-            <AreaChart data={o.spark} margin={{ top: 22, right: 8, bottom: 20, left: 8 }}>
+            <AreaChart data={spark} margin={{ top: 22, right: 8, bottom: 20, left: 8 }}>
               <defs>
                 <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.22} />

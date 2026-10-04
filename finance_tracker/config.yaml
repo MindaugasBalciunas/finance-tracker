@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal CFO — net worth, cash flow, plan, bank sync and an AI adviser"
-version: "2.4.3"
+version: "2.4.4"
 slug: "finance_tracker"
 init: false
 image: "ghcr.io/mindaugasbalciunas/finance-tracker"
