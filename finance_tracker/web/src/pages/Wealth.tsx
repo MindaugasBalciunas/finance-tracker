@@ -11,7 +11,7 @@ import type { Account } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
 import { Icon, IconTile } from '../components/Icon'
-import { accountColors, accountIcon, bankOf, brandColor, volatility } from '../lib/brand'
+import { accountColors, accountIcon, bankOf, bankRank, brandColor, volatility } from '../lib/brand'
 import { AccountSelect } from '../components/pickers'
 
 export default function Wealth() {
@@ -152,8 +152,9 @@ function Overview() {
 }
 
 /** Where the money is: stacked balances over the chosen range plus today's
- *  split, by account or by bank. Bank colours; the steadiest money forms the
- *  base of the stack and each bank's accounts sit together. */
+ *  split, by account or by bank. Bank colours; Swedbank, SEB and Revolut form
+ *  the base in that order, other holdings follow steadiest-first, and each
+ *  bank's accounts sit together (steadiest first within the bank). */
 function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, SHORT.includes(range) ? 'week' : 'month', true)
   const { prefs, set } = usePrefs()
@@ -175,7 +176,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
     const vals = (ids: string[]) => (hist ?? []).map((h) => ids.reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0))
     const banks = new Map<string, Account[]>()
     for (const a of eligible) banks.set(bankOf(a), [...(banks.get(bankOf(a)) ?? []), a])
-    const bankList = [...banks.entries()].map(([name, accts]) => ({ name, accts, vol: volatility(vals(accts.map((x) => x.id))) })).sort((x, y) => x.vol - y.vol)
+    const bankList = [...banks.entries()].map(([name, accts]) => ({ name, accts, vol: volatility(vals(accts.map((x) => x.id))) })).sort((x, y) => bankRank(x.accts[0]) - bankRank(y.accts[0]) || x.vol - y.vol)
     if (view === 'banks') {
       return bankList.map((b) => {
         const lead = [...b.accts].sort((x, y) => (y.balance ?? 0) - (x.balance ?? 0))[0]
@@ -203,7 +204,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
   const visible = allShown ? series : series.slice(0, limit)
   return (
     <Card title="Where my money is" action={<Segmented size="sm" value={view} onChange={setView} options={[{ value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} />}>
-      <div className="mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts · same total in both views · steadiest at the base · tap to leave one out</div>
+      <div className="mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts · same total in both views · tap to leave one out</div>
       {/* The legend is the switchboard: amount and share of what is shown. */}
       <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((x, i) => {

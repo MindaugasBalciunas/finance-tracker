@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import { byBank } from './brand'
 import type { Account, Category, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
-export const useAccounts = () => useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/accounts'), staleTime: 60_000 })
+// Every picker and list shows Swedbank first, then SEB, Revolut, the rest.
+export const useAccounts = () => useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/accounts'), staleTime: 60_000, select: byBank })
 export const useTags = () => useQuery({ queryKey: ['tags'], queryFn: () => api.get<{ tag: string; count: number; last: string }[]>('/tags'), staleTime: 60_000 })
 export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: () => api.get<Rule[]>('/rules') })
 export const useBudgets = () => useQuery({ queryKey: ['budgets'], queryFn: () => api.get<Budget[]>('/budgets', { archived: '1' }) })

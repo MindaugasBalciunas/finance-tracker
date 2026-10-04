@@ -69,3 +69,14 @@ export function volatility(values: number[]): number {
   const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length)
   return sd / mean
 }
+
+/** The owner's banks in order of use: Swedbank first, then SEB, Revolut, the rest. */
+const BANK_ORDER = [/swed/i, /\bseb\b/i, /revolut/i]
+export function bankRank(a: Pick<Account, 'institution' | 'name'>): number {
+  const hay = `${a.institution ?? ''} ${a.name}`
+  const i = BANK_ORDER.findIndex((re) => re.test(hay))
+  return i < 0 ? BANK_ORDER.length : i
+}
+/** Sort accounts: bank order first, then the account's own sort order. */
+export const byBank = <T extends Pick<Account, 'institution' | 'name' | 'sort'>>(list: T[]): T[] =>
+  [...list].sort((a, b) => bankRank(a) - bankRank(b) || (a.sort ?? 0) - (b.sort ?? 0))
