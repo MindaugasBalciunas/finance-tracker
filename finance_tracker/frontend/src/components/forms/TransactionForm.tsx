@@ -2,6 +2,7 @@ import { useEffect, useId, useState, useRef } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import type { CreateTransactionInput, TransactionType, AccountKey } from '../../types'
 import { ACCOUNT_LABELS } from '../../types'
+import { useAddedAccounts } from '../../hooks/useAccounts'
 import { CATEGORIES_BY_TYPE, CATEGORY_HINTS } from '../../constants/categories'
 import DateInput from '../ui/DateInput'
 import { useLabelRules } from '../../hooks/useBudgets'
@@ -60,6 +61,7 @@ interface Props {
 const ALL_ACCOUNTS = Object.entries(ACCOUNT_LABELS) as [AccountKey, string][]
 
 function AccountSelect({ label, name, register }: { label: string; name: 'debit_account' | 'credit_account'; register: any }) {
+  const added = useAddedAccounts()
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -72,6 +74,9 @@ function AccountSelect({ label, name, register }: { label: string; name: 'debit_
         <option value="">None</option>
         {ALL_ACCOUNTS.map(([key, label]) => (
           <option key={key} value={key}>{label}</option>
+        ))}
+        {added.filter((a) => !a.archived).map((a) => (
+          <option key={a.key} value={a.key}>{a.label}</option>
         ))}
       </select>
     </div>

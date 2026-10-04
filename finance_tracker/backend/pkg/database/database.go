@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"strings"
@@ -89,7 +90,7 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 		db.Exec("ALTER TABLE balances DROP COLUMN is_auto")
 	}
 
-	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.BudgetAmount{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}, &domain.BankSettings{}, &domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}, &domain.AISpend{}, &domain.AITopUp{}); err != nil {
+	if err := db.AutoMigrate(&domain.Transaction{}, &domain.Balance{}, &domain.AIInsight{}, &domain.StockTrade{}, &domain.ExportLog{}, &domain.Asset{}, &domain.AuthSettings{}, &domain.WebauthnCredential{}, &domain.Budget{}, &domain.BudgetAmount{}, &domain.LabelRule{}, &domain.BudgetSettings{}, &domain.AISettings{}, &domain.AIChatMessage{}, &domain.AIActivity{}, &domain.AIContext{}, &domain.AIForecast{}, &domain.BankSettings{}, &domain.BankConnection{}, &domain.BankAccountLink{}, &domain.BankStagedTx{}, &domain.AISpend{}, &domain.AITopUp{}, &domain.Account{}); err != nil {
 		return nil, err
 	}
 
@@ -105,8 +106,22 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 	applyLabelCleanups(db)
 	applyBalanceBackfills(db)
 	applyBankIndexes(db)
+	seedBuiltinAccounts(db)
 
 	return db, nil
+}
+
+// seedBuiltinAccounts registers the Balance columns as account rows, so the
+// accounts list is complete. Idempotent: an existing key is left alone.
+func seedBuiltinAccounts(db *gorm.DB) {
+	for i, a := range domain.BuiltinAccounts {
+		row := a
+		row.Builtin = true
+		row.SortOrder = i
+		if err := db.Where("key = ?", a.Key).FirstOrCreate(&row).Error; err != nil {
+			log.Printf("seeding account %s: %v", a.Key, err)
+		}
+	}
 }
 
 // applyBankIndexes adds the partial unique index that stops the same bank row

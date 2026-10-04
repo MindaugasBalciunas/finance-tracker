@@ -530,7 +530,7 @@ func (s *insightService) buildDataReport(dateFrom, dateTo *time.Time) (string, e
 		savingsRate = ((summary.TotalIncome - summary.TotalExpenses) / summary.TotalIncome) * 100
 	}
 
-	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR
+	freeCash := latest.Seb + latest.Swed + latest.Luminor + latest.Cash + latest.RevM + latest.RevR + latest.ExtraGroups["cash"]
 	investments := latest.SwedETF + latest.RevStocks + latest.IBKRStocks
 	pensions := latest.SebPen + latest.Art
 

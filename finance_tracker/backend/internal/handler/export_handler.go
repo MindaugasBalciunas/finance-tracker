@@ -36,6 +36,7 @@ type ExportHandler struct {
 	balSvc        service.BalanceService
 	stockSvc      service.StockService
 	assetSvc      service.AssetService
+	accountRepo   repository.AccountRepository // optional: added accounts travel with the backup
 	exportLogRepo repository.ExportLogRepository
 	budgetRepo    repository.BudgetRepository
 	insightRepo   repository.InsightRepository // optional: AI settings in backups
@@ -81,6 +82,30 @@ func (h *ExportHandler) settingsRow() *budgetSettingsRow {
 		return nil
 	}
 	return &budgetSettingsRow{IncomeMode: s.IncomeMode, ManualIncome: s.ManualIncome, GrossSalary: s.GrossSalary, MonthlyDeductions: s.MonthlyDeductions}
+}
+
+// WithAccounts includes added accounts in JSON backups.
+func (h *ExportHandler) WithAccounts(repo repository.AccountRepository) *ExportHandler {
+	h.accountRepo = repo
+	return h
+}
+
+func (h *ExportHandler) accountRows() []accountExportRow {
+	if h.accountRepo == nil {
+		return nil
+	}
+	accs, err := h.accountRepo.List()
+	if err != nil {
+		return nil
+	}
+	var out []accountExportRow
+	for _, a := range accs {
+		if a.Builtin {
+			continue
+		}
+		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder})
+	}
+	return out
 }
 
 func NewExportHandler(txSvc service.TransactionService, balSvc service.BalanceService, stockSvc service.StockService, assetSvc service.AssetService, exportLogRepo repository.ExportLogRepository) *ExportHandler {
@@ -260,7 +285,9 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //	v5 — transactions carry external_id (PSD2 bank-row id, the bank sync's
 //	     first dedup layer), ai_settings carry provider + enabled
 //	v6 — budgets carry period, fund, start_month and their amount history
-const exportSchemaVersion = 6
+//	v7 — accounts added after the built-in columns: an accounts list, and
+//	     balance rows carry their values under extra
+const exportSchemaVersion = 7
 
 type financeExport struct {
 	SchemaVersion   int                  `json:"schema_version,omitempty"`
@@ -276,6 +303,16 @@ type financeExport struct {
 	AISettings      *aiSettingsExportRow `json:"ai_settings,omitempty"`
 	// AIContext is the user's CFO-briefing document (v4 backups).
 	AIContext string `json:"ai_context,omitempty"`
+	// Accounts lists the accounts added beyond the built-in ones (v7).
+	Accounts []accountExportRow `json:"accounts,omitempty"`
+}
+
+type accountExportRow struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Group     string `json:"group"`
+	Archived  bool   `json:"archived,omitempty"`
+	SortOrder int    `json:"sort_order,omitempty"`
 }
 
 // aiSettingsExportRow carries the gateway configuration INCLUDING the API
@@ -355,6 +392,8 @@ type balExportRow struct {
 	BtcPrice   float64 `json:"btc_price_eur,omitempty"`
 	RevStocks  float64 `json:"revolut_stocks,omitempty"`
 	IBKRStocks float64 `json:"ibkr_stocks,omitempty"`
+	// Extra holds added accounts by key (v7).
+	Extra map[string]float64 `json:"extra,omitempty"`
 }
 
 type stockExportRow struct {
@@ -438,6 +477,7 @@ func toBalExportRows(balances []domain.Balance) []balExportRow {
 			BtcPrice:   b.BtcPrice,
 			RevStocks:  b.RevStocks,
 			IBKRStocks: b.IBKRStocks,
+			Extra:      b.Extra,
 		}
 		// Time-of-day distinguishes multiple snapshots on the same date; only
 		// written when non-midnight so v1-era daily snapshots stay unchanged.
@@ -655,6 +695,7 @@ func (h *ExportHandler) ExportAllJSON(c *gin.Context) {
 		BudgetSettings:  h.settingsRow(),
 		AISettings:      h.aiSettingsRow(),
 		AIContext:       h.aiContextContent(),
+		Accounts:        h.accountRows(),
 	})
 }
 
@@ -722,6 +763,7 @@ func (h *ExportHandler) ExportPartialJSON(c *gin.Context) {
 		BudgetSettings:  h.settingsRow(),
 		AISettings:      h.aiSettingsRow(),
 		AIContext:       h.aiContextContent(),
+		Accounts:        h.accountRows(),
 	})
 }
 

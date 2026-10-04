@@ -1,19 +1,19 @@
-import type { Balance } from '../types'
+import type { Account, AccountGroup, Balance } from '../types'
 
 export function freeCash(b: Balance): number {
-  return b.seb + b.swed + b.cash + b.rev_m + b.rev_r
+  return b.seb + b.swed + b.cash + b.rev_m + b.rev_r + (b.extra_groups?.cash ?? 0)
 }
 
 export function investments(b: Balance): number {
-  return b.swed_etf + b.rev_stocks + b.ibkr_stocks
+  return b.swed_etf + b.rev_stocks + b.ibkr_stocks + (b.extra_groups?.investments ?? 0)
 }
 
 export function pensions(b: Balance): number {
-  return b.seb_pen + b.art
+  return b.seb_pen + b.art + (b.extra_groups?.pensions ?? 0)
 }
 
 export function cryptoEur(b: Balance): number {
-  return (b.r_btc_eur ?? 0) + (b.m_btc_eur ?? 0)
+  return (b.r_btc_eur ?? 0) + (b.m_btc_eur ?? 0) + (b.extra_groups?.crypto ?? 0)
 }
 
 export interface AccountDef {
@@ -24,6 +24,7 @@ export interface AccountDef {
 
 export interface GroupDef {
   key: string
+  group: AccountGroup
   color: string
   total: (b: Balance) => number
   accounts: AccountDef[]
@@ -36,7 +37,7 @@ export interface GroupDef {
 // deuteranopia (ΔE 0.9); the darker step separates by lightness (ΔE 10.9).
 export const GROUPS: GroupDef[] = [
   {
-    key: 'Free cash', color: '#22c55e', total: freeCash,
+    key: 'Free cash', group: 'cash', color: '#22c55e', total: freeCash,
     accounts: [
       { key: 'seb', label: 'SEB', value: (b) => b.seb },
       { key: 'swed', label: 'Swedbank', value: (b) => b.swed },
@@ -46,7 +47,7 @@ export const GROUPS: GroupDef[] = [
     ],
   },
   {
-    key: 'Investments', color: '#3b82f6', total: investments,
+    key: 'Investments', group: 'investments', color: '#3b82f6', total: investments,
     accounts: [
       { key: 'ibkr_stocks', label: 'IBKR stocks', value: (b) => b.ibkr_stocks },
       { key: 'swed_etf', label: 'Swedbank ETF', value: (b) => b.swed_etf },
@@ -54,14 +55,14 @@ export const GROUPS: GroupDef[] = [
     ],
   },
   {
-    key: 'Pensions', color: '#6d28d9', total: pensions,
+    key: 'Pensions', group: 'pensions', color: '#6d28d9', total: pensions,
     accounts: [
       { key: 'seb_pen', label: 'SEB pension', value: (b) => b.seb_pen },
       { key: 'art', label: 'Artea pension', value: (b) => b.art },
     ],
   },
   {
-    key: 'Crypto', color: '#f59e0b', total: cryptoEur,
+    key: 'Crypto', group: 'crypto', color: '#f59e0b', total: cryptoEur,
     accounts: [
       { key: 'm_btc', label: 'M BTC (€)', value: (b) => b.m_btc_eur ?? 0 },
       { key: 'r_btc', label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
@@ -81,4 +82,18 @@ export function cryptoSubtitle(b: Balance, btcPrice: number | null): string {
   return btcPrice != null
     ? `${totalBtc} BTC · €${btcPrice.toLocaleString()} /BTC`
     : `${totalBtc} BTC`
+}
+
+// withAddedAccounts places added accounts in their group's breakdown, and
+// "other" ones next to the closed built-ins. Group totals already include
+// them (via extra_groups); this is only the per-account list.
+export function withAddedAccounts(added: Account[]): { groups: GroupDef[]; other: AccountDef[] } {
+  const def = (a: Account): AccountDef => ({ key: a.key, label: a.label, value: (b) => b.extra?.[a.key] ?? 0 })
+  return {
+    groups: GROUPS.map((g) => ({
+      ...g,
+      accounts: [...g.accounts, ...added.filter((a) => a.group === g.group).map(def)],
+    })),
+    other: [...OTHER_ACCOUNTS, ...added.filter((a) => a.group === 'other').map(def)],
+  }
 }

@@ -293,6 +293,32 @@ export interface Balance {
   // Computed EUR values (only present when the account has BTC holdings)
   r_btc_eur?: number
   m_btc_eur?: number
+  // Accounts added after the columns above, by key (see Account). In total.
+  extra?: Record<string, number>
+  // extra summed per group (cash, investments, pensions, crypto, other).
+  extra_groups?: Record<string, number>
+}
+
+export type AccountGroup = 'cash' | 'investments' | 'pensions' | 'crypto' | 'other'
+
+export const ACCOUNT_GROUP_LABELS: Record<AccountGroup, string> = {
+  cash: 'Free cash',
+  investments: 'Investments',
+  pensions: 'Pensions',
+  crypto: 'Crypto',
+  other: 'Other',
+}
+
+// One balance-sheet account. Built-in ones are the Balance columns; added
+// ones keep their values in Balance.extra under their key.
+export interface Account {
+  id: number
+  key: string
+  label: string
+  group: AccountGroup
+  builtin: boolean
+  archived: boolean
+  sort_order: number
 }
 
 export interface CreateBalanceInput {
@@ -312,6 +338,7 @@ export interface CreateBalanceInput {
   btc_price?: number
   rev_stocks?: number
   ibkr_stocks?: number
+  extra?: Record<string, number>
 }
 
 export interface BalanceTrend {

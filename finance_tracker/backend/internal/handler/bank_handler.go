@@ -342,7 +342,7 @@ func (h *BankHandler) ListConnections(c *gin.Context) {
 			Accounts:        accs,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"connections": out, "valid_account_keys": domain.ValidAccountKeys})
+	c.JSON(http.StatusOK, gin.H{"connections": out, "valid_account_keys": h.validAccountKeys()})
 }
 
 // effectiveStatus reports a consent past its validity as expired even if
@@ -648,8 +648,8 @@ func (h *BankHandler) UpdateAccountLink(c *gin.Context) {
 		return
 	}
 	key := strings.TrimSpace(in.AccountKey)
-	if key != "" && !domain.IsValidAccountKey(key) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unknown account %q — expected one of %s", key, strings.Join(domain.ValidAccountKeys, ", "))})
+	if key != "" && !h.accountKeyExists(key) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unknown account %q — expected one of %s", key, strings.Join(h.validAccountKeys(), ", "))})
 		return
 	}
 	link, err := h.repo.GetLink(id)
@@ -674,6 +674,34 @@ func (h *BankHandler) UpdateAccountLink(c *gin.Context) {
 }
 
 // ── shared helpers ──────────────────────────────────────────────────
+
+// validAccountKeys is what a bank account can be mapped to: the built-in
+// columns plus every added account that is not archived.
+func (h *BankHandler) validAccountKeys() []string {
+	keys := append([]string{}, domain.ValidAccountKeys...)
+	if h.db == nil {
+		return keys
+	}
+	accs, err := repository.NewAccountRepository(h.db).List()
+	if err != nil {
+		return keys
+	}
+	for _, a := range accs {
+		if !a.Builtin && !a.Archived {
+			keys = append(keys, a.Key)
+		}
+	}
+	return keys
+}
+
+func (h *BankHandler) accountKeyExists(key string) bool {
+	for _, k := range h.validAccountKeys() {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
 
 func uintParam(c *gin.Context, name string) (uint, error) {
 	v, err := strconv.ParseUint(c.Param(name), 10, 32)

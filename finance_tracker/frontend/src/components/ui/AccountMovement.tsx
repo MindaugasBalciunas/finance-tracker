@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Balance } from '../../types'
-import { GROUPS, OTHER_ACCOUNTS } from '../../utils/balanceGroups'
+import { withAddedAccounts } from '../../utils/balanceGroups'
+import { useAddedAccounts } from '../../hooks/useAccounts'
 import { formatEuro, formatDate } from '../../utils/format'
 
 interface Props {
@@ -8,14 +9,15 @@ interface Props {
   balances: Balance[]
 }
 
-const ALL_ACCOUNTS = [...GROUPS.flatMap((g) => g.accounts), ...OTHER_ACCOUNTS]
-
 // Compares the first and last snapshot of the selected range per account:
 // where did money arrive, where did it leave. Diverging bars share one
 // scale; green/red follows the app's gain/loss convention and every delta
 // is written out, so the sign is never carried by color alone.
 export default function AccountMovement({ balances }: Props) {
+  const added = useAddedAccounts()
   const data = useMemo(() => {
+    const { groups, other } = withAddedAccounts(added)
+    const ALL_ACCOUNTS = [...groups.flatMap((g) => g.accounts), ...other]
     if (balances.length < 2) return null
     const sorted = [...balances].sort((a, b) => a.date.localeCompare(b.date))
     const first = sorted[0]
@@ -26,7 +28,7 @@ export default function AccountMovement({ balances }: Props) {
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     const maxDelta = Math.max(...rows.map((r) => Math.abs(r.delta)), 1)
     return { first, last, rows, maxDelta, totalDelta: last.total - first.total }
-  }, [balances])
+  }, [balances, added])
 
   if (!data) return null
   const { first, last, rows, maxDelta, totalDelta } = data

@@ -25,12 +25,18 @@ type Balance struct {
 	BtcPrice   float64   `json:"btc_price"`   // EUR/BTC rate at snapshot time (0 = legacy EUR row or price unknown)
 	RevStocks  float64   `json:"rev_stocks"`  // EUR - Revolut stocks portfolio
 	IBKRStocks float64   `json:"ibkr_stocks"` // EUR - IBKR portfolio
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// Extra holds accounts added after the columns above, keyed by account
+	// key (see Account). Included in Total.
+	Extra     AccountValues `json:"extra,omitempty" gorm:"type:text;not null;default:'{}'"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 
 	// Computed EUR values for BTC fields (not persisted, only set when holding > 0)
 	RBtcEur float64 `json:"r_btc_eur,omitempty" gorm:"-"` // r_btc converted to EUR at live price
 	MBtcEur float64 `json:"m_btc_eur,omitempty" gorm:"-"` // m_btc converted to EUR at live price
+	// ExtraGroups sums Extra by account group (cash, investments, …), so a
+	// reader can place added accounts without knowing them. Read path only.
+	ExtraGroups map[string]float64 `json:"extra_groups,omitempty" gorm:"-"`
 }
 
 // BalanceFilter holds filtering options for querying balances

@@ -75,8 +75,13 @@ var ValidAccountKeys = []string{
 	"art", "rev_m", "rev_r", "rev_stocks", "ibkr_stocks", "cash",
 }
 
-// IsValidAccountKey reports whether key names a real balance-sheet account.
+// IsValidAccountKey reports whether key names a real balance-sheet account:
+// a built-in column, or an added account's key (existence is checked where
+// a key is chosen — the bank mapping and the accounts API).
 func IsValidAccountKey(key string) bool {
+	if IsCustomAccountKey(key) {
+		return true
+	}
 	for _, k := range ValidAccountKeys {
 		if k == key {
 			return true

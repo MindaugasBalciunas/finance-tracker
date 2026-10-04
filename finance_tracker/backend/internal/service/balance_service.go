@@ -32,6 +32,9 @@ type CreateBalanceInput struct {
 	BtcPrice   float64 `json:"btc_price"` // EUR/BTC at snapshot time
 	RevStocks  float64 `json:"rev_stocks"`
 	IBKRStocks float64 `json:"ibkr_stocks"`
+	// Extra holds added accounts by key. On update, nil keeps what the
+	// snapshot has — a client that predates added accounts must not wipe them.
+	Extra map[string]float64 `json:"extra"`
 }
 
 // UpdateBalanceInput is the input DTO for updating a balance snapshot
@@ -52,6 +55,9 @@ type UpdateBalanceInput struct {
 	BtcPrice   float64 `json:"btc_price"` // EUR/BTC at snapshot time
 	RevStocks  float64 `json:"rev_stocks"`
 	IBKRStocks float64 `json:"ibkr_stocks"`
+	// Extra holds added accounts by key. On update, nil keeps what the
+	// snapshot has — a client that predates added accounts must not wipe them.
+	Extra map[string]float64 `json:"extra"`
 }
 
 const minValidBtcPrice = 100.0
@@ -78,13 +84,18 @@ func applyBtcEur(b *domain.Balance, livePrice float64) {
 	}
 	rBtcEur := btcToEur(b.RBTC, b.BtcPrice, livePrice)
 	mBtcEur := btcToEur(b.MBTC, b.BtcPrice, livePrice)
-	b.Total = b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + rBtcEur + mBtcEur + b.RevStocks + b.IBKRStocks
+	b.Total = componentsTotal(b, rBtcEur+mBtcEur)
 	if b.RBTC > 0 {
 		b.RBtcEur = rBtcEur
 	}
 	if b.MBTC > 0 {
 		b.MBtcEur = mBtcEur
 	}
+}
+
+// componentsTotal is every account summed, with BTC already in EUR.
+func componentsTotal(b *domain.Balance, btcEur float64) float64 {
+	return b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks + b.Extra.Sum()
 }
 
 func roundCents(v float64) float64 {
@@ -118,6 +129,31 @@ type BalanceService interface {
 type balanceService struct {
 	repo   repository.BalanceRepository
 	snapMu sync.Mutex
+	// accounts names added accounts in the allocation; optional.
+	accounts repository.AccountRepository
+}
+
+// WithAccounts lets the allocation name added accounts by their label.
+func WithAccounts(svc BalanceService, accounts repository.AccountRepository) BalanceService {
+	if s, ok := svc.(*balanceService); ok {
+		s.accounts = accounts
+	}
+	return svc
+}
+
+func (s *balanceService) accountLabels() map[string]string {
+	out := map[string]string{}
+	if s.accounts == nil {
+		return out
+	}
+	accs, err := s.accounts.List()
+	if err != nil {
+		return out
+	}
+	for _, a := range accs {
+		out[a.Key] = a.Label
+	}
+	return out
 }
 
 func NewBalanceService(repo repository.BalanceRepository, _ repository.TransactionRepository) BalanceService {
@@ -147,6 +183,7 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 		BtcPrice:   input.BtcPrice,
 		RevStocks:  input.RevStocks,
 		IBKRStocks: input.IBKRStocks,
+		Extra:      extraValues(input.Extra),
 	}
 
 	// The form sends the live BTC price, or 0 when the price feed hasn't
@@ -162,7 +199,7 @@ func (s *balanceService) Create(input CreateBalanceInput) (*domain.Balance, erro
 
 	if b.Total == 0 {
 		btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-		b.Total = roundCents(b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks)
+		b.Total = roundCents(componentsTotal(b, btcEur))
 	}
 
 	if err := s.repo.Create(b); err != nil {
@@ -203,6 +240,9 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	b.BtcPrice = input.BtcPrice
 	b.RevStocks = input.RevStocks
 	b.IBKRStocks = input.IBKRStocks
+	if input.Extra != nil {
+		b.Extra = extraValues(input.Extra)
+	}
 
 	// Always recompute the total from the components at the SNAPSHOT's BTC
 	// price ("Total is auto-calculated" in the UI). Trusting input.Total let
@@ -211,7 +251,7 @@ func (s *balanceService) Update(id uint, input UpdateBalanceInput) (*domain.Bala
 	// the market price of the moment. The one exception: a legacy total-only
 	// row (no component breakdown) keeps its explicit total.
 	btcEur := b.BtcPrice * (b.RBTC + b.MBTC)
-	b.Total = roundCents(b.Seb + b.Swed + b.SwedETF + b.SebPen + b.Luminor + b.Art + b.Cash + b.RevM + b.RevR + btcEur + b.RevStocks + b.IBKRStocks)
+	b.Total = roundCents(componentsTotal(b, btcEur))
 	if b.Total == 0 && input.Total != 0 {
 		b.Total = input.Total
 	}
@@ -385,6 +425,7 @@ func (s *balanceService) snapshotLocked(deltas []AccountDelta) (string, error) {
 	}
 
 	snap := *latest
+	snap.Extra = latest.Extra.Clone()
 	// An account code that matches no column would write a snapshot that is
 	// a byte-for-byte clone of the previous one — the balance looks
 	// "adjusted" in the trend while nothing moved. Fail loudly instead; the
@@ -397,7 +438,7 @@ func (s *balanceService) snapshotLocked(deltas []AccountDelta) (string, error) {
 	roundAllAccounts(&snap)
 
 	btcEur := snap.BtcPrice * (snap.RBTC + snap.MBTC)
-	snap.Total = roundCents(snap.Seb + snap.Swed + snap.SwedETF + snap.SebPen + snap.Luminor + snap.Art + snap.Cash + snap.RevM + snap.RevR + btcEur + snap.RevStocks + snap.IBKRStocks)
+	snap.Total = roundCents(componentsTotal(&snap, btcEur))
 
 	// A fresh row, never an edit of the one it was cloned from.
 	snap.ID = 0
@@ -436,6 +477,7 @@ func (s *balanceService) SnapshotFromAbsolute(values map[string]float64, at time
 		return nil, err
 	}
 	snap := *latest
+	snap.Extra = latest.Extra.Clone()
 	var out []AccountSet
 	changed := false
 	for _, account := range sortedKeys(values) {
@@ -456,7 +498,7 @@ func (s *balanceService) SnapshotFromAbsolute(values map[string]float64, at time
 	}
 	roundAllAccounts(&snap)
 	btcEur := snap.BtcPrice * (snap.RBTC + snap.MBTC)
-	snap.Total = roundCents(snap.Seb + snap.Swed + snap.SwedETF + snap.SebPen + snap.Luminor + snap.Art + snap.Cash + snap.RevM + snap.RevR + btcEur + snap.RevStocks + snap.IBKRStocks)
+	snap.Total = roundCents(componentsTotal(&snap, btcEur))
 	snap.ID = 0
 	// Never behind the snapshot it was cloned from, so it really is the
 	// latest and later commits are measured against it.
@@ -497,6 +539,9 @@ func accountValue(b *domain.Balance, account string) (float64, bool) {
 		return b.IBKRStocks, true
 	case "cash":
 		return b.Cash, true
+	}
+	if domain.IsCustomAccountKey(account) {
+		return b.Extra[account], true
 	}
 	return 0, false
 }
@@ -571,9 +616,29 @@ func applyAccountDelta(b *domain.Balance, account string, delta float64) bool {
 	case "cash":
 		b.Cash += delta
 	default:
-		return false
+		if !domain.IsCustomAccountKey(account) {
+			return false
+		}
+		if b.Extra == nil {
+			b.Extra = domain.AccountValues{}
+		}
+		b.Extra[account] += delta
 	}
 	return true
+}
+
+// extraValues keeps only well-formed added-account keys.
+func extraValues(in map[string]float64) domain.AccountValues {
+	out := domain.AccountValues{}
+	for k, v := range in {
+		if domain.IsCustomAccountKey(k) {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func roundAllAccounts(b *domain.Balance) {
@@ -588,6 +653,9 @@ func roundAllAccounts(b *domain.Balance) {
 	b.RevR = roundCents(b.RevR)
 	b.RevStocks = roundCents(b.RevStocks)
 	b.IBKRStocks = roundCents(b.IBKRStocks)
+	for k, v := range b.Extra {
+		b.Extra[k] = roundCents(v)
+	}
 }
 
 func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error) {
@@ -617,6 +685,14 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"Revolut M account BTC":    mBtcEur,
 		"Revolut M account stocks": latest.RevStocks,
 		"IBKR stocks":              latest.IBKRStocks,
+	}
+	labels := s.accountLabels()
+	for k, v := range latest.Extra {
+		name := labels[k]
+		if name == "" {
+			name = k
+		}
+		accounts[name] += v
 	}
 
 	var allocations []domain.AccountAllocation

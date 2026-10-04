@@ -448,6 +448,27 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 		result.Imported.Transactions++
 	}
 
+	// --- Accounts (v7) — before balances, so their values have a home ---
+	if h.db != nil {
+		accRepo := repository.NewAccountRepository(h.db)
+		for _, row := range payload.Accounts {
+			if !domain.IsCustomAccountKey(row.Key) || strings.TrimSpace(row.Label) == "" {
+				continue
+			}
+			if _, err := accRepo.GetByKey(row.Key); err == nil {
+				continue
+			}
+			group := domain.AccountGroup(row.Group)
+			if !domain.IsValidAccountGroup(group) {
+				group = domain.AccountGroupOther
+			}
+			if err := accRepo.Create(&domain.Account{Key: row.Key, Label: row.Label, Group: group,
+				Archived: row.Archived, SortOrder: row.SortOrder}); err != nil {
+				return result, fmt.Errorf("restoring account %s: %w", row.Key, err)
+			}
+		}
+	}
+
 	// --- Balances ---
 	// v2 exports carry id + time: dedup by ID (idempotent re-import) and keep
 	// the time-of-day so multiple snapshots per day survive a restore.
@@ -500,6 +521,14 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			BtcPrice:   row.BtcPrice,
 			RevStocks:  row.RevStocks,
 			IBKRStocks: row.IBKRStocks,
+		}
+		for k, v := range row.Extra {
+			if domain.IsCustomAccountKey(k) {
+				if b.Extra == nil {
+					b.Extra = domain.AccountValues{}
+				}
+				b.Extra[k] = v
+			}
 		}
 		if err := h.balRepo.Create(b); err != nil {
 			return result, fmt.Errorf("restoring balance snapshot (%s): %w", row.Date, err)

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { StagedTx, StagedVerdict } from '../../api/banking'
 import { ACCOUNT_LABELS, type AccountKey } from '../../types'
+import { useAccountLabels } from '../../hooks/useAccounts'
 import { formatEuro } from '../../utils/format'
 import {
   useCommitStaged,
@@ -21,8 +22,8 @@ const verdictStyle: Record<StagedVerdict, { label: string; className: string }> 
   pending: { label: 'reserved', className: 'bg-sky-100 text-sky-700' },
 }
 
-function accountLabel(key: string): string {
-  return ACCOUNT_LABELS[key as AccountKey] ?? key
+function accountLabel(key: string, labels: Record<string, string>): string {
+  return labels[key] ?? ACCOUNT_LABELS[key as AccountKey] ?? key
 }
 
 function StagedCard({
@@ -42,6 +43,7 @@ function StagedCard({
   onDismiss: () => void
   onRestore: () => void
 }) {
+  const accountLabels = useAccountLabels()
   // Reviewing one row opens the ordinary transaction form, the same one
   // "+ Add" and editing a saved row use.
   const [reviewing, setReviewing] = useState(false)
@@ -103,7 +105,7 @@ function StagedCard({
               </span>
               {(row.debit_account || row.credit_account) && (
                 <span className="px-1.5 py-0.5 text-xs rounded bg-gray-100 text-gray-600">
-                  {accountLabel(row.debit_account || row.credit_account)}
+                  {accountLabel(row.debit_account || row.credit_account, accountLabels)}
                 </span>
               )}
               <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${verdict.className}`}>

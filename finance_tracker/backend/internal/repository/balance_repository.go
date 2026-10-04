@@ -36,6 +36,7 @@ func (r *balanceRepository) GetByID(id uint) (*domain.Balance, error) {
 	if err := r.db.First(&b, id).Error; err != nil {
 		return nil, err
 	}
+	annotateExtraGroups(accountGroups(r.db), &b)
 	return &b, nil
 }
 
@@ -59,6 +60,10 @@ func (r *balanceRepository) List(filter domain.BalanceFilter) ([]domain.Balance,
 	if err := query.Order("date DESC, id DESC").Find(&balances).Error; err != nil {
 		return nil, err
 	}
+	groups := accountGroups(r.db)
+	for i := range balances {
+		annotateExtraGroups(groups, &balances[i])
+	}
 	return balances, nil
 }
 
@@ -67,6 +72,7 @@ func (r *balanceRepository) GetLatest() (*domain.Balance, error) {
 	if err := r.db.Order("date DESC, id DESC").First(&b).Error; err != nil {
 		return nil, err
 	}
+	annotateExtraGroups(accountGroups(r.db), &b)
 	return &b, nil
 }
 
@@ -116,7 +122,21 @@ func (r *balanceRepository) GetTrend(filter domain.BalanceFilter) (*domain.Balan
 		},
 	}
 
+	// Added accounts get a series each, zero where a snapshot predates them.
+	extraKeys := map[string]bool{}
 	for _, b := range balances {
+		for k := range b.Extra {
+			extraKeys[k] = true
+		}
+	}
+	for k := range extraKeys {
+		trend.Accounts[k] = []float64{}
+	}
+
+	for _, b := range balances {
+		for k := range extraKeys {
+			trend.Accounts[k] = append(trend.Accounts[k], b.Extra[k])
+		}
 		trend.Dates = append(trend.Dates, b.Date.Format("2006-01-02"))
 		trend.Totals = append(trend.Totals, b.Total)
 		trend.Accounts["seb"] = append(trend.Accounts["seb"], b.Seb)

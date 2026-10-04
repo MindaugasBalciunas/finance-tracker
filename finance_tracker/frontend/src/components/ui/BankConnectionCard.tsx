@@ -3,6 +3,7 @@ import type { BankConnection, SyncResult } from '../../api/banking'
 import { balanceLines } from '../../utils/bankBalances'
 import { formatEuro } from '../../utils/format'
 import { ACCOUNT_LABELS, type AccountKey } from '../../types'
+import { useAccountLabels } from '../../hooks/useAccounts'
 import { useDisconnectBank, useMapBankAccount, useSyncBankAccount } from '../../hooks/useBanking'
 
 const statusStyle: Record<BankConnection['status'], string> = {
@@ -40,6 +41,7 @@ export default function BankConnectionCard({
   validAccountKeys: string[]
   onReconnect: (aspspName: string, country: string) => void
 }) {
+  const accountLabels = useAccountLabels()
   const sync = useSyncBankAccount()
   const mapAccount = useMapBankAccount()
   const disconnect = useDisconnectBank()
@@ -149,7 +151,7 @@ export default function BankConnectionCard({
                 <option value="">Don't sync</option>
                 {validAccountKeys.map((k) => (
                   <option key={k} value={k}>
-                    {ACCOUNT_LABELS[k as AccountKey] ?? k}
+                    {accountLabels[k] ?? ACCOUNT_LABELS[k as AccountKey] ?? k}
                   </option>
                 ))}
               </select>

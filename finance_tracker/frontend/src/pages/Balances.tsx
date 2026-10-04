@@ -10,6 +10,7 @@ import QueryError from '../components/ui/QueryError'
 import StatCard from '../components/ui/StatCard'
 import WhereMoneySits from '../components/ui/WhereMoneySits'
 import AccountMovement from '../components/ui/AccountMovement'
+import AccountsManager from '../components/ui/AccountsManager'
 import { formatEuro, formatDate, formatTime } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
 import { useAssetSummary } from '../hooks/useAssets'
@@ -125,6 +126,7 @@ export default function Balances() {
                 m_btc: editingBalance.m_btc,
                 rev_stocks: editingBalance.rev_stocks,
                 ibkr_stocks: editingBalance.ibkr_stocks,
+                extra: editingBalance.extra,
               }}
             />
           </div>
@@ -155,6 +157,7 @@ export default function Balances() {
                 m_btc: projected.m_btc,
                 rev_stocks: projected.rev_stocks,
                 ibkr_stocks: projected.ibkr_stocks,
+                extra: projected.extra,
               } : undefined}
             />
           </div>
@@ -220,6 +223,8 @@ export default function Balances() {
           )}
         </div>
       )}
+
+      <AccountsManager />
 
       {/* Current allocation by account */}
       {allocations && (

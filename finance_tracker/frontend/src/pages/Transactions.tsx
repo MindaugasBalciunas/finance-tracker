@@ -22,12 +22,10 @@ import { ACCOUNT_LABELS } from '../types'
 import { CATEGORIES } from '../constants/categories'
 import { useDateRange } from '../context/DateRangeContext'
 import { useLabels } from '../hooks/useBudgets'
+import { useAccountLabels } from '../hooks/useAccounts'
 
-function label(key: string) {
-  return ACCOUNT_LABELS[key as AccountKey] ?? key
-}
-
-function formatAccount(tx: Transaction): string {
+function formatAccount(tx: Transaction, labels: Record<string, string>): string {
+  const label = (key: string) => labels[key] ?? ACCOUNT_LABELS[key as AccountKey] ?? key
   const debit = tx.debit_account
   const credit = tx.credit_account
   // New-style rows
@@ -63,6 +61,7 @@ function SortableTh({ label, col, filter, onSort, align = 'left' }: {
 }
 
 export default function Transactions() {
+  const accountLabels = useAccountLabels()
   const { dateRange, setCustomRange } = useDateRange()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showForm, setShowForm] = useState(false)
@@ -556,7 +555,7 @@ export default function Transactions() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{formatAccount(tx)}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatAccount(tx, accountLabels)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-green-600' : 'text-blue-600'}`}>
                       {tx.type === 'expense' ? '-' : '+'}{formatEuro(tx.amount.value)}
                     </td>

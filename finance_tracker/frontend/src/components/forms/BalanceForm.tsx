@@ -4,6 +4,7 @@ import type { CreateBalanceInput } from '../../types'
 import { useBtcPrice } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
 import DateInput from '../ui/DateInput'
+import { useAddedAccounts } from '../../hooks/useAccounts'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
   { key: 'seb',         label: 'SEB' },
@@ -39,6 +40,13 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   const [rBtc, setRBtc] = useState<string>(initRBtc)
   const [mBtc, setMBtc] = useState<string>(initMBtc)
 
+  // Added accounts: open ones get an input; archived ones carry their last
+  // value forward untouched, like Luminor below.
+  const added = useAddedAccounts()
+  const openAdded = added.filter((a) => !a.archived)
+  const [extra, setExtra] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(defaultValues?.extra ?? {}).map(([k, v]) => [k, String(v)])))
+
   const today = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, control, formState: { errors } } = useForm<CreateBalanceInput>({
     defaultValues: { date: today, ...defaultValues },
@@ -59,6 +67,12 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
     for (const { key } of CLOSED_ACCOUNTS) {
       (data as any)[key] = (defaultValues?.[key] as number | undefined) ?? 0
     }
+    const out: Record<string, number> = { ...(defaultValues?.extra ?? {}) }
+    for (const a of openAdded) {
+      const v = parseFloat(extra[a.key] ?? '')
+      out[a.key] = isNaN(v) ? 0 : v
+    }
+    data.extra = out
     data.r_btc = rBtc ? parseFloat(rBtc) : 0
     data.m_btc = mBtc ? parseFloat(mBtc) : 0
     data.btc_price = btcPrice ?? 0
@@ -91,6 +105,20 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
               step="0.01"
               min="0"
               {...register(key, { valueAsNumber: true })}
+              placeholder="0.00"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        ))}
+
+        {openAdded.map((a) => (
+          <div key={a.key}>
+            <label className="block text-xs font-medium text-gray-600 mb-0.5">{a.label} (€)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={extra[a.key] ?? ''}
+              onChange={(e) => setExtra((x) => ({ ...x, [a.key]: e.target.value }))}
               placeholder="0.00"
               className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
