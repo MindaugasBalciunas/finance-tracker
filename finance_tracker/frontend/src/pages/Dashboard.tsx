@@ -6,8 +6,7 @@ import { freeCash } from '../utils/balanceGroups'
 import NetWorthHero from '../components/ui/NetWorthHero'
 import CashFlowCard from '../components/ui/CashFlowCard'
 import OwedCard from '../components/ui/OwedCard'
-import { Link } from 'react-router-dom'
-import { lastCompleteMonth } from '../utils/month'
+import ReviewNudge from '../components/ui/ReviewNudge'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
@@ -125,18 +124,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-8">
 
-      {/* First week of a month: last month's review is the thing to read. */}
-      {new Date().getDate() <= 7 && (
-        <Link
-          to={`/review?month=${lastCompleteMonth()}`}
-          className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 hover:bg-blue-100"
-        >
-          <span className="text-sm text-blue-900">
-            🗓️ Your {new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString('en-GB', { month: 'long' })} review is ready
-          </span>
-          <span className="text-sm text-blue-700">Open →</span>
-        </Link>
-      )}
+      <ReviewNudge />
 
       {/* Net worth hero — latest snapshot + trend + composition */}
       {latestBalance && (
