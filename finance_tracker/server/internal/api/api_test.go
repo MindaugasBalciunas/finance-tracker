@@ -129,6 +129,15 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot accept bank rows", tokRW, "POST", "/bank/inbox/commit", map[string]any{"ids": []int{1}}, 403},
 		{"rw cannot change AI settings", tokRW, "PUT", "/ai/settings", map[string]any{"model": "x"}, 403},
 		{"rw cannot restore", tokRW, "POST", "/import/backup?confirm=replace", map[string]any{}, 403},
+		// Routes added in 2.1–2.4 stay outside every token's scope.
+		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
+		{"ro cannot read prefs", tokRO, "GET", "/prefs", nil, 403},
+		{"rw cannot change prefs", tokRW, "PUT", "/prefs", map[string]any{"liquid_only": true}, 403},
+		{"rw cannot add recurring", tokRW, "POST", "/recurring", map[string]any{"merchant": "x"}, 403},
+		{"rw cannot hide accounts", tokRW, "PUT", "/accounts/swed", map[string]any{"name": "Swedbank", "kind": "checking", "archived": true}, 403},
+		{"rw cannot set balances", tokRW, "POST", "/balances", map[string]any{"date": "2026-09-01", "values": []any{}}, 403},
+		{"ro cannot download the AI export", tokRO, "GET", "/export/ai.zip", nil, 403},
+		{"rw cannot run AI assist", tokRW, "POST", "/ai/assist", map[string]any{"text": "x"}, 403},
 		{"forged token", bad, "GET", "/transactions", nil, 401},
 		{"token in X-API-Token (behind basic auth)", c.with("X-API-Token", ro).with("Authorization", "Basic dTpw"), "GET", "/overview", nil, 200},
 	}

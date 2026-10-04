@@ -1,6 +1,7 @@
 package insights_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -261,6 +262,9 @@ func TestRecurringEditsHideAndManual(t *testing.T) {
 	again := insights.RecurringItem{Merchant: "LANDLORD", Category: "housing.rent", Amount: E(650), NextDate: "2026-09-10"}
 	if err := insights.SaveRecurringItem(d, &again); err != nil || again.ID != rent.ID {
 		t.Fatalf("upsert: %v id %d vs %d", err, again.ID, rent.ID)
+	}
+	if err := insights.SaveRecurringItem(d, &insights.RecurringItem{Merchant: strings.Repeat("x", 200)}); err == nil {
+		t.Error("oversized merchant accepted")
 	}
 	if err := insights.SaveRecurringItem(d, &insights.RecurringItem{Merchant: "X", Cadence: "weekly"}); err == nil {
 		t.Error("bad cadence accepted")

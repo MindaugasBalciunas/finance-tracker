@@ -1287,7 +1287,11 @@ func (s *Server) aiRoutes() {
 			st.APIKey = k
 		}
 		if in.Model != nil {
-			st.Model = strings.TrimSpace(*in.Model)
+			m := strings.TrimSpace(*in.Model)
+			if len(m) > 100 || strings.ContainsAny(m, " \t\r\n\"'<>") {
+				return nil, bad("invalid model name")
+			}
+			st.Model = m
 		}
 		if in.Provider != nil {
 			st.Provider = *in.Provider

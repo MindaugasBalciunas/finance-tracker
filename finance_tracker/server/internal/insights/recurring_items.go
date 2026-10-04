@@ -52,6 +52,9 @@ func SaveRecurringItem(d *sql.DB, it *RecurringItem) error {
 	if it.Merchant == "" {
 		return errors.New("merchant is required")
 	}
+	if len(it.Merchant) > 120 || len(it.Category) > 64 || len(it.Note) > 500 {
+		return errors.New("merchant, category or note is too long")
+	}
 	if it.Cadence == "" {
 		it.Cadence = "monthly"
 	}
