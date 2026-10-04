@@ -223,7 +223,11 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return jsonOut(insights.DetectRecurring(txs, now))
+		list, _, err := insights.RecurringCosts(a.DB, txs, now)
+		if err != nil {
+			return "", err
+		}
+		return jsonOut(list)
 	case "get_fi":
 		txs, err := ledger.All(a.DB, ledger.Filter{From: now.AddDate(-2, 0, 0).Format("2006-01-02")})
 		if err != nil {

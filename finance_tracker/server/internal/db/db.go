@@ -24,6 +24,20 @@ var migrations = []string{
 	schemaV1,
 	// 2: II and III pillar pensions can be cashed out, so they count as liquid.
 	`UPDATE accounts SET liquid = 1 WHERE kind = 'pension';`,
+	// 3: owner edits to recurring costs — added by hand, adjusted, or hidden.
+	`CREATE TABLE IF NOT EXISTS recurring_items (
+    id         INTEGER PRIMARY KEY,
+    merchant   TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT '',
+    cadence    TEXT NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly','quarterly','yearly')),
+    amount     INTEGER NOT NULL DEFAULT 0,      -- cents per charge; 0 = keep the detected amount
+    next_date  TEXT NOT NULL DEFAULT '',        -- '' = keep the detected next date
+    note       TEXT NOT NULL DEFAULT '',
+    hidden     INTEGER NOT NULL DEFAULT 0,      -- 1 = not recurring, stop showing it
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant ON recurring_items(lower(merchant));`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

@@ -57,6 +57,15 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Ask CFO | Model picker in the chat header | — |
 | UI | Firefox/mobile: sheet footer padding, consistent select chevrons, tab bars without vertical scrollbars, stable page width (`scrollbar-gutter`) | Firefox Playwright sweep |
 
+## Added in v2.3
+
+| Area | Change | Covered by |
+|---|---|---|
+| Recurring | Add, edit (amount, cadence incl. quarterly, category, next date, note), mark not recurring, restore, reset to detected; same list feeds Home "Coming up" and the AI (migration 3, `recurring_items`, in backups) | `insights/TestRecurringEditsHideAndManual`, `api/TestRecurringCRUD` |
+| Charts | Donuts: spending by category; "Where my money is" — stacked balances per account over time + today's split, with a switch per account (remembered); net worth line over the stacked groups | — |
+| Periods | 3M / 6M / YTD added to net worth, cash flow, trends, spending and positions; each chart's choice remembered on the server | `api/TestPrefsPersist` |
+| Accounts | Settings → Accounts: hide closed/unused accounts (Luminor) from Update balances, pickers and Wealth lists | — |
+
 ## Where v2 is better
 
 - One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.

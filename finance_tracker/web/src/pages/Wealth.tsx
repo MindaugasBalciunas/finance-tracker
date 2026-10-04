@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../lib/api'
-import { useAccounts, useNetWorthHistory, usePrefs, useRefresh } from '../lib/hooks'
+import { useAccounts, useNetWorthHistory, usePeriod, usePrefs, useRefresh } from '../lib/hooks'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
 import type { Account } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
-import { axisProps, gridProps, Legend, TooltipBox } from '../components/charts'
+import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
 import { Icon } from '../components/Icon'
 import { AccountSelect } from '../components/pickers'
 
@@ -31,20 +31,25 @@ export default function Wealth() {
   )
 }
 
-const RANGES = [{ value: '1y', label: '1Y' }, { value: '3y', label: '3Y' }, { value: '5y', label: '5Y' }, { value: 'all', label: 'All' }]
+const RANGES = [{ value: '3m', label: '3M' }, { value: '6m', label: '6M' }, { value: 'ytd', label: 'YTD' }, { value: '1y', label: '1Y' }, { value: '3y', label: '3Y' }, { value: '5y', label: '5Y' }, { value: 'all', label: 'All' }]
+const SHORT = ['3m', '6m', 'ytd']
 function rangeFrom(r: string) {
   if (r === 'all') return ''
   const d = new Date()
-  d.setFullYear(d.getFullYear() - Number(r[0]))
+  if (r === 'ytd') return `${d.getFullYear() - 1}-12-31`
+  if (r.endsWith('m')) d.setMonth(d.getMonth() - Number(r.slice(0, -1)))
+  else d.setFullYear(d.getFullYear() - Number(r.slice(0, -1)))
   return d.toISOString().slice(0, 10)
 }
+const rangeLabel = (r: string) => (r === 'all' ? 'since records began' : r === 'ytd' ? 'this year' : `over ${r.toUpperCase()}`)
+const rangeTick = (r: string) => (d: string) => (r === '5y' || r === 'all' ? d.slice(0, 4) : new Date(d).toLocaleDateString('en-GB', SHORT.includes(r) ? { day: 'numeric', month: 'short' } : { month: 'short', year: '2-digit' }))
 
 function Overview() {
-  const [range, setRange] = useState('3y')
+  const [range, setRange] = usePeriod('wealth', '3y', RANGES.map((r) => r.value))
   const { prefs, set: setPrefs } = usePrefs()
   const liquidOnly = prefs.liquid_only
   const setLiquidOnly = (v: boolean) => setPrefs({ liquid_only: v })
-  const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range))
+  const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range), SHORT.includes(range) ? 'week' : 'month')
   const { data: accounts } = useAccounts()
   const [sp, setSp] = useSearchParams()
   const [updateOpen, setUpdateOpen] = useState(sp.get('update') === '1')
@@ -68,7 +73,7 @@ function Overview() {
   const byGroup = useMemo(() => {
     const m: Record<string, Account[]> = {}
     for (const a of accounts ?? []) {
-      if (a.archived && !a.balance) continue
+      if (a.archived) continue
       ;(m[a.group] ||= []).push(a)
     }
     return m
@@ -81,7 +86,7 @@ function Overview() {
           <div>
             <div className="text-sm text-ink2">{liquidOnly ? 'Liquid assets' : 'Net worth'}</div>
             <div className="text-3xl font-semibold tracking-tight">{eur(head)}</div>
-            <div className="text-sm text-muted">{range === 'all' ? 'since records began' : `over ${range.toUpperCase()}`} <Delta value={change} /></div>
+            <div className="text-sm text-muted">{rangeLabel(range)} <Delta value={change} /></div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Toggle checked={liquidOnly} onChange={setLiquidOnly} label="Liquid only" />
@@ -91,9 +96,9 @@ function Overview() {
         <div className="mt-4 h-64 sm:h-80">
           {isLoading ? <Loading /> : (
             <ResponsiveContainer>
-              <AreaChart data={data} stackOffset="sign" margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+              <ComposedChart data={data} stackOffset="sign" margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
                 <CartesianGrid {...gridProps} />
-                <XAxis dataKey="date" {...axisProps} tickFormatter={(d) => (range === '1y' || range === '3y' ? new Date(d).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) : d.slice(0, 4))} minTickGap={40} />
+                <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
                 <YAxis {...axisProps} tickFormatter={eurk} width={48} />
                 <ReferenceLine y={0} stroke="var(--chart-axis)" />
                 <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
@@ -101,16 +106,19 @@ function Overview() {
                     { label: liquidOnly ? 'Liquid' : 'Net worth', value: eur(payload[0].payload.net), bold: true }]} />) : null} />
                 {groups.map((g) => (
                   <Area key={g.id} type="monotone" dataKey={g.id} name={g.name} stackId="1" stroke="var(--chart-surface)" strokeWidth={1.5}
-                    fill={`var(--s${g.slot})`} fillOpacity={0.9} isAnimationActive={false} />
+                    fill={`var(--s${g.slot})`} fillOpacity={0.85} isAnimationActive={false} />
                 ))}
-              </AreaChart>
+                <Line type="monotone" dataKey="net" name={liquidOnly ? 'Liquid' : 'Net worth'} stroke="rgb(var(--ink))" strokeWidth={2} dot={false} isAnimationActive={false} />
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>
-        <div className="mt-3"><Legend items={groups.map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? eurk(last.by_group[g.id] ?? 0) : undefined }))} /></div>
+        <div className="mt-3"><Legend items={[...groups.map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? eurk(last.by_group[g.id] ?? 0) : undefined })),
+          { color: 'rgb(var(--ink))', label: liquidOnly ? 'Liquid (line)' : 'Net worth (line)', value: eurk(head) }]} /></div>
         {last && <Allocation byGroup={last.by_group} liquidOnly={liquidOnly} />}
       </section>
-      <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={range === 'all' ? 'since records began' : `over ${range.toUpperCase()}`} />
+      <WhereMoneyIs from={rangeFrom(range)} range={range} liquidOnly={liquidOnly} accounts={accounts ?? []} />
+      <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={rangeLabel(range)} />
 
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Accounts</h2>
@@ -128,6 +136,9 @@ function Overview() {
             </div>
           </Card>
         ))}
+        {(accounts ?? []).some((a) => a.archived) && (
+          <a href="#/settings/accounts" className="text-xs text-muted hover:text-accent lg:col-span-2">{(accounts ?? []).filter((a) => a.archived).length} hidden accounts — manage in Settings</a>
+        )}
         {byGroup.other?.length > 0 && (
           <Card pad={false} title="Other"><div className="divide-y divide-line border-t border-line">{byGroup.other.map((a) => <AccountRow key={a.id} a={a} onClick={() => setAcct(a)} />)}</div></Card>
         )}
@@ -136,6 +147,79 @@ function Overview() {
       {acct && <AccountSheet a={acct} onClose={() => setAcct(null)} />}
       {newAcct && <AccountEditor onClose={() => setNewAcct(false)} />}
     </div>
+  )
+}
+
+/** Where the money is, account by account: stacked balances over the chosen
+ *  range plus today's split, with a switch per account. */
+function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
+  const { data: hist, isLoading } = useNetWorthHistory(from, SHORT.includes(range) ? 'week' : 'month', true)
+  const { prefs, set } = usePrefs()
+  const off = new Set(prefs.hidden_accounts ?? [])
+  const toggle = (id: string) => {
+    const next = new Set(off)
+    next.has(id) ? next.delete(id) : next.add(id)
+    set({ hidden_accounts: [...next] })
+  }
+  // Colours are ranked within the view (all assets, or liquid only) so the
+  // seven hues go to what is on screen; switching an account off keeps them.
+  const { colors, eligible } = useMemo(() => {
+    const eligible = accounts.filter((a) => a.kind !== 'loan' && !a.archived && (a.balance ?? 0) > 0 && (!liquidOnly || LIQUID_GROUPS.includes(a.group)))
+      .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+    const colors: Record<string, string> = {}
+    eligible.slice(0, 7).forEach((a, i) => { colors[a.id] = `var(--s${i + 1})` })
+    return { colors, eligible }
+  }, [accounts, liquidOnly])
+  const shown = eligible.filter((a) => !off.has(a.id))
+  const named = shown.filter((a) => colors[a.id])
+  const others = shown.filter((a) => !colors[a.id])
+  const series = useMemo(() => (hist ?? []).map((h) => {
+    const row: any = { date: h.date }
+    for (const a of named) row[a.id] = Math.max(0, h.by_account?.[a.id] ?? 0)
+    row.other = others.reduce((t, a) => t + Math.max(0, h.by_account?.[a.id] ?? 0), 0)
+    return row
+  }), [hist, named, others])
+  if (isLoading) return <Card title="Where my money is"><Loading /></Card>
+  if (!eligible.length) return null
+  const slices: Slice[] = foldSlices([...named.map((a) => ({ key: a.id, label: a.name, value: a.balance ?? 0, color: colors[a.id] })),
+    ...(others.length ? [{ key: 'other', label: `Other (${others.length})`, value: others.reduce((t, a) => t + (a.balance ?? 0), 0), color: 'var(--s-other)' }] : [])])
+  const keys = [...named.map((a) => ({ id: a.id, name: a.name, color: colors[a.id] })), ...(others.length ? [{ id: 'other', name: 'Other', color: 'var(--s-other)' }] : [])]
+  const total = shown.reduce((t, a) => t + (a.balance ?? 0), 0)
+  return (
+    <Card title="Where my money is" action={<span className="text-xs text-muted">{liquidOnly ? 'liquid' : 'all assets'} · {shown.length} of {eligible.length} accounts</span>}>
+      {/* One switch per account: tap to leave it out of both charts. */}
+      <div className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto overflow-y-hidden px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+        {eligible.map((a) => {
+          const on = !off.has(a.id)
+          return (
+            <button key={a.id} type="button" onClick={() => toggle(a.id)} aria-pressed={on} className={clsx('chip shrink-0', on ? 'text-ink' : 'opacity-50 line-through')}>
+              <span className="h-2 w-2 rounded-[3px]" style={{ background: on ? colors[a.id] ?? 'var(--s-other)' : 'transparent', border: on ? undefined : '1px solid rgb(var(--axis))' }} />
+              {a.name}
+            </button>
+          )
+        })}
+      </div>
+      {!shown.length ? <div className="py-8 text-center text-sm text-muted">Every account is switched off — tap one above.</div> : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_minmax(0,320px)]">
+          <div className="h-56 sm:h-64">
+            <ResponsiveContainer>
+              <AreaChart data={series} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
+                <YAxis {...axisProps} tickFormatter={eurk} width={48} />
+                <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                  <TooltipBox title={shortDate(label)} rows={[...keys.filter((k) => payload[0].payload[k.id] > 0).map((k) => ({ color: k.color, label: k.name, value: eur(payload[0].payload[k.id]) })).reverse(),
+                    { label: 'Total', value: eur(keys.reduce((t, k) => t + (payload[0].payload[k.id] ?? 0), 0)), bold: true }]} />) : null} />
+                {keys.map((k) => (
+                  <Area key={k.id} type="monotone" dataKey={k.id} name={k.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={k.color} fillOpacity={0.85} isAnimationActive={false} />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <Donut slices={slices} center={eurk(total)} sub="today" height={180} />
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -439,7 +523,7 @@ function ScenarioCard() {
 }
 
 function PositionSheet({ h, onClose }: { h: any; onClose: () => void }) {
-  const [range, setRange] = useState('1y')
+  const [range, setRange] = usePeriod('position', '1y', ['1mo', '6mo', 'ytd', '1y', '5y'])
   const { data: hist } = useQuery({ queryKey: ['hist', h.ticker, range], queryFn: () => api.get<any[]>(`/market/history/${h.ticker}`, { range }) })
   const { data: an } = useQuery({ queryKey: ['analyst', h.ticker], queryFn: () => api.get<any>(`/market/analyst/${h.ticker}`), retry: false })
   return (
@@ -449,7 +533,7 @@ function PositionSheet({ h, onClose }: { h: any; onClose: () => void }) {
         <div><div className="text-xs text-muted">Gain</div><div className={clsx('font-semibold', (h.gain ?? 0) >= 0 ? 'text-good' : 'text-bad')}>{h.gain != null ? `${h.gain.toFixed(0)} ${h.currency}` : '—'}</div></div>
         <div><div className="text-xs text-muted">52-week</div><div className="font-semibold tnum">{h.week52_low ? `${h.week52_low.toFixed(0)}–${h.week52_high.toFixed(0)}` : '—'}</div></div>
       </div>
-      <Segmented value={range} onChange={setRange} size="sm" options={['1mo', '6mo', '1y', '5y'].map((r) => ({ value: r, label: r }))} />
+      <Segmented value={range} onChange={setRange} size="sm" options={[{ value: '1mo', label: '1M' }, { value: '6mo', label: '6M' }, { value: 'ytd', label: 'YTD' }, { value: '1y', label: '1Y' }, { value: '5y', label: '5Y' }]} />
       <div className="mt-2 h-52">
         <ResponsiveContainer>
           <LineChart data={hist ?? []} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>

@@ -238,9 +238,12 @@ func Breakdown(txs []ledger.Tx, from, to string) []CategoryStat {
 // Recurring is a cost that repeats on a schedule (subscriptions, bills,
 // obligations), detected from the ledger rather than declared.
 type Recurring struct {
+	ID        int64       `json:"id,omitempty"`     // saved owner edit, if any
+	Source    string      `json:"source"`           // detected | edited | manual
+	Note      string      `json:"note,omitempty"`
 	Merchant  string      `json:"merchant"`
 	Category  string      `json:"category"`
-	Cadence   string      `json:"cadence"` // monthly | yearly
+	Cadence   string      `json:"cadence"` // monthly | quarterly | yearly
 	Amount    money.Cents `json:"amount"`  // typical charge
 	Monthly   money.Cents `json:"monthly"` // monthly equivalent
 	Last      string      `json:"last"`
@@ -300,7 +303,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 			}
 			lastMonth := months[last.date[:7]]
 			lt, _ := time.Parse("2006-01-02", last.date)
-			out = append(out, Recurring{Merchant: m, Category: last.cat, Cadence: "monthly", Amount: money.FromFloat(med),
+			out = append(out, Recurring{Source: "detected", Merchant: m, Category: last.cat, Cadence: "monthly", Amount: money.FromFloat(med),
 				Monthly: money.FromFloat(med), Last: last.date, Next: lt.AddDate(0, 1, 0).Format("2006-01-02"), Count: len(hs),
 				LastAmount: lastMonth, Changed: math.Abs(lastMonth.Float()-med) > 0.1*med+1})
 			continue
@@ -312,7 +315,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 			tb, _ := time.Parse("2006-01-02", b.date)
 			gap := tb.Sub(ta).Hours() / 24
 			if gap > 330 && gap < 400 && math.Abs(a.amt.Float()-b.amt.Float()) <= 0.25*b.amt.Float() && b.amt >= 1000 {
-				out = append(out, Recurring{Merchant: m, Category: b.cat, Cadence: "yearly", Amount: b.amt, Monthly: b.amt / 12,
+				out = append(out, Recurring{Source: "detected", Merchant: m, Category: b.cat, Cadence: "yearly", Amount: b.amt, Monthly: b.amt / 12,
 					Last: b.date, Next: tb.AddDate(1, 0, 0).Format("2006-01-02"), Count: len(hs), LastAmount: b.amt})
 			}
 		}
@@ -432,6 +435,8 @@ func Window(preset string, now time.Time) (string, string) {
 		return d(f), d(f.AddDate(0, 1, -1))
 	case "3m":
 		return d(now.AddDate(0, -3, 0).AddDate(0, 0, 1)), d(now)
+	case "6m":
+		return d(now.AddDate(0, -6, 0).AddDate(0, 0, 1)), d(now)
 	case "ytd":
 		return d(time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)), d(now)
 	case "last_year":

@@ -232,3 +232,62 @@ func TestTagTotals(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestRecurringEditsHideAndManual(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	var txs []ledger.Tx
+	for i := 0; i < 8; i++ {
+		date := now.AddDate(0, -i, -2).Format("2006-01-02")
+		y := tx(date, "expense", "subscriptions.media", 9.99)
+		y.Merchant = "YouTube Premium"
+		n := tx(date, "expense", "subscriptions.media", 15)
+		n.Merchant = "Netflix"
+		txs = append(txs, y, n)
+	}
+	// Edit YouTube to a family plan billed quarterly; hide Netflix; add rent by hand.
+	yt := insights.RecurringItem{Merchant: "youtube premium", Cadence: "quarterly", Amount: E(30), Note: "family"}
+	if err := insights.SaveRecurringItem(d, &yt); err != nil {
+		t.Fatal(err)
+	}
+	if err := insights.SaveRecurringItem(d, &insights.RecurringItem{Merchant: "Netflix", Hidden: true}); err != nil {
+		t.Fatal(err)
+	}
+	rent := insights.RecurringItem{Merchant: "Landlord", Category: "housing.rent", Amount: E(600), NextDate: "2026-09-10"}
+	if err := insights.SaveRecurringItem(d, &rent); err != nil {
+		t.Fatal(err)
+	}
+	// Saving the same merchant again updates, never duplicates.
+	again := insights.RecurringItem{Merchant: "LANDLORD", Category: "housing.rent", Amount: E(650), NextDate: "2026-09-10"}
+	if err := insights.SaveRecurringItem(d, &again); err != nil || again.ID != rent.ID {
+		t.Fatalf("upsert: %v id %d vs %d", err, again.ID, rent.ID)
+	}
+	if err := insights.SaveRecurringItem(d, &insights.RecurringItem{Merchant: "X", Cadence: "weekly"}); err == nil {
+		t.Error("bad cadence accepted")
+	}
+	list, hidden, err := insights.RecurringCosts(d, txs, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]insights.Recurring{}
+	for _, r := range list {
+		by[r.Merchant] = r
+	}
+	if r := by["YouTube Premium"]; r.Source != "edited" || r.Cadence != "quarterly" || r.Amount != E(30) || r.Monthly != E(10) || r.Note != "family" {
+		t.Errorf("edit: %+v", r)
+	}
+	if _, ok := by["Netflix"]; ok || len(hidden) != 1 || hidden[0].Merchant != "Netflix" {
+		t.Errorf("hidden: %+v / %+v", by["Netflix"], hidden)
+	}
+	// A past next date rolls forward by its cadence.
+	if r := by["Landlord"]; r.Source != "manual" || r.Amount != E(650) || r.Next != "2026-10-10" || r.Category != "housing.rent" {
+		t.Errorf("manual: %+v", r)
+	}
+	insights.DeleteRecurringItem(d, yt.ID)
+	list, _, _ = insights.RecurringCosts(d, txs, now)
+	for _, r := range list {
+		if r.Merchant == "YouTube Premium" && (r.Source != "detected" || r.Amount != E(9.99)) {
+			t.Errorf("delete restores detection: %+v", r)
+		}
+	}
+}

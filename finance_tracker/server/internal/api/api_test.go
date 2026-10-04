@@ -554,6 +554,38 @@ func TestNewInsightAndTidyEndpoints(t *testing.T) {
 	}
 }
 
+func TestRecurringCRUD(t *testing.T) {
+	_, c := newServer(t)
+	var it map[string]any
+	c.ok("POST", "/recurring", map[string]any{"merchant": "Landlord", "category": "housing.rent", "cadence": "monthly", "amount": 600, "next_date": "2099-01-10"}, &it)
+	id := itoa(int64(it["id"].(float64)))
+	var rec struct {
+		Items  []map[string]any `json:"items"`
+		Hidden []map[string]any `json:"hidden"`
+		Total  float64          `json:"monthly_total"`
+	}
+	c.ok("GET", "/insights/recurring", nil, &rec)
+	if len(rec.Items) != 1 || rec.Items[0]["source"] != "manual" || rec.Total != 600 {
+		t.Fatalf("%+v", rec)
+	}
+	c.ok("PUT", "/recurring/"+id, map[string]any{"merchant": "Landlord", "cadence": "yearly", "amount": 1200, "hidden": true}, nil)
+	c.ok("GET", "/insights/recurring", nil, &rec)
+	if len(rec.Items) != 0 || len(rec.Hidden) != 1 {
+		t.Fatalf("hide: %+v", rec)
+	}
+	if code, _ := c.do("POST", "/recurring", map[string]any{"merchant": ""}); code != 400 {
+		t.Error("empty merchant", code)
+	}
+	if code, _ := c.do("PUT", "/recurring/9999", map[string]any{"merchant": "x"}); code != 404 {
+		t.Error("missing id", code)
+	}
+	c.ok("DELETE", "/recurring/"+id, nil, nil)
+	c.ok("GET", "/insights/recurring", nil, &rec)
+	if len(rec.Items)+len(rec.Hidden) != 0 {
+		t.Fatal("delete")
+	}
+}
+
 func TestPrefsPersist(t *testing.T) {
 	_, c := newServer(t)
 	var p map[string]any
@@ -563,9 +595,23 @@ func TestPrefsPersist(t *testing.T) {
 	}
 	c.ok("PUT", "/prefs", map[string]any{"liquid_only": true}, nil)
 	c.ok("PUT", "/prefs", map[string]any{}, nil) // partial update keeps it
+	c.ok("PUT", "/prefs", map[string]any{"periods": map[string]string{"wealth": "6m"}}, nil)
+	c.ok("PUT", "/prefs", map[string]any{"periods": map[string]string{"cashflow": "ytd"}}, nil) // merges per chart
 	c.ok("GET", "/prefs", nil, &p)
 	if p["liquid_only"] != true {
 		t.Fatal("liquid_only not remembered", p)
+	}
+	c.ok("PUT", "/prefs", map[string]any{"hidden_accounts": []string{"house", "car"}}, nil)
+	c.ok("PUT", "/prefs", map[string]any{"hidden_accounts": []string{"car"}}, nil) // replaced, not merged
+	c.ok("GET", "/prefs", nil, &p)
+	if h := p["hidden_accounts"].([]any); len(h) != 1 || h[0] != "car" {
+		t.Fatal("hidden accounts", h)
+	}
+	if per := p["periods"].(map[string]any); per["wealth"] != "6m" || per["cashflow"] != "ytd" {
+		t.Fatal("periods", per)
+	}
+	if code, _ := c.do("PUT", "/prefs", map[string]any{"periods": map[string]string{"x": strings.Repeat("y", 40)}}); code != 400 {
+		t.Error("oversized period accepted", code)
 	}
 }
 

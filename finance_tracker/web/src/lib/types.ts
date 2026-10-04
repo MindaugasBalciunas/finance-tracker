@@ -38,6 +38,7 @@ export interface Snapshot {
 }
 
 export interface Recurring {
+  id?: number; source: 'detected' | 'edited' | 'manual'; note?: string
   merchant: string; category: string; cadence: string; amount: number; monthly: number; last: string; next: string
   count: number; changed: boolean; last_amount: number
 }

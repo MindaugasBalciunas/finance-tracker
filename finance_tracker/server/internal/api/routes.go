@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"errors"
 	"io"
 	"net/http"
@@ -787,7 +788,7 @@ func (s *Server) wealthRoutes() {
 		}
 		rng := r.URL.Query().Get("range")
 		switch rng {
-		case "1mo", "3mo", "6mo", "1y", "2y", "5y", "max":
+		case "1mo", "3mo", "6mo", "ytd", "1y", "2y", "5y", "max":
 		default:
 			rng = "1y"
 		}
@@ -816,9 +817,12 @@ func (s *Server) planRoutes() {
 		return loadPrefs(s.DB), nil
 	})
 	s.handle("PUT /api/prefs", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		p := loadPrefs(s.DB) // partial updates: absent fields keep their value
+		p := loadPrefs(s.DB) // partial updates: absent fields keep their value; periods merge per chart
 		if err := decode(r, &p); err != nil {
 			return nil, err
+		}
+		if err := validPrefs(p); err != nil {
+			return nil, bad(err.Error())
 		}
 		return p, savePrefs(s.DB, p)
 	})
@@ -1005,12 +1009,47 @@ func (s *Server) insightRoutes() {
 		if err != nil {
 			return nil, err
 		}
-		rec := insights.DetectRecurring(txs, time.Now())
+		rec, hidden, err := insights.RecurringCosts(s.DB, txs, time.Now())
+		if err != nil {
+			return nil, err
+		}
 		var total money.Cents
 		for _, x := range rec {
 			total += x.Monthly
 		}
-		return map[string]any{"items": rec, "monthly_total": total}, nil
+		if hidden == nil {
+			hidden = []insights.Recurring{}
+		}
+		return map[string]any{"items": rec, "hidden": hidden, "monthly_total": total}, nil
+	})
+	saveRecurring := func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var it insights.RecurringItem
+		if err := decode(r, &it); err != nil {
+			return nil, err
+		}
+		if r.Method == http.MethodPut {
+			id, err := idParam(r, "id")
+			if err != nil {
+				return nil, err
+			}
+			it.ID = id
+		}
+		if err := insights.SaveRecurringItem(s.DB, &it); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+			return nil, bad(err.Error())
+		}
+		return it, nil
+	}
+	s.handle("POST /api/recurring", saveRecurring)
+	s.handle("PUT /api/recurring/{id}", saveRecurring)
+	s.handle("DELETE /api/recurring/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, insights.DeleteRecurringItem(s.DB, id)
 	})
 	s.handle("GET /api/insights/fi", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-2, 0, 0).Format("2006-01-02")})

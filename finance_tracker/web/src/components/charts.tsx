@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Area, AreaChart, ResponsiveContainer } from 'recharts'
+import { Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { eurc, eurk } from '../lib/format'
 
 // Shared chart chrome: recessive axes and hairline grid in the palette's
@@ -84,6 +84,56 @@ export function ShareBar({ value, max, color = 'rgb(var(--accent))' }: { value: 
   return (
     <div className="h-1.5 w-full rounded-full bg-sunken">
       <div className="h-full rounded-full" style={{ width: `${Math.min(w, 100)}%`, background: color }} />
+    </div>
+  )
+}
+
+export type Slice = { key: string; label: string; value: number; color: string }
+
+/** Keep the largest slices (fixed colours stay with their entity) and fold
+ *  the rest into one neutral "Other" — never more than max-1 hues. */
+export function foldSlices(slices: Slice[], max = 8): Slice[] {
+  const pos = slices.filter((s) => s.value > 0).sort((a, b) => b.value - a.value)
+  if (pos.length <= max) return pos
+  const keep = pos.slice(0, max - 1)
+  const rest = pos.slice(max - 1).reduce((a, s) => a + s.value, 0)
+  return [...keep, { key: 'other', label: 'Other', value: rest, color: 'var(--s-other)' }]
+}
+
+/** Donut with the total in the middle, a tooltip, and an HTML legend with shares. */
+export function Donut({ slices, center, sub, height = 200, legend = true }: { slices: Slice[]; center?: ReactNode; sub?: ReactNode; height?: number; legend?: boolean }) {
+  const total = slices.reduce((a, s) => a + s.value, 0)
+  if (!total) return null
+  return (
+    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
+      <div className="relative w-full max-w-[220px] shrink-0" style={{ height }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={slices} dataKey="value" nameKey="label" innerRadius="62%" outerRadius="92%" paddingAngle={slices.length > 1 ? 1.5 : 0}
+              stroke="var(--chart-surface)" strokeWidth={2} isAnimationActive={false} startAngle={90} endAngle={-270}>
+              {slices.map((s) => <Cell key={s.key} fill={s.color} />)}
+            </Pie>
+            <Tooltip content={({ active, payload }) => active && payload?.length ? (
+              <TooltipBox title={payload[0].name} rows={[{ color: (payload[0].payload as Slice).color, label: `${Math.round(((payload[0].value as number) / total) * 1000) / 10}%`, value: eurc(payload[0].value as number), bold: true }]} />) : null} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <div className="text-base font-semibold tnum">{center ?? eurk(total)}</div>
+          {sub && <div className="text-[11px] text-muted">{sub}</div>}
+        </div>
+      </div>
+      {legend && (
+        <div className="grid w-full min-w-0 grid-cols-1 gap-y-1 text-xs">
+          {slices.map((s) => (
+            <div key={s.key} className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: s.color }} />
+              <span className="min-w-0 flex-1 truncate text-ink2">{s.label}</span>
+              <span className="tnum text-muted">{Math.round((s.value / total) * 100)}%</span>
+              <span className="w-14 text-right tnum text-ink">{eurk(s.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

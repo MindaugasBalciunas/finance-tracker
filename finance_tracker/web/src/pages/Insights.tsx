@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../lib/api'
-import { useCashflow } from '../lib/hooks'
+import { useCashflow, usePeriod, useRefresh } from '../lib/hooks'
 import { catColor, CORE, useCats } from '../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Flow, Recurring, Tx } from '../lib/types'
-import { AskCFO, Card, Delta, Empty, Loading, Meter, PageHeader, Segmented, Stat, Tabs } from '../components/ui'
-import { axisProps, gridProps, Legend, ShareBar, TooltipBox } from '../components/charts'
+import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Stat, Tabs, useToast } from '../components/ui'
+import { CategoryPicker } from '../components/pickers'
+import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
 
@@ -41,9 +42,13 @@ export default function Insights() {
 
 // ── cash flow ───────────────────────────────────────────────────────
 
+/** Chart spans in months; YTD counts the months of this year so far. */
+const SPANS = [{ value: '3', label: '3M' }, { value: '6', label: '6M' }, { value: 'ytd', label: 'YTD' }, { value: '12', label: '12M' }, { value: '24', label: '24M' }, { value: '60', label: '5Y' }]
+const spanMonths = (v: string) => (v === 'ytd' ? new Date().getMonth() + 1 : Number(v))
+
 function CashFlow() {
-  const [span, setSpan] = useState('24')
-  const from = addMonths(thisMonth(), -Number(span) + 1) + '-01'
+  const [span, setSpan] = usePeriod('cashflow', '24', SPANS.map((s) => s.value))
+  const from = addMonths(thisMonth(), -spanMonths(span) + 1) + '-01'
   const { data: months, isLoading } = useCashflow(from, todayISO(), 'month')
   const { data: years } = useCashflow('', '', 'year')
   const rows = useMemo(() => (months ?? []).map((f) => ({ ...f, label: f.period, spendNeg: -f.spending, rate: f.income > 0 ? f.savings_rate * 100 : null })), [months])
@@ -61,7 +66,7 @@ function CashFlow() {
         <Stat label="Savings rate" value={pct(inc ? (inc - sp) / inc : 0)} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
         <Stat label="Invested & principal" value={eur(sum('invested'))} sub={`incl. ${eur(sum('principal'))} mortgage principal`} />
       </div>
-      <Card title="Income vs spending" action={<Segmented size="sm" value={span} onChange={setSpan} options={[{ value: '12', label: '12M' }, { value: '24', label: '24M' }, { value: '60', label: '5Y' }]} />}>
+      <Card title="Income vs spending" action={<Segmented size="sm" value={span} onChange={setSpan} options={SPANS} />}>
         <div className="h-64">
           <ResponsiveContainer>
             <BarChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barGap={2} barCategoryGap="20%">
@@ -126,10 +131,10 @@ function CashFlow() {
 
 // ── spending ────────────────────────────────────────────────────────
 
-const PRESETS = [{ value: 'month', label: 'This month' }, { value: 'last_month', label: 'Last month' }, { value: '3m', label: '3 months' }, { value: 'ytd', label: 'This year' }, { value: '12m', label: '12 months' }, { value: 'last_year', label: 'Last year' }]
+const PRESETS = [{ value: 'month', label: 'This month' }, { value: 'last_month', label: 'Last month' }, { value: '3m', label: '3 months' }, { value: '6m', label: '6 months' }, { value: 'ytd', label: 'This year' }, { value: '12m', label: '12 months' }, { value: 'last_year', label: 'Last year' }]
 
 function Spending() {
-  const [preset, setPreset] = useState('12m')
+  const [preset, setPreset] = usePeriod('spending', '12m', PRESETS.map((p) => p.value))
   const [open, setOpen] = useState<string | null>(null)
   const cats = useCats()
   const editor = useTxEditor()
@@ -178,6 +183,9 @@ function Spending() {
           </div>
         </Card>
         <div className="space-y-4">
+          <Card title="Where it went">
+            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub="spent" />
+          </Card>
           <Card pad={false} title="Top merchants">
             <div className="divide-y divide-line border-t border-line">
               {data.merchants.slice(0, 12).map((m: any) => (
@@ -240,10 +248,11 @@ function PaceCard() {
 // ── trends ──────────────────────────────────────────────────────────
 
 function Trends() {
-  const [months, setMonths] = useState('24')
+  const [months, setMonths] = usePeriod('trends', '24', SPANS.map((s) => s.value))
   const [parent, setParent] = useState('')
   const cats = useCats()
-  const { data, isLoading } = useQuery({ queryKey: ['trends', months, parent], queryFn: () => api.get<any[]>('/insights/trends', { months, parent }) })
+  const n = String(spanMonths(months))
+  const { data, isLoading } = useQuery({ queryKey: ['trends', n, parent], queryFn: () => api.get<any[]>('/insights/trends', { months: n, parent }) })
   const keys = useMemo(() => {
     const totals: Record<string, number> = {}
     for (const r of data ?? []) for (const [k, v] of Object.entries(r)) if (k !== 'month') totals[k] = (totals[k] ?? 0) + (v as number)
@@ -272,7 +281,7 @@ function Trends() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Segmented size="sm" value={months} onChange={setMonths} options={[{ value: '12', label: '12M' }, { value: '24', label: '24M' }, { value: '60', label: '5Y' }]} />
+        <Segmented size="sm" value={months} onChange={setMonths} options={SPANS} />
         <select className="input select-pad h-8 w-auto text-xs" value={parent} onChange={(e) => setParent(e.target.value)}>
           <option value="">All categories</option>
           {cats.tree.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name} breakdown</option>)}
@@ -302,31 +311,117 @@ function Trends() {
 
 // ── recurring ───────────────────────────────────────────────────────
 
+const CADENCE_LABEL: Record<string, string> = { monthly: 'monthly', quarterly: 'quarterly', yearly: 'yearly' }
+
 function RecurringView() {
-  const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; monthly_total: number }>('/insights/recurring') })
+  const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number }>('/insights/recurring') })
   const cats = useCats()
+  const [edit, setEdit] = useState<Recurring | 'new' | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
+  const refresh = useRefresh()
   if (isLoading || !data) return <Loading />
-  if (!data.items.length) return <Empty title="Nothing recurring found" />
+  const restore = async (r: Recurring) => { await api.put(`/recurring/${r.id}`, { ...toItem(r), hidden: false }); refresh() }
   return (
     <div className="space-y-4">
-      <Stat label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.length} merchants`} />
-      <Card pad={false}>
-        <div className="divide-y divide-line">
-          {data.items.map((r) => (
-            <a key={r.merchant} href={`#/ledger?period=365&merchant=${encodeURIComponent(r.merchant)}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-sunken/40">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{r.merchant}{r.cadence === 'yearly' && <span className="ml-1.5 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">yearly</span>}</div>
-                <div className="truncate text-xs text-muted">{cats.path(r.category)} · next ~{shortDate(r.next)}</div>
+      <div className="flex items-end justify-between gap-3">
+        <Stat label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.length} merchants`} />
+        <button className="btn-primary shrink-0" onClick={() => setEdit('new')}><Icon name="plus" size={16} />Add</button>
+      </div>
+      {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance or anything billed on a schedule.</Empty> : (
+        <Card pad={false}>
+          <div className="divide-y divide-line">
+            {data.items.map((r) => (
+              <button key={r.merchant} onClick={() => setEdit(r)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 truncate text-sm font-medium">
+                    <span className="truncate">{r.merchant}</span>
+                    {r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
+                    {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">added</span>}
+                    {r.source === 'edited' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">edited</span>}
+                  </div>
+                  <div className="truncate text-xs text-muted">{r.category ? cats.path(r.category) : 'No category'} · next {r.source === 'detected' ? '~' : ''}{shortDate(r.next)}{r.note ? ` · ${r.note}` : ''}</div>
+                </div>
+                <div className="text-right">
+                  <div className="tnum text-sm font-semibold">{eur(r.amount)}</div>
+                  {r.cadence !== 'monthly' ? <div className="text-xs text-muted tnum">{eur(r.monthly)}/mo</div> : r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>}
+                </div>
+                <Icon name="chevronR" size={14} className="text-muted" />
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+      {data.hidden.length > 0 && (
+        <div>
+          <button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
+            <Icon name="chevronD" size={14} className={clsx('transition', showHidden && 'rotate-180')} />Not recurring ({data.hidden.length})
+          </button>
+          {showHidden && (
+            <Card pad={false} className="mt-2">
+              <div className="divide-y divide-line">
+                {data.hidden.map((r) => (
+                  <div key={r.merchant} className="flex items-center gap-3 px-4 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate text-ink2">{r.merchant}</span>
+                    <span className="tnum text-muted">{eur(r.amount)}</span>
+                    <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => restore(r)}>Restore</button>
+                  </div>
+                ))}
               </div>
-              <div className="text-right">
-                <div className="tnum text-sm font-semibold">{eur(r.amount)}</div>
-                {r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>}
-              </div>
-            </a>
-          ))}
+            </Card>
+          )}
         </div>
-      </Card>
+      )}
+      {edit && <RecurringEditor r={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
     </div>
+  )
+}
+
+const toItem = (r: Recurring) => ({ merchant: r.merchant, category: r.category, cadence: r.cadence, amount: r.amount, next_date: r.next, note: r.note ?? '' })
+
+/** Add a recurring cost, correct a detected one, or mark it not recurring. */
+function RecurringEditor({ r, onClose }: { r: Recurring | null; onClose: () => void }) {
+  const [v, setV] = useState({ merchant: r?.merchant ?? '', category: r?.category ?? '', cadence: r?.cadence ?? 'monthly', amount: r ? String(r.amount) : '', next_date: r?.next ?? '', note: r?.note ?? '' })
+  const refresh = useRefresh()
+  const toast = useToast()
+  const done = (msg: string) => { refresh(); toast(msg, 'good'); onClose() }
+  const body = (extra: object = {}) => {
+    const amount = Number(v.amount.replace(',', '.'))
+    if (!v.merchant.trim()) throw new Error('Name it — the merchant or payee')
+    if (!Number.isFinite(amount) || amount < 0) throw new Error('Amount must be a number')
+    return { ...v, merchant: v.merchant.trim(), amount, ...extra }
+  }
+  const save = useMutation({
+    mutationFn: () => (r?.id ? api.put(`/recurring/${r.id}`, body()) : api.post('/recurring', body())),
+    onSuccess: () => done('Saved'),
+  })
+  const hide = useMutation({
+    mutationFn: () => (r?.id ? api.put(`/recurring/${r.id}`, { ...toItem(r), hidden: true }) : api.post('/recurring', { ...toItem(r!), hidden: true })),
+    onSuccess: () => done('Marked not recurring'),
+  })
+  const remove = useMutation({ mutationFn: () => api.del(`/recurring/${r!.id}`), onSuccess: () => done(r?.source === 'manual' ? 'Removed' : 'Back to the detected values') })
+  const err = save.error || hide.error || remove.error
+  return (
+    <Sheet open onClose={onClose} title={r ? r.merchant : 'Add recurring cost'} footer={<>
+      {r && r.source !== 'manual' && <button className="btn-danger mr-auto" onClick={() => hide.mutate()}>Not recurring</button>}
+      {r?.source === 'manual' && <button className="btn-danger mr-auto" onClick={() => confirm(`Remove ${r.merchant}?`) && remove.mutate()}>Remove</button>}
+      <button className="btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>Save</button>
+    </>}>
+      <div className="space-y-4">
+        {r?.source === 'detected' && <div className="rounded-xl bg-sunken p-3 text-xs text-ink2">Found in your transactions: {r.count} charges, last {shortDate(r.last)} ({eurc(r.last_amount)}). Saving keeps your values from now on.</div>}
+        <Field label="Merchant or payee"><input className="input" value={v.merchant} disabled={!!r && r.source !== 'manual'} onChange={(e) => setV({ ...v, merchant: e.target.value })} placeholder="e.g. Landlord" /></Field>
+        <Field label="Category"><CategoryPicker value={v.category} kind="expense" onChange={(id) => setV({ ...v, category: id })} /></Field>
+        <Field label="How often"><Segmented value={v.cadence} onChange={(c) => setV({ ...v, cadence: c })} options={[{ value: 'monthly', label: 'Monthly' }, { value: 'quarterly', label: 'Quarterly' }, { value: 'yearly', label: 'Yearly' }]} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount €"><input className="input tnum" inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
+          <Field label="Next charge"><input type="date" className="input" value={v.next_date} onChange={(e) => setV({ ...v, next_date: e.target.value })} /></Field>
+        </div>
+        <Field label="Note"><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional" /></Field>
+        {r?.source === 'edited' && <button className="btn-ghost h-8 px-2 text-xs" onClick={() => remove.mutate()}><Icon name="refresh" size={14} />Reset to detected values</button>}
+        {r && r.source !== 'manual' && <a className="block text-xs text-accent" href={`#/ledger?period=365&merchant=${encodeURIComponent(r.merchant)}`}>See its transactions →</a>}
+        <ErrorBox error={err} />
+      </div>
+    </Sheet>
   )
 }
 

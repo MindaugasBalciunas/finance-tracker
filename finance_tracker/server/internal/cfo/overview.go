@@ -197,7 +197,8 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	o.Emergency, o.FIProgress, o.YearsToFI = fi.Emergency, fi.Progress, fi.YearsToFI
 	o.Anomalies = insights.Anomalies(txs, thisM, now)
 	soon := now.AddDate(0, 0, 14).Format("2006-01-02")
-	for _, r := range insights.DetectRecurring(txs, now) {
+	recurring, _, _ := insights.RecurringCosts(d, txs, now)
+	for _, r := range recurring {
 		if r.Next >= today && r.Next <= soon {
 			o.Upcoming = append(o.Upcoming, r)
 		}

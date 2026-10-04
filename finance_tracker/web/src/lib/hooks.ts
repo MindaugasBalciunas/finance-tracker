@@ -17,7 +17,7 @@ export const useCashflow = (from: string, to: string, granularity: 'month' | 'ye
 export const useMerchants = () =>
   useQuery({ queryKey: ['merchants'], queryFn: () => api.get<{ merchant: string; count: number; category: string }[]>('/merchants'), staleTime: 300_000 })
 
-export interface Prefs { liquid_only: boolean }
+export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[] }
 
 /** View choices stored on the server so they follow the owner across devices. */
 export function usePrefs() {
@@ -25,11 +25,19 @@ export function usePrefs() {
   const q = useQuery({ queryKey: ['prefs'], queryFn: () => api.get<Prefs>('/prefs'), staleTime: Infinity })
   const set = useMutation({
     mutationFn: (p: Partial<Prefs>) => api.put<Prefs>('/prefs', p),
-    onMutate: (p) => qc.setQueryData<Prefs>(['prefs'], (old) => ({ ...(old ?? { liquid_only: false }), ...p })),
+    onMutate: (p) => qc.setQueryData<Prefs>(['prefs'], (old) => ({ ...(old ?? { liquid_only: false }), ...p, periods: { ...(old?.periods ?? {}), ...(p.periods ?? {}) } })),
     onSuccess: (p) => qc.setQueryData(['prefs'], p),
     onError: () => qc.invalidateQueries({ queryKey: ['prefs'] }),
   })
   return { prefs: q.data ?? { liquid_only: false }, set: set.mutate }
+}
+
+/** A chart's period, remembered on the server per chart key. */
+export function usePeriod(key: string, fallback: string, allowed?: string[]): [string, (v: string) => void] {
+  const { prefs, set } = usePrefs()
+  const saved = prefs.periods?.[key]
+  const value = saved && (!allowed || allowed.includes(saved)) ? saved : fallback
+  return [value, (v: string) => set({ periods: { [key]: v } })]
 }
 
 export interface TxFilter {
