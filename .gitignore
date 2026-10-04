@@ -33,3 +33,9 @@ exports/
 /finance.db
 /*.db
 *.tsbuildinfo
+
+# v2
+finance_tracker/server/*.db*
+finance_tracker/server/backups/
+finance_tracker/web/node_modules/
+finance_tracker/web/dist/
