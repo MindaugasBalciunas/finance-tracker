@@ -13,26 +13,11 @@ import StatCard from '../components/ui/StatCard'
 import WhereMoneySits from '../components/ui/WhereMoneySits'
 import AccountMovement from '../components/ui/AccountMovement'
 import AccountsManager from '../components/ui/AccountsManager'
-import { formatEuro, formatDate, formatTime } from '../utils/format'
+import SnapshotHistory from '../components/ui/SnapshotHistory'
+import { formatEuro, formatDate } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
 import { useAssetSummary } from '../hooks/useAssets'
 import type { Balance, CreateBalanceInput } from '../types'
-
-// Per-account rows for the mobile snapshot cards; mirrors the desktop table columns.
-const ACCOUNT_ROWS: { key: string; label: string; value: (b: Balance) => number }[] = [
-  { key: 'seb', label: 'SEB', value: (b) => b.seb },
-  { key: 'swed', label: 'Swedbank', value: (b) => b.swed },
-  { key: 'ibkr_stocks', label: 'IBKR stocks', value: (b) => b.ibkr_stocks },
-  { key: 'swed_etf', label: 'Swedbank ETF', value: (b) => b.swed_etf },
-  { key: 'rev_m', label: 'Revolut M', value: (b) => b.rev_m },
-  { key: 'cash', label: 'Cash', value: (b) => b.cash },
-  { key: 'm_btc', label: 'M BTC (€)', value: (b) => b.m_btc_eur ?? 0 },
-  { key: 'rev_stocks', label: 'Rev M stocks', value: (b) => b.rev_stocks },
-  { key: 'seb_pen', label: 'SEB pension', value: (b) => b.seb_pen },
-  { key: 'art', label: 'Artea pension', value: (b) => b.art },
-  { key: 'rev_r', label: 'Revolut R', value: (b) => b.rev_r },
-  { key: 'r_btc', label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
-]
 
 type BalancesTab = 'overview' | 'history' | 'accounts'
 
@@ -127,11 +112,6 @@ export default function Balances() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
   const pageRows = (balances ?? []).slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-  // Added accounts that hold a value in any snapshot, archived ones included.
-  const extraRows = addedAccounts
-    .filter((a) => balances?.some((b) => (b.extra?.[a.key] ?? 0) !== 0))
-    .map((a) => ({ label: a.label, value: (b: Balance) => b.extra?.[a.key] ?? 0 }))
-
   if (isLoading) return <LoadingSpinner />
   if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
@@ -306,131 +286,13 @@ export default function Balances() {
             </h3>
           </div>
   
-          {/* Mobile cards */}
-          <div className="sm:hidden divide-y divide-gray-100">
-            {pageRows.map((b) => (
-              <div key={b.id} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">{formatDate(b.date)}</p>
-                    <p className="text-xs text-gray-400">{formatTime(b.created_at)}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-base font-bold text-blue-700 mr-1">{formatEuro(b.total)}</span>
-                    <button
-                      onClick={() => { setEditingBalance(b); setFormError(null) }}
-                      className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      onClick={() => handleDelete(b.id)}
-                      className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Free cash</span>
-                    <span className="font-medium text-green-700">{formatEuro(freeCash(b))}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Investments</span>
-                    <span className="font-medium text-blue-700">{formatEuro(investments(b))}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Pensions</span>
-                    <span className="font-medium text-purple-700">{formatEuro(pensions(b))}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Crypto</span>
-                    <span className="font-medium text-yellow-700">{formatEuro(cryptoEur(b))}</span>
-                  </div>
-                </div>
-                <details className="mt-2">
-                  <summary className="text-xs text-blue-600 cursor-pointer select-none py-1">
-                    All accounts
-                  </summary>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs">
-                    {[...ACCOUNT_ROWS.map((r) => ({ ...r, label: accountName(r.key, r.label) })), ...extraRows].filter((r) => r.value(b) !== 0).map((r) => (
-                      <div key={r.label} className="flex justify-between">
-                        <span className="text-gray-400">{r.label}</span>
-                        <span className="text-gray-700">{formatEuro(r.value(b))}</span>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            ))}
-            {!balances?.length && (
-              <p className="px-4 py-12 text-center text-gray-400 text-sm">
-                No balance snapshots yet. Add one above.
-              </p>
-            )}
-          </div>
-  
-          {/* Desktop table */}
-          <div className="overflow-x-auto hidden sm:block">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
-                  {ACCOUNT_ROWS.map((r) => (
-                    <th key={r.key} className="text-right px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">{accountName(r.key, r.label)}</th>
-                  ))}
-                  {extraRows.map((r) => (
-                    <th key={r.label} className="text-right px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">{r.label}</th>
-                  ))}
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {pageRows.map((b) => {
-                  return (
-                    <tr key={b.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-2">
-                        <span className="text-gray-700 font-medium">{formatDate(b.date)}</span>
-                        <span className="block text-xs text-gray-400 mt-0.5">{formatTime(b.created_at)}</span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
-                      {extraRows.map((r) => (
-                        <td key={r.label} className="px-3 py-2 text-right text-gray-600">{formatEuro(r.value(b))}</td>
-                      ))}
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => { setEditingBalance(b); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
-                          <button onClick={() => handleDelete(b.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {!balances?.length && (
-                  <tr>
-                    <td colSpan={15 + extraRows.length} className="px-4 py-12 text-center text-gray-400">
-                      No balance snapshots yet. Add one above.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-  
+          <SnapshotHistory
+            rows={pageRows}
+            all={balances ?? []}
+            onEdit={(b) => { setEditingBalance(b); setFormError(null) }}
+            onDelete={handleDelete}
+          />
+
           {pageCount > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
               <p className="text-sm text-gray-500">Page {safePage} of {pageCount}</p>

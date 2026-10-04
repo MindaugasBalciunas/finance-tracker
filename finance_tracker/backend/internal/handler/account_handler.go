@@ -43,10 +43,11 @@ func (h *AccountHandler) List(c *gin.Context) {
 }
 
 type accountInput struct {
-	Label     string              `json:"label"`
-	Group     domain.AccountGroup `json:"group"`
-	Archived  *bool               `json:"archived"`
-	SortOrder *int                `json:"sort_order"`
+	Label       string              `json:"label"`
+	Group       domain.AccountGroup `json:"group"`
+	Institution *string             `json:"institution"`
+	Archived    *bool               `json:"archived"`
+	SortOrder   *int                `json:"sort_order"`
 }
 
 func (h *AccountHandler) Create(c *gin.Context) {
@@ -80,6 +81,11 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		key = fmt.Sprintf("%s_%d", base, n)
 	}
 	a := &domain.Account{Key: key, Label: in.Label, Group: in.Group, SortOrder: 100}
+	if in.Institution != nil {
+		a.Institution = strings.TrimSpace(*in.Institution)
+	} else {
+		a.Institution = h.inferInstitution(in.Label)
+	}
 	if in.SortOrder != nil {
 		a.SortOrder = *in.SortOrder
 	}
@@ -125,6 +131,9 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	if in.Archived != nil {
 		a.Archived = *in.Archived
 	}
+	if in.Institution != nil {
+		a.Institution = strings.TrimSpace(*in.Institution)
+	}
 	if in.SortOrder != nil {
 		a.SortOrder = *in.SortOrder
 	}
@@ -133,4 +142,22 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, a)
+}
+
+// inferInstitution picks the bank an account's name starts with, among the
+// institutions already in use.
+func (h *AccountHandler) inferInstitution(label string) string {
+	accs, err := h.repo.List()
+	if err != nil {
+		return ""
+	}
+	seen := map[string]bool{}
+	var known []string
+	for _, a := range accs {
+		if a.Institution != "" && !seen[a.Institution] {
+			seen[a.Institution] = true
+			known = append(known, a.Institution)
+		}
+	}
+	return domain.InferInstitution(label, known)
 }

@@ -8,8 +8,8 @@ const base = {
   created_at: '', updated_at: '',
 } as Balance
 
-const paysera: Account = { id: 20, key: 'acc_paysera', label: 'Paysera', group: 'cash', builtin: false, archived: false, sort_order: 100 }
-const house: Account = { id: 21, key: 'acc_house', label: 'House fund', group: 'other', builtin: false, archived: false, sort_order: 100 }
+const paysera: Account = { id: 20, key: 'acc_paysera', label: 'Paysera', group: 'cash', institution: 'Paysera', builtin: false, archived: false, sort_order: 100 }
+const house: Account = { id: 21, key: 'acc_house', label: 'House fund', group: 'other', institution: '', builtin: false, archived: false, sort_order: 100 }
 
 describe('added accounts', () => {
   it('count in their group total via extra_groups', () => {

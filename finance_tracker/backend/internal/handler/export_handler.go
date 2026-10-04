@@ -106,10 +106,10 @@ func (h *ExportHandler) accountRows() []accountExportRow {
 	for _, a := range accs {
 		// A built-in travels only when the user changed it — its name and
 		// group are the things about it they can change.
-		if d := defaults[a.Key]; a.Builtin && a.Label == d.Label && a.Group == d.Group {
+		if d := defaults[a.Key]; a.Builtin && a.Label == d.Label && a.Group == d.Group && a.Institution == d.Institution {
 			continue
 		}
-		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder, Builtin: a.Builtin})
+		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder, Builtin: a.Builtin, Institution: a.Institution})
 	}
 	return out
 }
@@ -319,9 +319,10 @@ type accountExportRow struct {
 	Group     string `json:"group"`
 	Archived  bool   `json:"archived,omitempty"`
 	SortOrder int    `json:"sort_order,omitempty"`
-	// Builtin marks a changed built-in account: its label and group are
-	// restored onto the seeded row.
-	Builtin bool `json:"builtin,omitempty"`
+	// Builtin marks a changed built-in account: its label, group and
+	// institution are restored onto the seeded row.
+	Builtin     bool   `json:"builtin,omitempty"`
+	Institution string `json:"institution,omitempty"`
 }
 
 // aiSettingsExportRow carries the gateway configuration INCLUDING the API

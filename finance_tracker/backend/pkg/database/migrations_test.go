@@ -892,3 +892,33 @@ func TestRepairBtcTotalsKeepsAddedAccounts(t *testing.T) {
 	assert.Equal(t, 1450.0, get(bad.ID), "repaired including the added account")
 	assert.Equal(t, 760.0, get(plain.ID), "rows without added accounts behave as before")
 }
+
+// Seeding fills an empty institution — built-ins from their default, added
+// accounts from a name that starts with a known bank — and never overwrites
+// one the user set.
+func TestSeedAccountInstitutions(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Account{}))
+	require.NoError(t, db.Create(&domain.Account{Key: "seb", Label: "SEB", Group: "cash", Builtin: true, Institution: "SEB Lietuva"}).Error)
+	require.NoError(t, db.Create(&domain.Account{Key: "swed", Label: "Swedbank", Group: "cash", Builtin: true}).Error)
+	require.NoError(t, db.Create(&domain.Account{Key: "acc_swedbank_savings", Label: "Swedbank savings", Group: "cash"}).Error)
+	require.NoError(t, db.Create(&domain.Account{Key: "acc_paysera", Label: "Paysera", Group: "cash"}).Error)
+
+	seedBuiltinAccounts(db)
+	seedBuiltinAccounts(db)
+
+	inst := func(key string) string {
+		var a domain.Account
+		require.NoError(t, db.Where("key = ?", key).First(&a).Error)
+		return a.Institution
+	}
+	assert.Equal(t, "SEB Lietuva", inst("seb"), "user's choice kept")
+	assert.Equal(t, "Swedbank", inst("swed"))
+	assert.Equal(t, "Swedbank", inst("acc_swedbank_savings"))
+	assert.Equal(t, "", inst("acc_paysera"))
+	assert.Equal(t, "Revolut", inst("rev_r"))
+	var n int64
+	db.Model(&domain.Account{}).Count(&n)
+	assert.EqualValues(t, 13, n, "11 built-ins + 2 added, no duplicates")
+}

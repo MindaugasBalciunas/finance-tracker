@@ -77,6 +77,15 @@ export const GROUPS: GroupDef[] = [
 // Accounts outside every group (currently only Luminor) fold into a gray
 // "Other" bucket, mirroring the hero bar's leftover segment.
 export const OTHER_COLOR = '#9ca3af'
+
+// One color per account type, everywhere a type is shown.
+export const GROUP_COLORS: Record<AccountGroup, string> = {
+  cash: '#22c55e',
+  investments: '#3b82f6',
+  pensions: '#6d28d9',
+  crypto: '#f59e0b',
+  other: OTHER_COLOR,
+}
 export const OTHER_ACCOUNTS: AccountDef[] = [
   { key: 'luminor', label: 'Luminor', value: (b) => b.luminor },
 ]

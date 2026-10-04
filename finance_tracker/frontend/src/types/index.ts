@@ -321,6 +321,8 @@ export interface Account {
   key: string
   label: string
   group: AccountGroup
+  // The bank or provider holding it — how the snapshot form and history group.
+  institution: string
   builtin: boolean
   archived: boolean
   sort_order: number

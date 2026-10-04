@@ -74,7 +74,7 @@ function useInvalidateAccounts() {
 export function useCreateAccount() {
   const invalidate = useInvalidateAccounts()
   return useMutation({
-    mutationFn: (input: { label: string; group: AccountGroup }) => accountsApi.create(input),
+    mutationFn: (input: { label: string; group: AccountGroup; institution?: string }) => accountsApi.create(input),
     onSuccess: invalidate,
   })
 }

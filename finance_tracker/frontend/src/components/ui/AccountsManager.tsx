@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useAccountGroupOf, useAccountLabels, useAccountName, useAccounts, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
+import { useAccountLabels, useAccounts, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
 import { useBankConnections, useBankSettings, useMapBankAccount } from '../../hooks/useBanking'
 import type { BankAccountLink, BankConnection } from '../../api/banking'
 import { Link } from 'react-router-dom'
 import { ACCOUNT_GROUP_LABELS, type Account, type AccountGroup, type Balance } from '../../types'
-import { GROUPS, OTHER_COLOR, withAddedAccounts } from '../../utils/balanceGroups'
+import { GROUP_COLORS } from '../../utils/balanceGroups'
+import { useBankSections } from '../../utils/accountLayout'
 import { formatEuro } from '../../utils/format'
 
 const GROUP_OPTIONS = Object.entries(ACCOUNT_GROUP_LABELS) as [AccountGroup, string][]
@@ -17,13 +18,6 @@ const GROUP_HINTS: Record<AccountGroup, string> = {
   other: 'Anything else — counted in the total only.',
 }
 
-const GROUP_COLOR: Record<AccountGroup, string> = {
-  cash: GROUPS.find((g) => g.group === 'cash')!.color,
-  investments: GROUPS.find((g) => g.group === 'investments')!.color,
-  pensions: GROUPS.find((g) => g.group === 'pensions')!.color,
-  crypto: GROUPS.find((g) => g.group === 'crypto')!.color,
-  other: OTHER_COLOR,
-}
 
 const errorText = (e: any, fallback: string) => e?.response?.data?.error ?? fallback
 
@@ -50,28 +44,39 @@ export default function AccountsManager({ balance, embedded = false }: { balance
     return keys
   }, [bank])
 
-  const active = added.filter((a) => !a.archived)
   const archived = added.filter((a) => a.archived)
   // Every account with a row — built-ins included — can be edited; the two
   // BTC lines are computed, not accounts, and have no row.
   const { data: allAccounts } = useAccounts()
   const byKey = useMemo(() => new Map((allAccounts ?? []).map((a) => [a.key, a])), [allAccounts])
-  const name = useAccountName()
-  const groupOf = useAccountGroupOf()
   const bankLinks = useMemo(
     () => (bank?.connections ?? []).flatMap((c) => (c.accounts ?? []).map((link) => ({ conn: c, link }))),
     [bank],
   )
+  const allSections = useBankSections()
+  const sections = useMemo(
+    // Archived accounts have their own list; a closed, empty Luminor is noise
+    // here exactly as in the snapshot form.
+    () => allSections
+      .map((s) => ({ ...s, fields: s.fields.filter((f) => !f.archived && !(f.key === 'luminor' && balance && !f.value(balance))) }))
+      .filter((s) => s.fields.length),
+    [allSections, balance],
+  )
+  // A bank's PSD2 accounts sit in that bank's section ("Swedbank" ⇔
+  // "Swedbank AB"); any that match no section get one of their own.
+  const sameBank = (a: string, b: string) => {
+    const x = a.toLowerCase().trim()
+    const y = b.toLowerCase().trim()
+    return !!x && !!y && (x.startsWith(y) || y.startsWith(x))
+  }
+  const linksFor = (institution: string) => bankLinks.filter((r) => sameBank(r.conn.aspsp_name, institution))
+  const unplacedLinks = bankLinks.filter((r) => !sections.some((s) => sameBank(r.conn.aspsp_name, s.institution)))
+  const institutions = useMemo(
+    () => [...new Set((allAccounts ?? []).map((a) => a.institution).filter(Boolean))].sort(),
+    [allAccounts],
+  )
 
-  const sections = useMemo(() => {
-    const { groups, other } = withAddedAccounts(active, name, groupOf)
-    return [
-      ...groups.map((g) => ({ group: g.group, title: g.key, accounts: g.accounts })),
-      { group: 'other' as AccountGroup, title: 'Other', accounts: other },
-    ]
-  }, [active, name, groupOf])
-
-  const count = sections.reduce((n, s) => n + s.accounts.length, 0)
+  const count = sections.reduce((n, s) => n + s.fields.filter((f) => f.kind === 'eur').length, 0)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
@@ -104,68 +109,66 @@ export default function AccountsManager({ balance, embedded = false }: { balance
           )}
 
           {sections.map((s) => {
-            const total = balance ? s.accounts.reduce((sum, a) => sum + a.value(balance), 0) : null
+            const total = balance ? s.fields.reduce((sum, f) => sum + f.value(balance), 0) : null
+            const links = linksFor(s.institution)
             return (
-              <section key={s.group}>
+              <section key={s.institution || 'other'}>
                 <div className="flex items-baseline justify-between border-b border-gray-100 pb-1 mb-1">
-                  <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: GROUP_COLOR[s.group] }} />
-                    {s.title}
-                  </h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{s.institution || 'Other'}</h4>
                   {total != null && <span className="text-xs font-semibold text-gray-500">{formatEuro(total)}</span>}
                 </div>
-                {s.accounts.length === 0 ? (
-                  <p className="text-xs text-gray-400 py-1.5">No accounts.</p>
-                ) : (
-                  <ul className="divide-y divide-gray-50">
-                    {s.accounts.map((a) => {
-                      const acc = byKey.get(a.key)
-                      if (acc && editing === acc.id) {
-                        return (
-                          <li key={a.key} className="py-2">
-                            <AccountEditor
-                              account={{ ...acc, label: a.label }}
-                              bankLinks={bankLinks}
-                              onDone={(msg) => { setEditing(null); if (msg) setNotice(msg) }}
-                            />
-                          </li>
-                        )
-                      }
+                <ul className="divide-y divide-gray-50">
+                  {s.fields.map((f) => {
+                    const acc = byKey.get(f.key)
+                    if (acc && editing === acc.id) {
                       return (
-                        <li key={a.key} className="py-2 flex items-center gap-2 min-w-0">
-                          <span className="flex-1 min-w-0">
-                            <span className="block text-sm text-gray-800 truncate">{a.label}</span>
-                            {(bankFed.has(a.key) || (acc && !acc.builtin)) && (
-                              <span className="flex flex-wrap gap-1 mt-0.5">
-                                {bankFed.has(a.key) && <Badge tone="blue">🔗 bank sync</Badge>}
-                                {acc && !acc.builtin && <Badge tone="gray">added</Badge>}
-                              </span>
-                            )}
-                          </span>
-                          {balance && (
-                            <span className="text-sm font-semibold text-gray-700 tabular-nums">{formatEuro(a.value(balance))}</span>
-                          )}
-                          {acc ? (
-                            <button
-                              onClick={() => { setEditing(acc.id); setAdding(false) }}
-                              className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg"
-                            >
-                              Edit
-                            </button>
-                          ) : (
-                            <span className="w-[42px]" aria-hidden />
-                          )}
+                        <li key={f.key} className="py-2">
+                          <AccountEditor
+                            account={{ ...acc, label: f.label, institution: s.institution }}
+                            bankLinks={bankLinks}
+                            institutions={institutions}
+                            onDone={(msg) => { setEditing(null); if (msg) setNotice(msg) }}
+                          />
                         </li>
                       )
-                    })}
-                  </ul>
+                    }
+                    return (
+                      <li key={f.key} className="py-2 flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: GROUP_COLORS[f.group] }} title={ACCOUNT_GROUP_LABELS[f.group]} aria-hidden />
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm text-gray-800 truncate">{f.label}{f.kind === 'btc' && <span className="text-gray-400"> ₿</span>}</span>
+                          <span className="flex flex-wrap items-center gap-1 mt-0.5">
+                            <span className="text-[11px] text-gray-400">{ACCOUNT_GROUP_LABELS[f.group]}</span>
+                            {bankFed.has(f.key) && <Badge tone="blue">🔗 bank sync</Badge>}
+                            {acc && !acc.builtin && <Badge tone="gray">added</Badge>}
+                          </span>
+                        </span>
+                        {balance && (
+                          <span className="text-sm font-semibold text-gray-700 tabular-nums">{formatEuro(f.value(balance))}</span>
+                        )}
+                        {acc ? (
+                          <button
+                            onClick={() => { setEditing(acc.id); setAdding(false) }}
+                            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="w-[42px]" aria-hidden />
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+                {links.length > 0 && bank && (
+                  <BankLinks refs={links} allRefs={bankLinks} validKeys={bank.valid_account_keys} onNotice={setNotice} compact />
                 )}
               </section>
             )
           })}
 
-          {bank && bank.connections.some((c) => (c.accounts ?? []).length > 0) && (
-            <BankLinks connections={bank.connections} validKeys={bank.valid_account_keys} onNotice={setNotice} />
+          {unplacedLinks.length > 0 && bank && (
+            <BankLinks refs={unplacedLinks} allRefs={bankLinks} validKeys={bank.valid_account_keys} onNotice={setNotice} />
           )}
 
           {archived.length > 0 && (
@@ -179,6 +182,7 @@ export default function AccountsManager({ balance, embedded = false }: { balance
 
           {adding ? (
             <AddAccountForm
+              institutions={institutions}
               onDone={(msg) => { setAdding(false); if (msg) setNotice(msg) }}
             />
           ) : (
@@ -219,10 +223,11 @@ function GroupSelect({ value, onChange, id }: { value: AccountGroup; onChange: (
   )
 }
 
-function AddAccountForm({ onDone }: { onDone: (notice?: string) => void }) {
+function AddAccountForm({ institutions, onDone }: { institutions: string[]; onDone: (notice?: string) => void }) {
   const create = useCreateAccount()
   const [label, setLabel] = useState('')
   const [group, setGroup] = useState<AccountGroup>('cash')
+  const [bankName, setBankName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const submit = (e: React.FormEvent) => {
@@ -230,7 +235,7 @@ function AddAccountForm({ onDone }: { onDone: (notice?: string) => void }) {
     const name = label.trim()
     if (!name) return
     setError(null)
-    create.mutate({ label: name, group }, {
+    create.mutate({ label: name, group, institution: bankName.trim() || undefined }, {
       onSuccess: (a) => onDone(`${a.label} added to ${ACCOUNT_GROUP_LABELS[a.group]}. Enter its balance in your next snapshot (+ Add on this page).`),
       onError: (err) => setError(errorText(err, 'Could not add the account')),
     })
@@ -252,6 +257,10 @@ function AddAccountForm({ onDone }: { onDone: (notice?: string) => void }) {
         />
       </div>
       <div>
+        <label className="block text-xs font-medium text-gray-600 mb-0.5">Bank</label>
+        <BankInput value={bankName} onChange={setBankName} institutions={institutions} placeholder="e.g. Swedbank — blank: guessed from the name" />
+      </div>
+      <div>
         <label htmlFor="new-account-group" className="block text-xs font-medium text-gray-600 mb-0.5">Counts as</label>
         <GroupSelect id="new-account-group" value={group} onChange={setGroup} />
         <p className="text-xs text-gray-400 mt-1">{GROUP_HINTS[group]}</p>
@@ -269,23 +278,26 @@ function AddAccountForm({ onDone }: { onDone: (notice?: string) => void }) {
 
 type BankLinkRef = { conn: BankConnection; link: BankAccountLink }
 
-function AccountEditor({ account, bankLinks, onDone }: {
+
+function AccountEditor({ account, bankLinks, institutions, onDone }: {
   account: Account
   bankLinks: BankLinkRef[]
+  institutions: string[]
   onDone: (notice?: string) => void
 }) {
   const update = useUpdateAccount()
   const [label, setLabel] = useState(account.label)
   const [group, setGroup] = useState<AccountGroup>(account.group)
+  const [bankName, setBankName] = useState(account.institution ?? '')
   const [error, setError] = useState<string | null>(null)
-  const dirty = label.trim() !== account.label || group !== account.group
+  const dirty = label.trim() !== account.label || group !== account.group || bankName.trim() !== (account.institution ?? '')
 
   const save = (e: React.FormEvent) => {
     e.preventDefault()
     if (!label.trim()) return
     if (!dirty) { onDone(); return }
     setError(null)
-    update.mutate({ id: account.id, input: { label: label.trim(), group } }, {
+    update.mutate({ id: account.id, input: { label: label.trim(), group, institution: bankName.trim() } }, {
       onSuccess: () => onDone(),
       onError: (err) => setError(errorText(err, 'Could not save')),
     })
@@ -320,6 +332,11 @@ function AccountEditor({ account, bankLinks, onDone }: {
             <p className="text-xs text-gray-400 mt-1">Moves its money to {ACCOUNT_GROUP_LABELS[group]} in every snapshot, past ones too.</p>
           )}
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-0.5">Bank</label>
+        <BankInput value={bankName} onChange={setBankName} institutions={institutions} />
       </div>
 
       {bankLinks.length > 0 && <BankFeedPicker account={account} bankLinks={bankLinks} />}
@@ -421,24 +438,28 @@ const NEW_ACCOUNT = '__new__'
 // Which balance-sheet account each PSD2 bank account feeds. Every sync sets
 // that account to the bank's balance; two bank accounts pointed at the same
 // one are added together. Pointing one of them at its own account splits it.
-function BankLinks({ connections, validKeys, onNotice }: {
-  connections: BankConnection[]
+function BankLinks({ refs, allRefs, validKeys, onNotice, compact = false }: {
+  refs: BankLinkRef[]
+  allRefs: BankLinkRef[]
   validKeys: string[]
   onNotice: (msg: string) => void
+  // compact: shown inside its bank's section rather than as its own.
+  compact?: boolean
 }) {
   const labels = useAccountLabels()
-  const links = connections.flatMap((c) => (c.accounts ?? []).map((a) => ({ conn: c, link: a })))
   const shared = new Map<string, number>()
-  for (const { link } of links) if (link.account_key) shared.set(link.account_key, (shared.get(link.account_key) ?? 0) + 1)
+  for (const { link } of allRefs) if (link.account_key) shared.set(link.account_key, (shared.get(link.account_key) ?? 0) + 1)
 
   return (
-    <section>
-      <div className="flex items-baseline justify-between border-b border-gray-100 pb-1 mb-1">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">🔗 Bank accounts (PSD2)</h4>
+    <div className={compact ? 'mt-1 ml-1 pl-3 border-l-2 border-blue-100' : ''}>
+      <div className={`flex items-baseline justify-between ${compact ? 'pt-1' : 'border-b border-gray-100 pb-1 mb-1'}`}>
+        <h4 className={compact ? 'text-[11px] font-semibold text-blue-700' : 'text-xs font-semibold uppercase tracking-wide text-gray-500'}>
+          🔗 {compact ? 'Synced from the bank (PSD2)' : 'Bank accounts (PSD2)'}
+        </h4>
         <Link to="/banking" className="text-xs text-blue-600 hover:underline">Connections →</Link>
       </div>
       <ul className="divide-y divide-gray-50">
-        {links.map(({ conn, link }) => (
+        {refs.map(({ conn, link }) => (
           <BankLinkRow
             key={link.id}
             conn={conn}
@@ -450,11 +471,13 @@ function BankLinks({ connections, validKeys, onNotice }: {
           />
         ))}
       </ul>
-      <p className="text-xs text-gray-400 mt-1">
-        Each sync sets the chosen account to the bank's own balance. Bank accounts pointed at the same account are added
-        together — to track one separately, pick “＋ New account…”.
-      </p>
-    </section>
+      {!compact && (
+        <p className="text-xs text-gray-400 mt-1">
+          Each sync sets the chosen account to the bank's own balance. Bank accounts pointed at the same account are added
+          together — to track one separately, pick “＋ New account…”.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -548,5 +571,31 @@ function BankLinkRow({ conn, link, validKeys, labels, sharedWith, onNotice }: {
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </li>
+  )
+}
+
+// Free text with the banks already in use as suggestions, so "Swedbank" is
+// picked rather than retyped as "swedbank".
+function BankInput({ value, onChange, institutions, placeholder }: {
+  value: string
+  onChange: (v: string) => void
+  institutions: string[]
+  placeholder?: string
+}) {
+  return (
+    <>
+      <input
+        list="account-banks"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? 'e.g. Swedbank'}
+        maxLength={40}
+        aria-label="Bank"
+        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <datalist id="account-banks">
+        {institutions.map((i) => <option key={i} value={i} />)}
+      </datalist>
+    </>
   )
 }

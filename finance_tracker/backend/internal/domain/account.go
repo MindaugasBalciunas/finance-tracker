@@ -44,6 +44,9 @@ type Account struct {
 	Key   string       `json:"key" gorm:"uniqueIndex;not null"`
 	Label string       `json:"label" gorm:"not null"`
 	Group AccountGroup `json:"group" gorm:"not null;default:'other'"`
+	// Institution is the bank or provider holding the account ("Swedbank",
+	// "Revolut") — how the snapshot form and history group accounts.
+	Institution string `json:"institution" gorm:"not null;default:''"`
 	// Builtin accounts are backed by a Balance column and cannot be edited
 	// or archived here.
 	Builtin bool `json:"builtin" gorm:"not null;default:false"`
@@ -57,17 +60,31 @@ type Account struct {
 // BuiltinAccounts mirrors the Balance columns, in the order the forms show
 // them. Groups match the frontend's balanceGroups.ts.
 var BuiltinAccounts = []Account{
-	{Key: "seb", Label: "SEB", Group: AccountGroupCash},
-	{Key: "swed", Label: "Swedbank", Group: AccountGroupCash},
-	{Key: "cash", Label: "Cash", Group: AccountGroupCash},
-	{Key: "rev_m", Label: "Revolut M", Group: AccountGroupCash},
-	{Key: "rev_r", Label: "Revolut R", Group: AccountGroupCash},
-	{Key: "swed_etf", Label: "Swed ETF", Group: AccountGroupInvestments},
-	{Key: "rev_stocks", Label: "Rev Stocks", Group: AccountGroupInvestments},
-	{Key: "ibkr_stocks", Label: "IBKR", Group: AccountGroupInvestments},
-	{Key: "seb_pen", Label: "SEB Pension", Group: AccountGroupPensions},
-	{Key: "art", Label: "Artea", Group: AccountGroupPensions},
-	{Key: "luminor", Label: "Luminor", Group: AccountGroupOther},
+	{Key: "seb", Label: "SEB", Group: AccountGroupCash, Institution: "SEB"},
+	{Key: "swed", Label: "Swedbank", Group: AccountGroupCash, Institution: "Swedbank"},
+	{Key: "cash", Label: "Cash", Group: AccountGroupCash, Institution: "Cash"},
+	{Key: "rev_m", Label: "Revolut M", Group: AccountGroupCash, Institution: "Revolut"},
+	{Key: "rev_r", Label: "Revolut R", Group: AccountGroupCash, Institution: "Revolut"},
+	{Key: "swed_etf", Label: "Swed ETF", Group: AccountGroupInvestments, Institution: "Swedbank"},
+	{Key: "rev_stocks", Label: "Rev Stocks", Group: AccountGroupInvestments, Institution: "Revolut"},
+	{Key: "ibkr_stocks", Label: "IBKR", Group: AccountGroupInvestments, Institution: "IBKR"},
+	{Key: "seb_pen", Label: "SEB Pension", Group: AccountGroupPensions, Institution: "SEB"},
+	{Key: "art", Label: "Artea", Group: AccountGroupPensions, Institution: "Artea"},
+	{Key: "luminor", Label: "Luminor", Group: AccountGroupOther, Institution: "Luminor"},
+}
+
+// InferInstitution guesses an added account's bank from its name: the known
+// institution its name starts with ("Swedbank savings" → "Swedbank"), else "".
+func InferInstitution(label string, known []string) string {
+	l := strings.ToLower(strings.TrimSpace(label))
+	best := ""
+	for _, k := range known {
+		kl := strings.ToLower(k)
+		if kl != "" && (l == kl || strings.HasPrefix(l, kl+" ")) && len(k) > len(best) {
+			best = k
+		}
+	}
+	return best
 }
 
 // customKeyPrefix marks an account that lives in Balance.Extra. The prefix

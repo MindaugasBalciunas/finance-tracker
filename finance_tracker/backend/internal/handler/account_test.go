@@ -183,7 +183,7 @@ func TestLegacySnapshotsReadUnchanged(t *testing.T) {
 func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	_, src := importRouterFor(t)
 	require.NoError(t, src.AutoMigrate(&domain.ExportLog{}, &domain.Account{}))
-	require.NoError(t, src.Create(&domain.Account{Key: "acc_paysera", Label: "Paysera", Group: domain.AccountGroupCash}).Error)
+	require.NoError(t, src.Create(&domain.Account{Key: "acc_paysera", Label: "Paysera", Group: domain.AccountGroupCash, Institution: "Paysera"}).Error)
 	require.NoError(t, src.Create(&domain.Account{Key: "swed", Label: "Swedbank main", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	require.NoError(t, src.Create(&domain.Account{Key: "seb", Label: "SEB", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	require.NoError(t, src.Create(&domain.Account{Key: "swed_etf", Label: "Swed ETF", Group: domain.AccountGroupCash, Builtin: true}).Error)
@@ -214,6 +214,7 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	var acc domain.Account
 	require.NoError(t, dst.Where("key = ?", "acc_paysera").First(&acc).Error)
 	assert.Equal(t, "Paysera", acc.Label)
+	assert.Equal(t, "Paysera", acc.Institution, "the bank travels with the backup")
 	assert.Equal(t, domain.AccountGroupCash, acc.Group)
 	var swed domain.Account
 	require.NoError(t, dst.Where("key = ?", "swed").First(&swed).Error)
@@ -258,4 +259,34 @@ func TestRegroupedBuiltinMovesItsMoney(t *testing.T) {
 func TestFreeCashWithoutGroups(t *testing.T) {
 	b := domain.Balance{Seb: 1, Swed: 2, Cash: 3, RevM: 4, RevR: 5, SwedETF: 100}
 	assert.Equal(t, 15.0, b.FreeCash())
+}
+
+func TestInferInstitution(t *testing.T) {
+	known := []string{"SEB", "Swedbank", "Revolut", "Cash"}
+	assert.Equal(t, "Swedbank", domain.InferInstitution("Swedbank savings", known))
+	assert.Equal(t, "SEB", domain.InferInstitution("seb", known))
+	assert.Equal(t, "", domain.InferInstitution("Sebastian's fund", known), "a word prefix is not a bank")
+	assert.Equal(t, "", domain.InferInstitution("Paysera", known))
+}
+
+// A new account picks its bank from its name unless one is given.
+func TestCreateAccountInstitution(t *testing.T) {
+	e := accountTestEnv(t)
+	require.NoError(t, e.db.Model(&domain.Account{}).Where("key = ?", "swed").Update("institution", "Swedbank").Error)
+	a := e.addAccount(t, "Swedbank savings", "cash")
+	assert.Equal(t, "Swedbank", a.Institution)
+
+	rec := bankJSON(t, e.r, http.MethodPost, "/api/v1/accounts", map[string]any{"label": "Wallet", "group": "cash", "institution": "Paysera"})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var b domain.Account
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &b))
+	assert.Equal(t, "Paysera", b.Institution)
+
+	// Built-ins can be moved to another bank too.
+	var swed domain.Account
+	require.NoError(t, e.db.Where("key = ?", "swed").First(&swed).Error)
+	rec = bankJSON(t, e.r, http.MethodPut, "/api/v1/accounts/"+fmt.Sprint(swed.ID), map[string]any{"institution": "Swedbank LT"})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NoError(t, e.db.First(&swed, swed.ID).Error)
+	assert.Equal(t, "Swedbank LT", swed.Institution)
 }

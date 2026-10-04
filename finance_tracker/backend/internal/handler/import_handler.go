@@ -470,6 +470,9 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 					if g := domain.AccountGroup(row.Group); domain.IsValidAccountGroup(g) {
 						existing.Group = g
 					}
+					if row.Institution != "" {
+						existing.Institution = row.Institution
+					}
 					if err := accRepo.Save(existing); err != nil {
 						return result, fmt.Errorf("restoring account name %s: %w", row.Key, err)
 					}
@@ -484,7 +487,7 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 				group = domain.AccountGroupOther
 			}
 			if err := accRepo.Create(&domain.Account{Key: row.Key, Label: row.Label, Group: group,
-				Archived: row.Archived, SortOrder: row.SortOrder}); err != nil {
+				Archived: row.Archived, SortOrder: row.SortOrder, Institution: row.Institution}); err != nil {
 				return result, fmt.Errorf("restoring account %s: %w", row.Key, err)
 			}
 		}

@@ -112,14 +112,30 @@ func NewSQLiteDB(path string) (*gorm.DB, error) {
 }
 
 // seedBuiltinAccounts registers the Balance columns as account rows, so the
-// accounts list is complete. Idempotent: an existing key is left alone.
+// accounts list is complete. Idempotent: an existing key is left alone, except
+// that an empty institution is filled — on built-ins from their default, on
+// added accounts from their name when it starts with a known bank.
 func seedBuiltinAccounts(db *gorm.DB) {
+	known := map[string]bool{}
 	for i, a := range domain.BuiltinAccounts {
 		row := a
 		row.Builtin = true
 		row.SortOrder = i
 		if err := db.Where("key = ?", a.Key).FirstOrCreate(&row).Error; err != nil {
 			log.Printf("seeding account %s: %v", a.Key, err)
+		}
+		db.Model(&domain.Account{}).Where("key = ? AND institution = ''", a.Key).Update("institution", a.Institution)
+		known[a.Institution] = true
+	}
+	var added []domain.Account
+	db.Where("builtin = ? AND institution = ''", false).Find(&added)
+	names := make([]string, 0, len(known))
+	for k := range known {
+		names = append(names, k)
+	}
+	for _, a := range added {
+		if inst := domain.InferInstitution(a.Label, names); inst != "" {
+			db.Model(&domain.Account{}).Where("id = ?", a.ID).Update("institution", inst)
 		}
 	}
 }
