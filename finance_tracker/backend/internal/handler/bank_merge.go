@@ -26,20 +26,28 @@ import (
 
 // mergeDayWindow is how far apart a hand-entered date and the bank's date may
 // sit and still be the same purchase. A card row is dated when it was swiped
-// and a person types the day they remember; one day either way covers that,
-// a week would start pairing unrelated groceries.
-const mergeDayWindow = 1
+// and people type the day they remember — the first live sync showed two-day
+// gaps (Apollo, Lidl) that a one-day window turned into duplicates. Three
+// days still keeps a week's groceries apart.
+const mergeDayWindow = 3
 
 // amountMatchEpsilon is cent-level equality for money that arrived as a
 // decimal string on one side and a float on the other.
 const amountMatchEpsilon = 0.005
 
-// findMergeCandidate looks for a ledger row that is plainly the same payment
+// findMergeCandidate looks for a ledger row that is probably the same payment
 // as this staged row but was written by hand.
 //
-// Deliberately strict on everything except the description: same direction,
-// same amount to the cent, same account, within a day. The description is the
-// one field two people — the user and the bank — reliably disagree about.
+// A candidate is only a suggestion: it unticks the row and offers "Link to
+// it", and the row can still be added. Missing one is what costs — a ticked
+// duplicate — so the rule is generous where the first live sync showed real
+// duplicates slipping through, and the ranking keeps the likeliest first:
+//
+//   - same amount to the cent, within mergeDayWindow days;
+//   - same direction: money out (expense or investment — the bank calls an
+//     IBKR or Artea transfer an expense, the ledger an investment) or in;
+//   - any account, but a row on the same account beats one on another
+//     (an IBKR top-up typed under Cash is still that top-up).
 //
 // Rows that already carry a provider id are skipped: those came from a sync
 // and the existing layers own them.
@@ -48,16 +56,13 @@ func findMergeCandidate(row *domain.BankStagedTx, existing []domain.Transaction,
 		return nil
 	}
 	var best *domain.Transaction
-	bestGap := time.Duration(math.MaxInt64)
+	bestScore := math.MaxFloat64
 	for i := range existing {
 		t := &existing[i]
 		if t.ExternalID != "" || claimed[t.ID] {
 			continue
 		}
-		if t.Type != row.Type || math.Abs(t.Amount-row.Amount) > amountMatchEpsilon {
-			continue
-		}
-		if !sameAccounts(t, row) {
+		if math.Abs(t.Amount-row.Amount) > amountMatchEpsilon || !sameDirection(t.Type, row.Type) {
 			continue
 		}
 		gap := t.Date.Sub(row.Date)
@@ -67,16 +72,30 @@ func findMergeCandidate(row *domain.BankStagedTx, existing []domain.Transaction,
 		if gap > mergeDayWindow*24*time.Hour {
 			continue
 		}
-		if gap < bestGap {
-			best, bestGap = t, gap
+		score := gap.Hours() / 24
+		if !sameAccounts(t, row) {
+			score += 10
+		}
+		if t.Type != row.Type {
+			score += 0.5
+		}
+		if score < bestScore {
+			best, bestScore = t, score
 		}
 	}
 	return best
 }
 
-// sameAccounts requires the money to have moved between the same places. A
-// staged row always names at least one account (the link's own), so a ledger
-// row with none is not a match — it was never tied to this account.
+// sameDirection: money out (expense, investment) or money in (income).
+func sameDirection(a, b domain.TransactionType) bool {
+	out := func(t domain.TransactionType) bool {
+		return t == domain.TransactionTypeExpense || t == domain.TransactionTypeInvestment
+	}
+	return a == b || (out(a) && out(b))
+}
+
+// sameAccounts reports whether the money moved between the same places — the
+// ranking's strongest signal. A staged row always names the link's account.
 func sameAccounts(t *domain.Transaction, row *domain.BankStagedTx) bool {
 	debit, credit := t.DebitAccount, t.CreditAccount
 	if debit == "" && credit == "" && t.SourceAccount != "" {

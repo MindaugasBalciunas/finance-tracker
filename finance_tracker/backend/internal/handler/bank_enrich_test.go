@@ -16,14 +16,17 @@ import (
 
 // seedHistory writes transactions straight to the DB — the point is what the
 // ledger already contains, not how it got there.
-func (e *bankTestEnv) seedHistory(t *testing.T, txs ...domain.Transaction) {
+func (e *bankTestEnv) seedHistory(t *testing.T, txs ...domain.Transaction) []uint {
 	t.Helper()
+	ids := make([]uint, len(txs))
 	for i := range txs {
 		if txs[i].Date.IsZero() {
 			txs[i].Date = time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 		}
 		require.NoError(t, e.db.Create(&txs[i]).Error)
+		ids[i] = txs[i].ID
 	}
+	return ids
 }
 
 func (e *bankTestEnv) seedRule(t *testing.T, label, category, commentMatch string) {
@@ -452,28 +455,85 @@ func TestUnmergeReturnsTheRowToTheQueue(t *testing.T) {
 
 // Merging must not reach across accounts, amounts or more than a day — and a
 // row that already belongs to another bank row is never re-pointed.
-func TestMergeCandidateIsStrict(t *testing.T) {
+func TestMergeCandidateRules(t *testing.T) {
 	env := bankTestRouter(t, true)
 	env.seedHistory(t,
-		// Right amount and day, wrong account.
-		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
-			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Elsewhere", DebitAccount: "seb"},
-		// Right account and day, wrong amount.
+		// Right account and day, wrong amount: never.
 		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 			Type: domain.TransactionTypeExpense, Amount: 66.00, Comment: "Close", DebitAccount: "swed"},
-		// Right account and amount, a week away.
+		// Right account and amount, a week away: never.
 		domain.Transaction{Date: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
 			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Last week", DebitAccount: "swed"},
+		// Money in, same amount: never a match for money out.
+		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeIncome, Amount: 65.20, Comment: "Refund", CreditAccount: "swed"},
 	)
 	env.stage(t, []openbanking.Transaction{
 		ebRow("m3", "2026-10-02", "65.20", "D", "MAXIMA", "Pirkiniai"),
 	})
-
 	rows, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
 	require.NoError(t, err)
 	candidates, err := env.h.mergeCandidates(rows)
 	require.NoError(t, err)
 	assert.Empty(t, candidates, "none of those is the same payment")
+}
+
+// What the first live sync let through as ticked duplicates: a two-day gap
+// between card date and typed date, a transfer the bank calls an expense and
+// the ledger an investment, and a top-up typed under another account.
+func TestMergeCandidateCatchesLiveSyncDuplicates(t *testing.T) {
+	env := bankTestRouter(t, true)
+	h := env.seedHistory(t,
+		domain.Transaction{Date: time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 13.66, Comment: "Lidl. food and flowers", DebitAccount: "swed"},
+		domain.Transaction{Date: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeInvestment, Amount: 200, Comment: "Artea (INVL) 3rd pillar pension", DebitAccount: "swed"},
+		domain.Transaction{Date: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeInvestment, Amount: 1000, Comment: "ibkr top up", DebitAccount: "cash"},
+	)
+	env.stage(t, []openbanking.Transaction{
+		ebRow("l1", "2026-08-12", "13.66", "D", "LIDL", "Pirkiniai"),
+		ebRow("a1", "2026-09-10", "200.00", "D", "Artea Ambicingas 16+", "Imoka"),
+		ebRow("i1", "2026-08-01", "1000.00", "D", "INTERACTIVE BROKERS IRELAND LIMITED", "U26056927"),
+	})
+	rows, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	candidates, err := env.h.mergeCandidates(rows)
+	require.NoError(t, err)
+	byRef := map[string]uint{}
+	for _, r := range rows {
+		if m := candidates[r.ID]; m != nil {
+			byRef[r.ExternalID] = m.ID
+		}
+	}
+	require.Len(t, byRef, 3, "all three are suggested")
+	for _, id := range h {
+		found := false
+		for _, m := range byRef {
+			found = found || m == id
+		}
+		assert.True(t, found, "ledger row %d is suggested", id)
+	}
+}
+
+// The same account wins over a nearer row on another account.
+func TestMergeCandidatePrefersSameAccount(t *testing.T) {
+	env := bankTestRouter(t, true)
+	ids := env.seedHistory(t,
+		domain.Transaction{Date: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Elsewhere", DebitAccount: "seb"},
+		domain.Transaction{Date: time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC),
+			Type: domain.TransactionTypeExpense, Amount: 65.20, Comment: "Maxima food", DebitAccount: "swed"},
+	)
+	env.stage(t, []openbanking.Transaction{ebRow("m4", "2026-10-02", "65.20", "D", "MAXIMA", "Pirkiniai")})
+	rows, _, err := env.repo.ListStaged(repository.StagedFilter{State: domain.StagedStateStaged})
+	require.NoError(t, err)
+	candidates, err := env.h.mergeCandidates(rows)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	for _, m := range candidates {
+		assert.Equal(t, ids[1], m.ID)
+	}
 }
 
 // A row that looks like something already added must never arrive ticked:
