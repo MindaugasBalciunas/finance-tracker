@@ -859,3 +859,36 @@ func TestRepairBtcTotals(t *testing.T) {
 		assert.Equal(t, 10.0, get(noCoins.ID).Total)
 	}
 }
+
+// A snapshot holding BTC and an added account must keep its total through the
+// startup BTC repair. Before the fix the repair summed only the built-in
+// columns and rewrote such a total €3,000 short on every restart.
+func TestRepairBtcTotalsKeepsAddedAccounts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&domain.Balance{}))
+
+	good := domain.Balance{Date: time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC), Swed: 545.52, Cash: 100,
+		RBTC: 0.01, BtcPrice: 75000, Extra: domain.AccountValues{"acc_swedbank_savings": 3000}}
+	good.Total = 545.52 + 100 + 750 + 3000
+	// A genuinely wrong total (BTC left out) on a row with an added account
+	// is still repaired — to the sum that includes the account.
+	bad := domain.Balance{Date: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC), Swed: 500,
+		RBTC: 0.01, BtcPrice: 75000, Extra: domain.AccountValues{"acc_x": 200}, Total: 700}
+	plain := domain.Balance{Date: time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), Swed: 10, RBTC: 0.01, BtcPrice: 75000, Total: 10}
+	require.NoError(t, db.Create(&good).Error)
+	require.NoError(t, db.Create(&bad).Error)
+	require.NoError(t, db.Create(&plain).Error)
+
+	repairBtcTotals(db)
+	repairBtcTotals(db) // idempotent
+
+	get := func(id uint) float64 {
+		var b domain.Balance
+		require.NoError(t, db.First(&b, id).Error)
+		return b.Total
+	}
+	assert.Equal(t, 4395.52, get(good.ID), "correct total untouched")
+	assert.Equal(t, 1450.0, get(bad.ID), "repaired including the added account")
+	assert.Equal(t, 760.0, get(plain.ID), "rows without added accounts behave as before")
+}

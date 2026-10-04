@@ -657,10 +657,13 @@ func applyBalanceBackfills(db *gorm.DB) {
 	repairBtcTotals(db)
 }
 
-// balanceComponentsSQL sums every non-BTC account column of a snapshot.
+// balanceComponentsSQL sums every non-BTC account of a snapshot: the
+// built-in columns plus the added accounts held in its extra JSON. Leaving
+// extra out silently rewrote such snapshots' totals on every restart.
 const balanceComponentsSQL = `COALESCE(seb,0)+COALESCE(swed,0)+COALESCE(swed_etf,0)+COALESCE(seb_pen,0)+
 	COALESCE(luminor,0)+COALESCE(art,0)+COALESCE(cash,0)+COALESCE(rev_m,0)+COALESCE(rev_r,0)+
-	COALESCE(rev_stocks,0)+COALESCE(ibkr_stocks,0)`
+	COALESCE(rev_stocks,0)+COALESCE(ibkr_stocks,0)+
+	COALESCE((SELECT SUM(j.value) FROM json_each(CASE WHEN json_valid(balances.extra) THEN balances.extra ELSE '{}' END) j), 0)`
 
 // repairBtcTotals fixes stored totals that leave the BTC holding out, which
 // is what exports and backups carry (the UI re-prices on read and hid it):
