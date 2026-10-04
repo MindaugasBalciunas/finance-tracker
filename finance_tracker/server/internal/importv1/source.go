@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -69,19 +70,19 @@ type V1Trade struct {
 }
 
 type V1Asset struct {
-	Name, Type, PurchaseDate, ValuationDate, Notes          string
-	PurchasePrice, CurrentValue                             float64
-	LoanRemaining                                           float64
-	LoanRemainingDate, LoanRate, LoanAccount, LoanPaidOff   string
-	LoanMargin, LoanBaseRate, LoanMonthly                   float64
-	LoanLabel, LoanRateReset                                string
+	Name, Type, PurchaseDate, ValuationDate, Notes        string
+	PurchasePrice, CurrentValue                           float64
+	LoanRemaining                                         float64
+	LoanRemainingDate, LoanRate, LoanAccount, LoanPaidOff string
+	LoanMargin, LoanBaseRate, LoanMonthly                 float64
+	LoanLabel, LoanRateReset                              string
 }
 
 type V1Budget struct {
 	Name, Kind, Label, Category, StartMonth, Period string
 	Amount                                          float64
-	Fund                                    bool
-	Amounts                                 []struct {
+	Fund                                            bool
+	Amounts                                         []struct {
 		From   string
 		Amount float64
 	}
@@ -133,21 +134,21 @@ type V1Conn struct {
 }
 
 type V1Link struct {
-	ID, ConnectionID                                         int64
-	Hash, UID, IBAN, Name, AccountKey, LastSynced, LastTx    string
-	BankBalance                                              sql.NullFloat64
+	ID, ConnectionID                                          int64
+	Hash, UID, IBAN, Name, AccountKey, LastSynced, LastTx     string
+	BankBalance                                               sql.NullFloat64
 	BalCurrency, BalType, BalDate, BalFetched, AppliedThrough string
 }
 
 type V1Staged struct {
-	LinkID                                                    sql.NullInt64
-	ExternalID, Raw, RawPayee, RawDetails, RawCurrency        string
-	BookingDate, Date, Type, Category, Comment, Labels        string
-	Debit, Credit, Verdict, VerdictNote, State                string
-	Amount                                                    float64
-	Pending, Edited                                           bool
-	MatchedTxID, ImportedTxID                                 sql.NullInt64
-	FirstSeen, LastSeen                                       string
+	LinkID                                             sql.NullInt64
+	ExternalID, Raw, RawPayee, RawDetails, RawCurrency string
+	BookingDate, Date, Type, Category, Comment, Labels string
+	Debit, Credit, Verdict, VerdictNote, State         string
+	Amount                                             float64
+	Pending, Edited                                    bool
+	MatchedTxID, ImportedTxID                          sql.NullInt64
+	FirstSeen, LastSeen                                string
 }
 
 // day trims v1's "2010-06-10 00:00:00+00:00" to "2010-06-10".
@@ -506,6 +507,7 @@ func ReadJSON(raw []byte) (*Data, error) {
 		}
 		out.Balances = append(out.Balances, v)
 	}
+	fillOmittedZeros(out.Balances)
 	for _, t := range in.Trades {
 		out.Trades = append(out.Trades, V1Trade{Date: day(t.Date), Action: t.Action, Ticker: t.Ticker, Shares: t.Shares, Price: t.Price, Currency: t.Currency, Source: t.Source, Notes: t.Notes})
 	}
@@ -538,4 +540,31 @@ func ReadJSON(raw []byte) (*Data, error) {
 		out.Accounts = append(out.Accounts, V1Account{Key: a.Key, Label: a.Label, Group: a.Group, Institution: a.Institution, Archived: a.Archived, Sort: a.Sort})
 	}
 	return out, nil
+}
+
+// fillOmittedZeros restores the zeros a v1 JSON export leaves out. v1
+// snapshots are full rows (every account on every date), but the export
+// drops zero-valued fields, so an emptied wallet would otherwise carry its
+// last non-zero value forward for years. Once an account has appeared, a
+// snapshot without it means 0 — exactly what the v1 database stores.
+func fillOmittedZeros(bs []V1Balance) {
+	sort.SliceStable(bs, func(i, j int) bool {
+		if bs[i].Date != bs[j].Date {
+			return bs[i].Date < bs[j].Date
+		}
+		return bs[i].ID < bs[j].ID
+	})
+	seen := map[string]bool{}
+	for i := range bs {
+		for k := range seen {
+			if _, ok := bs[i].Values[k]; !ok {
+				bs[i].Values[k] = 0
+			}
+		}
+		for k := range bs[i].Values {
+			if k != "btc_price" { // a price, not a holding
+				seen[k] = true
+			}
+		}
+	}
 }

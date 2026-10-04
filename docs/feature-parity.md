@@ -88,6 +88,9 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 
 ## Data reconciliation (2026-10-04)
 
+Re-checked against production at 18:00 (prod still on v1): 16/16 conversion checks; 6,422 transactions identical to local plus 2 new PSD2 bank fees on prod; every latest balance equal; net worth identical at all 118 month-ends since 2017; 12 integrity checks clean (no orphan accounts/categories, no self-transfers, no spending from property, no duplicate bank ids, no sign errors). Found and fixed in 2.4.2: a v1 JSON export omits zero balances, which made an emptied BTC wallet carry €509 forward for years when importing from the export (the database path was already right).
+
+
 `importv1.Verify` runs on every first start and in `make convert`. Results on real data:
 
 | Source | Transactions | Balance values | Yearly totals | Latest balance sheet | Settings/secrets/bank state |

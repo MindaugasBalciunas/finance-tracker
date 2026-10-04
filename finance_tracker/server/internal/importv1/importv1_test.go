@@ -300,3 +300,27 @@ func TestVerifyCatchesLoss(t *testing.T) {
 		t.Error(string(b))
 	}
 }
+
+// A v1 JSON export drops zero fields; an emptied wallet must read 0, not its
+// last value carried forward (prod export 2026-10-04: BTC (M) +€509 for years).
+func TestJSONExportOmittedZerosRestored(t *testing.T) {
+	bs := []V1Balance{
+		{ID: 3, Date: "2018-03-31", Values: map[string]float64{"swed": 240}},                                   // btc gone
+		{ID: 1, Date: "2017-12-31", Values: map[string]float64{"swed": 10}},                                    // before btc existed
+		{ID: 2, Date: "2018-02-28", Values: map[string]float64{"swed": 2, "mbtc": 509.05, "btc_price": 9000}}, // btc appears
+		{ID: 4, Date: "2026-02-21", Values: map[string]float64{"swed": 5, "mbtc": 0.01, "btc_price": 60000}},  // back again
+	}
+	fillOmittedZeros(bs)
+	if bs[0].Date != "2017-12-31" || len(bs[0].Values) != 1 {
+		t.Fatalf("sorted, nothing invented before first sight: %+v", bs[0])
+	}
+	if v, ok := bs[2].Values["mbtc"]; !ok || v != 0 {
+		t.Errorf("emptied wallet should be 0: %+v", bs[2].Values)
+	}
+	if _, ok := bs[2].Values["btc_price"]; ok {
+		t.Error("a missing price is not a zero price")
+	}
+	if bs[3].Values["mbtc"] != 0.01 {
+		t.Error("later value kept")
+	}
+}
