@@ -92,7 +92,7 @@ func (b *Book) FirstDate() string {
 type Snapshot struct {
 	Date      string                 `json:"date"`
 	NetWorth  money.Cents            `json:"net_worth"`
-	Liquid    money.Cents            `json:"liquid"` // liquid accounts only (cash, brokers, crypto)
+	Liquid    money.Cents            `json:"liquid"` // liquid accounts only (cash, brokers, pensions, crypto)
 	Assets    money.Cents            `json:"assets"`
 	Debt      money.Cents            `json:"debt"` // positive number
 	ByGroup   map[string]money.Cents `json:"by_group"`

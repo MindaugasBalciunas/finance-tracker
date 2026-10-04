@@ -436,10 +436,14 @@ func TestImportV1AndExports(t *testing.T) {
 	for _, f := range zr.File {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"README.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "reference.json", "context.md"} {
+	for _, want := range []string{"README.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "reference.json", "context.md", "loans.csv", "today.json", "PROMPT.md"} {
 		if !names[want] {
 			t.Errorf("ai.zip missing %s", want)
 		}
+	}
+	req, _ := http.NewRequest("GET", c.base+"/export/ai.zip", nil)
+	if res, err := c.http.Do(req); err != nil || !strings.Contains(res.Header.Get("Content-Disposition"), "finance-for-ai-") {
+		t.Errorf("export name: %v %v", err, res.Header)
 	}
 	c.ok("POST", "/backups", nil, nil)
 	var b struct {
@@ -547,6 +551,21 @@ func TestNewInsightAndTidyEndpoints(t *testing.T) {
 	c.ok("GET", "/backups", nil, &b)
 	if b["last_download"] == "" {
 		t.Fatal("a real download records the marker")
+	}
+}
+
+func TestPrefsPersist(t *testing.T) {
+	_, c := newServer(t)
+	var p map[string]any
+	c.ok("GET", "/prefs", nil, &p)
+	if p["liquid_only"] != false {
+		t.Fatal(p)
+	}
+	c.ok("PUT", "/prefs", map[string]any{"liquid_only": true}, nil)
+	c.ok("PUT", "/prefs", map[string]any{}, nil) // partial update keeps it
+	c.ok("GET", "/prefs", nil, &p)
+	if p["liquid_only"] != true {
+		t.Fatal("liquid_only not remembered", p)
 	}
 }
 

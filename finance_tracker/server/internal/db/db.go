@@ -22,6 +22,8 @@ var schemaV1 string
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []string{
 	schemaV1,
+	// 2: II and III pillar pensions can be cashed out, so they count as liquid.
+	`UPDATE accounts SET liquid = 1 WHERE kind = 'pension';`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

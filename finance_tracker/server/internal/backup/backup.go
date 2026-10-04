@@ -218,6 +218,13 @@ func Restore(d *sql.DB, raw []byte) (map[string]int, error) {
 		}
 		tx.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)`, k, v)
 	}
+	// Data changes from migrations newer than the backup (schema 2: pensions
+	// are liquid).
+	if f.Schema < 2 {
+		if _, err := tx.Exec(`UPDATE accounts SET liquid = 1 WHERE kind = 'pension'`); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

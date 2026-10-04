@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, NavLink, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
@@ -8,7 +8,7 @@ import { catColor, useCats } from '../lib/categories'
 import { shortDate } from '../lib/format'
 import type { Rule } from '../lib/types'
 import { applyTheme } from '../App'
-import { Card, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Spinner, Toggle, useToast } from '../components/ui'
+import { Card, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Spinner, Tabs, Toggle, useToast } from '../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TxRow } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
@@ -27,13 +27,56 @@ function UnknownSection() {
   return <Navigate to={`/settings/${last || 'categories'}`} replace />
 }
 
+const AI_SHARE_TEXT = 'The attached zip is my complete finances. Open PROMPT.md and follow it, using README.md for the file formats.'
+
+/** The everyday hand-off: the whole dataset to any AI assistant in one tap. */
+function ShareForAI() {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const share = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('api/export/ai.zip', { credentials: 'same-origin' })
+      if (!res.ok) throw new Error(`Export failed (${res.status})`)
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'finance-for-ai.zip'
+      const file = new File([await res.blob()], name, { type: 'application/zip' })
+      // Phones: the share sheet goes straight to an AI app. Elsewhere: download.
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'Finances for AI', text: AI_SHARE_TEXT }) } catch (e: any) { if (e?.name !== 'AbortError') throw e }
+      } else {
+        const url = URL.createObjectURL(file)
+        const a = Object.assign(document.createElement('a'), { href: url, download: name })
+        document.body.append(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10_000)
+        toast('Saved — attach it in your AI assistant', 'good')
+      }
+    } catch (e: any) {
+      toast(e?.message ?? 'Export failed', 'bad')
+    } finally { setBusy(false) }
+  }
+  return (
+    <section className="card mb-4 flex flex-wrap items-center gap-3 p-4">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
+      <div className="min-w-0 flex-1 basis-48">
+        <div className="text-sm font-medium">Export for AI</div>
+        <div className="text-xs text-muted">Every transaction, balance, loan and plan as one zip with a start-here PROMPT.md — for any AI assistant.</div>
+      </div>
+      <div className="flex w-full sm:w-auto">
+        <button className="btn-primary flex-1 sm:flex-none" onClick={share} disabled={busy}>{busy ? <Spinner /> : <Icon name="share" size={16} />}Export zip</button>
+      </div>
+    </section>
+  )
+}
+
 export default function Settings() {
+  const nav = useNavigate()
+  const seg = useLocation().pathname.split('/')[2] || 'categories'
+  const tab = SECTIONS.some((s) => s.to === seg) ? seg : 'categories'
   return (
     <div>
       <PageHeader title="Settings" />
-      <div className="no-scrollbar -mx-4 mb-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        {SECTIONS.map((s) => <NavLink key={s.to} to={`/settings/${s.to}`} className={({ isActive }) => (isActive ? 'chip-on' : 'chip')}>{s.label}</NavLink>)}
-      </div>
+      <ShareForAI />
+      <Tabs value={tab} onChange={(v) => nav(`/settings/${v}`)} tabs={SECTIONS.map((s) => ({ value: s.to, label: s.label }))} />
       <Routes>
         <Route path="/" element={<Categories />} />
         <Route path="categories" element={<Categories />} />
@@ -295,7 +338,7 @@ function Banks() {
     <div className="space-y-4">
       <Card title="Connections" action={st?.configured && (
         <div className="flex items-center gap-2">
-          <select className="input h-8 w-auto text-xs" value={bank} onChange={(e) => setBank(e.target.value)}>{['Swedbank', 'SEB', 'Luminor', 'Revolut', 'Šiaulių bankas'].map((b) => <option key={b}>{b}</option>)}</select>
+          <select className="input select-pad h-8 w-auto text-xs" value={bank} onChange={(e) => setBank(e.target.value)}>{['Swedbank', 'SEB', 'Luminor', 'Revolut', 'Šiaulių bankas'].map((b) => <option key={b}>{b}</option>)}</select>
           <button className="btn-primary h-8 text-xs" onClick={connect} disabled={busy}>Connect</button>
         </div>)}>
         {!st?.configured ? <BankGuide /> : isLoading ? <Loading /> : (
@@ -582,9 +625,9 @@ function Data() {
       <Card title="Exports">
         <div className="flex flex-wrap gap-2">
           <a className="btn-outline" href="api/export/transactions.csv">Transactions CSV</a>
-          <a className="btn-outline" href="api/export/ai.zip">AI dataset (zip)</a>
+          <a className="btn-outline" href="api/export/ai.zip">Export for AI (zip)</a>
         </div>
-        <div className="mt-2 text-xs text-muted">The AI dataset bundles every transaction, monthly cash flow and net worth, balances and your brief with a README — ready for Claude.ai.</div>
+        <div className="mt-2 text-xs text-muted">The AI export bundles every transaction, monthly cash flow and net worth, balances, loans and your brief with a README and a start-here PROMPT.md — for any AI assistant.</div>
       </Card>
       <Card title="Snapshots on the server" action={<button className="btn-ghost h-8 text-xs" onClick={async () => { await api.post('/backups'); qc.invalidateQueries({ queryKey: ['backups'] }); toast('Snapshot taken', 'good') }}>Take one now</button>}>
         <div className="max-h-64 divide-y divide-line overflow-y-auto text-sm">

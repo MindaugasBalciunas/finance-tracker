@@ -22,6 +22,8 @@ export const GROUPS: { id: string; name: string; slot: number }[] = [
   { id: 'real_assets', name: 'Property & car', slot: 5 },
   { id: 'debt', name: 'Debt', slot: 7 },
 ]
+/** Groups counted in "Liquid only" views (II/III pillar pensions can be cashed out). */
+export const LIQUID_GROUPS = ['cash', 'investments', 'pension', 'crypto']
 export const groupName = (g: string) => GROUPS.find((x) => x.id === g)?.name ?? g
 
 export function useCats() {

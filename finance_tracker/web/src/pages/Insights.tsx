@@ -139,7 +139,7 @@ function Spending() {
   const max = Math.max(...data.categories.map((c: any) => c.total), 1)
   return (
     <div className="space-y-4">
-      <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      <div className="no-scrollbar overflow-y-hidden -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         {PRESETS.map((p) => <button key={p.value} className={preset === p.value ? 'chip-on' : 'chip'} onClick={() => setPreset(p.value)}>{p.label}</button>)}
       </div>
       <PaceCard />
@@ -273,7 +273,7 @@ function Trends() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Segmented size="sm" value={months} onChange={setMonths} options={[{ value: '12', label: '12M' }, { value: '24', label: '24M' }, { value: '60', label: '5Y' }]} />
-        <select className="input h-8 w-auto text-xs" value={parent} onChange={(e) => setParent(e.target.value)}>
+        <select className="input select-pad h-8 w-auto text-xs" value={parent} onChange={(e) => setParent(e.target.value)}>
           <option value="">All categories</option>
           {cats.tree.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name} breakdown</option>)}
         </select>
@@ -547,7 +547,7 @@ function Review() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <select className="input h-9 w-auto" value={year} onChange={(e) => setYear(e.target.value)}>{years.map((y) => <option key={y}>{y}</option>)}</select>
+        <select className="input select-pad h-9 w-auto" value={year} onChange={(e) => setYear(e.target.value)}>{years.map((y) => <option key={y}>{y}</option>)}</select>
         <span className="text-sm text-muted">vs {Number(year) - 1}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

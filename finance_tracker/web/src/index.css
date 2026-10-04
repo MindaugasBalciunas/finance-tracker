@@ -24,6 +24,19 @@
 @layer base {
   *, ::after, ::before, ::backdrop { border-color: rgb(var(--line)); }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+  /* In the base layer so utilities (bg-raised, px-3, …) always win —
+     unlayered rules beat every Tailwind utility. */
+  input, select, textarea { background-color: transparent; }
+  /* One chevron in every engine (Firefox and Safari draw their own). */
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1rem;
+  }
+  textarea { resize: vertical; }
+  input[type="date"] { min-width: 0; }
 }
 
 /* Tokens. Chart chrome and ink follow the validated dataviz palette;
@@ -69,11 +82,12 @@
 }
 
 html, body { background: rgb(var(--page)); color: rgb(var(--ink)); }
+/* Reserve the scrollbar's width so switching between a short and a long
+   tab doesn't make the whole page jump sideways. */
+html { scrollbar-gutter: stable; }
 body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 .tnum { font-variant-numeric: tabular-nums; }
-.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .recharts-wrapper:focus, .recharts-surface:focus { outline: none; }
-input, select, textarea { background: transparent; }
 @utility card { @apply rounded-2xl bg-surface border border-line; }
 @utility btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 h-10 text-sm font-medium transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
 @utility btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
@@ -85,4 +99,10 @@ input, select, textarea { background: transparent; }
 @utility chip { @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 h-7 text-xs text-ink2 whitespace-nowrap; }
 @utility chip-on { @apply chip border-accent bg-accent/10 text-accent; }
 @utility section-title { @apply text-xs font-semibold uppercase tracking-wide text-muted; }
+/* Bottom padding that clears the iPhone home bar but never drops below the
+   given minimum (env() is 0 on desktop and Android). */
+@utility pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+@utility pb-safe-3 { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+/* Selects keep room for the chevron after px-3 from .input. */
+@utility select-pad { padding-right: 2rem; }
 @utility no-scrollbar { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }

@@ -1,12 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { useOverview } from '../lib/hooks'
+import { useOverview, usePrefs } from '../lib/hooks'
 import { eur, eurk, monthLabel, pct, shortDate, signed } from '../lib/format'
-import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat } from '../components/ui'
+import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat, Toggle } from '../components/ui'
 import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
-import { useCats, groupName } from '../lib/categories'
+import { useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { Checks } from './Insights'
 
 export default function Home() {
@@ -14,13 +14,16 @@ export default function Home() {
   const editor = useTxEditor()
   const nav = useNavigate()
   const cats = useCats()
+  const { prefs, set: setPrefs } = usePrefs()
+  const liquid = prefs.liquid_only
   if (isLoading) return <Loading />
   if (error || !o) return <ErrorBox error={error} />
 
   const m = o.month
   const avg = o.avg12
   const spendPace = avg.spending > 0 ? m.spending / (avg.spending * Math.max(o.month_progress, 0.05)) : 0
-  const groups = Object.entries(o.by_group).filter(([g]) => g !== 'debt').sort((a, b) => b[1] - a[1])
+  const assets = GROUPS.filter((g) => g.id !== 'debt' && (!liquid || LIQUID_GROUPS.includes(g.id))).map((g) => ({ ...g, v: o.by_group[g.id] ?? 0 })).filter((g) => g.v > 0).sort((a, b) => b.v - a.v)
+  const assetTotal = assets.reduce((a, g) => a + g.v, 0)
 
   return (
     <div className="space-y-4">
@@ -28,18 +31,24 @@ export default function Home() {
       <section className="card overflow-hidden">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
-            <div className="text-sm text-ink2">Net worth</div>
-            <div className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">{eur(o.net_worth)}</div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm text-ink2">{liquid ? 'Liquid assets' : 'Net worth'}</div>
+              <span className="text-xs sm:hidden"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
+            </div>
+            <div className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">{eur(liquid ? o.liquid : o.net_worth)}</div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span className="text-muted">30 days <Delta value={o.net_worth_30d} /></span>
-              <span className="text-muted">This year <Delta value={o.net_worth_ytd} /></span>
-              <span className="text-muted">12 months <Delta value={o.net_worth_12m} /></span>
+              <span className="text-muted">30 days <Delta value={liquid ? o.liquid_30d : o.net_worth_30d} /></span>
+              <span className="text-muted">This year <Delta value={liquid ? o.liquid_ytd : o.net_worth_ytd} /></span>
+              <span className="text-muted">12 months <Delta value={liquid ? o.liquid_12m : o.net_worth_12m} /></span>
             </div>
           </div>
+          <div className="flex flex-col gap-3 sm:items-end">
+          <span className="hidden sm:block"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
           <div className="grid grid-cols-3 gap-4 text-sm sm:text-right">
             <div><div className="text-muted">Liquid</div><div className="font-semibold tnum">{eur(o.liquid)}</div></div>
             <div><div className="text-muted">Debt</div><div className="font-semibold tnum">{eur(o.debt)}</div></div>
             <div><div className="text-muted">Asset equity</div><div className="font-semibold tnum">{eur((o.by_group.real_assets ?? 0) - o.debt)}</div></div>
+          </div>
           </div>
         </div>
         <div className="h-28 sm:h-36">
@@ -54,16 +63,38 @@ export default function Home() {
               <XAxis dataKey="date" hide />
               <YAxis hide domain={['dataMin - 5000', 'dataMax + 5000']} />
               <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) =>
-                active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
-              <Area type="monotone" dataKey="value" stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
+                active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: liquid ? 'Liquid' : 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
+              <Area type="monotone" dataKey={liquid ? 'liquid' : 'value'} stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto border-t border-line px-4 py-3 text-xs">
-          {groups.map(([g, v]) => (
-            <span key={g} className="chip"><span className="text-ink2">{groupName(g)}</span> <span className="tnum font-medium text-ink">{eurk(v)}</span></span>
-          ))}
-        </div>
+        {assetTotal > 0 && (
+          <Link to="/wealth" className="block border-t border-line px-4 py-3 hover:bg-sunken/50 sm:px-6">
+            <div className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full" aria-hidden>
+              {assets.map((g) => <div key={g.id} style={{ width: `${(g.v / assetTotal) * 100}%`, background: `var(--s${g.slot})` }} />)}
+            </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-3 sm:gap-x-6 sm:text-sm">
+              {assets.map((g) => (
+                <div key={g.id} className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />
+                  <span className="flex-1 truncate text-ink2">{g.name}</span>
+                  <span className="tnum font-medium">{eurk(g.v)}</span>
+                </div>
+              ))}
+              {!liquid && o.debt > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-[3px] border border-axis" />
+                  <span className="flex-1 truncate text-ink2">Debt</span>
+                  <span className="tnum font-medium text-bad">−{eurk(o.debt)}</span>
+                </div>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-muted">
+              <span>{liquid ? `Liquid total ${eurk(assetTotal)} · house and car excluded` : `Assets ${eurk(assetTotal)} − debt ${eurk(o.debt)} = ${eurk(o.net_worth)}`}</span>
+              <span className="inline-flex items-center gap-0.5 text-accent">Wealth <Icon name="chevronR" size={14} /></span>
+            </div>
+          </Link>
+        )}
       </section>
 
       {o.inbox_open > 0 && (

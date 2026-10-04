@@ -193,7 +193,7 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 		end := book.SnapshotAt(minDate(to, now.Format("2006-01-02")), false)
 		r.NetWorth = NetWorthMove{Start: start.NetWorth, End: end.NetWorth, Change: end.NetWorth - start.NetWorth}
 		for _, h := range book.History(from, minDate(to, now.Format("2006-01-02")), "week") {
-			r.NetWorth.Points = append(r.NetWorth.Points, SparkPoint{h.Date, h.NetWorth})
+			r.NetWorth.Points = append(r.NetWorth.Points, SparkPoint{h.Date, h.NetWorth, h.Liquid})
 		}
 	}
 

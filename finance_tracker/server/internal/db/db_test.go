@@ -70,3 +70,26 @@ func TestBackupRetention(t *testing.T) {
 		t.Fatal("snapshot is not a database")
 	}
 }
+
+func TestPensionsBecomeLiquid(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "p.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An instance still on schema 1 with a non-liquid pension.
+	d.Exec(`INSERT INTO accounts(id,name,kind,liquid,created_at,updated_at) VALUES('p','P','pension',0,'x','x'),('h','H','property',0,'x','x')`)
+	d.Exec(`PRAGMA user_version = 1`)
+	d.Close()
+	d, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var p, h int
+	d.QueryRow(`SELECT liquid FROM accounts WHERE id='p'`).Scan(&p)
+	d.QueryRow(`SELECT liquid FROM accounts WHERE id='h'`).Scan(&h)
+	if p != 1 || h != 0 {
+		t.Fatalf("pension liquid %d, property liquid %d", p, h)
+	}
+}

@@ -8,7 +8,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, P
 import { api } from '../lib/api'
 import { useRefresh } from '../lib/hooks'
 import { eurk } from '../lib/format'
-import { Empty, ErrorBox, Spinner } from '../components/ui'
+import { Empty, ErrorBox, PageHeader, Spinner } from '../components/ui'
 import { axisProps, gridProps, Legend, MoneyTooltip } from '../components/charts'
 import { Icon } from '../components/Icon'
 
@@ -22,6 +22,33 @@ const SUGGESTIONS = [
   'Which subscriptions and recurring costs could I cut?',
   'Review my investment positions against my satellite rules.',
 ]
+
+/** Pick the model for chat, scans and assists; saved in AI settings. */
+function ModelPicker() {
+  const qc = useQueryClient()
+  const { data: st } = useQuery({ queryKey: ['ai-settings'], queryFn: () => api.get<{ model: string; has_key: boolean }>('/ai/settings') })
+  const { data: models } = useQuery({ queryKey: ['ai-models'], queryFn: () => api.get<string[]>('/ai/models'), enabled: !!st?.has_key, staleTime: 3_600_000, retry: false })
+  const [saving, setSaving] = useState(false)
+  if (!st?.has_key) return null
+  // Newest families first; keep the current choice even if the list lacks it.
+  const list = Array.from(new Set([st.model, ...(models ?? [])].filter(Boolean))).sort((a, b) => (a === st.model ? -1 : b === st.model ? 1 : a.localeCompare(b)))
+  const pick = async (model: string) => {
+    setSaving(true)
+    try {
+      await api.put('/ai/settings', { model })
+      qc.setQueryData(['ai-settings'], { ...st, model })
+    } finally { setSaving(false) }
+  }
+  return (
+    <label className="relative inline-flex items-center gap-1.5 text-xs text-muted">
+      <Icon name="spark" size={14} />
+      <span className="sr-only">Model</span>
+      <select className="input select-pad h-8 w-auto max-w-[11rem] truncate text-xs" value={st.model} disabled={saving} onChange={(e) => pick(e.target.value)} aria-label="Model">
+        {list.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+    </label>
+  )
+}
 
 export default function Assistant() {
   const qc = useQueryClient()
@@ -37,7 +64,8 @@ export default function Assistant() {
   const msgs = [...(history ?? []), ...local]
   const [sp, setSp] = useSearchParams()
   useEffect(() => {
-    end.current?.scrollIntoView({ behavior: 'smooth' })
+    // Only follow a conversation; an empty chat stays at the top.
+    if (msgs.length || busy) end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [msgs.length, busy])
 
   const send = async (q?: string) => {
@@ -82,11 +110,8 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-10rem)] flex-col">
-      <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Ask your CFO</h1>
-        {msgs.length > 0 && <button className="btn-ghost h-8 text-xs" onClick={clear}>Clear</button>}
-      </div>
+    <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
+      <PageHeader title="Ask your CFO" actions={<><ModelPicker />{msgs.length > 0 && <button className="btn-ghost h-8 text-xs" onClick={clear}>Clear</button>}</>} />
       <div className="flex-1 space-y-4">
         {isLoading ? null : msgs.length === 0 ? (
           <div>
@@ -108,9 +133,9 @@ export default function Assistant() {
         )}
         <div className="flex items-end gap-2 rounded-2xl border border-line bg-raised p-2 shadow-sm">
           <button className="btn-ghost h-10 w-10 shrink-0 px-0" onClick={() => fileRef.current?.click()} aria-label="Attach image"><Icon name="camera" /></button>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Ask about spending, plan, investments…"
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Ask about your money…"
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            className="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm outline-none" />
+            className="block max-h-40 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 outline-none" />
           <button className="btn-primary h-10 w-10 shrink-0 px-0" onClick={() => send()} disabled={busy || (!text.trim() && !image)} aria-label="Send"><Icon name="send" /></button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { setImage(e.target.files?.[0] ?? null); e.target.value = '' }} />

@@ -44,8 +44,8 @@ var builtinAccounts = map[string]acctDef{
 	"swed_etf":       {"Swedbank funds", "Swedbank", "brokerage", true, 130},
 	"btc_m":          {"BTC (M)", "", "crypto", true, 200},
 	"btc_r":          {"BTC (R)", "", "crypto", true, 210},
-	"seb_pension":    {"SEB pension (II pillar)", "SEB", "pension", false, 300},
-	"artea":          {"Artea (III pillar)", "Artea", "pension", false, 310},
+	"seb_pension":    {"SEB pension (II pillar)", "SEB", "pension", true, 300},
+	"artea":          {"Artea (III pillar)", "Artea", "pension", true, 310},
 }
 
 // Labels that become the merchant (vendors and employers).

@@ -4,13 +4,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../lib/api'
-import { useAccounts, useNetWorthHistory, useRefresh } from '../lib/hooks'
-import { GROUPS } from '../lib/categories'
+import { useAccounts, useNetWorthHistory, usePrefs, useRefresh } from '../lib/hooks'
+import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
 import type { Account } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
+import { AccountSelect } from '../components/pickers'
 
 export default function Wealth() {
   const loc = useLocation()
@@ -40,7 +41,9 @@ function rangeFrom(r: string) {
 
 function Overview() {
   const [range, setRange] = useState('3y')
-  const [liquidOnly, setLiquidOnly] = useState(false)
+  const { prefs, set: setPrefs } = usePrefs()
+  const liquidOnly = prefs.liquid_only
+  const setLiquidOnly = (v: boolean) => setPrefs({ liquid_only: v })
   const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range))
   const { data: accounts } = useAccounts()
   const [sp, setSp] = useSearchParams()
@@ -51,7 +54,7 @@ function Overview() {
     if (sp.get('update') === '1') { setUpdateOpen(true); sp.delete('update'); setSp(sp, { replace: true }) }
   }, [sp, setSp])
 
-  const groups = liquidOnly ? GROUPS.filter((g) => ['cash', 'investments', 'crypto'].includes(g.id)) : GROUPS
+  const groups = liquidOnly ? GROUPS.filter((g) => LIQUID_GROUPS.includes(g.id)) : GROUPS
   const data = useMemo(() => (hist ?? []).map((h) => {
     const row: any = { date: h.date, net: liquidOnly ? h.liquid : h.net_worth }
     for (const g of groups) row[g.id] = h.by_group[g.id] ?? 0
@@ -138,7 +141,7 @@ function Overview() {
 
 /** Where the money sits now: one composition bar of the positive groups. */
 function Allocation({ byGroup, liquidOnly }: { byGroup: Record<string, number>; liquidOnly: boolean }) {
-  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || ['cash', 'investments', 'crypto'].includes(g.id)))
+  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
     .map((g) => ({ ...g, v: Math.max(0, byGroup[g.id] ?? 0) })).filter((g) => g.v > 0)
   const total = parts.reduce((a, g) => a + g.v, 0)
   if (!total) return null
@@ -198,6 +201,12 @@ function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
 
 function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: () => void }) {
   const editable = accounts.filter((a) => !a.archived && a.kind !== 'loan')
+  // House, car and solar are revalued once a year at most: tucked away.
+  const isValuation = (a: Account) => a.kind === 'property' || a.kind === 'vehicle'
+  const frequent = editable.filter((a) => !isValuation(a))
+  const valuations = editable.filter(isValuation)
+  const oldest = valuations.map((a) => a.balance_date).filter(Boolean).sort()[0]
+  const [showVal, setShowVal] = useState(false)
   const [date, setDate] = useState(todayISO())
   const [vals, setVals] = useState<Record<string, string>>({})
   const [qty, setQty] = useState<Record<string, string>>({})
@@ -219,6 +228,19 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
     }),
     onSuccess: (r) => { toast(`${r.saved} balances saved`, 'good'); refresh(); onClose() },
   })
+  const row = (a: Account) => (
+    <div key={a.id} className="flex items-center gap-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{a.name}</div>
+        <div className="text-xs text-muted">now {a.balance != null ? eurc(a.balance) : '—'}{a.balance_date ? ` · ${shortDate(a.balance_date)}` : ''}</div>
+      </div>
+      {a.kind === 'crypto' ? (
+        <input className="input h-9 w-32 tnum" inputMode="decimal" placeholder={a.quantity ? String(a.quantity) : 'units'} value={qty[a.id] ?? ''} onChange={(e) => setQty({ ...qty, [a.id]: e.target.value })} />
+      ) : (
+        <input className="input h-9 w-32 tnum" inputMode="decimal" placeholder={a.balance != null ? String(a.balance) : '€'} value={vals[a.id] ?? ''} onChange={(e) => setVals({ ...vals, [a.id]: e.target.value })} />
+      )}
+    </div>
+  )
   return (
     <Sheet open onClose={onClose} title="Update balances" footer={<>
       <button className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -230,20 +252,20 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
       </div>
       <div className="text-xs text-muted mb-2">Leave a field empty to keep it. Bank-synced accounts update themselves on sync.</div>
       <div className="divide-y divide-line">
-        {editable.map((a) => (
-          <div key={a.id} className="flex items-center gap-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{a.name}</div>
-              <div className="text-xs text-muted">now {a.balance != null ? eurc(a.balance) : '—'}{a.balance_date ? ` · ${shortDate(a.balance_date)}` : ''}</div>
-            </div>
-            {a.kind === 'crypto' ? (
-              <input className="input h-9 w-32 tnum" inputMode="decimal" placeholder={a.quantity ? String(a.quantity) : 'units'} value={qty[a.id] ?? ''} onChange={(e) => setQty({ ...qty, [a.id]: e.target.value })} />
-            ) : (
-              <input className="input h-9 w-32 tnum" inputMode="decimal" placeholder={a.balance != null ? String(a.balance) : '€'} value={vals[a.id] ?? ''} onChange={(e) => setVals({ ...vals, [a.id]: e.target.value })} />
-            )}
-          </div>
-        ))}
+        {frequent.map(row)}
       </div>
+      {valuations.length > 0 && (
+        <div className="mt-3 rounded-xl border border-line">
+          <button type="button" onClick={() => setShowVal(!showVal)} aria-expanded={showVal} className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Property & car <span className="font-normal text-muted">· {valuations.length}</span></div>
+              <div className="truncate text-xs text-muted">{eurc(valuations.reduce((t, a) => t + (a.balance ?? 0), 0))} · valued {oldest ? `since ${shortDate(oldest)}` : '—'} · change rarely</div>
+            </div>
+            <Icon name="chevronD" size={16} className={clsx('text-muted transition', showVal && 'rotate-180')} />
+          </button>
+          {showVal && <div className="divide-y divide-line border-t border-line px-3">{valuations.map(row)}</div>}
+        </div>
+      )}
       <ErrorBox error={save.error} />
     </Sheet>
   )
@@ -293,6 +315,8 @@ function AccountSheet({ a, onClose }: { a: Account; onClose: () => void }) {
   )
 }
 
+const safeParse = (s: string) => { try { return JSON.parse(s || '{}') } catch { return {} } }
+
 const KINDS = ['checking', 'savings', 'cash', 'brokerage', 'pension', 'crypto', 'property', 'vehicle', 'loan', 'other']
 
 function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
@@ -304,6 +328,7 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
     mutationFn: () => {
       let d = {}
       try { d = JSON.parse(details || '{}') } catch { throw new Error('Details must be valid JSON') }
+      if (v.kind === 'loan') d = cleanTerms(d)
       const body = { ...v, details: d }
       return a ? api.put(`/accounts/${a.id}`, body) : api.post('/accounts', body)
     },
@@ -320,15 +345,16 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
         <Field label="Name"><input className="input" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Institution"><input className="input" value={v.institution} onChange={(e) => setV({ ...v, institution: e.target.value })} /></Field>
-          <Field label="Kind"><select className="input" value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value })}>{KINDS.map((k) => <option key={k}>{k}</option>)}</select></Field>
+          <Field label="Kind"><select className="input select-pad" value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value })}>{KINDS.map((k) => <option key={k}>{k}</option>)}</select></Field>
         </div>
         <div className="flex flex-wrap gap-4">
           <Toggle checked={!!v.liquid} onChange={(x) => setV({ ...v, liquid: x })} label="Liquid" />
           <Toggle checked={!!v.archived} onChange={(x) => setV({ ...v, archived: x })} label="Archived" />
         </div>
         <Field label="Notes"><textarea className="input h-20 py-2" value={v.notes ?? ''} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
-        {['property', 'vehicle', 'loan'].includes(v.kind ?? '') && (
-          <Field label="Details (JSON)" hint={v.kind === 'loan' ? 'base_rate, margin, monthly_payment, end_date, rate_reset_date, asset_id' : 'purchase_date, purchase_price, address'}>
+        {v.kind === 'loan' && <LoanFields d={safeParse(details)} onChange={(d) => setDetails(JSON.stringify(d, null, 2))} />}
+        {['property', 'vehicle'].includes(v.kind ?? '') && (
+          <Field label="Details (JSON)" hint="purchase_date, purchase_price, address">
             <textarea className="input h-36 py-2 font-mono text-xs" value={details} onChange={(e) => setDetails(e.target.value)} />
           </Field>
         )}
@@ -473,8 +499,8 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
           <Field label="Date"><input type="date" className="input" value={t.date} onChange={(e) => setT({ ...t, date: e.target.value })} /></Field>
           <Field label="Shares"><input className="input tnum" inputMode="decimal" value={t.shares ?? ''} onChange={(e) => setT({ ...t, shares: Number(e.target.value) })} /></Field>
           <Field label="Price per share"><input className="input tnum" inputMode="decimal" value={t.price ?? ''} onChange={(e) => setT({ ...t, price: Number(e.target.value) })} /></Field>
-          <Field label="Currency"><select className="input" value={t.currency} onChange={(e) => setT({ ...t, currency: e.target.value })}>{['USD', 'EUR', 'GBP'].map((c) => <option key={c}>{c}</option>)}</select></Field>
-          <Field label="Account"><select className="input" value={t.account_id ?? ''} onChange={(e) => setT({ ...t, account_id: e.target.value })}><option value="ibkr">IBKR</option><option value="revolut_stocks">Revolut Stocks</option><option value="">—</option></select></Field>
+          <Field label="Currency"><select className="input select-pad" value={t.currency} onChange={(e) => setT({ ...t, currency: e.target.value })}>{['USD', 'EUR', 'GBP'].map((c) => <option key={c}>{c}</option>)}</select></Field>
+          <Field label="Account"><select className="input select-pad" value={t.account_id ?? ''} onChange={(e) => setT({ ...t, account_id: e.target.value })}><option value="ibkr">IBKR</option><option value="revolut_stocks">Revolut Stocks</option><option value="">—</option></select></Field>
         </div>
         <Field label="Notes"><input className="input" value={t.notes ?? ''} onChange={(e) => setT({ ...t, notes: e.target.value })} /></Field>
         <ErrorBox error={save.error} />
@@ -485,7 +511,106 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
 
 // ── loans ───────────────────────────────────────────────────────────
 
+/** Structured loan terms (replaces hand-edited JSON). */
+type Num = number | string // raw text while typing ("3." must survive), a number once saved
+type LoanTerms = {
+  lender?: string; asset_id?: string; base_rate_name?: string; base_rate?: Num; margin?: Num; rate_reset_date?: string
+  monthly_payment?: Num; payment_day?: Num; start_date?: string; start_principal?: Num; end_date?: string
+}
+const LOAN_NUMS = ['base_rate', 'margin', 'monthly_payment', 'payment_day', 'start_principal'] as const
+const toNum = (v?: Num) => (v == null || v === '' ? undefined : Number(String(v).replace(',', '.')))
+
+/** Numbers as numbers; rejects anything that isn't one. */
+function cleanTerms(d: LoanTerms): LoanTerms {
+  const out: LoanTerms = { ...d }
+  for (const k of LOAN_NUMS) {
+    const n = toNum(d[k])
+    if (n !== undefined && !Number.isFinite(n)) throw new Error(`${k.replace('_', ' ')} must be a number`)
+    out[k] = n
+  }
+  const p = out.payment_day as number | undefined
+  if (p != null && (p < 1 || p > 31 || !Number.isInteger(p))) throw new Error('Payment day must be 1–31')
+  return out
+}
+
+function LoanFields({ d, onChange }: { d: LoanTerms; onChange: (d: LoanTerms) => void }) {
+  const num = (k: keyof LoanTerms) => ({
+    className: 'input tnum', inputMode: 'decimal' as const, value: d[k] ?? '',
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...d, [k]: e.target.value === '' ? undefined : e.target.value }),
+  })
+  const txt = (k: keyof LoanTerms, type = 'text') => ({
+    className: 'input', type, value: (d[k] as string) ?? '',
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...d, [k]: e.target.value || undefined }),
+  })
+  const rate = (toNum(d.base_rate) ?? 0) + (toNum(d.margin) ?? 0)
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Lender"><input {...txt('lender')} placeholder="SEB" /></Field>
+        <Field label="Secured on"><AccountSelect value={d.asset_id ?? ''} onChange={(v) => onChange({ ...d, asset_id: v || undefined })} placeholder="Nothing" kinds={['property', 'vehicle']} /></Field>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Base rate"><input {...txt('base_rate_name')} placeholder="6M EURIBOR" /></Field>
+        <Field label="Base %"><input {...num('base_rate')} placeholder="2.10" /></Field>
+        <Field label="Margin %"><input {...num('margin')} placeholder="1.85" /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Rate resets on" hint={rate > 0 ? `Rate now ${rate.toFixed(2)}%` : undefined}><input {...txt('rate_reset_date', 'date')} /></Field>
+        <Field label="Monthly payment €" hint="Empty = computed from the end date"><input {...num('monthly_payment')} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Started"><input {...txt('start_date', 'date')} /></Field>
+        <Field label="Ends"><input {...txt('end_date', 'date')} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Payment day"><input {...num('payment_day')} placeholder="17" /></Field>
+        <Field label="Original principal €"><input {...num('start_principal')} /></Field>
+      </div>
+    </div>
+  )
+}
+
+function LoanEditor({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data: accounts } = useAccounts()
+  const a = accounts?.find((x) => x.id === id)
+  const [d, setD] = useState<LoanTerms | null>(null)
+  const [owed, setOwed] = useState('')
+  const [owedDate, setOwedDate] = useState(todayISO())
+  const refresh = useRefresh()
+  const toast = useToast()
+  useEffect(() => { if (a && !d) setD({ ...(a.details ?? {}) }) }, [a, d])
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!a || !d) return
+      await api.put(`/accounts/${a.id}`, { ...a, details: { ...(a.details ?? {}), ...cleanTerms(d) } })
+      if (owed.trim()) await api.post('/balances', { date: owedDate, values: [{ account_id: a.id, value: -Math.abs(Number(owed.replace(',', '.'))) }] })
+    },
+    onSuccess: () => { refresh(); toast('Loan updated', 'good'); onClose() },
+  })
+  return (
+    <Sheet open onClose={onClose} title={a ? `Edit ${a.name}` : 'Edit loan'} footer={<>
+      <button className="btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn-primary" onClick={() => save.mutate()} disabled={!d || save.isPending}>Save</button>
+    </>}>
+      {!d ? <Loading /> : (
+        <div className="space-y-4">
+          <LoanFields d={d} onChange={setD} />
+          <div className="rounded-xl bg-sunken p-3">
+            <div className="section-title mb-2">Balance owed</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Owed €" hint={a?.balance != null ? `now ${eurc(Math.abs(a.balance))}` : undefined}><input className="input tnum" inputMode="decimal" value={owed} onChange={(e) => setOwed(e.target.value)} placeholder="leave empty to keep" /></Field>
+              <Field label="As of"><input type="date" className="input" value={owedDate} onChange={(e) => setOwedDate(e.target.value)} /></Field>
+            </div>
+          </div>
+          <ErrorBox error={save.error} />
+        </div>
+      )}
+    </Sheet>
+  )
+}
+
 function Loans() {
+  const [editing, setEditing] = useState<string | null>(null)
   const { data, isLoading } = useQuery({ queryKey: ['loans'], queryFn: () => api.get<any[]>('/loans') })
   const { data: hist } = useNetWorthHistory(rangeFrom('5y'), 'month', true)
   if (isLoading) return <Loading />
@@ -495,7 +620,7 @@ function Loans() {
       {data.map((l) => {
         const series = (hist ?? []).map((h) => ({ date: h.date, balance: -(h.by_account?.[l.account_id] ?? 0), equity: (h.by_account?.[l.details.asset_id] ?? 0) + (h.by_account?.[l.account_id] ?? 0) })).filter((x) => x.balance > 0)
         return (
-          <Card key={l.account_id} title={`${l.name} · ${l.details.lender ?? ''}`}>
+          <Card key={l.account_id} title={`${l.name}${l.details.lender ? ` · ${l.details.lender}` : ''}`} action={<button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => setEditing(l.account_id)}><Icon name="edit" size={15} />Edit</button>}>
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
               <div><div className="text-xs text-muted">Owed</div><div className="text-xl font-semibold">{eur(l.balance)}</div><div className="text-xs text-muted">as of {shortDate(l.balance_date)}</div></div>
               <div><div className="text-xs text-muted">Rate</div><div className="text-xl font-semibold">{l.rate.toFixed(2)}%</div><div className="text-xs text-muted">{l.details.base_rate_name} {l.details.base_rate}% + {l.details.margin}%</div></div>
@@ -530,6 +655,7 @@ function Loans() {
           </Card>
         )
       })}
+      {editing && <LoanEditor id={editing} onClose={() => setEditing(null)} />}
     </div>
   )
 }

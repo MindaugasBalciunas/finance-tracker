@@ -71,7 +71,7 @@ export function AccountSelect({ value, onChange, placeholder = 'No account', kin
   const { data } = useAccounts()
   const filter = kinds ? (k: string) => kinds.includes(k) : undefined
   return (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className="input select-pad" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder}</option>
       {(data ?? []).filter((a) => (!a.archived || a.id === value) && (!filter || filter(a.kind) || a.id === value)).map((a) => (
         <option key={a.id} value={a.id}>{a.name}{a.institution && a.institution !== a.name ? ` · ${a.institution}` : ''}</option>

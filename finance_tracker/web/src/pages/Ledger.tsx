@@ -128,7 +128,7 @@ function Transactions() {
         <button className="btn-outline hidden sm:inline-flex" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
         <button className="btn-primary" onClick={() => editor.open()}><Icon name="plus" size={16} /><span className="hidden sm:inline">Add</span></button>
       </div>
-      <div className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      <div className="no-scrollbar overflow-y-hidden -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         {PERIODS.map((p) => (
           <button key={p.value} className={period === p.value ? 'chip-on' : 'chip'} onClick={() => { const n = new URLSearchParams(sp); n.delete('from'); n.delete('to'); n.set('period', p.value); setSp(n, { replace: true }) }}>{p.label}</button>
         ))}

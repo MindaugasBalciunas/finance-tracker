@@ -104,7 +104,7 @@ func Convert(d *sql.DB, src *Data) (*Report, error) {
 			case v.Group == "investments":
 				a.Kind = "brokerage"
 			case v.Group == "pensions":
-				a.Kind, a.Liquid = "pension", false
+				a.Kind, a.Liquid = "pension", true
 			case v.Group == "crypto":
 				a.Kind = "crypto"
 			}

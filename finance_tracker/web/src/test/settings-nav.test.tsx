@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import Settings from '../pages/Settings'
@@ -10,7 +10,7 @@ function Where() {
 describe('settings navigation', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('section links are absolute and a stacked path recovers', async () => {
+  it('tabs navigate to absolute paths and a stacked path recovers', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -20,7 +20,10 @@ describe('settings navigation', () => {
       </QueryClientProvider>,
     )
     await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/appearance'))
-    expect(screen.getByText('Data & backup').closest('a')!.getAttribute('href')).toBe('/settings/data')
-    expect(screen.getByText('Appearance').closest('a')).toHaveClass('chip-on')
+    expect(screen.getByRole('button', { name: 'Appearance' })).toHaveClass('text-ink')
+    fireEvent.click(screen.getByRole('button', { name: 'Data & backup' }))
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/data'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }))
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/rules'))
   })
 })

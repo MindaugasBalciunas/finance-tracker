@@ -75,7 +75,7 @@ How the data is modelled:
 - Transactions are income, expense or transfer. Transfers move money between own accounts; transfer.invest / transfer.pension / transfer.debt (mortgage principal) / transfer.asset build wealth and count as "invested", transfer.internal is just shuffling cash.
 - Categories are two-level ids (food.groceries). Merchant is who was paid. Tags are who/why/where: people (kids, evelina, kristina), properties (house, apartment), trips (trip:…).
 - Savings rate = (income − spending) / income; refunds reduce spending. Mortgage interest is spending; principal is saving.
-- Net worth includes property and loans; "liquid" excludes pension, property and debt.
+- Net worth includes property and loans; "liquid" is cash, brokers, crypto and II/III pillar pensions (cashable); it excludes property, car and debt.
 
 Answer style: direct, concise, numbers first. Markdown: bullets, **bold** key figures, compact tables; no top-level headings. When a picture helps (or the user asks to chart/plot/show), add a fenced block tagged chart with ONE JSON object: {"type":"line|bar|area|pie","title":"…","x":"<label field>","unit":"€","series":[{"name":"…","key":"<numeric field>"}],"data":[…]} — real figures only, ≤24 points, ≤4 series, at most 2 charts.
 

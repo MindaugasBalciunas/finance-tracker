@@ -35,6 +35,10 @@ func TestBuildOverview(t *testing.T) {
 	if o.NetWorth12m != E(4000) {
 		t.Errorf("12-month change %v", o.NetWorth12m)
 	}
+	// Liquid view: only cash moved, so its change matches; the house is out.
+	if o.Liquid != E(5000) || o.Liquid12m != E(4000) || o.Spark[len(o.Spark)-1].Liquid != E(5000) {
+		t.Errorf("liquid %v / 12m %v / spark %+v", o.Liquid, o.Liquid12m, o.Spark[len(o.Spark)-1])
+	}
 	if o.Avg12.Income != E(5000) || o.Avg12.Spending != E(1000) || o.Avg12.SavingsRate != 0.8 {
 		t.Errorf("trailing average %+v", o.Avg12)
 	}

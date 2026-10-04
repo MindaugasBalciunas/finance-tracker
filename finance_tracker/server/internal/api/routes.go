@@ -812,6 +812,16 @@ func (s *Server) planRoutes() {
 		}
 		return cfo.BudgetReport(s.DB, m, time.Now())
 	})
+	s.handle("GET /api/prefs", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return loadPrefs(s.DB), nil
+	})
+	s.handle("PUT /api/prefs", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		p := loadPrefs(s.DB) // partial updates: absent fields keep their value
+		if err := decode(r, &p); err != nil {
+			return nil, err
+		}
+		return p, savePrefs(s.DB, p)
+	})
 	s.handle("GET /api/plan/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		st := plan.LoadSettings(s.DB)
 		return map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossSalary, st.MonthlyDeductions)}, nil

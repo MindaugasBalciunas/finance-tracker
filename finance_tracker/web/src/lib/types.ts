@@ -47,7 +47,8 @@ export interface Anomaly { category: string; spent: number; typical: number; rat
 export interface Overview {
   date: string; net_worth: number; liquid: number; debt: number; by_group: Record<string, number>
   net_worth_30d: number; net_worth_ytd: number; net_worth_12m: number
-  spark: { date: string; value: number }[]
+  liquid_30d: number; liquid_ytd: number; liquid_12m: number
+  spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number; over: { name: string; spent: number; budgeted: number; remaining: number }[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }

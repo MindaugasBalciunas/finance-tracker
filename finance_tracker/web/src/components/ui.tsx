@@ -87,7 +87,7 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 export function Segmented<T extends string>({ value, options, onChange, size = 'md' }: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; size?: 'sm' | 'md' }) {
   return (
-    <div className="no-scrollbar inline-flex rounded-xl bg-sunken p-0.5 max-w-full overflow-x-auto">
+    <div className="no-scrollbar inline-flex rounded-xl bg-sunken p-0.5 max-w-full overflow-x-auto overflow-y-hidden">
       {options.map((o) => (
         <button key={o.value} onClick={() => onChange(o.value)}
           className={clsx('rounded-[10px] px-3 font-medium whitespace-nowrap transition', size === 'sm' ? 'h-7 text-xs' : 'h-8 text-sm',
@@ -122,7 +122,7 @@ export function Sheet({ open, onClose, title, children, footer, wide = false }: 
           <button className="btn-ghost h-9 w-9 px-0" onClick={onClose} aria-label="Close"><Icon name="x" /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <div className="shrink-0 border-t border-line px-4 py-3 pb-safe flex gap-2 justify-end">{footer}</div>}
+        {footer && <div className="shrink-0 border-t border-line px-4 pt-3 pb-safe-3 flex flex-wrap gap-2 justify-end">{footer}</div>}
       </div>
     </div>
   )
@@ -189,13 +189,13 @@ export function PageHeader({ title, sub, actions }: { title: ReactNode; sub?: Re
 
 export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode; badge?: number }[] }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-line -mx-4 px-4 sm:mx-0 sm:px-0">
+    <div className="no-scrollbar mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line -mx-4 px-4 sm:mx-0 sm:px-0">
       {tabs.map((t) => (
         <button key={t.value} onClick={() => onChange(t.value)}
           className={clsx('relative h-10 px-3 text-sm font-medium whitespace-nowrap transition', value === t.value ? 'text-ink' : 'text-muted hover:text-ink2')}>
           {t.label}
           {!!t.badge && <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">{t.badge}</span>}
-          {value === t.value && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" />}
+          {value === t.value && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
         </button>
       ))}
     </div>

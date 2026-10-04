@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"ft/internal/backup"
+	"ft/internal/cfo"
 	"ft/internal/db"
 	"ft/internal/importv1"
 	"ft/internal/insights"
@@ -98,7 +99,7 @@ func (s *Server) dataRoutes() {
 			return nil, err
 		}
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", `attachment; filename="finance-ai-dataset-`+time.Now().Format("2006-01-02")+`.zip"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="finance-for-ai-`+time.Now().Format("2006-01-02")+`.zip"`)
 		w.Write(buf)
 		return nil, nil
 	})
@@ -234,7 +235,30 @@ func (s *Server) aiZip() ([]byte, error) {
 		return json.NewEncoder(w).Encode(map[string]any{"accounts": accts, "categories": cl, "budgets": budgets, "trades": trades,
 			"plan_settings": plan.LoadSettings(s.DB)})
 	})
+	add("loans.csv", func(w io.Writer) error {
+		cw := csv.NewWriter(w)
+		cw.Write([]string{"account", "name", "lender", "owed_eur", "as_of", "rate_pct", "base_rate_name", "base_rate_pct", "margin_pct", "rate_reset_date",
+			"monthly_payment_eur", "months_left", "payoff", "interest_left_eur", "secured_on", "asset_value_eur", "ltv"})
+		for _, l := range wealth.Loans(book, txs, time.Now()) {
+			d := l.Details
+			cw.Write([]string{l.AccountID, l.Name, d.Lender, l.Balance.String(), l.BalanceDate, fmt.Sprintf("%.2f", l.Rate), d.BaseRateName,
+				fmt.Sprintf("%.3f", d.BaseRate), fmt.Sprintf("%.2f", d.Margin), d.RateResetDate, fmt.Sprintf("%.2f", (l.NextInterest + l.NextPrincipal).Float()),
+				fmt.Sprint(l.MonthsLeft), l.PayoffDate, l.TotalInterest.String(), d.AssetID, l.AssetValue.String(), fmt.Sprintf("%.3f", l.LTV)})
+		}
+		cw.Flush()
+		return nil
+	})
+	add("today.json", func(w io.Writer) error {
+		o, err := cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
+		if err != nil {
+			return err
+		}
+		e := json.NewEncoder(w)
+		e.SetIndent("", " ")
+		return e.Encode(o)
+	})
 	add("context.md", func(w io.Writer) error { _, err := io.WriteString(w, s.AI.Context()); return err })
+	add("PROMPT.md", func(w io.Writer) error { _, err := io.WriteString(w, analysisPrompt); return err })
 	add("README.md", func(w io.Writer) error {
 		_, err := io.WriteString(w, `# Personal finance dataset
 
@@ -249,7 +273,11 @@ Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
   2026 are reconstructed from payments (source=computed in balances.csv).
 - balances.csv — every recorded account value.
 - reference.json — accounts, category tree, budgets, investment trades, plan settings.
+- loans.csv — each loan: balance, rate (base + margin), reset date, payment, payoff, interest left, LTV.
+- today.json — the app's current overview: net worth, liquid (cash, brokers, crypto, II/III pillar pensions), this month vs
+  typical, plan pulse, emergency fund.
 - context.md — the owner's own brief: who they are and how they want to be advised.
+- PROMPT.md — start here: what to analyse and how to answer.
 `)
 		return err
 	})
@@ -258,6 +286,25 @@ Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
 	}
 	return buf.Bytes(), nil
 }
+
+// analysisPrompt tells an outside AI assistant how to use the dataset.
+// Shared via Settings → "Export for AI".
+const analysisPrompt = `# Start here
+
+You are my personal CFO. The files in this archive are my complete finances (EUR, Lithuania). Read README.md for the file
+formats and context.md for who I am, then answer from the data — quote numbers, months and merchants, don't guess.
+
+1. **Where I stand** — net worth and liquid assets now, change over 12 months and why (today.json, networth_monthly.csv).
+2. **Cash flow** — savings rate for the last 12 months vs the year before; months that broke the pattern and the cause
+   (cashflow_monthly.csv, transactions.csv). A salary booked on the 1st–3rd belongs to the previous month.
+3. **Spending** — the 5 categories and 10 merchants that grew most; recurring charges I could cut.
+4. **Debt** — mortgage: rate, reset date, prepay vs invest at my rate, and what happens if EURIBOR moves ±1% (loans.csv).
+5. **Safety** — emergency fund in months of essential spending; anything stale or risky.
+6. **Next 3 actions** — concrete, with euro amounts and dates.
+
+Rules: mortgage principal (transfer.debt) is saving, not spending; transfer.internal is neutral; refunds reduce spending.
+Keep it short — tables over prose.
+`
 
 // Review is a year in review.
 type Review struct {

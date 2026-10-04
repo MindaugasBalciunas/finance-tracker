@@ -46,6 +46,17 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Bank setup help | Settings → Banks step-by-step guide | — |
 | Export for sync without touching the backup reminder | `?purpose=export` | `api/TestNewInsightAndTidyEndpoints` |
 
+## Added in v2.1.1–2.2
+
+| Area | Change | Covered by |
+|---|---|---|
+| Settings | Absolute tab links (stacked `/settings/a/b/c` paths fixed, unknown paths recover); same tab bar as other pages; **Export for AI** zip (PROMPT.md, loans.csv, today.json) with phone share sheet | `test/settings-nav.test.tsx`, `api/TestImportV1AndExports` |
+| Net worth | "Liquid only" on Home and Wealth, remembered on the server (`/api/prefs`); II/III pillar pensions count as liquid (migration 2, also applied to older backups on restore) | `api/TestPrefsPersist`, `cfo/TestBuildOverview`, `db/TestPensionsBecomeLiquid` |
+| Home | Balance-sheet breakdown (assets − debt = net worth) instead of a sideways-scrolling chip row | — |
+| Wealth | Structured loan editor (rates, reset, payment, dates, owed balance); property & car valuations folded away in "Update balances" | — |
+| Ask CFO | Model picker in the chat header | — |
+| UI | Firefox/mobile: sheet footer padding, consistent select chevrons, tab bars without vertical scrollbars, stable page width (`scrollbar-gutter`) | Firefox Playwright sweep |
+
 ## Where v2 is better
 
 - One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.

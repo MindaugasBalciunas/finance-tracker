@@ -30,6 +30,9 @@ type Overview struct {
 	NetWorth30d   money.Cents            `json:"net_worth_30d"`  // change vs 30 days ago
 	NetWorthYTD   money.Cents            `json:"net_worth_ytd"`  // change since 31 Dec
 	NetWorth12m   money.Cents            `json:"net_worth_12m"`  // change vs a year ago
+	Liquid30d     money.Cents            `json:"liquid_30d"`
+	LiquidYTD     money.Cents            `json:"liquid_ytd"`
+	Liquid12m     money.Cents            `json:"liquid_12m"`
 	Spark         []SparkPoint           `json:"spark"`          // 24 month-ends
 	Month         insights.Flow          `json:"month"`          // this month so far
 	LastMonth     insights.Flow          `json:"last_month"`
@@ -50,8 +53,9 @@ type Overview struct {
 }
 
 type SparkPoint struct {
-	Date  string      `json:"date"`
-	Value money.Cents `json:"value"`
+	Date   string      `json:"date"`
+	Value  money.Cents `json:"value"`
+	Liquid money.Cents `json:"liquid"`
 }
 
 type PlanPulse struct {
@@ -113,11 +117,14 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	today := now.Format("2006-01-02")
 	snap := book.SnapshotAt(today, true)
 	o := &Overview{Date: today, NetWorth: snap.NetWorth, Liquid: snap.Liquid, Debt: snap.Debt, ByGroup: snap.ByGroup, Stale: snap.Stale, InboxOpen: inboxOpen}
-	o.NetWorth30d = snap.NetWorth - book.SnapshotAt(now.AddDate(0, 0, -30).Format("2006-01-02"), false).NetWorth
-	o.NetWorthYTD = snap.NetWorth - book.SnapshotAt(time.Date(now.Year()-1, 12, 31, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), false).NetWorth
-	o.NetWorth12m = snap.NetWorth - book.SnapshotAt(now.AddDate(-1, 0, 0).Format("2006-01-02"), false).NetWorth
+	ago30 := book.SnapshotAt(now.AddDate(0, 0, -30).Format("2006-01-02"), false)
+	yearEnd := book.SnapshotAt(time.Date(now.Year()-1, 12, 31, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), false)
+	ago12 := book.SnapshotAt(now.AddDate(-1, 0, 0).Format("2006-01-02"), false)
+	o.NetWorth30d, o.Liquid30d = snap.NetWorth-ago30.NetWorth, snap.Liquid-ago30.Liquid
+	o.NetWorthYTD, o.LiquidYTD = snap.NetWorth-yearEnd.NetWorth, snap.Liquid-yearEnd.Liquid
+	o.NetWorth12m, o.Liquid12m = snap.NetWorth-ago12.NetWorth, snap.Liquid-ago12.Liquid
 	for _, h := range book.History(now.AddDate(-2, 0, 0).Format("2006-01-02"), today, "month") {
-		o.Spark = append(o.Spark, SparkPoint{h.Date, h.NetWorth})
+		o.Spark = append(o.Spark, SparkPoint{h.Date, h.NetWorth, h.Liquid})
 	}
 
 	txs, err := ledger.All(d, ledger.Filter{From: now.AddDate(-2, 0, 0).Format("2006-01") + "-01"})

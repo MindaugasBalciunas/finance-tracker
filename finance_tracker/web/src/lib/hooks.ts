@@ -17,6 +17,21 @@ export const useCashflow = (from: string, to: string, granularity: 'month' | 'ye
 export const useMerchants = () =>
   useQuery({ queryKey: ['merchants'], queryFn: () => api.get<{ merchant: string; count: number; category: string }[]>('/merchants'), staleTime: 300_000 })
 
+export interface Prefs { liquid_only: boolean }
+
+/** View choices stored on the server so they follow the owner across devices. */
+export function usePrefs() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['prefs'], queryFn: () => api.get<Prefs>('/prefs'), staleTime: Infinity })
+  const set = useMutation({
+    mutationFn: (p: Partial<Prefs>) => api.put<Prefs>('/prefs', p),
+    onMutate: (p) => qc.setQueryData<Prefs>(['prefs'], (old) => ({ ...(old ?? { liquid_only: false }), ...p })),
+    onSuccess: (p) => qc.setQueryData(['prefs'], p),
+    onError: () => qc.invalidateQueries({ queryKey: ['prefs'] }),
+  })
+  return { prefs: q.data ?? { liquid_only: false }, set: set.mutate }
+}
+
 export interface TxFilter {
   from?: string; to?: string; kind?: string; category?: string[]; account?: string[]; tag?: string[]; tags_all?: boolean
   merchant?: string; q?: string; min?: string; max?: string; sort?: string; limit?: number; offset?: number
