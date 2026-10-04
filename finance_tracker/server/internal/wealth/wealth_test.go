@@ -38,6 +38,11 @@ func TestSnapshotCarriesValuesForward(t *testing.T) {
 	if len(hist) != 3 || hist[2].ByGroup["cash"] != E(1500) {
 		t.Fatalf("history %+v", hist)
 	}
+	// Weekly series always end on the last day (today's update is visible).
+	wk := book.History("2026-01-01", "2026-03-31", "week")
+	if wk[len(wk)-1].Date != "2026-03-31" || wk[len(wk)-1].ByGroup["cash"] != E(1500) {
+		t.Fatalf("weekly tail %+v", wk[len(wk)-1])
+	}
 	if book.FirstDate() != "2022-08-17" {
 		t.Error(book.FirstDate())
 	}

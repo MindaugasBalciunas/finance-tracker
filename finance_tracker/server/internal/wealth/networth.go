@@ -162,6 +162,10 @@ func (b *Book) History(from, to string, step string) []Snapshot {
 		for d := start; !d.After(end); d = d.AddDate(0, 0, 7) {
 			out = append(out, b.SnapshotAt(d.Format("2006-01-02"), false))
 		}
+		// Always end on the last day, so a balance updated today shows up.
+		if last := end.Format("2006-01-02"); len(out) > 0 && out[len(out)-1].Date != last {
+			out = append(out, b.SnapshotAt(last, false))
+		}
 	default: // month ends
 		cur := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC)
 		for !cur.After(end) {

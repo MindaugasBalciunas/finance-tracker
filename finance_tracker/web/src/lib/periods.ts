@@ -11,7 +11,8 @@ export function rangeFrom(r: string) {
   else d.setFullYear(d.getFullYear() - Number(r.slice(0, -1)))
   return d.toISOString().slice(0, 10)
 }
-/** Weekly points for short periods, monthly otherwise. */
-export const rangeStep = (r: string) => (SHORT.includes(r) ? 'week' : 'month')
+/** Daily points up to a year (exact highs and lows), weekly for 3Y, monthly
+ *  beyond. Every series ends on today, so a fresh balance shows at once. */
+export const rangeStep = (r: string) => (SHORT.includes(r) || r === '1y' ? 'day' : r === '3y' ? 'week' : 'month')
 export const rangeLabel = (r: string) => (r === 'all' ? 'since records began' : r === 'ytd' ? 'this year' : `over ${r.toUpperCase()}`)
 export const rangeTick = (r: string) => (d: string) => (r === '5y' || r === 'all' ? d.slice(0, 4) : new Date(d).toLocaleDateString('en-GB', SHORT.includes(r) ? { day: 'numeric', month: 'short' } : { month: 'short', year: '2-digit' }))
