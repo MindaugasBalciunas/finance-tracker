@@ -871,6 +871,13 @@ func (s *Server) insightRoutes() {
 		}
 		return rows, nil
 	})
+	s.handle("GET /api/insights/pace", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(0, -7, 0).Format("2006-01") + "-01"})
+		if err != nil {
+			return nil, err
+		}
+		return insights.Pace(txs, time.Now()), nil
+	})
 	s.handle("GET /api/insights/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-2, 0, 0).Format("2006-01-02")})
 		if err != nil {

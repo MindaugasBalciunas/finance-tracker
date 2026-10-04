@@ -249,6 +249,11 @@ func MapTx(t V1Tx) Mapped {
 		m.Tags = append(m.Tags, "kristina")
 	}
 	m.Tags = ledger.NormalizeTags(m.Tags)
+	// Alimony is paid to Evelina; the v1 comment ("Aliments 2026.09") is
+	// not a payee.
+	if m.Category == "kids.alimony" && hasAny(m.Tags, "evelina") {
+		m.Merchant = "Evelina"
+	}
 	return m
 }
 

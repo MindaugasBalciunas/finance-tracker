@@ -30,6 +30,7 @@ func TestMapTx(t *testing.T) {
 		{"combined payment", V1Tx{Type: "expense", Category: "Finance", Labels: "loan", Comment: "House payment"}, "expense", "housing.mortgage", "", "", ""},
 		{"notary with loan label", V1Tx{Type: "expense", Category: "Finance", Labels: "divorce,bank fee,loan", Comment: "Notary services for hipoteka"}, "expense", "finance.legal", "", "", "divorce"},
 		{"alimony by text", V1Tx{Type: "expense", Category: "Finance", Labels: "evelina", Comment: "Aliments 2026.09 Evelina"}, "expense", "kids.alimony", "Evelina", "", "evelina"},
+		{"alimony comment is not a payee", V1Tx{Type: "expense", Category: "Kids", Labels: "alimony,evelina", Comment: "Aliments 2026.08"}, "expense", "kids.alimony", "Evelina", "", "evelina"},
 		{"family support", V1Tx{Type: "expense", Category: "Finance", Comment: "EVELINA BALČIŪNIENĖ (Išlaidoms)"}, "expense", "other.family", "Evelina", "", "evelina"},
 		{"mother is not evelina", V1Tx{Type: "expense", Category: "Finance", Labels: "tax", Comment: "VALSTYBINĖ MOKESČIŲ INSPEKCIJA (#ALDONA BALČIŪNIENĖ#)"}, "expense", "finance.taxes", "VMI", "", ""},
 		{"bank fee", V1Tx{Type: "expense", Category: "Finance", Labels: "bank fee", Comment: "Swedbank card fee"}, "expense", "finance.bank_fees", "", "", ""},

@@ -1,7 +1,6 @@
 package insights_test
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -166,7 +165,6 @@ func TestComputeFI(t *testing.T) {
 	if len(f.Projection) != 26 {
 		t.Error(len(f.Projection))
 	}
-	fmt.Sprint(f)
 }
 
 func TestWindowPresets(t *testing.T) {
@@ -196,5 +194,28 @@ func TestTopExpensesAndMerchants(t *testing.T) {
 	m := insights.MerchantTotals(txs, "2026-09-01", "2026-09-30", 5)
 	if m[0].Name != "Airbnb" || m[1].Count != 2 || m[1].Amount != E(25) {
 		t.Error(m)
+	}
+}
+
+func TestPace(t *testing.T) {
+	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	txs := []ledger.Tx{
+		tx("2026-10-02", "expense", "food", 100), tx("2026-10-09", "expense", "food", 50),
+		tx("2026-09-01", "expense", "food", 300), tx("2026-09-20", "expense", "food", 300),
+		tx("2026-10-05", "income", "refunds", 20),
+	}
+	for i := 2; i <= 6; i++ {
+		txs = append(txs, tx(now.AddDate(0, -i, 0).Format("2006-01")+"-01", "expense", "food", 600))
+	}
+	p := insights.Pace(txs, now)
+	if len(p) != 31 || *p[9].Current != E(130) || p[10].Current != nil {
+		t.Fatalf("current: %+v %+v", p[9], p[10])
+	}
+	if p[0].LastMonth != E(300) || p[30].LastMonth != E(600) {
+		t.Fatal("last month cumulative")
+	}
+	// Six months average: Sep 300 by day 1 (600 by day 30), five months of 600 on day 1.
+	if p[0].Typical != E((300+5*600)/6.0) {
+		t.Fatal(p[0].Typical)
 	}
 }

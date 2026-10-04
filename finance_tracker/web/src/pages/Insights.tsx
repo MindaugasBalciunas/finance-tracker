@@ -142,6 +142,7 @@ function Spending() {
       <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         {PRESETS.map((p) => <button key={p.value} className={preset === p.value ? 'chip-on' : 'chip'} onClick={() => setPreset(p.value)}>{p.label}</button>)}
       </div>
+      <PaceCard />
       <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the same length before</div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card pad={false} title="By category" className="lg:col-span-2">
@@ -195,6 +196,32 @@ function Spending() {
         </div>
       </div>
     </div>
+  )
+}
+
+function PaceCard() {
+  const { data } = useQuery({ queryKey: ['pace'], queryFn: () => api.get<{ day: number; current?: number; last_month: number; typical: number }[]>('/insights/pace') })
+  if (!data) return null
+  const today = data.filter((p) => p.current != null).pop()
+  const ahead = today ? today.current! - today.typical : 0
+  return (
+    <Card title="This month so far" action={today && <span className={clsx('text-sm tnum', ahead > 0 ? 'text-bad' : 'text-good')}>{ahead > 0 ? `${eur(ahead)} ahead of` : `${eur(-ahead)} below`} a typical month</span>}>
+      <div className="h-48">
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="day" {...axisProps} interval={4} />
+            <YAxis {...axisProps} tickFormatter={eurk} width={48} />
+            <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+              <TooltipBox title={`Day ${label}`} rows={payload.filter((p: any) => p.value != null).map((p: any) => ({ color: p.stroke, label: p.name, value: eur(p.value) }))} />) : null} />
+            <Line dataKey="typical" name="Typical (6-month avg)" stroke="var(--s-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="last_month" name="Last month" stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="current" name="This month" stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2"><Legend items={[{ color: 'var(--s1)', label: 'This month' }, { color: 'var(--s2)', label: 'Last month' }, { color: 'var(--s-other)', label: 'Typical (6-month avg)' }]} /></div>
+    </Card>
   )
 }
 

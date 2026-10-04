@@ -5,6 +5,7 @@
 package insights
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -439,4 +440,64 @@ func Window(preset string, now time.Time) (string, string) {
 		return "2000-01-01", d(now)
 	}
 	return d(now.AddDate(-1, 0, 0).AddDate(0, 0, 1)), d(now)
+}
+
+// PacePoint is cumulative spending by day of month.
+type PacePoint struct {
+	Day       int          `json:"day"`
+	Current   *money.Cents `json:"current,omitempty"` // this month (only up to today)
+	LastMonth money.Cents  `json:"last_month"`
+	Typical   money.Cents  `json:"typical"` // average of the previous six months
+}
+
+// Pace compares this month's cumulative spending with last month and the
+// six-month norm, day by day — "am I spending faster than usual?".
+func Pace(txs []ledger.Tx, now time.Time) []PacePoint {
+	month := now.Format("2006-01")
+	byMonthDay := map[string]map[int]money.Cents{}
+	for i := range txs {
+		t := &txs[i]
+		if t.Kind != "expense" && !isRefund(t) {
+			continue
+		}
+		amt := t.Amount
+		if isRefund(t) {
+			amt = -amt
+		}
+		m := t.Date[:7]
+		if byMonthDay[m] == nil {
+			byMonthDay[m] = map[int]money.Cents{}
+		}
+		var d int
+		fmt.Sscanf(t.Date[8:], "%d", &d)
+		byMonthDay[m][d] += amt
+	}
+	cum := func(m string, day int) money.Cents {
+		var s money.Cents
+		for d := 1; d <= day; d++ {
+			s += byMonthDay[m][d]
+		}
+		return s
+	}
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	last := first.AddDate(0, -1, 0).Format("2006-01")
+	var prev []string
+	for i := 1; i <= 6; i++ {
+		prev = append(prev, first.AddDate(0, -i, 0).Format("2006-01"))
+	}
+	out := make([]PacePoint, 0, 31)
+	for d := 1; d <= 31; d++ {
+		p := PacePoint{Day: d, LastMonth: cum(last, d)}
+		var s money.Cents
+		for _, m := range prev {
+			s += cum(m, d)
+		}
+		p.Typical = s / money.Cents(len(prev))
+		if d <= now.Day() {
+			c := cum(month, d)
+			p.Current = &c
+		}
+		out = append(out, p)
+	}
+	return out
 }
