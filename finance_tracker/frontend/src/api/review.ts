@@ -18,7 +18,7 @@ export type MonthReview = ReviewTotals & {
     points?: ReviewPoint[]
   }
   categories: { category: string; spent: number; average: number; delta: number }[]
-  top_expenses: { id: number; date: string; amount: number; category: string; comment: string }[]
+  top_expenses: ReviewExpense[]
   budget?: {
     over: ReviewBudgetLine[]; within_count: number; safe_to_spend?: number
     lines?: ReviewBudgetLine[]
@@ -28,11 +28,21 @@ export type MonthReview = ReviewTotals & {
   trend?: (ReviewTotals & { month: string })[]
   by_category?: ReviewCategory[]
   daily?: ReviewPoint[]
+  fixed?: number
+  fixed_average?: number
+  fixed_labels?: string[]
+  top_income?: ReviewExpense[]
 }
+
+export type ReviewExpense = { id: number; date: string; amount: number; category: string; comment: string; recurring?: boolean; moved_from?: string }
 
 export type ReviewPoint = { date: string; value: number }
 export type ReviewBudgetLine = { name: string; budgeted: number; spent: number }
-export type ReviewCategory = { category: string; spent: number; average: number; delta: number }
+export type ReviewCategory = {
+  category: string; spent: number; average: number; delta: number
+  count?: number
+  top?: ReviewExpense[]
+}
 
 export const reviewApi = {
   get: (month?: string) =>

@@ -1,13 +1,14 @@
 import { formatEuro } from '../../utils/format'
 import Sparkline from './Sparkline'
 
-// Stat tile: label · value · signed change vs last month · 12-month trend.
+// Stat tile: label · value · signed change vs a named reference · trend.
 // The change is colored by whether it is good news and always carries an
 // arrow, so direction never rests on color alone.
-export default function KpiTile({ label, value, previous, goodWhenUp, trend, accent, note }: {
+export default function KpiTile({ label, value, previous, refLabel = 'vs last month', goodWhenUp, trend, accent, note }: {
   label: string
   value: number
   previous?: number
+  refLabel?: string
   goodWhenUp: boolean
   trend?: number[]
   accent: string
@@ -25,10 +26,10 @@ export default function KpiTile({ label, value, previous, goodWhenUp, trend, acc
       <span className={`text-lg sm:text-xl font-semibold ${value < 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatEuro(value)}</span>
       <span className="text-xs">
         {flat ? (
-          <span className="text-gray-400">{d == null ? note ?? ' ' : 'same as last month'}</span>
+          <span className="text-gray-400">{d == null ? note ?? ' ' : `about the same ${refLabel.replace('vs ', 'as ')}`}</span>
         ) : (
           <span className={good ? 'text-green-700' : 'text-red-600'}>
-            {d! > 0 ? '▲' : '▼'} {formatEuro(Math.abs(d!))} <span className="text-gray-400">vs last month</span>
+            {d! > 0 ? '▲' : '▼'} {formatEuro(Math.abs(d!))} <span className="text-gray-400">{refLabel}</span>
           </span>
         )}
       </span>

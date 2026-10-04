@@ -1,13 +1,19 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ReviewBudgetLine } from '../../api/review'
 import { formatEuro } from '../../utils/format'
 
-// One meter per monthly budget line. The fill carries the state — within,
+// One meter per monthly budget line; over-budget lines first, the rest
+// folded so the page leads with what went wrong. The fill carries the state — within,
 // close, over — and every over line also says "over" with an icon, so the
 // state never rests on color alone.
 export default function BudgetMeters({ lines, safeToSpend }: { lines: ReviewBudgetLine[]; safeToSpend?: number }) {
+  const [showWithin, setShowWithin] = useState(false)
   if (lines.length === 0) return null
-  const over = lines.filter((l) => l.spent > l.budgeted + 0.5).length
+  const overLines = lines.filter((l) => l.spent > l.budgeted + 0.5)
+  const withinLines = lines.filter((l) => l.spent <= l.budgeted + 0.5)
+  const over = overLines.length
+  const shown = showWithin ? [...overLines, ...withinLines] : overLines
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
       <div className="flex items-baseline justify-between gap-2">
@@ -19,7 +25,7 @@ export default function BudgetMeters({ lines, safeToSpend }: { lines: ReviewBudg
         {safeToSpend != null && <> · safe to spend <span className={safeToSpend < 0 ? 'text-red-600 font-semibold' : ''}>{formatEuro(safeToSpend)}</span></>}
       </p>
       <ul className="space-y-2.5">
-        {lines.map((l) => {
+        {shown.map((l) => {
           const ratio = l.budgeted > 0 ? l.spent / l.budgeted : 0
           const state = ratio > 1.005 ? 'over' : ratio >= 0.9 ? 'close' : 'ok'
           const fill = state === 'over' ? 'bg-red-500' : state === 'close' ? 'bg-amber-500' : 'bg-blue-500'
@@ -40,6 +46,11 @@ export default function BudgetMeters({ lines, safeToSpend }: { lines: ReviewBudg
           )
         })}
       </ul>
+      {withinLines.length > 0 && (
+        <button onClick={() => setShowWithin((v) => !v)} className="mt-3 text-xs text-blue-600 hover:underline">
+          {showWithin ? 'Hide lines within budget' : `${over === 0 ? 'Show' : '+'} ${withinLines.length} line${withinLines.length === 1 ? '' : 's'} within budget ▸`}
+        </button>
+      )}
     </div>
   )
 }

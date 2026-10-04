@@ -5,7 +5,9 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindaugas/finance-tracker/internal/domain"
@@ -73,6 +75,10 @@ type reviewCategory struct {
 	Spent    float64 `json:"spent"`
 	Average  float64 `json:"average"` // over the previous six months
 	Delta    float64 `json:"delta"`
+	Count    int     `json:"count,omitempty"`
+	// Top is the category's largest expenses this month (by_category only):
+	// what turns "Finance +€937" into "the alimony and the loan".
+	Top []reviewExpense `json:"top,omitempty"`
 }
 
 type reviewExpense struct {
@@ -81,6 +87,31 @@ type reviewExpense struct {
 	Amount   float64 `json:"amount"`
 	Category string  `json:"category"`
 	Comment  string  `json:"comment"`
+	// Recurring: the same payee/comment (dates and numbers ignored) appeared
+	// in the three months before — a regular payment, not what changed.
+	Recurring bool `json:"recurring,omitempty"`
+	// MovedFrom is the category the same recurring payment was filed under
+	// last time, when that differs — a re-filing, not new spending.
+	MovedFrom string `json:"moved_from,omitempty"`
+}
+
+// recurKey reduces a comment to its words: "Aliments 2026.09 Evelina" and
+// "Aliments 2026.08 Evelina" are the same payment.
+func recurKey(comment string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range strings.ToLower(comment) {
+		if unicode.IsLetter(r) {
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteRune(r)
+			space = false
+		} else {
+			space = true
+		}
+	}
+	return b.String()
 }
 
 type reviewBudgetLine struct {
@@ -124,6 +155,12 @@ type monthReview struct {
 	ByCategory []reviewCategory `json:"by_category"`
 	// Daily is spending per calendar day of the month.
 	Daily []reviewPoint `json:"daily"`
+	// Fixed is this month's spending on fixed obligations (rows labelled
+	// loan, alimony, leasing, …) — money that was never a choice.
+	Fixed        float64         `json:"fixed"`
+	FixedAverage float64         `json:"fixed_average"`
+	FixedLabels  []string        `json:"fixed_labels"`
+	TopIncome    []reviewExpense `json:"top_income"`
 }
 
 func (h *ReviewHandler) Get(c *gin.Context) {
@@ -280,6 +317,93 @@ func buildMonthReview(in reviewInput) monthReview {
 			unlabeled++
 		}
 	}
+	isFixed := func(x domain.Transaction) bool {
+		for _, l := range domain.FixedObligationLabels {
+			if x.HasLabel(l) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, x := range expenses {
+		if isFixed(x) {
+			out.Fixed += x.Amount
+		}
+	}
+	out.Fixed = r2(out.Fixed)
+	out.FixedLabels = append([]string{}, domain.FixedObligationLabels...)
+	if n > 0 {
+		var fsum float64
+		for i := 1; i <= 6; i++ {
+			for _, x := range byMonth[m.AddDate(0, -i, 0).Format("2006-01")] {
+				if x.Type == domain.TransactionTypeExpense && x.Category != domain.CategoryTransfers && isFixed(x) {
+					fsum += x.Amount
+				}
+			}
+		}
+		out.FixedAverage = r2(fsum / float64(n))
+	}
+	byCat := map[string][]domain.Transaction{}
+	for _, x := range expenses {
+		byCat[string(x.Category)] = append(byCat[string(x.Category)], x)
+	}
+	// A payment recurs when the three months before hold the same words
+	// (dates and numbers ignored), or the same first word for the same amount
+	// — "Aliments 2026.08" and "Aliments 2026.09 Evelina" are one payment.
+	// Each key remembers the category it was last filed under.
+	recurring := map[string]string{}
+	keysOf := func(x domain.Transaction) []string {
+		k := recurKey(x.Comment)
+		if k == "" {
+			return nil
+		}
+		first := strings.SplitN(k, " ", 2)[0]
+		return []string{string(x.Type) + "|w|" + k, fmt.Sprintf("%s|a|%s|%.0f", x.Type, first, x.Amount)}
+	}
+	for i := 3; i >= 1; i-- { // oldest first, so the latest category wins
+		for _, x := range byMonth[m.AddDate(0, -i, 0).Format("2006-01")] {
+			for _, k := range keysOf(x) {
+				recurring[k] = string(x.Category)
+			}
+		}
+	}
+	recurInfo := func(x domain.Transaction) (bool, string) {
+		for _, k := range keysOf(x) {
+			if cat, ok := recurring[k]; ok {
+				if cat != string(x.Category) {
+					return true, cat
+				}
+				return true, ""
+			}
+		}
+		return false, ""
+	}
+	expenseRow := func(x domain.Transaction) reviewExpense {
+		rec, moved := recurInfo(x)
+		return reviewExpense{ID: x.ID, Date: x.Date.Format("2006-01-02"), Amount: r2(x.Amount), Category: string(x.Category),
+			Comment: x.Comment, Recurring: rec, MovedFrom: moved}
+	}
+	topOf := func(rows []domain.Transaction, k int) []reviewExpense {
+		sorted := append([]domain.Transaction{}, rows...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].Amount > sorted[j].Amount })
+		var top []reviewExpense
+		for i := 0; i < len(sorted) && i < k; i++ {
+			x := sorted[i]
+			top = append(top, expenseRow(x))
+		}
+		return top
+	}
+	var incomes []domain.Transaction
+	for _, x := range cur {
+		if x.Type == domain.TransactionTypeIncome && x.Category != domain.CategoryTransfers {
+			incomes = append(incomes, x)
+		}
+	}
+	out.TopIncome = topOf(incomes, 3)
+	if out.TopIncome == nil {
+		out.TopIncome = []reviewExpense{}
+	}
+
 	seen := map[string]bool{}
 	for k := range catCur {
 		seen[k] = true
@@ -307,7 +431,8 @@ func buildMonthReview(in reviewInput) monthReview {
 		if catCur[k] < 0.005 && avg < 0.005 {
 			continue
 		}
-		out.ByCategory = append(out.ByCategory, reviewCategory{Category: k, Spent: r2(catCur[k]), Average: r2(avg), Delta: r2(catCur[k] - avg)})
+		out.ByCategory = append(out.ByCategory, reviewCategory{Category: k, Spent: r2(catCur[k]), Average: r2(avg), Delta: r2(catCur[k] - avg),
+			Count: len(byCat[k]), Top: topOf(byCat[k], 3)})
 	}
 	sort.Slice(out.ByCategory, func(i, j int) bool {
 		if out.ByCategory[i].Spent != out.ByCategory[j].Spent {
@@ -347,8 +472,7 @@ func buildMonthReview(in reviewInput) monthReview {
 	sort.Slice(expenses, func(i, j int) bool { return expenses[i].Amount > expenses[j].Amount })
 	for i := 0; i < len(expenses) && i < 5; i++ {
 		x := expenses[i]
-		out.TopExpenses = append(out.TopExpenses, reviewExpense{ID: x.ID, Date: x.Date.Format("2006-01-02"),
-			Amount: r2(x.Amount), Category: string(x.Category), Comment: x.Comment})
+		out.TopExpenses = append(out.TopExpenses, expenseRow(x))
 	}
 
 	// Net worth: the last snapshot before the month against the last one in

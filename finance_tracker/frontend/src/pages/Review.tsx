@@ -5,7 +5,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner'
 import QueryError from '../components/ui/QueryError'
 import { formatEuro } from '../utils/format'
 import KpiTile from '../components/review/KpiTile'
-import SavingsMeter from '../components/review/SavingsMeter'
+import HighlightsCard from '../components/review/HighlightsCard'
 import TwelveMonthChart from '../components/review/TwelveMonthChart'
 import CategoryBars from '../components/review/CategoryBars'
 import BudgetMeters from '../components/review/BudgetMeters'
@@ -52,40 +52,23 @@ export default function Review() {
 
       {isError ? <QueryError error={error} onRetry={() => refetch()} /> : isLoading || !r ? <LoadingSpinner /> : (
         <>
-          {r.checks.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Needs attention</h3>
-              <ul className="space-y-1.5">
-                {r.checks.map((c) => (
-                  <li key={c.text} className="flex items-start gap-2 text-sm">
-                    <span className={c.level === 'warn' ? 'text-amber-600' : 'text-gray-400'}>{c.level === 'warn' ? '⚠' : 'ℹ'}</span>
-                    <span className="flex-1 text-gray-700">
-                      {c.text}{' '}
-                      {c.link && <Link to={c.link} className="text-blue-600 hover:underline whitespace-nowrap">Open →</Link>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <HighlightsCard r={r} />
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KpiTile label="Income" value={r.income} previous={r.previous.income} goodWhenUp accent={INCOME}
+            <KpiTile label="Income" value={r.income} previous={r.six_month_avg.income} refLabel="vs usual" goodWhenUp accent={INCOME}
               trend={r.trend?.map((t) => t.income)} />
-            <KpiTile label="Spending" value={r.spending} previous={r.previous.spending} goodWhenUp={false} accent={SPENDING}
+            <KpiTile label="Spending" value={r.spending} previous={r.six_month_avg.spending} refLabel="vs usual" goodWhenUp={false} accent={SPENDING}
               trend={r.trend?.map((t) => t.spending)} />
-            <KpiTile label="Net saved" value={r.net_saved} previous={r.previous.net_saved} goodWhenUp accent={ACCENT}
+            <KpiTile label="Net saved" value={r.net_saved} previous={r.six_month_avg.net_saved} refLabel="vs usual" goodWhenUp accent={ACCENT}
               trend={r.trend?.map((t) => t.net_saved)} />
             {r.net_worth ? (
               <KpiTile label="Net worth change" value={r.net_worth.change} goodWhenUp accent={ACCENT}
                 note={`now ${formatEuro(r.net_worth.end)}`} trend={r.net_worth.points?.map((p) => p.value)} />
             ) : (
-              <KpiTile label="Invested" value={r.invested} previous={r.previous.invested} goodWhenUp accent={ACCENT}
+              <KpiTile label="Invested" value={r.invested} previous={r.six_month_avg.invested} refLabel="vs usual" goodWhenUp accent={ACCENT}
                 trend={r.trend?.map((t) => t.invested)} />
             )}
           </div>
-
-          <SavingsMeter rate={r.savings_rate} avg={r.six_month_avg.savings_rate} prev={r.previous.savings_rate} />
 
           {r.trend && r.trend.length > 1 && (
             <TwelveMonthChart rows={r.trend} current={r.month} onPick={(m) => setParams({ month: m })} />
@@ -128,6 +111,23 @@ export default function Review() {
               </div>
             )}
           </div>
+
+          {r.checks.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Housekeeping</h3>
+              <ul className="space-y-1.5">
+                {r.checks.map((c) => (
+                  <li key={c.text} className="flex items-start gap-2 text-sm">
+                    <span className={c.level === 'warn' ? 'text-amber-600' : 'text-gray-400'}>{c.level === 'warn' ? '⚠' : 'ℹ'}</span>
+                    <span className="flex-1 text-gray-700">
+                      {c.text}{' '}
+                      {c.link && <Link to={c.link} className="text-blue-600 hover:underline whitespace-nowrap">Open →</Link>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {Math.abs(r.owed_to_you) >= 0.01 && (
             <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 flex items-baseline justify-between">

@@ -96,6 +96,11 @@ func TestMonthReviewTotalsAndComparisons(t *testing.T) {
 	assert.Equal(t, 400.0, r.ByCategory[1].Average, "Food over Jul+Aug")
 	require.NotNil(t, r.NetWorth)
 	assert.Equal(t, []reviewPoint{{"2026-08-31", 10000}, {"2026-09-30", 11500}}, r.NetWorth.Points)
+	require.Len(t, r.ByCategory[0].Top, 1)
+	assert.Equal(t, uint(3), r.ByCategory[0].Top[0].ID)
+	assert.Equal(t, 1, r.ByCategory[0].Count)
+	require.Len(t, r.TopIncome, 1, "the repayment is not income")
+	assert.Equal(t, 3000.0, r.TopIncome[0].Amount)
 	require.Len(t, r.Budget.Lines, 2)
 	assert.Equal(t, "Food", r.Budget.Lines[0].Name, "fullest first")
 }
@@ -134,4 +139,31 @@ func TestMonthReviewRunningMonthIsIncomplete(t *testing.T) {
 	r := buildMonthReview(reviewInput{month: d("2026-10-01"), now: d("2026-10-04")})
 	assert.False(t, r.Complete)
 	assert.Nil(t, r.SavingsRate)
+}
+
+func TestMonthReviewFixedObligations(t *testing.T) {
+	r := buildMonthReview(reviewInput{month: d("2026-09-01"), now: d("2026-10-04"), txs: []domain.Transaction{
+		rtx(1, "2026-09-17", "expense", 1000, "Finance", "alimony"),
+		rtx(2, "2026-09-17", "expense", 900, "Finance", "loan"),
+		rtx(3, "2026-09-20", "expense", 100, "Food", "groceries"),
+		rtx(4, "2026-08-17", "expense", 1000, "Finance", "alimony"),
+	}})
+	assert.Equal(t, 1900.0, r.Fixed)
+	assert.Equal(t, 1000.0, r.FixedAverage)
+	assert.Contains(t, r.FixedLabels, "loan")
+}
+
+func TestMonthReviewMarksRecurringPayments(t *testing.T) {
+	alimony := rtx(1, "2026-09-17", "expense", 1000, "Finance", "alimony")
+	alimony.Comment = "Aliments 2026.09 Evelina"
+	trip := rtx(2, "2026-09-21", "expense", 920, "Vacation", "")
+	trip.Comment = "Final payment for Navaturas Egypt trip"
+	prev := rtx(3, "2026-08-17", "expense", 1000, "Kids", "alimony")
+	prev.Comment = "Aliments 2026.08"
+	r := buildMonthReview(reviewInput{month: d("2026-09-01"), now: d("2026-10-04"), txs: []domain.Transaction{alimony, trip, prev}})
+	require.Len(t, r.TopExpenses, 2)
+	assert.True(t, r.TopExpenses[0].Recurring, "same first word and amount, comment reworded")
+	assert.Equal(t, "Kids", r.TopExpenses[0].MovedFrom, "filed under Kids last time")
+	assert.False(t, r.TopExpenses[1].Recurring)
+	assert.Equal(t, "aliments evelina", recurKey("Aliments 2026.09 Evelina"))
 }
