@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useOverview, usePrefs } from '../lib/hooks'
 import { eur, eurk, monthLabel, pct, shortDate, signed } from '../lib/format'
 import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Stat, Toggle } from '../components/ui'
@@ -24,6 +24,25 @@ export default function Home() {
   const spendPace = avg.spending > 0 ? m.spending / (avg.spending * Math.max(o.month_progress, 0.05)) : 0
   const assets = GROUPS.filter((g) => g.id !== 'debt' && (!liquid || LIQUID_GROUPS.includes(g.id))).map((g) => ({ ...g, v: o.by_group[g.id] ?? 0 })).filter((g) => g.v > 0).sort((a, b) => b.v - a.v)
   const assetTotal = assets.reduce((a, g) => a + g.v, 0)
+  // Lowest and highest points of the chart, marked with value and month.
+  const key = liquid ? 'liquid' : 'value'
+  const spark = o.spark ?? []
+  const pick = (better: (a: number, b: number) => boolean) => spark.reduce<{ i: number; p: (typeof spark)[number] } | null>((m, p, i) => (!m || better(p[key], m.p[key]) ? { i, p } : m), null)
+  const hi = pick((a, b) => a > b)
+  const lo = pick((a, b) => a < b)
+  // Keep the label inside the chart near the edges.
+  const anchor = (i: number) => (i < spark.length * 0.15 ? 'start' : i > spark.length * 0.85 ? 'end' : 'middle')
+  const dotLabel = (m: { i: number; p: (typeof spark)[number] }, above: boolean) => (props: any) => {
+    const vb = props.viewBox ?? {}
+    const x = (vb.x ?? 0) + (vb.width ?? 0) / 2
+    const y = (vb.y ?? 0) + (above ? -8 : (vb.height ?? 0) + 14)
+    return (
+      <text x={x} y={y} textAnchor={anchor(m.i)} fontSize={11} fill="var(--chart-text)">
+        <tspan fontWeight={600} fill="rgb(var(--ink))">{eurk(m.p[key])}</tspan>
+        <tspan dx={4}>{monthLabel(m.p.date.slice(0, 7))}</tspan>
+      </text>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -51,9 +70,9 @@ export default function Home() {
           </div>
           </div>
         </div>
-        <div className="h-28 sm:h-36">
+        <div className="h-36 sm:h-44">
           <ResponsiveContainer>
-            <AreaChart data={o.spark} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+            <AreaChart data={o.spark} margin={{ top: 22, right: 8, bottom: 20, left: 8 }}>
               <defs>
                 <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.22} />
@@ -65,6 +84,10 @@ export default function Home() {
               <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) =>
                 active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: liquid ? 'Liquid' : 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
               <Area type="monotone" dataKey={liquid ? 'liquid' : 'value'} stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
+              {hi && lo && hi.i !== lo.i && <>
+                <ReferenceDot x={hi.p.date} y={hi.p[key]} r={4} fill="var(--s6)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(hi, true) }} />
+                <ReferenceDot x={lo.p.date} y={lo.p[key]} r={4} fill="var(--s8)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(lo, false) }} />
+              </>}
             </AreaChart>
           </ResponsiveContainer>
         </div>
