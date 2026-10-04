@@ -330,7 +330,9 @@ func buildMonthReview(in reviewInput) monthReview {
 				rb.WithinCount++
 			}
 		}
-		sort.Slice(rb.Over, func(i, j int) bool { return rb.Over[i].Spent-rb.Over[i].Budgeted > rb.Over[j].Spent-rb.Over[j].Budgeted })
+		sort.Slice(rb.Over, func(i, j int) bool {
+			return rb.Over[i].Spent-rb.Over[i].Budgeted > rb.Over[j].Spent-rb.Over[j].Budgeted
+		})
 		out.Budget = rb
 	}
 

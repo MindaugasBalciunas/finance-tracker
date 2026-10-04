@@ -662,6 +662,13 @@ func (s *balanceService) GetTrend(filter domain.BalanceFilter) (*domain.BalanceT
 	return s.repo.GetTrend(filter)
 }
 
+// builtinAllocationName is the allocation's own wording per built-in column.
+var builtinAllocationName = map[string]string{
+	"seb": "Seb", "swed": "Swedbank", "swed_etf": "Swedbank ETF", "seb_pen": "SEB 2nd pillar pension",
+	"luminor": "Luminor", "art": "Artea 3rd pillar pension", "cash": "Cash", "rev_m": "Revolut M account",
+	"rev_r": "Revolut R account", "rev_stocks": "Revolut M account stocks", "ibkr_stocks": "IBKR stocks",
+}
+
 func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 	latest, err := s.repo.GetLatest()
 	if err != nil {
@@ -687,6 +694,15 @@ func (s *balanceService) GetAllocation() ([]domain.AccountAllocation, error) {
 		"IBKR stocks":              latest.IBKRStocks,
 	}
 	labels := s.accountLabels()
+	// A built-in the user renamed shows under its new name.
+	for _, b := range domain.BuiltinAccounts {
+		if l := labels[b.Key]; l != "" && l != b.Label {
+			if old := builtinAllocationName[b.Key]; old != "" {
+				accounts[l] += accounts[old]
+				delete(accounts, old)
+			}
+		}
+	}
 	for k, v := range latest.Extra {
 		name := labels[k]
 		if name == "" {

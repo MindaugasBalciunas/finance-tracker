@@ -87,13 +87,18 @@ export function cryptoSubtitle(b: Balance, btcPrice: number | null): string {
 // withAddedAccounts places added accounts in their group's breakdown, and
 // "other" ones next to the closed built-ins. Group totals already include
 // them (via extra_groups); this is only the per-account list.
-export function withAddedAccounts(added: Account[]): { groups: GroupDef[]; other: AccountDef[] } {
+// name (optional) renames built-in rows the user has renamed.
+export function withAddedAccounts(
+  added: Account[],
+  name?: (key: string, fallback?: string) => string,
+): { groups: GroupDef[]; other: AccountDef[] } {
   const def = (a: Account): AccountDef => ({ key: a.key, label: a.label, value: (b) => b.extra?.[a.key] ?? 0 })
+  const rename = (a: AccountDef): AccountDef => (name ? { ...a, label: name(a.key, a.label) } : a)
   return {
     groups: GROUPS.map((g) => ({
       ...g,
-      accounts: [...g.accounts, ...added.filter((a) => a.group === g.group).map(def)],
+      accounts: [...g.accounts.map(rename), ...added.filter((a) => a.group === g.group).map(def)],
     })),
-    other: [...OTHER_ACCOUNTS, ...added.filter((a) => a.group === 'other').map(def)],
+    other: [...OTHER_ACCOUNTS.map(rename), ...added.filter((a) => a.group === 'other').map(def)],
   }
 }

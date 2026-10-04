@@ -99,11 +99,17 @@ func (h *ExportHandler) accountRows() []accountExportRow {
 		return nil
 	}
 	var out []accountExportRow
+	defaults := map[string]string{}
+	for _, b := range domain.BuiltinAccounts {
+		defaults[b.Key] = b.Label
+	}
 	for _, a := range accs {
-		if a.Builtin {
+		// A built-in travels only when renamed — its name is the one thing
+		// about it the user can change.
+		if a.Builtin && a.Label == defaults[a.Key] {
 			continue
 		}
-		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder})
+		out = append(out, accountExportRow{Key: a.Key, Label: a.Label, Group: string(a.Group), Archived: a.Archived, SortOrder: a.SortOrder, Builtin: a.Builtin})
 	}
 	return out
 }
@@ -313,6 +319,8 @@ type accountExportRow struct {
 	Group     string `json:"group"`
 	Archived  bool   `json:"archived,omitempty"`
 	SortOrder int    `json:"sort_order,omitempty"`
+	// Builtin marks a renamed built-in account: only its label is restored.
+	Builtin bool `json:"builtin,omitempty"`
 }
 
 // aiSettingsExportRow carries the gateway configuration INCLUDING the API

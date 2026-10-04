@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react'
-import { useAccountLabels } from '../../hooks/useAccounts'
+import { useAccountName } from '../../hooks/useAccounts'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -165,7 +165,7 @@ function CustomLegend({ payload, hiddenKeys, latestValues, onToggle, horizontal 
 }
 
 const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
-  const addedLabels = useAccountLabels()
+  const accountName = useAccountName()
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
   // On phones the side legend would eat half the plot width — stack it below.
   const isMobile = useIsMobile()
@@ -303,7 +303,7 @@ const BalanceTrendChart = ({ trend, btcPrice }: Props) => {
             strokeWidth={acc === 'swed' ? 2 : 0.5}
             strokeOpacity={acc === 'swed' ? 0.9 : 0.4}
             fill={`url(#sg-${acc})`}
-            name={ACCOUNT_LABELS[acc] ?? addedLabels[acc] ?? acc}
+            name={accountName(acc, ACCOUNT_LABELS[acc])}
             hide={hiddenKeys.has(acc)}
           />
         ))}

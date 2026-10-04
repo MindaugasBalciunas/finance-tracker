@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useAccountLabels, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
+import { useAccountLabels, useAccountName, useAccounts, useAddedAccounts, useCreateAccount, useUpdateAccount } from '../../hooks/useAccounts'
 import { useBankConnections, useBankSettings, useMapBankAccount } from '../../hooks/useBanking'
 import type { BankAccountLink, BankConnection } from '../../api/banking'
 import { Link } from 'react-router-dom'
@@ -52,15 +52,23 @@ export default function AccountsManager({ balance, embedded = false }: { balance
 
   const active = added.filter((a) => !a.archived)
   const archived = added.filter((a) => a.archived)
-  const addedByKey = useMemo(() => new Map(added.map((a) => [a.key, a])), [added])
+  // Every account with a row — built-ins included — can be edited; the two
+  // BTC lines are computed, not accounts, and have no row.
+  const { data: allAccounts } = useAccounts()
+  const byKey = useMemo(() => new Map((allAccounts ?? []).map((a) => [a.key, a])), [allAccounts])
+  const name = useAccountName()
+  const bankLinks = useMemo(
+    () => (bank?.connections ?? []).flatMap((c) => (c.accounts ?? []).map((link) => ({ conn: c, link }))),
+    [bank],
+  )
 
   const sections = useMemo(() => {
-    const { groups, other } = withAddedAccounts(active)
+    const { groups, other } = withAddedAccounts(active, name)
     return [
       ...groups.map((g) => ({ group: g.group, title: g.key, accounts: g.accounts })),
       { group: 'other' as AccountGroup, title: 'Other', accounts: other },
     ]
-  }, [active])
+  }, [active, name])
 
   const count = sections.reduce((n, s) => n + s.accounts.length, 0)
 
@@ -110,12 +118,13 @@ export default function AccountsManager({ balance, embedded = false }: { balance
                 ) : (
                   <ul className="divide-y divide-gray-50">
                     {s.accounts.map((a) => {
-                      const acc = addedByKey.get(a.key)
+                      const acc = byKey.get(a.key)
                       if (acc && editing === acc.id) {
                         return (
                           <li key={a.key} className="py-2">
                             <AccountEditor
-                              account={acc}
+                              account={{ ...acc, label: a.label }}
+                              bankLinks={bankLinks}
                               onDone={(msg) => { setEditing(null); if (msg) setNotice(msg) }}
                             />
                           </li>
@@ -125,10 +134,10 @@ export default function AccountsManager({ balance, embedded = false }: { balance
                         <li key={a.key} className="py-2 flex items-center gap-2 min-w-0">
                           <span className="flex-1 min-w-0">
                             <span className="block text-sm text-gray-800 truncate">{a.label}</span>
-                            {(bankFed.has(a.key) || acc) && (
+                            {(bankFed.has(a.key) || (acc && !acc.builtin)) && (
                               <span className="flex flex-wrap gap-1 mt-0.5">
                                 {bankFed.has(a.key) && <Badge tone="blue">🔗 bank sync</Badge>}
-                                {acc && <Badge tone="gray">added</Badge>}
+                                {acc && !acc.builtin && <Badge tone="gray">added</Badge>}
                               </span>
                             )}
                           </span>
@@ -257,7 +266,13 @@ function AddAccountForm({ onDone }: { onDone: (notice?: string) => void }) {
   )
 }
 
-function AccountEditor({ account, onDone }: { account: Account; onDone: (notice?: string) => void }) {
+type BankLinkRef = { conn: BankConnection; link: BankAccountLink }
+
+function AccountEditor({ account, bankLinks, onDone }: {
+  account: Account
+  bankLinks: BankLinkRef[]
+  onDone: (notice?: string) => void
+}) {
   const update = useUpdateAccount()
   const [label, setLabel] = useState(account.label)
   const [group, setGroup] = useState<AccountGroup>(account.group)
@@ -267,8 +282,9 @@ function AccountEditor({ account, onDone }: { account: Account; onDone: (notice?
   const save = (e: React.FormEvent) => {
     e.preventDefault()
     if (!label.trim()) return
+    if (!dirty) { onDone(); return }
     setError(null)
-    update.mutate({ id: account.id, input: { label: label.trim(), group } }, {
+    update.mutate({ id: account.id, input: account.builtin ? { label: label.trim() } : { label: label.trim(), group } }, {
       onSuccess: () => onDone(),
       onError: (err) => setError(errorText(err, 'Could not save')),
     })
@@ -283,30 +299,98 @@ function AccountEditor({ account, onDone }: { account: Account; onDone: (notice?
   }
 
   return (
-    <form onSubmit={save} className="border border-gray-200 rounded-lg p-3 space-y-2">
+    <form onSubmit={save} className="border border-gray-200 rounded-lg p-3 space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input
-          autoFocus
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          maxLength={60}
-          aria-label="Account name"
-          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <GroupSelect value={group} onChange={setGroup} />
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Name</label>
+          <input
+            autoFocus
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            maxLength={60}
+            aria-label="Account name"
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Counts as</label>
+          {account.builtin ? (
+            <p className="text-sm text-gray-500 py-1.5">{ACCOUNT_GROUP_LABELS[account.group]} <span className="text-xs text-gray-400">· fixed for built-in accounts</span></p>
+          ) : (
+            <GroupSelect value={group} onChange={setGroup} />
+          )}
+        </div>
       </div>
+
+      {bankLinks.length > 0 && <BankFeedPicker account={account} bankLinks={bankLinks} />}
+
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex items-center gap-2">
-        <button type="button" onClick={archive} disabled={update.isPending} className="text-xs text-gray-500 hover:text-red-600 underline">
-          Archive
-        </button>
+        {!account.builtin && (
+          <button type="button" onClick={archive} disabled={update.isPending} className="text-xs text-gray-500 hover:text-red-600 underline">
+            Archive
+          </button>
+        )}
         <span className="flex-1" />
-        <button type="button" onClick={() => onDone()} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">Cancel</button>
+        <button type="button" onClick={() => onDone()} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">Close</button>
         <button type="submit" disabled={!dirty || !label.trim() || update.isPending} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg disabled:opacity-50">
-          Save
+          Save name
         </button>
       </div>
     </form>
+  )
+}
+
+// Which PSD2 bank accounts keep this account up to date. Ticking one points
+// it here (away from wherever it fed before); unticking stops syncing it.
+// Applies at once — it is the same link as on the Bank connections page.
+function BankFeedPicker({ account, bankLinks }: { account: Account; bankLinks: BankLinkRef[] }) {
+  const map = useMapBankAccount()
+  const labels = useAccountLabels()
+  const [error, setError] = useState<string | null>(null)
+
+  const toggle = (link: BankAccountLink, on: boolean) => {
+    setError(null)
+    map.mutate({ id: link.id, accountKey: on ? account.key : '' }, {
+      onError: (e) => setError(errorText(e, 'Could not change the link')),
+    })
+  }
+
+  return (
+    <fieldset>
+      <legend className="block text-xs font-medium text-gray-600 mb-1">Auto-update from bank account</legend>
+      <ul className="space-y-1">
+        {bankLinks.map(({ conn, link }) => {
+          const here = link.account_key === account.key
+          const elsewhere = !here && link.account_key ? labels[link.account_key] ?? link.account_key : null
+          return (
+            <li key={link.id}>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={here}
+                  disabled={map.isPending}
+                  onChange={(e) => toggle(link, e.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-gray-800 truncate">{link.display_name || link.iban}</span>
+                  <span className="block text-xs text-gray-400">
+                    {conn.aspsp_name}{link.iban && link.display_name ? ` · ${link.iban}` : ''}
+                    {link.bank_balance != null && ` · bank says ${formatEuro(link.bank_balance)}`}
+                    {elsewhere && <span className="text-amber-700"> · now feeds {elsewhere}</span>}
+                  </span>
+                </span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="text-xs text-gray-400 mt-1">
+        Applies immediately. Each sync sets this account to the bank's balance — the sum, if you tick more than one.
+      </p>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </fieldset>
   )
 }
 

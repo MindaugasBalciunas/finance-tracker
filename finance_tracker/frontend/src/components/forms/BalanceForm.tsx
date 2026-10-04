@@ -4,7 +4,7 @@ import type { CreateBalanceInput } from '../../types'
 import { useBtcPrice } from '../../hooks/useBtcPrice'
 import { formatEuro } from '../../utils/format'
 import DateInput from '../ui/DateInput'
-import { useAddedAccounts } from '../../hooks/useAccounts'
+import { useAccountName, useAddedAccounts } from '../../hooks/useAccounts'
 
 const EUR_ACCOUNTS: { key: keyof CreateBalanceInput; label: string }[] = [
   { key: 'seb',         label: 'SEB' },
@@ -43,6 +43,7 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
   // Added accounts: open ones get an input; archived ones carry their last
   // value forward untouched, like Luminor below.
   const added = useAddedAccounts()
+  const accountName = useAccountName()
   const openAdded = added.filter((a) => !a.archived)
   const [extra, setExtra] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(defaultValues?.extra ?? {}).map(([k, v]) => [k, String(v)])))
@@ -99,7 +100,7 @@ export default function BalanceForm({ onSubmit, onCancel, isSubmitting, defaultV
       <div className="grid grid-cols-2 gap-3">
         {EUR_ACCOUNTS.map(({ key, label }) => (
           <div key={key}>
-            <label className="block text-xs font-medium text-gray-600 mb-0.5">{label} (€)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-0.5">{accountName(key, label)} (€)</label>
             <input
               type="number"
               step="0.01"

@@ -12,9 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// AccountHandler manages balance-sheet accounts. The built-in ones are
-// read-only; added ones can be renamed, regrouped and archived. Nothing is
-// ever deleted — an account's history lives in every snapshot that held it.
+// AccountHandler manages balance-sheet accounts. Built-in ones can be
+// renamed; added ones can also be regrouped and archived. Nothing is ever
+// deleted — an account's history lives in every snapshot that held it.
 type AccountHandler struct {
 	repo repository.AccountRepository
 }
@@ -101,13 +101,15 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "account not found"})
 		return
 	}
-	if a.Builtin {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "built-in accounts cannot be changed"})
-		return
-	}
 	var in accountInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	// A built-in account can be renamed, nothing more: its group is wired
+	// into the net-worth cards and its column can never be hidden.
+	if a.Builtin && ((in.Group != "" && in.Group != a.Group) || in.Archived != nil) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "a built-in account can only be renamed"})
 		return
 	}
 	if l := strings.TrimSpace(in.Label); l != "" {

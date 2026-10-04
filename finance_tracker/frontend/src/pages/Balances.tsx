@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useAddedAccounts } from '../hooks/useAccounts'
+import { useAccountName, useAddedAccounts } from '../hooks/useAccounts'
 import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useProjectedBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
 import { useDateRange } from '../context/DateRangeContext'
@@ -19,19 +19,19 @@ import { useAssetSummary } from '../hooks/useAssets'
 import type { Balance, CreateBalanceInput } from '../types'
 
 // Per-account rows for the mobile snapshot cards; mirrors the desktop table columns.
-const ACCOUNT_ROWS: { label: string; value: (b: Balance) => number }[] = [
-  { label: 'SEB', value: (b) => b.seb },
-  { label: 'Swedbank', value: (b) => b.swed },
-  { label: 'IBKR stocks', value: (b) => b.ibkr_stocks },
-  { label: 'Swedbank ETF', value: (b) => b.swed_etf },
-  { label: 'Revolut M', value: (b) => b.rev_m },
-  { label: 'Cash', value: (b) => b.cash },
-  { label: 'M BTC (€)', value: (b) => b.m_btc_eur ?? 0 },
-  { label: 'Rev M stocks', value: (b) => b.rev_stocks },
-  { label: 'SEB pension', value: (b) => b.seb_pen },
-  { label: 'Artea pension', value: (b) => b.art },
-  { label: 'Revolut R', value: (b) => b.rev_r },
-  { label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
+const ACCOUNT_ROWS: { key: string; label: string; value: (b: Balance) => number }[] = [
+  { key: 'seb', label: 'SEB', value: (b) => b.seb },
+  { key: 'swed', label: 'Swedbank', value: (b) => b.swed },
+  { key: 'ibkr_stocks', label: 'IBKR stocks', value: (b) => b.ibkr_stocks },
+  { key: 'swed_etf', label: 'Swedbank ETF', value: (b) => b.swed_etf },
+  { key: 'rev_m', label: 'Revolut M', value: (b) => b.rev_m },
+  { key: 'cash', label: 'Cash', value: (b) => b.cash },
+  { key: 'm_btc', label: 'M BTC (€)', value: (b) => b.m_btc_eur ?? 0 },
+  { key: 'rev_stocks', label: 'Rev M stocks', value: (b) => b.rev_stocks },
+  { key: 'seb_pen', label: 'SEB pension', value: (b) => b.seb_pen },
+  { key: 'art', label: 'Artea pension', value: (b) => b.art },
+  { key: 'rev_r', label: 'Revolut R', value: (b) => b.rev_r },
+  { key: 'r_btc', label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
 ]
 
 type BalancesTab = 'overview' | 'history' | 'accounts'
@@ -66,6 +66,7 @@ export default function Balances() {
   }
   // Added accounts with history get a column / row in the snapshot list.
   const addedAccounts = useAddedAccounts()
+  const accountName = useAccountName()
 
   const { dateRange } = useDateRange()
   const { price: liveBtcPrice } = useBtcEur()
@@ -346,7 +347,7 @@ export default function Balances() {
                     All accounts
                   </summary>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs">
-                    {[...ACCOUNT_ROWS, ...extraRows].filter((r) => r.value(b) !== 0).map((r) => (
+                    {[...ACCOUNT_ROWS.map((r) => ({ ...r, label: accountName(r.key, r.label) })), ...extraRows].filter((r) => r.value(b) !== 0).map((r) => (
                       <div key={r.label} className="flex justify-between">
                         <span className="text-gray-400">{r.label}</span>
                         <span className="text-gray-700">{formatEuro(r.value(b))}</span>
@@ -370,18 +371,9 @@ export default function Balances() {
                 <tr>
                   <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
                   <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">IBKR stocks</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC (€)</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M stocks</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB pension</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea pension</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC (€)</th>
+                  {ACCOUNT_ROWS.map((r) => (
+                    <th key={r.key} className="text-right px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">{accountName(r.key, r.label)}</th>
+                  ))}
                   {extraRows.map((r) => (
                     <th key={r.label} className="text-right px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">{r.label}</th>
                   ))}

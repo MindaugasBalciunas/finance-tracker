@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { Balance } from '../../types'
 import { withAddedAccounts } from '../../utils/balanceGroups'
-import { useAddedAccounts } from '../../hooks/useAccounts'
+import { useAccountName, useAddedAccounts } from '../../hooks/useAccounts'
 import { formatEuro, formatDate } from '../../utils/format'
 
 interface Props {
@@ -15,8 +15,9 @@ interface Props {
 // is written out, so the sign is never carried by color alone.
 export default function AccountMovement({ balances }: Props) {
   const added = useAddedAccounts()
+  const name = useAccountName()
   const data = useMemo(() => {
-    const { groups, other } = withAddedAccounts(added)
+    const { groups, other } = withAddedAccounts(added, name)
     const ALL_ACCOUNTS = [...groups.flatMap((g) => g.accounts), ...other]
     if (balances.length < 2) return null
     const sorted = [...balances].sort((a, b) => a.date.localeCompare(b.date))
@@ -28,7 +29,7 @@ export default function AccountMovement({ balances }: Props) {
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     const maxDelta = Math.max(...rows.map((r) => Math.abs(r.delta)), 1)
     return { first, last, rows, maxDelta, totalDelta: last.total - first.total }
-  }, [balances, added])
+  }, [balances, added, name])
 
   if (!data) return null
   const { first, last, rows, maxDelta, totalDelta } = data

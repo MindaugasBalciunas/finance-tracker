@@ -460,7 +460,17 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 	if h.db != nil {
 		accRepo := repository.NewAccountRepository(h.db)
 		for _, row := range payload.Accounts {
-			if !domain.IsCustomAccountKey(row.Key) || strings.TrimSpace(row.Label) == "" {
+			if strings.TrimSpace(row.Label) == "" {
+				continue
+			}
+			// A renamed built-in: restore its name onto the seeded row.
+			if !domain.IsCustomAccountKey(row.Key) {
+				if existing, err := accRepo.GetByKey(row.Key); err == nil && existing.Builtin {
+					existing.Label = strings.TrimSpace(row.Label)
+					if err := accRepo.Save(existing); err != nil {
+						return result, fmt.Errorf("restoring account name %s: %w", row.Key, err)
+					}
+				}
 				continue
 			}
 			if _, err := accRepo.GetByKey(row.Key); err == nil {

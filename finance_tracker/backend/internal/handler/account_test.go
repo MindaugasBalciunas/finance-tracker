@@ -71,12 +71,31 @@ func TestAccountKeyFromLabelIsStableAndUnique(t *testing.T) {
 	assert.Equal(t, a.Key, got.Key)
 }
 
-func TestBuiltinAccountsAreReadOnly(t *testing.T) {
+func TestBuiltinAccountsCanOnlyBeRenamed(t *testing.T) {
 	e := accountTestEnv(t)
-	var seb domain.Account
-	require.NoError(t, e.db.Where("key = ?", "seb").First(&seb).Error)
-	rec := bankJSON(t, e.r, http.MethodPut, "/api/v1/accounts/"+fmt.Sprint(seb.ID), map[string]any{"archived": true})
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var swed domain.Account
+	require.NoError(t, e.db.Where("key = ?", "swed").First(&swed).Error)
+	url := "/api/v1/accounts/" + fmt.Sprint(swed.ID)
+	assert.Equal(t, http.StatusBadRequest, bankJSON(t, e.r, http.MethodPut, url, map[string]any{"archived": true}).Code)
+	assert.Equal(t, http.StatusBadRequest, bankJSON(t, e.r, http.MethodPut, url, map[string]any{"group": "investments"}).Code)
+
+	rec := bankJSON(t, e.r, http.MethodPut, url, map[string]any{"label": "Swedbank main", "group": "cash"})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var got domain.Account
+	require.NoError(t, e.db.First(&got, swed.ID).Error)
+	assert.Equal(t, "Swedbank main", got.Label)
+	assert.Equal(t, "swed", got.Key, "the key never changes")
+
+	require.NoError(t, e.db.Create(&domain.Balance{Date: time.Now(), Swed: 100, Seb: 50, Total: 150}).Error)
+	alloc, err := e.balSvc.GetAllocation()
+	require.NoError(t, err)
+	names := map[string]float64{}
+	for _, a := range alloc {
+		names[a.Account] = a.Amount
+	}
+	assert.Equal(t, 100.0, names["Swedbank main"], "allocation uses the new name")
+	assert.NotContains(t, names, "Swedbank")
+	assert.Equal(t, 50.0, names["Seb"], "untouched accounts keep their wording")
 }
 
 func TestAddedAccountCountsInTotalsGroupsAndTrend(t *testing.T) {
@@ -166,6 +185,8 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	_, src := importRouterFor(t)
 	require.NoError(t, src.AutoMigrate(&domain.ExportLog{}, &domain.Account{}))
 	require.NoError(t, src.Create(&domain.Account{Key: "acc_paysera", Label: "Paysera", Group: domain.AccountGroupCash}).Error)
+	require.NoError(t, src.Create(&domain.Account{Key: "swed", Label: "Swedbank main", Group: domain.AccountGroupCash, Builtin: true}).Error)
+	require.NoError(t, src.Create(&domain.Account{Key: "seb", Label: "SEB", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	require.NoError(t, src.Create(&domain.Balance{Date: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Swed: 10, Total: 60,
 		Extra: domain.AccountValues{"acc_paysera": 50}}).Error)
 
@@ -182,6 +203,7 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 
 	_, dst := importRouterFor(t)
 	require.NoError(t, dst.AutoMigrate(&domain.Account{}))
+	require.NoError(t, dst.Create(&domain.Account{Key: "swed", Label: "Swedbank", Group: domain.AccountGroupCash, Builtin: true}).Error)
 	imp := gin.New()
 	NewImportHandler(repository.NewTransactionRepository(dst), repository.NewBalanceRepository(dst),
 		repository.NewStockRepository(dst), repository.NewAssetRepository(dst)).WithDB(dst).
@@ -192,6 +214,12 @@ func TestBackupRoundtrip_AddedAccounts(t *testing.T) {
 	require.NoError(t, dst.Where("key = ?", "acc_paysera").First(&acc).Error)
 	assert.Equal(t, "Paysera", acc.Label)
 	assert.Equal(t, domain.AccountGroupCash, acc.Group)
+	var swed domain.Account
+	require.NoError(t, dst.Where("key = ?", "swed").First(&swed).Error)
+	assert.Equal(t, "Swedbank main", swed.Label, "a renamed built-in keeps its name through a restore")
+	var n int64
+	dst.Model(&domain.Account{}).Count(&n)
+	assert.EqualValues(t, 2, n, "an unrenamed built-in is not exported, a renamed one is not duplicated")
 	var b domain.Balance
 	require.NoError(t, dst.First(&b).Error)
 	assert.Equal(t, 50.0, b.Extra["acc_paysera"])

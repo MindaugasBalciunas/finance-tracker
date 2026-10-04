@@ -16,14 +16,34 @@ export function useAddedAccounts(): Account[] {
   return useMemo(() => (data ?? []).filter((a) => !a.builtin), [data])
 }
 
-// Every account key → display name: the built-in labels plus added accounts.
-export function useAccountLabels(): Record<string, string> {
-  const added = useAddedAccounts()
+export type AccountNamer = (key: string, fallback?: string) => string
+
+// useAccountName returns the display name for an account key. Added accounts
+// use their own label; a built-in uses its label only once the user renamed
+// it, otherwise each screen's own wording (fallback) stays.
+export function useAccountName(): AccountNamer {
+  const { data } = useAccounts()
   return useMemo(() => {
-    const out: Record<string, string> = { ...ACCOUNT_LABELS }
-    for (const a of added) out[a.key] = a.label
+    const byKey = new Map((data ?? []).map((a) => [a.key, a]))
+    return (key: string, fallback?: string) => {
+      const a = byKey.get(key)
+      const builtinDefault = ACCOUNT_LABELS[key as keyof typeof ACCOUNT_LABELS]
+      if (a && (!a.builtin || a.label !== builtinDefault)) return a.label
+      return fallback ?? builtinDefault ?? key
+    }
+  }, [data])
+}
+
+// Every account key → display name: built-ins (renamed or not) plus added.
+export function useAccountLabels(): Record<string, string> {
+  const { data } = useAccounts()
+  const name = useAccountName()
+  return useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const k of Object.keys(ACCOUNT_LABELS)) out[k] = name(k)
+    for (const a of data ?? []) out[a.key] = name(a.key)
     return out
-  }, [added])
+  }, [data, name])
 }
 
 function useInvalidateAccounts() {
