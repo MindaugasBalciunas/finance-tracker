@@ -33,9 +33,26 @@ func newDedupIndex(existing []domain.Transaction) *dedupIndex {
 		remaining: make(map[string]int, len(existing)),
 		rows:      make(map[string][]*domain.Transaction, len(existing)),
 	}
+	// A split transaction is still ONE bank row: its parts are matched as
+	// their sum, under the comment and date of the part that kept them, so a
+	// re-imported statement does not bring the original back as new.
+	// A part whose original was deleted stands on its own.
+	present := make(map[uint]bool, len(existing))
+	for i := range existing {
+		present[existing[i].ID] = true
+	}
+	partsSum := map[uint]float64{}
+	for i := range existing {
+		if p := existing[i].SplitOf; p != 0 && present[p] {
+			partsSum[p] += existing[i].Amount
+		}
+	}
 	for i := range existing {
 		t := &existing[i]
-		k := dedupKey(t.Date, t.Type, t.Amount, t.Comment)
+		if t.SplitOf != 0 && present[t.SplitOf] {
+			continue
+		}
+		k := dedupKey(t.Date, t.Type, t.Amount+partsSum[t.ID], t.Comment)
 		d.remaining[k]++
 		d.rows[k] = append(d.rows[k], t)
 	}

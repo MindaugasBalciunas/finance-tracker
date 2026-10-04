@@ -23,6 +23,7 @@ import { CATEGORIES } from '../constants/categories'
 import { useDateRange } from '../context/DateRangeContext'
 import { useLabels } from '../hooks/useBudgets'
 import { useAccountLabels } from '../hooks/useAccounts'
+import SplitModal from '../components/ui/SplitModal'
 
 function formatAccount(tx: Transaction, labels: Record<string, string>): string {
   const label = (key: string) => labels[key] ?? ACCOUNT_LABELS[key as AccountKey] ?? key
@@ -68,6 +69,7 @@ export default function Transactions() {
   // A photo picked from the Add menu, handed to the form to read on open.
   const [scanFile, setScanFile] = useState<File | null>(null)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [splittingTx, setSplittingTx] = useState<Transaction | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   // Set when the server saved the transaction but did NOT move an account
   // balance, and says why. Survives the modal closing — the point is that the
@@ -352,11 +354,22 @@ export default function Transactions() {
         </div>
       )}
 
+      {splittingTx && <SplitModal tx={splittingTx} onClose={() => setSplittingTx(null)} />}
+
       {/* Edit form modal */}
       {editingTx && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Transaction</h3>
+            <div className="flex items-baseline justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Edit Transaction</h3>
+              <button
+                type="button"
+                onClick={() => { setSplittingTx(editingTx); setEditingTx(null); setFormError(null) }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {editingTx.split_of ? 'Undo split…' : 'Split…'}
+              </button>
+            </div>
             {formError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{formError}</p>}
             <TransactionForm
               key={editingTx.id}
@@ -478,6 +491,7 @@ export default function Transactions() {
                   <div className="flex items-center gap-2 mb-0.5">
                     <Badge type={tx.type} />
                     <span className="text-xs text-gray-400">{formatDate(tx.date)}</span>
+                    {!!tx.split_of && <span className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-gray-100 text-gray-500">split</span>}
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate">{tx.category}</p>
                   {tx.comment && <p className="text-xs text-gray-400 truncate">{tx.comment}</p>}
@@ -539,6 +553,7 @@ export default function Transactions() {
                     <td className="px-4 py-3 text-gray-600">{tx.category}</td>
                     <td className="px-4 py-3 text-gray-500">
                       {tx.comment || '—'}
+                      {!!tx.split_of && <span className="ml-1.5 text-[10px] font-medium rounded px-1.5 py-0.5 bg-gray-100 text-gray-500">split</span>}
                       {tx.labels && (
                         <span className="block mt-0.5">
                           {txLabels(tx).map((l) => (

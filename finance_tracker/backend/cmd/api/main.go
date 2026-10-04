@@ -122,6 +122,7 @@ func main() {
 	txHandler.RegisterRoutes(v1)
 	balHandler.RegisterRoutes(v1)
 	handler.NewAccountHandler(accountRepo).RegisterRoutes(v1)
+	handler.NewSplitHandler(db).RegisterRoutes(v1)
 	insightHandler.RegisterRoutes(v1)
 	exportHandler.RegisterRoutes(v1)
 	importHandler.RegisterRoutes(v1)

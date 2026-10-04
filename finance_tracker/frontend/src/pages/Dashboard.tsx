@@ -5,6 +5,7 @@ import { useAssetSummary } from '../hooks/useAssets'
 import { freeCash } from '../utils/balanceGroups'
 import NetWorthHero from '../components/ui/NetWorthHero'
 import CashFlowCard from '../components/ui/CashFlowCard'
+import OwedCard from '../components/ui/OwedCard'
 import BalanceTrendChart from '../components/charts/BalanceTrendChart'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import MonthlyBarChart from '../components/charts/MonthlyBarChart'
@@ -133,6 +134,8 @@ export default function Dashboard() {
           assets={assetSummary}
         />
       )}
+
+      <OwedCard />
 
       {/* Cash flow + computed insights — side by side on desktop */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">

@@ -286,7 +286,7 @@ func (h *ExportHandler) ExportBalances(c *gin.Context) {
 //	     first dedup layer), ai_settings carry provider + enabled
 //	v6 — budgets carry period, fund, start_month and their amount history
 //	v7 — accounts added after the built-in columns: an accounts list, and
-//	     balance rows carry their values under extra
+//	     balance rows carry their values under extra; split parts carry split_of
 const exportSchemaVersion = 7
 
 type financeExport struct {
@@ -371,6 +371,8 @@ type txExportRow struct {
 	CreditAccount string  `json:"credit_account,omitempty"`
 	SourceAccount string  `json:"source_account,omitempty"`
 	ExternalID    string  `json:"external_id,omitempty"`
+	// SplitOf links a split part to its original (v7).
+	SplitOf uint `json:"split_of,omitempty"`
 }
 
 type balExportRow struct {
@@ -451,6 +453,7 @@ func toTxExportRows(transactions []domain.Transaction) []txExportRow {
 			CreditAccount: tx.CreditAccount,
 			SourceAccount: tx.SourceAccount,
 			ExternalID:    tx.ExternalID,
+			SplitOf:       tx.SplitOf,
 		}
 	}
 	return rows

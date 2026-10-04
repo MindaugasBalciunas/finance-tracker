@@ -164,6 +164,10 @@ type Transaction struct {
 	// which is exactly why content-based dedup still has to run alongside it.
 	ExternalID string `json:"external_id,omitempty" gorm:"index;default:''"`
 
+	// SplitOf points a split part at the transaction it was split from (the
+	// part that kept the original's bank id and comment). 0 = not a part.
+	SplitOf uint `json:"split_of,omitempty" gorm:"not null;default:0;index"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
@@ -488,4 +492,33 @@ type PaginatedTransactions struct {
 	Page       int           `json:"page"`
 	PageSize   int           `json:"page_size"`
 	TotalPages int           `json:"total_pages"`
+}
+
+// Owed-money labels. A share someone owes you is filed as Transfers (money
+// fronted, not spending) carrying "owed" plus "owed-<person>"; their
+// repayment carries the same pair, so it is not income either.
+const (
+	OwedLabel       = "owed"
+	OwedLabelPrefix = "owed-"
+)
+
+// OwedPersonLabel is the per-person label: "Tomas K." → "owed-tomas-k".
+func OwedPersonLabel(name string) string {
+	s := strings.ToLower(foldDiacritics(strings.TrimSpace(name)))
+	s = strings.Trim(nonKeyChars.ReplaceAllString(s, "-"), "-")
+	if s == "" {
+		return ""
+	}
+	return OwedLabelPrefix + s
+}
+
+// OwedPerson returns the person slug from a transaction's labels, or "".
+func (t *Transaction) OwedPerson() string {
+	for _, l := range strings.Split(t.Labels, ",") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, OwedLabelPrefix) && len(l) > len(OwedLabelPrefix) {
+			return strings.TrimPrefix(l, OwedLabelPrefix)
+		}
+	}
+	return ""
 }

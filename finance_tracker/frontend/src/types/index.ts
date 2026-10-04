@@ -51,6 +51,8 @@ export interface Transaction {
   // NOT adjusted: says why (no account set, dated before the latest
   // snapshot, no snapshot yet…). Absent when the balance did move.
   balance_note?: string
+  // Set on a split part: the id of the transaction it was split from.
+  split_of?: number
 }
 
 export interface CreateTransactionInput {

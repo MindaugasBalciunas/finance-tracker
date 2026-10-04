@@ -37,6 +37,9 @@ type BudgetRepository interface {
 	// ApplyLabel tags every transaction matching the rule with the label.
 	// Returns the number of transactions updated.
 	ApplyLabel(rule domain.LabelRule) (int, error)
+	// ApplyLabelTo is ApplyLabel limited to the given transactions — what an
+	// import uses, so it labels the rows it brought in and nothing else.
+	ApplyLabelTo(rule domain.LabelRule, ids []uint) (int, error)
 	// PreviewLabel counts what ApplyLabel would touch without writing:
 	// total matching transactions and how many of them lack the label.
 	PreviewLabel(rule domain.LabelRule) (matches, unlabeled int, err error)
@@ -200,8 +203,34 @@ func commentMatchLike(pattern string) string {
 }
 
 func (r *budgetRepository) ApplyLabel(rule domain.LabelRule) (int, error) {
+	return r.applyLabel(rule, nil)
+}
+
+func (r *budgetRepository) ApplyLabelTo(rule domain.LabelRule, ids []uint) (int, error) {
+	count := 0
+	// Chunked: SQLite caps bound parameters per statement.
+	for len(ids) > 0 {
+		n := len(ids)
+		if n > 500 {
+			n = 500
+		}
+		c, err := r.applyLabel(rule, ids[:n])
+		count += c
+		if err != nil {
+			return count, err
+		}
+		ids = ids[n:]
+	}
+	return count, nil
+}
+
+// applyLabel tags matching transactions; ids == nil means every row.
+func (r *budgetRepository) applyLabel(rule domain.LabelRule, ids []uint) (int, error) {
 	var txs []domain.Transaction
 	query := r.db.Model(&domain.Transaction{})
+	if ids != nil {
+		query = query.Where("id IN ?", ids)
+	}
 	if rule.Category != "" {
 		query = query.Where("category = ?", rule.Category)
 	}

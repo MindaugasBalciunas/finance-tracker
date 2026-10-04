@@ -145,6 +145,7 @@ func (h *ImportHandler) ImportSwedbankCSV(c *gin.Context) {
 }
 
 func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBalance, internal int, enrich bool) (swedbankImportResult, error) {
+	var createdIDs []uint
 	result := swedbankImportResult{Internal: internal}
 
 	// Dedup by content as a multiset — see dedupIndex. The baseline read MUST
@@ -219,6 +220,7 @@ func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBala
 			// constraint failures behind a 200 OK.
 			return result, fmt.Errorf("creating transaction (%s, %.2f): %w", row.Date.Format("2006-01-02"), row.Amount, err)
 		}
+		createdIDs = append(createdIDs, tx.ID)
 		result.Imported++
 		d := row.Date.Format("2006-01-02")
 		if result.DateFrom == "" || d < result.DateFrom {
@@ -230,13 +232,14 @@ func (h *ImportHandler) runSwedbankImport(rows []swedTx, stmtBalances []swedBala
 	}
 
 	// Deterministic labeling over the new rows (groceries, fuel, security…).
-	if h.budgetRepo != nil {
+	// Only the new rows: labels the user took off older rows stay off.
+	if h.budgetRepo != nil && len(createdIDs) > 0 {
 		rules, err := h.budgetRepo.ListRules()
 		if err != nil {
 			return result, fmt.Errorf("listing label rules: %w", err)
 		}
 		for _, rule := range rules {
-			n, err := h.budgetRepo.ApplyLabel(rule)
+			n, err := h.budgetRepo.ApplyLabelTo(rule, createdIDs)
 			if err != nil {
 				return result, fmt.Errorf("applying label rule %q: %w", rule.Label, err)
 			}
@@ -380,6 +383,7 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 		contentSeen[fmt.Sprintf("%s|%s|%.2f|%s|%s", t.Date.Format("2006-01-02"), t.Type, t.Amount, t.Category, t.Comment)] = true
 	}
 
+	var unlabeled []uint
 	for _, row := range payload.Transactions {
 		date, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {
@@ -434,6 +438,7 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			CreditAccount: row.CreditAccount,
 			SourceAccount: row.SourceAccount,
 			ExternalID:    row.ExternalID,
+			SplitOf:       row.SplitOf,
 		}
 		if row.ExternalID != "" {
 			externalSeen[row.ExternalID] = true
@@ -443,6 +448,9 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 		}
 		if err := h.txRepo.Create(tx); err != nil {
 			return result, fmt.Errorf("restoring transaction (%s, %.2f): %w", row.Date, row.Amount, err)
+		}
+		if strings.TrimSpace(tx.Labels) == "" {
+			unlabeled = append(unlabeled, tx.ID)
 		}
 		result.ImportedTxIDs = append(result.ImportedTxIDs, tx.ID)
 		result.Imported.Transactions++
@@ -769,14 +777,19 @@ func (h *ImportHandler) runJSONImport(payload financeExport) (importResult, erro
 			}
 		}
 
-		// Deterministic migration: re-apply every rule across the whole table so
-		// imported historical records (and pre-label rows) get their labels.
+		// Rows from a backup that predates labels get them from the rules. A
+		// row that arrived WITH labels is restored exactly as backed up, and
+		// rows already here are not touched: a label the user removed (or a
+		// split part filed apart from its rules) must survive a restore.
 		allRules, err := h.budgetRepo.ListRules()
 		if err != nil {
 			return result, fmt.Errorf("listing label rules for relabel: %w", err)
 		}
 		for _, rule := range allRules {
-			n, err := h.budgetRepo.ApplyLabel(rule)
+			if len(unlabeled) == 0 {
+				break
+			}
+			n, err := h.budgetRepo.ApplyLabelTo(rule, unlabeled)
 			if err != nil {
 				return result, fmt.Errorf("applying label rule %q: %w", rule.Label, err)
 			}
