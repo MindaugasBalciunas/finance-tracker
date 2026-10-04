@@ -586,8 +586,9 @@ func reviewChecks(in reviewInput, monthEnd *domain.Balance, unlabeled int) []rev
 		if ref == nil {
 			ref = a.PurchaseDate
 		}
-		if ref != nil && days(*ref) > 183 {
-			add("info", "/assets", "%s was last valued %s — over 6 months ago.", a.Name, ref.Format("2006-01-02"))
+		// A yearly revaluation is enough for property and vehicles.
+		if ref != nil && days(*ref) > 365 {
+			add("info", "/assets", "%s was last valued %s — over a year ago.", a.Name, ref.Format("2006-01-02"))
 		}
 		if a.LoanRateResetDate != nil {
 			if d := int(a.LoanRateResetDate.Sub(in.now).Hours() / 24); d >= 0 && d <= 45 {

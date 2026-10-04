@@ -107,13 +107,14 @@ func TestMonthReviewTotalsAndComparisons(t *testing.T) {
 
 func TestMonthReviewChecks(t *testing.T) {
 	now := d("2026-10-04")
-	old := d("2025-12-01")
+	old := d("2025-09-01")
+	recent := d("2025-12-01") // ten months: still fine
 	reset := d("2026-10-20")
 	r := buildMonthReview(reviewInput{
 		month: d("2026-09-01"), now: now,
 		txs:      []domain.Transaction{rtx(1, "2026-09-03", "expense", 10, "Food", "")},
 		balances: []domain.Balance{{Date: d("2026-08-01"), Total: 1}},
-		assets:   []domain.Asset{{Name: "Flat", ValuationDate: &old, LoanRateResetDate: &reset}},
+		assets:   []domain.Asset{{Name: "Flat", ValuationDate: &old, LoanRateResetDate: &reset}, {Name: "Car", ValuationDate: &recent}},
 		conns: []domain.BankConnection{
 			{ASPSPName: "Swedbank", Status: domain.BankConnAuthorized, ValidUntil: now.AddDate(0, 0, 5)},
 			{ASPSPName: "Old", Status: domain.BankConnRevoked, ValidUntil: now.AddDate(0, 0, -5)},
@@ -126,7 +127,8 @@ func TestMonthReviewChecks(t *testing.T) {
 	}
 	assert.Contains(t, texts, "64 days old")
 	assert.Contains(t, texts, "No balance snapshot inside this month")
-	assert.Contains(t, texts, "Flat was last valued 2025-12-01")
+	assert.Contains(t, texts, "Flat was last valued 2025-09-01 — over a year ago")
+	assert.NotContains(t, texts, "Car was last valued", "under a year is fine")
 	assert.Contains(t, texts, "Flat loan rate resets on 2026-10-20")
 	assert.Contains(t, texts, "Swedbank bank access expires in 5 days")
 	assert.NotContains(t, texts, "Old bank", "revoked connections are not nagged about")
