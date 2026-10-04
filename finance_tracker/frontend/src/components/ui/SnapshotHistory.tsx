@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { AccountGroup, Balance } from '../../types'
 import { ACCOUNT_GROUP_LABELS } from '../../types'
 import { cryptoEur, freeCash, investments, pensions, GROUP_COLORS } from '../../utils/balanceGroups'
 import { useBankSections } from '../../utils/accountLayout'
 import { formatDate, formatEuro, formatTime } from '../../utils/format'
+import { useHistoryColumns } from '../../utils/historyColumns'
 
 const TYPE_TOTALS: { group: AccountGroup; value: (b: Balance) => number }[] = [
   { group: 'cash', value: freeCash },
@@ -28,15 +29,85 @@ export default function SnapshotHistory({ rows, all, onEdit, onDelete }: {
   onDelete: (id: number) => void
 }) {
   const sections = useBankSections()
-  const banks = useMemo(
+  // Accounts that ever held money — the candidates for a column.
+  const everUsed = useMemo(
     () => sections
       .map((s) => ({ ...s, fields: s.fields.filter((f) => all.some((b) => Math.abs(f.value(b)) >= 0.005)) }))
       .filter((s) => s.fields.length),
     [sections, all],
   )
+  const latest = all[0]
+  const closedByDefault = useCallback(
+    (key: string) => {
+      const f = everUsed.flatMap((s) => s.fields).find((x) => x.key === key)
+      return !!(f && latest && Math.abs(f.value(latest)) < 0.005)
+    },
+    [everUsed, latest],
+  )
+  const { isHidden, setVisible, reset } = useHistoryColumns(closedByDefault)
+  const [picking, setPicking] = useState(false)
+  const banks = useMemo(
+    () => everUsed.map((s) => ({ ...s, fields: s.fields.filter((f) => !isHidden(f.key)) })).filter((s) => s.fields.length),
+    [everUsed, isHidden],
+  )
+  const hiddenCount = everUsed.reduce((n, s) => n + s.fields.filter((f) => isHidden(f.key)).length, 0)
 
   return (
     <>
+      <div className="relative flex items-center justify-end gap-3 px-3 sm:px-4 py-2 border-b border-gray-100">
+        {hiddenCount > 0 && <span className="text-xs text-gray-400">{hiddenCount} hidden</span>}
+        <button
+          type="button"
+          onClick={() => setPicking((p) => !p)}
+          aria-expanded={picking}
+          className="text-xs font-medium text-blue-600 hover:underline"
+        >
+          Columns ▾
+        </button>
+        {picking && (
+          <div className="absolute right-3 top-full mt-1 z-20 w-72 max-h-[70vh] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg p-3">
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-sm font-semibold text-gray-900">Show in history</span>
+              <button onClick={() => setPicking(false)} className="text-gray-400 hover:text-gray-700 text-sm" aria-label="Close">✕</button>
+            </div>
+            <div className="space-y-2">
+              {everUsed.map((s) => {
+                const keys = s.fields.map((f) => f.key)
+                const shown = keys.filter((k) => !isHidden(k)).length
+                return (
+                  <div key={s.institution}>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={shown === keys.length}
+                        ref={(el) => { if (el) el.indeterminate = shown > 0 && shown < keys.length }}
+                        onChange={(e) => setVisible(keys, e.target.checked)}
+                      />
+                      {s.institution || 'Other'}
+                    </label>
+                    {s.fields.length > 1 && (
+                      <div className="ml-6 mt-1 space-y-0.5">
+                        {s.fields.map((f) => (
+                          <label key={f.key} className="flex items-center gap-2 text-xs text-gray-600">
+                            <input type="checkbox" checked={!isHidden(f.key)} onChange={(e) => setVisible([f.key], e.target.checked)} />
+                            <Dot group={f.group} />
+                            {f.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-baseline justify-between mt-3 pt-2 border-t border-gray-100">
+              <span className="text-[11px] text-gray-400">Totals always include every account.</span>
+              <button onClick={reset} className="text-xs text-blue-600 hover:underline">Reset</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Mobile cards */}
       <div className="sm:hidden divide-y divide-gray-100">
         {rows.map((b) => (
