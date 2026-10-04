@@ -53,6 +53,15 @@ func main() {
 			for _, w := range rep.Warnings {
 				log.Printf("  note: %s", w)
 			}
+			ver := importv1.Verify(d, src)
+			for _, c := range ver.Checks {
+				log.Printf("  verify %v: %s — %s", c.OK, c.Name, c.Detail)
+			}
+			if !ver.OK {
+				d.Close()
+				os.Remove(path)
+				log.Fatalf("conversion verification failed — v1 data left untouched, v2 database removed")
+			}
 		} else if err := ledger.SeedCategories(d); err != nil {
 			log.Fatalf("seeding categories: %v", err)
 		}

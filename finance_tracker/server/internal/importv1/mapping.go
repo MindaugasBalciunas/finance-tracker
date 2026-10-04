@@ -242,7 +242,7 @@ func MapTx(t V1Tx) Mapped {
 			m.Dropped = append(m.Dropped, l)
 		}
 	}
-	if contains(t.Comment, "EVELINA", "PLYTNIKAIT", "BALČIŪNIEN", "BALCIUNIEN") && !hasAny(m.Tags, "evelina") {
+	if contains(t.Comment, "EVELINA", "PLYTNIKAIT") && !hasAny(m.Tags, "evelina") {
 		m.Tags = append(m.Tags, "evelina")
 	}
 	if t.Category == "Dating" && !hasAny(m.Tags, "kristina") && t.Date >= "2026-04-20" {
@@ -295,9 +295,6 @@ func transferCategory(t V1Tx, m *Mapped) string {
 		}
 		return "transfer.invest"
 	case "Vehicle":
-		if m.ToAccount == "" {
-			m.ToAccount = "car"
-		}
 		if contains(t.Comment, "pradin", "buyout", "down payment") {
 			return "transfer.asset"
 		}
@@ -329,6 +326,9 @@ func expenseCategory(t V1Tx, labels []string, merch string) string {
 		}
 		return "housing.mortgage"
 	}
+	if hasAny(labels, "alimony") || contains(c, "aliment", "alimon") {
+		return "kids.alimony"
+	}
 	if hasAny(labels, "divorce") && t.Category == "Finance" {
 		return "finance.divorce"
 	}
@@ -345,7 +345,7 @@ func expenseCategory(t V1Tx, labels []string, merch string) string {
 			return "finance.insurance"
 		case contains(c, "gedimino techn"):
 			return "other.education"
-		case hasAny(labels, "evelina") || contains(c, "EVELINA", "PLYTNIKAIT", "BALČIŪNIEN"):
+		case hasAny(labels, "evelina") || contains(c, "EVELINA", "PLYTNIKAIT"):
 			return "other.family"
 		case hasAny(labels, "parents"):
 			return "other.family"

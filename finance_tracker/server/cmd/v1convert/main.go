@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -47,4 +48,15 @@ func main() {
 	}
 	out, _ := json.MarshalIndent(rep, "", "  ")
 	os.Stdout.Write(out)
+	ver := importv1.Verify(d, src)
+	for _, c := range ver.Checks {
+		mark := "PASS"
+		if !c.OK {
+			mark = "FAIL"
+		}
+		fmt.Fprintf(os.Stderr, "[%s] %s — %s\n", mark, c.Name, c.Detail)
+	}
+	if !ver.OK {
+		os.Exit(1)
+	}
 }

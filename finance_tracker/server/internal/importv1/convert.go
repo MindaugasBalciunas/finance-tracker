@@ -127,21 +127,20 @@ func Convert(d *sql.DB, src *Data) (*Report, error) {
 	}
 	bal := map[bkey]bval{}
 	nonZero := map[string]bool{}
-	var lastBTC float64
 	for _, b := range src.Balances {
-		if p, ok := b.Values["btc_price"]; ok && p > 0 {
-			lastBTC = p
-		}
+		// BTC columns are coin quantities only on rows that state a BTC
+		// price; on rows without one, v1 stored the euro value directly.
+		price := b.Values["btc_price"]
 		for k, v := range b.Values {
 			if k == "btc_price" {
 				continue
 			}
 			id := MapAccount(k)
 			bv := bval{value: money.FromFloat(v)}
-			if k == "mbtc" || k == "rbtc" {
+			if (k == "mbtc" || k == "rbtc") && price > 0 {
 				q := v
-				pc := money.FromFloat(lastBTC)
-				bv = bval{value: money.FromFloat(v * lastBTC), qty: &q, price: &pc}
+				pc := money.FromFloat(price)
+				bv = bval{value: money.FromFloat(v * price), qty: &q, price: &pc}
 			}
 			if bv.value == 0 && !nonZero[id] {
 				continue

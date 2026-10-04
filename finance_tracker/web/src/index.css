@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tokens. Chart chrome and ink follow the validated dataviz palette;
+   the app chrome is built on the same neutrals. Values are "r g b". */
+:root {
+  color-scheme: light;
+  --page: 249 249 247;      /* #f9f9f7 */
+  --surface: 252 252 251;   /* #fcfcfb */
+  --raised: 255 255 255;
+  --sunken: 240 239 236;    /* #f0efec */
+  --ink: 11 11 11;          /* #0b0b0b */
+  --ink2: 82 81 78;         /* #52514e */
+  --muted: 137 135 129;     /* #898781 */
+  --line: 225 224 217;      /* #e1e0d9 */
+  --axis: 195 194 183;      /* #c3c2b7 */
+  --accent: 42 120 214;     /* series 1 */
+  --good: 0 99 0;           /* #006300 success text */
+  --bad: 208 59 59;         /* #d03b3b */
+  --warn: 176 110 0;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --s-other: #b4b2aa;
+  --chart-surface: #fcfcfb; --chart-grid: #e1e0d9; --chart-axis: #c3c2b7; --chart-text: #898781;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: 13 13 13; --surface: 26 26 25; --raised: 34 34 32; --sunken: 20 20 19;
+    --ink: 255 255 255; --ink2: 195 194 183; --muted: 137 135 129; --line: 44 44 42; --axis: 56 56 53;
+    --accent: 57 135 229; --good: 12 163 12; --bad: 230 103 103; --warn: 250 178 25;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --s-other: #5c5b57;
+    --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: 13 13 13; --surface: 26 26 25; --raised: 34 34 32; --sunken: 20 20 19;
+  --ink: 255 255 255; --ink2: 195 194 183; --muted: 137 135 129; --line: 44 44 42; --axis: 56 56 53;
+  --accent: 57 135 229; --good: 12 163 12; --bad: 230 103 103; --warn: 250 178 25;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --s-other: #5c5b57;
+  --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
+}
+
+html, body { background: rgb(var(--page)); color: rgb(var(--ink)); }
+body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+.tnum { font-variant-numeric: tabular-nums; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.recharts-wrapper:focus, .recharts-surface:focus { outline: none; }
+input, select, textarea { background: transparent; }
+@layer components {
+  .card { @apply rounded-2xl bg-surface border border-line; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 h-10 text-sm font-medium transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
+  .btn-ghost { @apply btn text-ink2 hover:bg-sunken; }
+  .btn-outline { @apply btn border border-line text-ink hover:bg-sunken; }
+  .btn-danger { @apply btn text-bad hover:bg-bad/10; }
+  .input { @apply w-full h-10 rounded-xl border border-line bg-raised px-3 text-sm text-ink placeholder:text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20; }
+  .label { @apply block text-xs font-medium text-ink2 mb-1; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 h-7 text-xs text-ink2 whitespace-nowrap; }
+  .chip-on { @apply chip border-accent bg-accent/10 text-accent; }
+  .section-title { @apply text-xs font-semibold uppercase tracking-wide text-muted; }
+}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

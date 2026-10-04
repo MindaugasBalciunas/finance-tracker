@@ -100,7 +100,6 @@ var aliases = []struct{ match, name string }{
 	{"NOVATURAS", "Novaturas"},
 	{"EVELINA", "Evelina"},
 	{"PLYTNIKAIT", "Evelina"},
-	{"BALCIUNIENE", "Evelina"},
 	{"360ARENA", "360 Arena"},
 	{"SKYPARK", "SkyPark"},
 	{"SKY PARK", "SkyPark"},

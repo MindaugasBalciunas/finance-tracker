@@ -373,6 +373,8 @@ func classify(p *Proposal, payee, details, accountID string, ctx Context) {
 	case has(up, "ARTEA", "INVL"):
 		p.set("transfer", "transfer.pension", "Artea", note)
 		p.ToAccountID = "artea"
+	case has(low, "aliment", "alimon"):
+		p.set("expense", "kids.alimony", m, note)
 	case has(low, "palūkan", "palukan") && has(up, "SEB", "PASKOL", "LOAN"):
 		p.set("expense", "housing.mortgage_interest", m, note)
 	case has(low, "paskolos grąžin", "paskolos grazin", "loan return"):

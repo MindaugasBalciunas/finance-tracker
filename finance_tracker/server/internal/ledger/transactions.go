@@ -238,14 +238,21 @@ func Validate(q querier, t *Tx) error {
 	if t.Kind != catKind {
 		return fmt.Errorf("category %q is for %s, not %s", t.Category, catKind, t.Kind)
 	}
-	for _, id := range []string{t.AccountID, t.ToAccountID} {
+	// Property and vehicles are tracked by valuation: money is never paid
+	// from or into them. Loans and pensions can only receive transfers.
+	for i, id := range []string{t.AccountID, t.ToAccountID} {
 		if id == "" {
 			continue
 		}
-		var n int
-		q.QueryRow(`SELECT COUNT(*) FROM accounts WHERE id=?`, id).Scan(&n)
-		if n == 0 {
+		var kind string
+		if err := q.QueryRow(`SELECT kind FROM accounts WHERE id=?`, id).Scan(&kind); err != nil {
 			return fmt.Errorf("unknown account %q", id)
+		}
+		switch {
+		case kind == "property" || kind == "vehicle":
+			return fmt.Errorf("%s is valued, not paid from — pick a bank, cash or broker account", id)
+		case i == 0 && (kind == "loan" || kind == "pension") && t.Kind != "transfer":
+			return fmt.Errorf("%s can't pay for things — pick a bank or cash account", id)
 		}
 	}
 	if t.Kind != "transfer" {
