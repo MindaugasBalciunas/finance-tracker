@@ -16,15 +16,16 @@ export default function Ledger() {
   const loc = useLocation()
   const nav = useNavigate()
   const { data: o } = useOverview()
-  const tab = loc.pathname.includes('/inbox') ? 'inbox' : 'tx'
+  const tab = loc.pathname.includes('/inbox') ? 'inbox' : loc.pathname.includes('/tidy') ? 'tidy' : 'tx'
   return (
     <div>
       <PageHeader title="Ledger" />
-      <Tabs value={tab} onChange={(v) => nav(v === 'inbox' ? '/ledger/inbox' : '/ledger')}
-        tabs={[{ value: 'tx', label: 'Transactions' }, { value: 'inbox', label: 'Bank inbox', badge: o?.inbox_open }]} />
+      <Tabs value={tab} onChange={(v) => nav(v === 'tx' ? '/ledger' : `/ledger/${v}`)}
+        tabs={[{ value: 'tx', label: 'Transactions' }, { value: 'inbox', label: 'Bank inbox', badge: o?.inbox_open }, { value: 'tidy', label: 'Tidy up' }]} />
       <Routes>
         <Route path="/" element={<Transactions />} />
         <Route path="/inbox" element={<Inbox />} />
+        <Route path="/tidy" element={<Tidy />} />
       </Routes>
     </div>
   )
@@ -500,5 +501,75 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
         <div><span className="label">Tags</span><TagInput value={r.tags} onChange={(v) => setR({ ...r, tags: v })} /></div>
       </div>
     </Sheet>
+  )
+}
+
+// ── tidy up ─────────────────────────────────────────────────────────
+
+/** Expenses that only carry a broad category, with sharper proposals from
+ *  history and rules (free) or the AI (on request). Nothing changes until
+ *  the owner applies a proposal. */
+function Tidy() {
+  const { data, isLoading } = useQuery({ queryKey: ['tidy'], queryFn: () => api.get<(Tx & { suggested?: string; why?: string })[]>('/tidy') })
+  const [ai, setAi] = useState<Record<number, { category: string; merchant?: string; reason?: string }>>({})
+  const [asking, setAsking] = useState(false)
+  const [done, setDone] = useState<Set<number>>(new Set())
+  const cats = useCats()
+  const refresh = useRefresh()
+  const toast = useToast()
+  const editor = useTxEditor()
+  const rows = (data ?? []).filter((r) => !done.has(r.id))
+  const proposal = (r: Tx & { suggested?: string }) => ai[r.id]?.category || r.suggested
+  const ask = async () => {
+    setAsking(true)
+    try {
+      const props = await api.post<{ id: number; category: string; merchant?: string; reason?: string }[]>('/ai/tidy', { ids: rows.filter((r) => !r.suggested).slice(0, 80).map((r) => r.id) })
+      const m: typeof ai = { ...ai }
+      props.forEach((p) => (m[p.id] = p))
+      setAi(m)
+      toast(`${props.length} suggestions`, 'good')
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setAsking(false)
+    }
+  }
+  const apply = async (list: (Tx & { suggested?: string })[]) => {
+    for (const r of list) {
+      const c = proposal(r)
+      if (!c) continue
+      await api.put(`/transactions/${r.id}`, { ...r, category: c, kind: undefined, merchant: r.merchant || ai[r.id]?.merchant || '' })
+    }
+    setDone(new Set([...done, ...list.map((r) => r.id)]))
+    toast(`${list.length} updated`, 'good')
+    refresh()
+  }
+  if (isLoading) return <Loading />
+  if (!rows.length) return <Empty title="Nothing to tidy" icon="check">Every expense from the last six months has a specific category.</Empty>
+  const ready = rows.filter((r) => proposal(r))
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted">{rows.length} recent expenses only have a broad category.</span>
+        <div className="ml-auto flex gap-2">
+          <button className="btn-outline h-9" onClick={ask} disabled={asking}>{asking ? <Spinner className="h-4 w-4" /> : <Icon name="spark" size={16} />}Ask AI</button>
+          {ready.length > 0 && <button className="btn-primary h-9" onClick={() => apply(ready)}>Apply {ready.length}</button>}
+        </div>
+      </div>
+      <div className="card divide-y divide-line">
+        {rows.map((r) => {
+          const p = proposal(r)
+          return (
+            <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+              <button className="min-w-0 flex-1 text-left" onClick={() => editor.open(r)}>
+                <div className="truncate text-sm font-medium">{r.merchant || r.note || '—'} <span className="font-normal text-muted tnum">· {eurc(r.amount)}</span></div>
+                <div className="truncate text-xs text-muted">{dayLabel(r.date)} · now {cats.path(r.category)}{p ? <> → <b className="text-ink">{cats.path(p)}</b> <span>({ai[r.id]?.reason || r.why})</span></> : ''}</div>
+              </button>
+              {p && <button className="btn-ghost h-8 text-xs text-accent" onClick={() => apply([r])}>Apply</button>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }

@@ -186,6 +186,7 @@ function Tags() {
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted">Rename a tag to merge it into another; rename to nothing to remove it everywhere (rules included).</div>
+      <TagSuggestions onPick={(from, to) => setEdit({ from, to })} />
       <div className="flex flex-wrap gap-1.5">
         {[...(data ?? [])].sort((a, b) => b.count - a.count).map((t) => (
           <button key={t.tag} className="chip hover:bg-sunken" onClick={() => setEdit({ from: t.tag, to: t.tag })}>{t.tag} <span className="text-muted">{t.count}</span></button>
@@ -201,6 +202,23 @@ function Tags() {
         </Sheet>
       )}
     </div>
+  )
+}
+
+function TagSuggestions({ onPick }: { onPick: (from: string, to: string) => void }) {
+  const { data } = useQuery({ queryKey: ['tag-suggestions'], queryFn: () => api.get<{ from: string; to: string; reason: string }[]>('/tags/suggestions') })
+  if (!data?.length) return null
+  return (
+    <Card title="Probably the same tag">
+      <div className="space-y-1.5">
+        {data.map((s) => (
+          <div key={s.from + s.to} className="flex items-center justify-between gap-2 text-sm">
+            <span><b>{s.from}</b> → <b>{s.to}</b> <span className="text-xs text-muted">{s.reason}</span></span>
+            <button className="btn-outline h-8 text-xs" onClick={() => onPick(s.from, s.to)}>Merge…</button>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 
@@ -271,7 +289,7 @@ function Banks() {
           <select className="input h-8 w-auto text-xs" value={bank} onChange={(e) => setBank(e.target.value)}>{['Swedbank', 'SEB', 'Luminor', 'Revolut', 'Šiaulių bankas'].map((b) => <option key={b}>{b}</option>)}</select>
           <button className="btn-primary h-8 text-xs" onClick={connect} disabled={busy}>Connect</button>
         </div>)}>
-        {!st?.configured ? <div className="text-sm text-muted">Add your Enable Banking application below first.</div> : isLoading ? <Loading /> : (
+        {!st?.configured ? <BankGuide /> : isLoading ? <Loading /> : (
           <div className="space-y-3">
             {(conns ?? []).filter((c) => c.accounts.length || c.status === 'authorized').map((c) => (
               <div key={c.id} className="rounded-xl border border-line p-3">
@@ -334,6 +352,18 @@ function Banks() {
   )
 }
 
+function BankGuide() {
+  return (
+    <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink2">
+      <li>Create a free account at <b>enablebanking.com</b> and register an application (environment: production, personal use).</li>
+      <li>Set its redirect URL to this app's address, e.g. <code className="rounded bg-sunken px-1">{window.location.origin}/</code> — it must match exactly.</li>
+      <li>Download the application's private key (PEM) and copy the application ID.</li>
+      <li>Paste both below with the same redirect URL, save, then press <b>Connect</b> and approve access in your bank.</li>
+      <li>Map each bank account to a ledger account. Sync from <b>Ledger → Bank inbox</b>; consent lasts up to 180 days.</li>
+    </ol>
+  )
+}
+
 // ── AI ──────────────────────────────────────────────────────────────
 
 function AISettings() {
@@ -382,6 +412,7 @@ function AISettings() {
           <div className="flex gap-2"><button className="btn-primary" onClick={save}>Save</button><button className="btn-outline" onClick={test} disabled={testing}>{testing ? <Spinner className="h-4 w-4" /> : 'Test'}</button></div>
         </div>
       </Card>
+      <TopUps />
       <Card title="Usage">
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div><div className="text-xs text-muted">This month</div><div className="font-semibold">${s.spend.month_usd.toFixed(2)}</div></div>
@@ -396,6 +427,33 @@ function AISettings() {
         <button className="btn-primary mt-2" disabled={context == null} onClick={async () => { await api.put('/ai/context', { content: context }); toast('Saved', 'good'); setContext(null); qc.invalidateQueries({ queryKey: ['ai-context'] }) }}>Save brief</button>
       </Card>
     </div>
+  )
+}
+
+function TopUps() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['topups'], queryFn: () => api.get<any[]>('/ai/topups') })
+  const { data: s } = useQuery({ queryKey: ['ai-settings'], queryFn: () => api.get<any>('/ai/settings') })
+  const [amt, setAmt] = useState('')
+  const [note, setNote] = useState('')
+  const reload = () => { qc.invalidateQueries({ queryKey: ['topups'] }); qc.invalidateQueries({ queryKey: ['ai-settings'] }) }
+  return (
+    <Card title="Credit" action={s?.spend && <span className={clsx('text-sm tnum', s.spend.balance_usd < 2 ? 'text-bad' : 'text-ink2')}>balance ${s.spend.balance_usd.toFixed(2)}</span>}>
+      <div className="mb-2 text-xs text-muted">Record what you pay the provider; the balance is top-ups minus measured spend.</div>
+      <div className="flex gap-2">
+        <input className="input w-28 tnum" inputMode="decimal" placeholder="$ amount" value={amt} onChange={(e) => setAmt(e.target.value)} />
+        <input className="input" placeholder="Note" value={note} onChange={(e) => setNote(e.target.value)} />
+        <button className="btn-outline" disabled={!(Number(amt) > 0)} onClick={async () => { await api.post('/ai/topups', { amount_usd: Number(amt), note }); setAmt(''); setNote(''); reload() }}>Add</button>
+      </div>
+      <div className="mt-2 divide-y divide-line text-sm">
+        {(data ?? []).map((t) => (
+          <div key={t.id} className="flex items-center justify-between py-1.5">
+            <span>{t.occurred_on} <span className="text-muted">{t.note}</span></span>
+            <span className="flex items-center gap-2 tnum">${t.amount_usd.toFixed(2)}<button className="text-muted hover:text-bad" onClick={async () => { await api.del(`/ai/topups/${t.id}`); reload() }} aria-label="Delete top-up"><Icon name="trash" size={14} /></button></span>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 

@@ -463,6 +463,17 @@ func (s *Server) ledgerRoutes() {
 	})
 
 	s.handle("GET /api/tags", func(w http.ResponseWriter, r *http.Request) (any, error) { return ledger.ListTags(s.DB) })
+	s.handle("GET /api/tags/suggestions", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		tags, err := ledger.ListTags(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		sg := ledger.SuggestTagMerges(tags)
+		if sg == nil {
+			sg = []ledger.MergeSuggestion{}
+		}
+		return sg, nil
+	})
 	s.handle("POST /api/tags/rename", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct{ From, To string }
 		if err := decode(r, &in); err != nil {
@@ -522,6 +533,64 @@ func (s *Server) ledgerRoutes() {
 	})
 }
 
+// vagueCategories are top-level expense categories a row can sit in without
+// saying much; the tidy-up queue offers sharper leaves for them.
+var vagueCategories = []string{"other", "leisure", "shopping", "food", "housing", "finance", "health", "transport", "utilities", "subscriptions", "kids", "travel"}
+
+type tidyRow struct {
+	ledger.Tx
+	Suggested string `json:"suggested,omitempty"` // from rules or history
+	Why       string `json:"why,omitempty"`
+}
+
+// tidyQueue lists the last six months' expenses that only carry a broad
+// category, with what rules and history would suggest.
+func (s *Server) tidyQueue() ([]tidyRow, error) {
+	txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(0, -6, 0).Format("2006-01-02"), Kind: "expense"})
+	if err != nil {
+		return nil, err
+	}
+	eng, err := ledger.LoadEngine(s.DB)
+	if err != nil {
+		return nil, err
+	}
+	vague := map[string]bool{}
+	for _, c := range vagueCategories {
+		vague[c] = true
+	}
+	out := []tidyRow{}
+	for i := len(txs) - 1; i >= 0; i-- {
+		t := txs[i]
+		if !vague[t.Category] {
+			continue
+		}
+		row := tidyRow{Tx: t}
+		probe := ledger.Tx{Kind: t.Kind, Merchant: t.Merchant, Note: t.Note}
+		res := eng.Apply(&probe, true, nil)
+		if probe.Category != "" && probe.Category != t.Category && strings.HasPrefix(probe.Category, t.Category+".") || (t.Category == "other" && probe.Category != "" && probe.Category != "other") {
+			row.Suggested = probe.Category
+			row.Why = "your rules"
+			if res.Learned {
+				row.Why = "what you filed " + firstNonEmptyStr(t.Merchant, "it") + " under before"
+			}
+		}
+		out = append(out, row)
+		if len(out) >= 200 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func firstNonEmptyStr(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // moveBalances applies (sign=1) or reverses (sign=-1) a hand-entered
 // transaction's effect on account balances. Bank rows never move balances:
 // the bank states its own balance on every sync.
@@ -566,6 +635,25 @@ func (s *Server) wealthRoutes() {
 			}
 		}
 		return hist, nil
+	})
+	s.handle("GET /api/networth/movement", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		book, err := wealth.LoadBook(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		q := r.URL.Query()
+		from, to := q.Get("from"), q.Get("to")
+		if to == "" {
+			to = today()
+		}
+		if from == "" {
+			from = time.Now().AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+		mv := book.Movement(from, to)
+		if mv == nil {
+			mv = []wealth.Move{}
+		}
+		return mv, nil
 	})
 	s.handle("GET /api/balances", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		book, err := wealth.LoadBook(s.DB)
@@ -640,6 +728,23 @@ func (s *Server) wealthRoutes() {
 			return nil, err
 		}
 		return wealth.BuildPortfolio(trades, r.URL.Query().Get("live") != "0"), nil
+	})
+	s.handle("GET /api/portfolio/scenarios", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		trades, err := wealth.ListTrades(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		return wealth.BuildScenarios(wealth.BuildPortfolio(trades, true), func(t string) (float64, float64, float64, int, string, error) {
+			a, err := market.Analyst(t)
+			if err != nil {
+				return 0, 0, 0, 0, "", err
+			}
+			basis := "analyst targets"
+			if a.NumAnalysts == 0 {
+				basis = "52-week range"
+			}
+			return a.TargetLow, a.TargetMean, a.TargetHigh, a.NumAnalysts, basis, nil
+		}), nil
 	})
 	s.handle("GET /api/trades", func(w http.ResponseWriter, r *http.Request) (any, error) { return wealth.ListTrades(s.DB) })
 	saveTrade := func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -830,7 +935,8 @@ func (s *Server) insightRoutes() {
 			return nil, err
 		}
 		return map[string]any{"from": from, "to": to, "categories": insights.Breakdown(txs, from, to),
-			"merchants": insights.MerchantTotals(txs, from, to, 25), "largest": insights.TopExpenses(txs, from, to, 15)}, nil
+			"merchants": insights.MerchantTotals(txs, from, to, 25), "largest": insights.TopExpenses(txs, from, to, 15),
+			"tags": insights.TagTotals(txs, from, to)}, nil
 	})
 	s.handle("GET /api/insights/trends", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		months := qint(r, "months", 24)
@@ -870,6 +976,12 @@ func (s *Server) insightRoutes() {
 			rows = append(rows, row)
 		}
 		return rows, nil
+	})
+	s.handle("GET /api/insights/month", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.BuildMonthReview(s.DB, r.URL.Query().Get("month"), time.Now())
+	})
+	s.handle("GET /api/checks", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.Checks(s.DB, time.Now()), nil
 	})
 	s.handle("GET /api/insights/pace", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(0, -7, 0).Format("2006-01") + "-01"})
@@ -1182,6 +1294,55 @@ func (s *Server) aiRoutes() {
 			return nil, bad("attach an image")
 		}
 		return s.AI.ScanReceipt(r.Context(), *img)
+	})
+	s.handle("POST /api/ai/assist", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return s.AI.Assist(r.Context(), in.Text)
+	})
+	s.handle("GET /api/tidy", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return s.tidyQueue()
+	})
+	s.handle("POST /api/ai/tidy", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			IDs []int64 `json:"ids"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		var txs []ledger.Tx
+		for _, id := range in.IDs {
+			if t, err := ledger.Get(s.DB, id); err == nil {
+				txs = append(txs, t)
+			}
+		}
+		return s.AI.Tidy(r.Context(), txs)
+	})
+	s.handle("GET /api/ai/topups", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		rows, err := s.DB.Query(`SELECT id, amount_usd, note, occurred_on FROM ai_topups ORDER BY occurred_on DESC, id DESC`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []map[string]any{}
+		for rows.Next() {
+			var id int64
+			var amt float64
+			var note, on string
+			rows.Scan(&id, &amt, &note, &on)
+			out = append(out, map[string]any{"id": id, "amount_usd": amt, "note": note, "occurred_on": on})
+		}
+		return out, nil
+	})
+	s.handle("DELETE /api/ai/topups/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			return nil, err
+		}
+		_, err = s.DB.Exec(`DELETE FROM ai_topups WHERE id=?`, id)
+		return map[string]bool{"ok": true}, err
 	})
 	s.handle("POST /api/ai/topups", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {

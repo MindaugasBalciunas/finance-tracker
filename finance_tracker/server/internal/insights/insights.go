@@ -501,3 +501,36 @@ func Pace(txs []ledger.Tx, now time.Time) []PacePoint {
 	}
 	return out
 }
+
+// TagTotals sums expenses (net of refunds) per tag in a window — who and
+// what the money was for, across categories.
+func TagTotals(txs []ledger.Tx, from, to string) []NamedCount {
+	m := map[string]*NamedCount{}
+	for i := range txs {
+		t := &txs[i]
+		if t.Date < from || t.Date > to || (t.Kind != "expense" && !isRefund(t)) {
+			continue
+		}
+		for _, tag := range t.Tags {
+			x := m[tag]
+			if x == nil {
+				x = &NamedCount{Name: tag}
+				m[tag] = x
+			}
+			if isRefund(t) {
+				x.Amount -= t.Amount
+			} else {
+				x.Amount += t.Amount
+				x.Count++
+			}
+		}
+	}
+	out := make([]NamedCount, 0, len(m))
+	for _, v := range m {
+		if v.Amount > 0 {
+			out = append(out, *v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Amount > out[j].Amount })
+	return out
+}

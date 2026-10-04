@@ -59,6 +59,7 @@ function Month() {
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
       <Summary r={r} current={current} />
+      <YearGrid r={r} />
       {groups.map((g) => {
         const lines = r.lines.filter((l) => l.kind === g.kind)
         return (
@@ -136,6 +137,41 @@ function Summary({ r, current }: { r: PlanReport; current: boolean }) {
         ))}
       </section>
     </div>
+  )
+}
+
+/** Twelve months × every line: how much of each month's share was used. */
+function YearGrid({ r }: { r: PlanReport }) {
+  const [open, setOpen] = useState(false)
+  const lines = r.lines.filter((l) => l.kind !== 'saving')
+  const cell = (spent: number, budget: number, fund: boolean) => {
+    if (budget <= 0) return { bg: 'rgb(var(--sunken))', label: '' }
+    const ratio = spent / budget
+    if (ratio > 1 && !fund) return { bg: 'color-mix(in oklab, rgb(var(--bad)) 75%, rgb(var(--surface)))', label: 'over' }
+    return { bg: `color-mix(in oklab, var(--s1) ${Math.round(12 + 70 * Math.min(ratio, 1))}%, rgb(var(--surface)))`, label: '' }
+  }
+  return (
+    <Card title="The year at a glance" action={<button className="btn-ghost h-8 text-xs" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>}>
+      {open && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr><th className="pb-1 pr-2 text-left font-medium text-muted">Line</th>{r.months.map((m) => <th key={m} className="pb-1 font-medium text-muted">{monthLabel(m).slice(0, 3)}</th>)}</tr></thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.id}>
+                  <td className="max-w-[8rem] truncate py-0.5 pr-2">{l.name}</td>
+                  {l.history.map((h) => {
+                    const c = cell(h.spent, h.budget, l.fund)
+                    return <td key={h.month} className="p-0.5"><div title={`${monthLabel(h.month, true)}: ${eur(h.spent)} of ${eur(h.budget)}`} className="h-6 min-w-6 rounded" style={{ background: c.bg }} /></td>
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-2 flex items-center gap-3 text-[11px] text-muted"><span>Darker = more of the month's share used</span><span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded" style={{ background: 'color-mix(in oklab, rgb(var(--bad)) 75%, rgb(var(--surface)))' }} />over budget</span></div>
+        </div>
+      )}
+    </Card>
   )
 }
 

@@ -38,7 +38,11 @@ func (s *Server) dataRoutes() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.json"`)
 		json.NewEncoder(w).Encode(f)
-		s.DB.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('last_backup_download',?)`, `"`+db.Now()+`"`)
+		// ?purpose=export (syncs, tooling) reads without counting as the
+		// owner's off-device backup.
+		if r.URL.Query().Get("purpose") != "export" {
+			s.DB.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('last_backup_download',?)`, `"`+db.Now()+`"`)
+		}
 		return nil, nil
 	})
 	s.handle("POST /api/import/backup", func(w http.ResponseWriter, r *http.Request) (any, error) {

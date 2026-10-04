@@ -20,7 +20,7 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Budget engine (fixed/investment/spending, funds, yearly, dated amounts, suggestions, unbudgeted, safe to spend, income modes incl. LT net from gross) | **Plan** — same engine semantics on the new categories; one-tap "Apply from this month" / "Make it a fund" | `plan/TestCompute*`, `plan/TestIncomeBaseModes` |
 | Trips (suggest, assign, rename, summarise) | **Plan → Trips**: per-trip totals and per-day cost (prepaid bookings don't stretch the trip), suggestions with one-tap tagging; rename via Tags | `plan/TestTrips` |
 | Reports (category charts, cumulative spending, growth, label chart, balance trend) | **Insights**: cash flow (12M/24M/5Y + every year table), savings rate by month, spending breakdown with change vs previous window and drill-down, month-to-date pace vs typical, monthly trends by category or subcategory, recurring costs, FI projection, year review | `insights/*` |
-| Review page (monthly highlights) | Home + Insights → Spending (last month preset) + Year review | `insights/TestBreakdownComparesWithPreviousWindow` |
+| Review page (monthly highlights) | **Insights → Review (Month/Year)**: verdict, highlights vs last month and the 6-month norm (a salary booked on the 1st–3rd of next month is counted, not reported as a bad month), net-worth move, categories vs norm, spend calendar, top expenses/income, budget brief, owed, checks; Home nudges during the first week of a month | `cfo/TestMonthReview`, `cfo/TestLateSalaryIsExplained` |
 | Bank (PSD2): settings, bank list, consent, callback (auto + pasted URL), account mapping, sync one/all, 90-day first window + 7-day overlap, reservations, released holds, staged queue, verdicts, edit, dismiss/restore, merge/unmerge, auto-link certain matches, bank balances summed per account | **Ledger → Bank inbox** + **Settings → Banks** — all of it, v1 external ids preserved so nothing re-imports | `bank/sync_test.go` (staging, idempotency, dismissals, reservations, linking, expiry), `bank/adapter_test.go` (captured narratives) |
 | AI chat with tools, images, charts, history, web search, market buzz | **Ask CFO**: tools redesigned for v2 (overview, search, cash flow, breakdown, net worth, plan, recurring, FI, loans, portfolio, quote, buzz, trips, reference, inbox) + confirmed writes | `ai/TestChatToolLoopAndHistory`, `ai/TestReadToolsAnswer` |
 | AI memory of decisions | `remember` tool → "Remembered decisions" (editable), injected into every chat and MCP context | `ai/TestWriteToolsAndMemory` |
@@ -31,6 +31,29 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Cross-origin write guard, body limits | Same | `api/TestCrossSiteWritesBlocked` |
 | Full backup / restore (finances.json), CSV export, AI zip, nightly + pre-migration snapshots | Backup (table dump; secrets only on request; restore keeps this instance's secrets), CSV, AI dataset zip, nightly/pre-migration/pre-restore/manual snapshots, v1 backup import | `backup/*`, `api/TestBackupRestoreThroughAPI`, `api/TestImportV1AndExports`, `db/TestBackupRetention` |
 | Startup data repairs | Replaced by a one-time verified conversion (`boot`), then numbered migrations | `boot/*`, `importv1/TestConvertFromV1DatabaseCarriesSecretsAndBankState` |
+
+## Gaps found in the second audit and closed (v2.1)
+
+| v1 | v2.1 | Covered by |
+|---|---|---|
+| Balance-page allocation and "what changed" | **Wealth → Net worth**: allocation bar + per-account movement over the selected range | `wealth/TestMovementAndScenarios` |
+| Stock forecast (portfolio at analyst targets) | **Wealth → Investments → Scenarios**: low/mean/high in EUR, coverage share | `wealth/TestMovementAndScenarios` |
+| Budget year view | **Plan → The year at a glance**: line × month grid, over-budget flagged | `plan/*` |
+| Label chart / label stats | Spending "By tag" card; tag merge suggestions (plural, separator, one-letter typos) in Settings → Tags | `insights/TestTagTotals`, `ledger/TestSuggestTagMerges` |
+| AI labeling / rule review | Editor "describe it" AI fill, "Always file X as Y" rule checkbox; **Ledger → Tidy up** queue for vague categories with history and AI proposals | `ai/TestAssistAndTidy`, `api/TestNewInsightAndTidyEndpoints` |
+| Data health warnings | `Checks`: stale balances, old valuations, loan rate reset, consent expiry, inbox, vague categories, backup age — on Home and in the month review | `cfo/TestChecks` |
+| AI credit top-ups | Settings → AI: top-ups list (add/delete), spend vs credit | `api/TestNewInsightAndTidyEndpoints` |
+| Bank setup help | Settings → Banks step-by-step guide | — |
+| Export for sync without touching the backup reminder | `?purpose=export` | `api/TestNewInsightAndTidyEndpoints` |
+
+## Where v2 is better
+
+- One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.
+- Property, car and loans can no longer be picked as "paid from"; every spend form offers only real money accounts.
+- Month review explains itself (verdict + reasons) and doesn't panic over a late salary.
+- Sessions survive restarts; read-only vs read-write tokens are route-exact; 0 known npm vulnerabilities, Go 1.26.8.
+- Integer-cent money end to end; first start converts and verifies v1 to the cent or refuses to run.
+- One Go binary + static web app; unit + integration tests in CI on every push.
 
 ## Retired by design
 

@@ -72,7 +72,10 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
       try {
         const r = await api.post<any>('/transactions/suggest', { kind: t.kind, merchant: t.merchant, note: t.note, tags: t.tags })
         const s = r.suggestion as Tx
-        if (s.category && cats.byId[s.category]?.kind === t.kind) set({ category: s.category })
+        if (s.category && cats.byId[s.category]?.kind === t.kind) {
+          set({ category: s.category })
+          setSuggestedCat(s.category)
+        }
         const extra = (s.tags ?? []).filter((x) => !(t.tags ?? []).includes(x) && !suppressed.includes(x))
         if (extra.length) {
           setSuggested(extra)
@@ -90,6 +93,10 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     if (!t.category) return toast('Pick a category', 'bad')
     try {
       await save.mutateAsync({ ...t, amount: value, suppressed_tags: suppressed })
+      if (makeRule && t.merchant) {
+        await api.post('/rules', { pattern: t.merchant, set_category: t.category, add_tags: (t.tags ?? []).filter((x) => !x.startsWith('trip:') && !x.startsWith('owed:')), enabled: true })
+        toast(`From now on ${t.merchant} → ${cats.path(t.category ?? '')}`, 'good')
+      }
       toast(isNew ? 'Added' : 'Saved', 'good')
       onClose()
     } catch {}
@@ -105,6 +112,26 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   ]
   const remark = (draft as any)._remark as string | undefined
   const [splitOpen, setSplitOpen] = useState(false)
+  const [describe, setDescribe] = useState('')
+  const [assisting, setAssisting] = useState(false)
+  const [makeRule, setMakeRule] = useState(false)
+  const [suggestedCat, setSuggestedCat] = useState<string>('')
+  const { data: owed } = useQuery({ queryKey: ['owed'], queryFn: () => api.get<Record<string, number>>('/owed'), enabled: t.kind === 'income' })
+  const assist = async () => {
+    if (!describe.trim()) return
+    setAssisting(true)
+    try {
+      const s = await api.post<any>('/ai/assist', { text: describe })
+      set({ kind: s.kind, date: s.date || t.date, category: s.category || t.category, merchant: s.merchant || t.merchant, note: s.note || t.note, account_id: s.account_id || t.account_id, tags: s.tags?.length ? s.tags : t.tags })
+      if (s.amount) setAmount(String(s.amount))
+      setTouchedCat(true)
+      if (s.remark) toast(s.remark)
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setAssisting(false)
+    }
+  }
   const refresh = useRefresh()
   const { data: detail } = useQuery({ queryKey: ['tx', t.id], queryFn: () => api.get<{ transaction: Tx; parts: Tx[] | null }>(`/transactions/${t.id}`), enabled: !!t.id })
   const parts = detail?.parts ?? []
@@ -124,6 +151,13 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
       </>}>
       <div className="space-y-4">
         {remark && <div className="rounded-xl bg-sunken px-3 py-2 text-xs text-ink2"><b>Receipt:</b> {remark}</div>}
+        {isNew && (
+          <div className="flex gap-2">
+            <input className="input" placeholder="Or describe it: “lunch 12.50 card today”" value={describe} onChange={(e) => setDescribe(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), assist())} />
+            <button className="btn-outline shrink-0" onClick={assist} disabled={assisting || !describe.trim()} aria-label="Fill from description">{assisting ? <Spinner className="h-4 w-4" /> : <Icon name="spark" size={16} />}</button>
+          </div>
+        )}
         <Segmented value={t.kind} onChange={(k) => { set({ kind: k, category: '' }); setTouchedCat(false) }} options={kinds} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount (€)">
@@ -147,6 +181,17 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           )}
         </div>
         <Field label="Note"><input className="input" value={t.note ?? ''} onChange={(e) => set({ note: e.target.value })} placeholder="What was it for?" /></Field>
+        {t.kind === 'income' && Object.entries(owed ?? {}).some(([, v]) => v > 0.005) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-ink2">Someone paying you back?</span>
+            {Object.entries(owed ?? {}).filter(([, v]) => v > 0.005).map(([who, v]) => (
+              <button key={who} className={(t.tags ?? []).includes(`owed:${who}`) ? 'chip-on' : 'chip hover:bg-sunken'}
+                onClick={() => { set({ category: 'refunds', tags: [...(t.tags ?? []).filter((x) => !x.startsWith('owed:')), `owed:${who}`], merchant: t.merchant || who }); if (!amount) setAmount(String(v)); setTouchedCat(true) }}>
+                <span className="capitalize">{who}</span> owes {eurc(v)}
+              </button>
+            ))}
+          </div>
+        )}
         <Field label="Tags" hint={suggested.length ? `Added by your rules: ${suggested.join(', ')}` : 'People, trips (trip:name), properties'}>
           <TagInput value={t.tags ?? []} onChange={(v) => {
             const removed = (t.tags ?? []).filter((x) => !v.includes(x) && suggested.includes(x))
@@ -154,6 +199,12 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             set({ tags: v })
           }} />
         </Field>
+        {t.merchant && t.category && t.category !== suggestedCat && touchedCat && (
+          <label className="flex items-center gap-2 text-sm text-ink2">
+            <input type="checkbox" checked={makeRule} onChange={(e) => setMakeRule(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--accent))]" />
+            Always file <b className="text-ink">{t.merchant}</b> as {cats.path(t.category)}
+          </label>
+        )}
         {t.external_id && <div className="text-xs text-muted">From the bank · {t.external_id}</div>}
         {!isNew && !t.split_of && (
           <div className="rounded-xl border border-line p-3">

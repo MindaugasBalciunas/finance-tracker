@@ -338,3 +338,19 @@ func TestTagsAndMerchantsAggregate(t *testing.T) {
 		t.Error(m)
 	}
 }
+
+func TestSuggestTagMerges(t *testing.T) {
+	got := ledger.SuggestTagMerges([]ledger.TagCount{
+		{Tag: "kid", Count: 3}, {Tag: "kids", Count: 300}, {Tag: "car-wash", Count: 2}, {Tag: "carwash", Count: 9},
+		{Tag: "kristina", Count: 60}, {Tag: "kristna", Count: 1}, {Tag: "trip:rome", Count: 5}, {Tag: "rome", Count: 5}, {Tag: "gift", Count: 1}, {Tag: "lift", Count: 1},
+	})
+	want := map[string]string{"kid": "kids", "car-wash": "carwash", "kristna": "kristina"}
+	if len(got) != len(want) {
+		t.Fatalf("%+v", got)
+	}
+	for _, g := range got {
+		if want[g.From] != g.To {
+			t.Errorf("%+v", g)
+		}
+	}
+}

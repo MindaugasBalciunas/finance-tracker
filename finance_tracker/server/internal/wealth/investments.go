@@ -269,3 +269,58 @@ func BuildPortfolio(trades []Trade, live bool) Portfolio {
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 func round3(v float64) float64 { return math.Round(v*1000) / 1000 }
+
+// Scenario values a position at analyst targets (or its 52-week range for
+// ETFs without coverage), in EUR.
+type Scenario struct {
+	Ticker    string   `json:"ticker"`
+	ValueEUR  float64  `json:"value_eur"`
+	LowEUR    *float64 `json:"low_eur,omitempty"`
+	MeanEUR   *float64 `json:"mean_eur,omitempty"`
+	HighEUR   *float64 `json:"high_eur,omitempty"`
+	Analysts  int      `json:"analysts"`
+	Basis     string   `json:"basis"`
+}
+
+type Scenarios struct {
+	Positions []Scenario `json:"positions"`
+	ValueEUR  float64    `json:"value_eur"`
+	LowEUR    float64    `json:"low_eur"`
+	MeanEUR   float64    `json:"mean_eur"`
+	HighEUR   float64    `json:"high_eur"`
+	Covered   float64    `json:"covered"` // share of value with a target
+}
+
+// AnalystFunc looks up targets; injectable for tests.
+type AnalystFunc func(ticker string) (low, mean, high float64, analysts int, basis string, err error)
+
+// BuildScenarios applies each position's target range to its share count.
+// Positions without targets count at today's value in every scenario.
+func BuildScenarios(p Portfolio, lookup AnalystFunc) Scenarios {
+	var out Scenarios
+	var covered float64
+	for _, h := range p.Holdings {
+		if h.ValueEUR == nil || h.Value == nil || *h.Value == 0 {
+			continue
+		}
+		rate := *h.ValueEUR / *h.Value // EUR per unit of trade currency
+		s := Scenario{Ticker: h.Ticker, ValueEUR: *h.ValueEUR}
+		low, mean, high := *h.ValueEUR, *h.ValueEUR, *h.ValueEUR
+		if lo, me, hi, n, basis, err := lookup(h.Ticker); err == nil && me > 0 {
+			l, m, x := round2(lo*h.Shares*rate), round2(me*h.Shares*rate), round2(hi*h.Shares*rate)
+			s.LowEUR, s.MeanEUR, s.HighEUR, s.Analysts, s.Basis = &l, &m, &x, n, basis
+			low, mean, high = l, m, x
+			covered += *h.ValueEUR
+		}
+		out.Positions = append(out.Positions, s)
+		out.ValueEUR += *h.ValueEUR
+		out.LowEUR += low
+		out.MeanEUR += mean
+		out.HighEUR += high
+	}
+	if out.ValueEUR > 0 {
+		out.Covered = round3(covered / out.ValueEUR)
+	}
+	out.ValueEUR, out.LowEUR, out.MeanEUR, out.HighEUR = round2(out.ValueEUR), round2(out.LowEUR), round2(out.MeanEUR), round2(out.HighEUR)
+	return out
+}

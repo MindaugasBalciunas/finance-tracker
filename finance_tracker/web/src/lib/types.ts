@@ -54,6 +54,7 @@ export interface Overview {
   fi_progress: number; years_to_fi: number
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null
   inbox_open: number; recent: Tx[] | null
+  checks: { level: string; text: string; link: string }[] | null; review_month?: string
 }
 
 export interface Step { from_month: string; amount: number }

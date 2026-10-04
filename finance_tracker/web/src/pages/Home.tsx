@@ -7,6 +7,7 @@ import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon } from '../components/Icon'
 import { useCats, groupName } from '../lib/categories'
+import { Checks } from './Insights'
 
 export default function Home() {
   const { data: o, isLoading, error } = useOverview()
@@ -20,7 +21,6 @@ export default function Home() {
   const avg = o.avg12
   const spendPace = avg.spending > 0 ? m.spending / (avg.spending * Math.max(o.month_progress, 0.05)) : 0
   const groups = Object.entries(o.by_group).filter(([g]) => g !== 'debt').sort((a, b) => b[1] - a[1])
-  const stale = Object.entries(o.stale ?? {})
 
   return (
     <div className="space-y-4">
@@ -143,13 +143,15 @@ export default function Home() {
         </Card>
       </div>
 
-      {stale.length > 0 && (
-        <Link to="/wealth?update=1" className="card flex items-center gap-3 p-3.5 hover:bg-sunken/50">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-warn/15 text-warn"><Icon name="refresh" /></span>
-          <span className="flex-1 text-sm">{stale.length} {stale.length === 1 ? 'balance is' : 'balances are'} over 45 days old — update them so net worth stays true.</span>
+      {o.review_month && (
+        <Link to={`/insights/review?month=${o.review_month}`} className="card flex items-center gap-3 p-3.5 hover:bg-sunken/50">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="chart" /></span>
+          <span className="flex-1 text-sm">Your <b>{monthLabel(o.review_month, true)}</b> review is ready — how the month went and what needs a look.</span>
           <Icon name="chevronR" className="text-muted" />
         </Link>
       )}
+
+      <Checks checks={(o.checks ?? []).filter((c) => !c.link.startsWith('/ledger/inbox'))} />
 
       <Card pad={false} title="Recent" action={
         <div className="flex gap-1">

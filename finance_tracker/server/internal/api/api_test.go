@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"ft/internal/api"
 	"ft/internal/auth"
@@ -489,3 +490,64 @@ func itoa(i int64) string {
 	b, _ := json.Marshal(i)
 	return string(b)
 }
+
+func TestNewInsightAndTidyEndpoints(t *testing.T) {
+	s, c := newServer(t)
+	Tx(t, s.DB, ledger.Tx{Date: "2026-09-02", Amount: E(30), Category: "food.restaurants", Merchant: "Jammi", AccountID: "swed"})
+	Tx(t, s.DB, ledger.Tx{Date: today6(), Amount: E(12), Category: "food", Merchant: "Jammi", AccountID: "swed", Tags: []string{"kristina"}})
+	for _, p := range []string{"/insights/month", "/insights/month?month=2026-09", "/checks", "/networth/movement", "/tags/suggestions", "/ai/topups", "/insights/pace"} {
+		if code, out := c.do("GET", p, nil); code != 200 {
+			t.Errorf("GET %s → %d %s", p, code, out)
+		}
+	}
+	var tidy []struct {
+		ID        int64  `json:"id"`
+		Suggested string `json:"suggested"`
+	}
+	c.ok("GET", "/tidy", nil, &tidy)
+	if len(tidy) != 1 || tidy[0].Suggested != "food.restaurants" {
+		t.Fatalf("history suggests the leaf for a vague row: %+v", tidy)
+	}
+	var bd struct {
+		Tags []map[string]any `json:"tags"`
+	}
+	c.ok("GET", "/insights/breakdown?preset=12m", nil, &bd)
+	if len(bd.Tags) != 1 {
+		t.Fatal(bd)
+	}
+	// Top-ups: add, list, delete.
+	c.ok("POST", "/ai/topups", map[string]any{"amount_usd": 10, "note": "card"}, nil)
+	var tops []map[string]any
+	c.ok("GET", "/ai/topups", nil, &tops)
+	c.ok("DELETE", "/ai/topups/"+itoa(int64(tops[0]["id"].(float64))), nil, nil)
+	c.ok("GET", "/ai/topups", nil, &tops)
+	if len(tops) != 0 {
+		t.Fatal("top-up delete")
+	}
+	// AI routes fail cleanly without a key; an empty portfolio still has scenarios.
+	for _, r := range []struct {
+		path string
+		body any
+	}{{"/ai/assist", map[string]any{"text": "coffee 4.50"}}, {"/ai/tidy", map[string]any{"ids": []int64{tidy[0].ID}}}} {
+		if code, _ := c.do("POST", r.path, r.body); code < 400 || code >= 500 {
+			t.Errorf("POST %s without AI → %d", r.path, code)
+		}
+	}
+	if code, out := c.do("GET", "/portfolio/scenarios", nil); code != 200 {
+		t.Errorf("scenarios → %d %s", code, out)
+	}
+	// purpose=export does not count as the owner's backup.
+	c.do("GET", "/export/backup.json?purpose=export", nil)
+	var b map[string]any
+	c.ok("GET", "/backups", nil, &b)
+	if b["last_download"] != "" {
+		t.Fatal("purpose=export bumped the backup marker")
+	}
+	c.do("GET", "/export/backup.json", nil)
+	c.ok("GET", "/backups", nil, &b)
+	if b["last_download"] == "" {
+		t.Fatal("a real download records the marker")
+	}
+}
+
+func today6() string { return time.Now().AddDate(0, 0, -3).Format("2006-01-02") }

@@ -44,6 +44,8 @@ type Overview struct {
 	Upcoming      []insights.Recurring   `json:"upcoming"` // recurring charges expected in the next 14 days
 	Stale         map[string]string      `json:"stale"`
 	InboxOpen     int                    `json:"inbox_open"`
+	Checks        []Check                `json:"checks"`
+	ReviewMonth   string                 `json:"review_month,omitempty"` // first week: last month's review is ready
 	Recent        []ledger.Tx            `json:"recent"`
 }
 
@@ -194,6 +196,10 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		}
 	}
 	sort.Slice(o.Upcoming, func(i, j int) bool { return o.Upcoming[i].Next < o.Upcoming[j].Next })
+	o.Checks = Checks(d, now)
+	if now.Day() <= 7 {
+		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")
+	}
 	rec, _ := ledger.List(d, ledger.Filter{Limit: 8})
 	o.Recent = rec.Items
 	return o, nil

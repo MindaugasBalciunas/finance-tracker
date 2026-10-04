@@ -252,3 +252,29 @@ func TestReadToolsAnswer(t *testing.T) {
 		t.Errorf("writes applied in order: %+v", got)
 	}
 }
+
+func TestAssistAndTidy(t *testing.T) {
+	assist := `{"content":[{"type":"text","text":"{\"kind\":\"expense\",\"date\":\"2026-10-03\",\"amount\":4.5,\"category\":\"food.coffee\",\"merchant\":\"Caffeine\",\"account_id\":\"cash\",\"tags\":[],\"remark\":\"\"}"}],"stop_reason":"end_turn","usage":{}}`
+	tidy := `{"content":[{"type":"text","text":"[{\"id\":1,\"category\":\"food.restaurants\",\"merchant\":\"Jammi\",\"reason\":\"restaurant\"},{\"id\":2,\"category\":\"salary\"},{\"id\":99,\"category\":\"food\"}]"}],"stop_reason":"end_turn","usage":{}}`
+	a, f := setup(t, "anthropic", assist, tidy)
+	s, err := a.Assist(context.Background(), "coffee 4.50 cash yesterday")
+	if err != nil || s.Category != "food.coffee" || s.AccountID != "cash" || s.Amount != E(4.5) {
+		t.Fatal(s, err)
+	}
+	if !strings.Contains(f.reqs[0]["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string), "coffee 4.50 cash yesterday") {
+		t.Error("prompt carries the description")
+	}
+	t1 := Tx(t, a.DB, ledger.Tx{Date: "2026-09-01", Amount: E(30), Category: "food", Merchant: "JAMMI", AccountID: "swed"})
+	t2 := Tx(t, a.DB, ledger.Tx{Date: "2026-09-02", Amount: E(9), Category: "leisure", AccountID: "swed"})
+	props, err := a.Tidy(context.Background(), []ledger.Tx{t1, t2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the valid same-kind proposal survives (salary is income; 99 is unknown).
+	if len(props) != 1 || props[0].ID != t1.ID || props[0].Category != "food.restaurants" {
+		t.Fatalf("%+v", props)
+	}
+	if _, err := a.Assist(context.Background(), "  "); err == nil {
+		t.Error("empty description accepted")
+	}
+}

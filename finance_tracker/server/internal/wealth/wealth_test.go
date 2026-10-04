@@ -189,3 +189,37 @@ func TestLoans(t *testing.T) {
 		t.Fatalf("months %d ltv %v", l.MonthsLeft, l.LTV)
 	}
 }
+
+func TestMovementAndScenarios(t *testing.T) {
+	d := DB(t)
+	Bal(t, d, "swed", "2026-01-01", 1000)
+	Bal(t, d, "swed", "2026-06-01", 1500)
+	Bal(t, d, "ibkr", "2026-01-01", 10000)
+	Bal(t, d, "ibkr", "2026-06-01", 8000)
+	book, _ := wealth.LoadBook(d)
+	mv := book.Movement("2026-01-01", "2026-06-30")
+	if len(mv) != 2 || mv[0].AccountID != "ibkr" || mv[0].Change != E(-2000) || mv[1].Change != E(500) {
+		t.Fatalf("%+v", mv)
+	}
+	v, ve := 100.0, 92.0
+	p := wealth.Portfolio{Holdings: []wealth.Holding{
+		{Ticker: "AAA", Shares: 2, Value: &v, ValueEUR: &ve},
+		{Ticker: "ETF", Shares: 1, Value: &v, ValueEUR: &ve},
+	}}
+	s := wealth.BuildScenarios(p, func(t string) (float64, float64, float64, int, string, error) {
+		if t == "AAA" {
+			return 40, 60, 80, 12, "analyst targets", nil
+		}
+		return 0, 0, 0, 0, "", errNone
+	})
+	// AAA: 2 shares × target × 0.92 EUR/USD; ETF counts at today's value.
+	if s.LowEUR != 73.6+92 || s.MeanEUR != 110.4+92 || s.HighEUR != 147.2+92 || s.Covered != 0.5 {
+		t.Fatalf("%+v", s)
+	}
+}
+
+var errNone = errFn("no targets")
+
+type errFn string
+
+func (e errFn) Error() string { return string(e) }

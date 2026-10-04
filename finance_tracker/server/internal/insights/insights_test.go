@@ -219,3 +219,16 @@ func TestPace(t *testing.T) {
 		t.Fatal(p[0].Typical)
 	}
 }
+
+func TestTagTotals(t *testing.T) {
+	a := tx("2026-09-01", "expense", "food", 50)
+	a.Tags = []string{"kids", "trip:rome"}
+	b := tx("2026-09-02", "expense", "leisure", 30)
+	b.Tags = []string{"kids"}
+	c := tx("2026-09-03", "income", "refunds", 10)
+	c.Tags = []string{"kids"}
+	got := insights.TagTotals([]ledger.Tx{a, b, c}, "2026-09-01", "2026-09-30")
+	if len(got) != 2 || got[0].Name != "kids" || got[0].Amount != E(70) || got[0].Count != 2 {
+		t.Fatalf("%+v", got)
+	}
+}

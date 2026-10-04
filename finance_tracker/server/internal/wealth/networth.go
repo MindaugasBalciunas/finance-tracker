@@ -259,3 +259,29 @@ func TxDeltas(kind, account, to string, amount money.Cents) map[string]money.Cen
 	delete(out, "")
 	return out
 }
+
+// Move is one account's change across a window.
+type Move struct {
+	AccountID string      `json:"account_id"`
+	Name      string      `json:"name"`
+	Group     string      `json:"group"`
+	Start     money.Cents `json:"start"`
+	End       money.Cents `json:"end"`
+	Change    money.Cents `json:"change"`
+}
+
+// Movement lists which accounts drove net worth between two dates, largest
+// change first.
+func (b *Book) Movement(from, to string) []Move {
+	s, e := b.SnapshotAt(from, true), b.SnapshotAt(to, true)
+	var out []Move
+	for id, a := range b.Accounts {
+		st, en := s.ByAccount[id], e.ByAccount[id]
+		if st == 0 && en == 0 {
+			continue
+		}
+		out = append(out, Move{AccountID: id, Name: a.Name, Group: a.Group, Start: st, End: en, Change: en - st})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Change.Abs() > out[j].Change.Abs() })
+	return out
+}

@@ -105,7 +105,9 @@ function Overview() {
           )}
         </div>
         <div className="mt-3"><Legend items={groups.map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? eurk(last.by_group[g.id] ?? 0) : undefined }))} /></div>
+        {last && <Allocation byGroup={last.by_group} liquidOnly={liquidOnly} />}
       </section>
+      <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={range === 'all' ? 'since records began' : `over ${range.toUpperCase()}`} />
 
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Accounts</h2>
@@ -131,6 +133,45 @@ function Overview() {
       {acct && <AccountSheet a={acct} onClose={() => setAcct(null)} />}
       {newAcct && <AccountEditor onClose={() => setNewAcct(false)} />}
     </div>
+  )
+}
+
+/** Where the money sits now: one composition bar of the positive groups. */
+function Allocation({ byGroup, liquidOnly }: { byGroup: Record<string, number>; liquidOnly: boolean }) {
+  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || ['cash', 'investments', 'crypto'].includes(g.id)))
+    .map((g) => ({ ...g, v: Math.max(0, byGroup[g.id] ?? 0) })).filter((g) => g.v > 0)
+  const total = parts.reduce((a, g) => a + g.v, 0)
+  if (!total) return null
+  return (
+    <div className="mt-4">
+      <div className="section-title mb-1.5">Allocation</div>
+      <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
+        {parts.map((g) => <div key={g.id} title={`${g.name} ${pct(g.v / total, 1)}`} style={{ width: `${(g.v / total) * 100}%`, background: `var(--s${g.slot})` }} />)}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink2">
+        {parts.map((g) => <span key={g.id}>{g.name} <b className="tnum text-ink">{pct(g.v / total)}</b></span>)}
+      </div>
+    </div>
+  )
+}
+
+/** Which accounts drove the change over the selected range. */
+function Movement({ from, label }: { from: string; label: string }) {
+  const { data } = useQuery({ queryKey: ['movement', from], queryFn: () => api.get<any[]>('/networth/movement', { from }), enabled: !!from })
+  if (!data?.length) return null
+  const max = Math.max(...data.map((m) => Math.abs(m.change)), 1)
+  return (
+    <Card title={`What moved ${label}`}>
+      <div className="space-y-2">
+        {data.filter((m) => Math.abs(m.change) >= 1).slice(0, 10).map((m) => (
+          <div key={m.account_id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 text-sm">
+            <span className="truncate">{m.name} <span className="text-xs text-muted tnum">{eurk(m.start)} → {eurk(m.end)}</span></span>
+            <span className={clsx('tnum', m.change >= 0 ? 'text-good' : 'text-bad')}>{m.change >= 0 ? '+' : '−'}{eur(Math.abs(m.change))}</span>
+            <div className="col-span-2 h-1 rounded-full bg-sunken"><div className={clsx('h-full rounded-full', m.change >= 0 ? 'bg-good' : 'bg-bad')} style={{ width: `${(Math.abs(m.change) / max) * 100}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 
@@ -314,6 +355,7 @@ function Investments() {
         <div className="card p-3.5"><div className="text-xs text-ink2">Unrealised</div><div className={clsx('text-xl font-semibold', p.gain_eur >= 0 ? 'text-good' : 'text-bad')}>{eur(p.gain_eur)}</div><div className="text-xs text-muted">{pct(p.cost_eur ? p.gain_eur / p.cost_eur : 0, 1)}</div></div>
         <div className="card p-3.5"><div className="text-xs text-ink2">Realised</div><div className="text-xl font-semibold">{eur(p.realized_eur)}</div></div>
       </div>
+      <ScenarioCard />
       <Card pad={false} title="Positions" action={<button className="btn-primary h-8 text-xs" onClick={() => setTrade({ action: 'buy', date: todayISO(), currency: 'USD', account_id: 'ibkr' })}><Icon name="plus" size={14} />Trade</button>}>
         {!p.holdings.length ? <Empty title="No open positions" /> : (
           <div className="divide-y divide-line border-t border-line">
@@ -345,6 +387,28 @@ function Investments() {
       {pos && <PositionSheet h={pos} onClose={() => setPos(null)} />}
       {trade && <TradeEditor t={trade} onClose={() => setTrade(null)} />}
     </div>
+  )
+}
+
+/** The book at analyst low / mean / high targets (52-week range for ETFs). */
+function ScenarioCard() {
+  const { data: s, isLoading } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<any>('/portfolio/scenarios'), staleTime: 3_600_000 })
+  if (isLoading) return <Card title="Where analysts see it"><Loading label="Fetching targets…" /></Card>
+  if (!s?.value_eur) return null
+  const rows = [{ label: 'Bear (low targets)', v: s.low_eur }, { label: 'Base (mean targets)', v: s.mean_eur }, { label: 'Bull (high targets)', v: s.high_eur }]
+  return (
+    <Card title="Where analysts see it" action={<span className="text-xs text-muted">{pct(s.covered)} of the book has targets</span>}>
+      <div className="grid grid-cols-3 gap-3 text-sm">
+        {rows.map((x) => (
+          <div key={x.label}>
+            <div className="text-xs text-muted">{x.label}</div>
+            <div className="font-semibold tnum">{eur(x.v)}</div>
+            <div className={clsx('text-xs tnum', x.v >= s.value_eur ? 'text-good' : 'text-bad')}>{x.v >= s.value_eur ? '+' : '−'}{pct(Math.abs(x.v / s.value_eur - 1))}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 text-xs text-muted">Today {eur(s.value_eur)}. Positions without targets count at today's value in every scenario. Targets are opinions, not forecasts.</div>
+    </Card>
   )
 }
 
