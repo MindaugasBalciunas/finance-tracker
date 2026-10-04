@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useAddedAccounts } from '../hooks/useAccounts'
 import { useBalances, useCreateBalance, useUpdateBalance, useDeleteBalance, useLatestBalance, useProjectedBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { freeCash, investments, pensions, cryptoEur, cryptoSubtitle } from '../utils/balanceGroups'
 import { useDateRange } from '../context/DateRangeContext'
@@ -32,10 +34,38 @@ const ACCOUNT_ROWS: { label: string; value: (b: Balance) => number }[] = [
   { label: 'R BTC (€)', value: (b) => b.r_btc_eur ?? 0 },
 ]
 
+type BalancesTab = 'overview' | 'history' | 'accounts'
+
+const TABS: { key: BalancesTab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'history', label: 'History' },
+  { key: 'accounts', label: 'Accounts' },
+]
+
+const PAGE_SIZE = 25
+
 export default function Balances() {
   const [showForm, setShowForm] = useState(false)
   const [editingBalance, setEditingBalance] = useState<Balance | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: BalancesTab = TABS.some((t) => t.key === searchParams.get('tab'))
+    ? (searchParams.get('tab') as BalancesTab)
+    : 'overview'
+  const showTab = (t: BalancesTab) => {
+    const next = new URLSearchParams(searchParams)
+    if (t === 'overview') next.delete('tab'); else next.set('tab', t)
+    next.delete('page')
+    setSearchParams(next, { replace: true })
+  }
+  const page = Math.max(1, Number(searchParams.get('page')) || 1)
+  const setPage = (n: number) => {
+    const next = new URLSearchParams(searchParams)
+    if (n <= 1) next.delete('page'); else next.set('page', String(n))
+    setSearchParams(next, { replace: true })
+  }
+  // Added accounts with history get a column / row in the snapshot list.
+  const addedAccounts = useAddedAccounts()
 
   const { dateRange } = useDateRange()
   const { price: liveBtcPrice } = useBtcEur()
@@ -85,16 +115,37 @@ export default function Balances() {
     }
   }
 
+  const total = balances?.length ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pageRows = (balances ?? []).slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  // Added accounts that hold a value in any snapshot, archived ones included.
+  const extraRows = addedAccounts
+    .filter((a) => balances?.some((b) => (b.extra?.[a.key] ?? 0) !== 0))
+    .map((a) => ({ label: a.label, value: (b: Balance) => b.extra?.[a.key] ?? 0 }))
+
   if (isLoading) return <LoadingSpinner />
   if (isError) return <QueryError error={error} onRetry={() => refetch()} />
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">Track your net worth across all accounts</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit min-w-0">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => showTab(t.key)}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                tab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
         <button
           onClick={() => { setShowForm(true); setFormError(null) }}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 whitespace-nowrap flex-shrink-0"
         >
           + Add
         </button>
@@ -164,6 +215,8 @@ export default function Balances() {
         </div>
       )}
 
+      {tab === 'overview' && (
+        <>
       {/* Latest stats */}
       {latest && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -224,8 +277,6 @@ export default function Balances() {
         </div>
       )}
 
-      <AccountsManager />
-
       {/* Current allocation by account */}
       {allocations && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
@@ -233,141 +284,177 @@ export default function Balances() {
           <AllocationPieChart allocations={allocations} />
         </div>
       )}
+        </>
+      )}
+
+      {tab === 'accounts' && <AccountsManager balance={latest} embedded />}
 
       {/* History table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <h3 className="text-sm font-semibold text-gray-700">Snapshot History</h3>
-        </div>
-
-        {/* Mobile cards */}
-        <div className="sm:hidden divide-y divide-gray-100">
-          {balances?.map((b) => (
-            <div key={b.id} className="px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">{formatDate(b.date)}</p>
-                  <p className="text-xs text-gray-400">{formatTime(b.created_at)}</p>
+      {tab === 'history' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Snapshot History <span className="font-normal text-gray-400">· {total} snapshot{total === 1 ? '' : 's'}</span>
+            </h3>
+          </div>
+  
+          {/* Mobile cards */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {pageRows.map((b) => (
+              <div key={b.id} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">{formatDate(b.date)}</p>
+                    <p className="text-xs text-gray-400">{formatTime(b.created_at)}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-base font-bold text-blue-700 mr-1">{formatEuro(b.total)}</span>
+                    <button
+                      onClick={() => { setEditingBalance(b); setFormError(null) }}
+                      className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => handleDelete(b.id)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-base font-bold text-blue-700 mr-1">{formatEuro(b.total)}</span>
-                  <button
-                    onClick={() => { setEditingBalance(b); setFormError(null) }}
-                    className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={() => handleDelete(b.id)}
-                    className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    ✕
-                  </button>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Free cash</span>
+                    <span className="font-medium text-green-700">{formatEuro(freeCash(b))}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Investments</span>
+                    <span className="font-medium text-blue-700">{formatEuro(investments(b))}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Pensions</span>
+                    <span className="font-medium text-purple-700">{formatEuro(pensions(b))}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Crypto</span>
+                    <span className="font-medium text-yellow-700">{formatEuro(cryptoEur(b))}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Free cash</span>
-                  <span className="font-medium text-green-700">{formatEuro(freeCash(b))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Investments</span>
-                  <span className="font-medium text-blue-700">{formatEuro(investments(b))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Pensions</span>
-                  <span className="font-medium text-purple-700">{formatEuro(pensions(b))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Crypto</span>
-                  <span className="font-medium text-yellow-700">{formatEuro(cryptoEur(b))}</span>
-                </div>
-              </div>
-              <details className="mt-2">
-                <summary className="text-xs text-blue-600 cursor-pointer select-none py-1">
-                  All accounts
-                </summary>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs">
-                  {ACCOUNT_ROWS.filter((r) => r.value(b) !== 0).map((r) => (
-                    <div key={r.label} className="flex justify-between">
-                      <span className="text-gray-400">{r.label}</span>
-                      <span className="text-gray-700">{formatEuro(r.value(b))}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            </div>
-          ))}
-          {!balances?.length && (
-            <p className="px-4 py-12 text-center text-gray-400 text-sm">
-              No balance snapshots yet. Add one above.
-            </p>
-          )}
-        </div>
-
-        {/* Desktop table */}
-        <div className="overflow-x-auto hidden sm:block">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">IBKR stocks</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC (€)</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M stocks</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB pension</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea pension</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R</th>
-                <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC (€)</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {balances?.map((b) => {
-                return (
-                  <tr key={b.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <span className="text-gray-700 font-medium">{formatDate(b.date)}</span>
-                      <span className="block text-xs text-gray-400 mt-0.5">{formatTime(b.created_at)}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => { setEditingBalance(b); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
-                        <button onClick={() => handleDelete(b.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
+                <details className="mt-2">
+                  <summary className="text-xs text-blue-600 cursor-pointer select-none py-1">
+                    All accounts
+                  </summary>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs">
+                    {[...ACCOUNT_ROWS, ...extraRows].filter((r) => r.value(b) !== 0).map((r) => (
+                      <div key={r.label} className="flex justify-between">
+                        <span className="text-gray-400">{r.label}</span>
+                        <span className="text-gray-700">{formatEuro(r.value(b))}</span>
                       </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            ))}
+            {!balances?.length && (
+              <p className="px-4 py-12 text-center text-gray-400 text-sm">
+                No balance snapshots yet. Add one above.
+              </p>
+            )}
+          </div>
+  
+          {/* Desktop table */}
+          <div className="overflow-x-auto hidden sm:block">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Date</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Total</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">IBKR stocks</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Swedbank ETF</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut M</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Cash</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">M BTC (€)</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Rev M stocks</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">SEB pension</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Artea pension</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Revolut R</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">R BTC (€)</th>
+                  {extraRows.map((r) => (
+                    <th key={r.label} className="text-right px-3 py-2 font-semibold text-gray-600 whitespace-nowrap">{r.label}</th>
+                  ))}
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pageRows.map((b) => {
+                  return (
+                    <tr key={b.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2">
+                        <span className="text-gray-700 font-medium">{formatDate(b.date)}</span>
+                        <span className="block text-xs text-gray-400 mt-0.5">{formatTime(b.created_at)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold text-blue-700">{formatEuro(b.total)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.ibkr_stocks)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.swed_etf)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_m)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.cash)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.m_btc_eur ?? 0)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_stocks)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.seb_pen)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.art)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.rev_r)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatEuro(b.r_btc_eur ?? 0)}</td>
+                      {extraRows.map((r) => (
+                        <td key={r.label} className="px-3 py-2 text-right text-gray-600">{formatEuro(r.value(b))}</td>
+                      ))}
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => { setEditingBalance(b); setFormError(null) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✎</button>
+                          <button onClick={() => handleDelete(b.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">✕</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!balances?.length && (
+                  <tr>
+                    <td colSpan={15 + extraRows.length} className="px-4 py-12 text-center text-gray-400">
+                      No balance snapshots yet. Add one above.
                     </td>
                   </tr>
-                )
-              })}
-              {!balances?.length && (
-                <tr>
-                  <td colSpan={15} className="px-4 py-12 text-center text-gray-400">
-                    No balance snapshots yet. Add one above.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
+  
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
+              <p className="text-sm text-gray-500">Page {safePage} of {pageCount}</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage(safePage - 1)}
+                  disabled={safePage <= 1}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() => setPage(safePage + 1)}
+                  disabled={safePage >= pageCount}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   )
 }
