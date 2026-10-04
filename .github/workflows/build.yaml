@@ -19,25 +19,29 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: finance_tracker/backend/go.mod
-          cache-dependency-path: finance_tracker/backend/go.sum
+          go-version-file: finance_tracker/server/go.mod
+          cache-dependency-path: finance_tracker/server/go.sum
 
-      - name: Backend tests
-        working-directory: finance_tracker/backend
-        run: go test ./...
+      - name: Server tests
+        working-directory: finance_tracker/server
+        run: |
+          go vet ./...
+          go test -race ./...
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: finance_tracker/frontend/package-lock.json
+          cache-dependency-path: finance_tracker/web/package-lock.json
 
-      - name: Frontend tests
-        working-directory: finance_tracker/frontend
+      - name: Web tests and build
+        working-directory: finance_tracker/web
         run: |
           npm ci
+          npx tsc --noEmit
           npx vitest run
+          npm run build
 
   build:
     runs-on: ubuntu-latest

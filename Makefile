@@ -1,59 +1,40 @@
-.PHONY: backend frontend install test test-backend test-frontend swagger dev
+.PHONY: install dev server web test test-server test-web build mcp convert verify
 
-# Install all dependencies
+# Local data lives next to the old v1 database so the first start converts it.
+DATA ?= $(CURDIR)/finance_tracker/backend
+PORT ?= 8080
+
 install:
-	cd finance_tracker/backend && go mod tidy
-	cd finance_tracker/frontend && npm install
+	cd finance_tracker/server && go mod download
+	cd finance_tracker/web && npm ci
 
-# Generate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
-swagger:
-	cd finance_tracker/backend && swag init -g cmd/api/main.go --output docs
-
-AIR := $(shell which air 2>/dev/null || echo $(HOME)/go/bin/air)
-
-# Run backend (with live reload via air)
-# Loads .env from project root if present
-backend:
-	@lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+# API on :$(PORT) (first start converts $(DATA)/finance.db into finance-v2.db)
+server:
 	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
-	  cd finance_tracker/backend && $(AIR)
+	  cd finance_tracker/server && DB_PATH=$(DATA)/finance-v2.db V1_DB_PATH=$(DATA)/finance.db PORT=$(PORT) go run ./cmd/server
 
-# Run backend without live reload (no air needed)
-run-backend:
-	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && \
-	  cd finance_tracker/backend && go run ./cmd/api/main.go
+# Web app on :5175, proxying /api to the server
+web:
+	cd finance_tracker/web && API_URL=http://localhost:$(PORT) npx vite
 
-# Run frontend dev server
-frontend:
-	cd finance_tracker/frontend && npm run dev
-
-# Run both concurrently (requires 'make -j2')
 dev:
-	$(MAKE) -j2 backend frontend
+	$(MAKE) -j2 server web
 
-# Run all tests
-test: test-backend test-frontend
+test: test-server test-web
 
-# Run Go tests
-test-backend:
-	cd finance_tracker/backend && go test ./... -v -cover
+test-server:
+	cd finance_tracker/server && go vet ./... && go test -race ./...
 
-# Run React tests
-test-frontend:
-	cd finance_tracker/frontend && npm test
+test-web:
+	cd finance_tracker/web && npx tsc --noEmit && npx vitest run
 
-# Build frontend for production
-build-frontend:
-	cd finance_tracker/frontend && npm run build
+build:
+	cd finance_tracker/server && go build -o bin/finance-tracker ./cmd/server && go build -o bin/finance-tracker-mcp ./cmd/mcp
+	cd finance_tracker/web && npm run build
 
-# Build backend binary
-build-backend:
-	cd finance_tracker/backend && go build -o bin/finance-tracker ./cmd/api/main.go
+mcp:
+	cd finance_tracker/server && go build -o bin/finance-tracker-mcp ./cmd/mcp
 
-# Build everything
-build: swagger build-backend build-frontend
-
-# Docker (future)
-docker-build:
-	docker build -t finance-tracker-backend ./finance_tracker/backend
-	docker build -t finance-tracker-frontend ./finance_tracker/frontend
+# Convert a v1 database or finances.json and print the reconciliation report.
+convert:
+	cd finance_tracker/server && go run ./cmd/v1convert -from $(FROM) -to $(TO)

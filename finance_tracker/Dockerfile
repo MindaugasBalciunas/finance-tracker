@@ -1,39 +1,31 @@
-# Stage 1 — build Go backend (natively on build runner, cross-compile to target arch)
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS backend-builder
+# Stage 1 — Go server (cross-compiled on the build host)
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine AS server
 ARG TARGETARCH
-WORKDIR /app/backend
-COPY backend/go.mod backend/go.sum ./
+WORKDIR /src
+COPY server/go.mod server/go.sum ./
 RUN go mod download
-COPY backend/ .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o finance-tracker ./cmd/api/main.go
+COPY server/ .
+COPY config.yaml /config.yaml
+RUN VERSION=$(sed -n 's/^version: *"\(.*\)"/\1/p' /config.yaml) \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/finance-tracker ./cmd/server \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/finance-tracker-mcp ./cmd/mcp
 
-# Stage 2 — build React frontend (natively on build runner, output is arch-independent)
-FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
+# Stage 2 — web app (arch-independent output)
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+WORKDIR /src
+COPY web/package*.json ./
 RUN npm ci
-COPY frontend/ .
+COPY web/ .
 RUN npm run build
 
-# Stage 3 — final image: nginx + Go binary in one container
+# Stage 3 — nginx + server in one container
 FROM nginx:stable-alpine
 WORKDIR /app
-
-RUN apk add --no-cache ca-certificates jq openssl
-
-# Go binary
-COPY --from=backend-builder /app/backend/finance-tracker ./finance-tracker
-
-# React static files
-COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
-
-# nginx config (proxies /api/ to localhost:8080)
+RUN apk add --no-cache ca-certificates jq openssl tzdata
+COPY --from=server /out/finance-tracker /out/finance-tracker-mcp ./
+COPY --from=web /src/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# startup script
 COPY run.sh /run.sh
-RUN chmod +x /run.sh /app/finance-tracker
-
+RUN chmod +x /run.sh /app/finance-tracker /app/finance-tracker-mcp
 EXPOSE 80
-
 CMD ["/run.sh"]

@@ -33,9 +33,14 @@ else
     echo "[finance-tracker] Basic auth disabled (no auth_password set)"
 fi
 
-# Start Go backend in background
-export DB_PATH="/data/finance.db"
+# v2 keeps its own database. On the very first start it converts the v1
+# database next to it (/data/finance.db), verifies every row and balance,
+# and refuses to start if anything does not match — the v1 file is only read,
+# so reinstalling the previous add-on version is a complete rollback.
+export DB_PATH="/data/finance-v2.db"
+export V1_DB_PATH="/data/finance.db"
 export PORT="8080"
+export TZ="${TZ:-Europe/Vilnius}"
 
 echo "[finance-tracker] Starting backend on port $PORT, DB at $DB_PATH"
 /app/finance-tracker &
@@ -44,14 +49,14 @@ BACKEND_PID=$!
 # Wait for the backend to actually answer (startup runs migrations, which can
 # take a while) instead of hoping one second is enough.
 i=0
-until wget -q -O /dev/null "http://127.0.0.1:8080/api/v1/health" 2>/dev/null; do
+until wget -q -O /dev/null "http://127.0.0.1:8080/api/health" 2>/dev/null; do
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
         echo "[finance-tracker] Backend exited during startup — aborting"
         exit 1
     fi
     i=$((i + 1))
-    if [ "$i" -gt 120 ]; then
-        echo "[finance-tracker] Backend did not become healthy in 60s — aborting"
+    if [ "$i" -gt 600 ]; then
+        echo "[finance-tracker] Backend did not become healthy in 5 minutes — aborting"
         exit 1
     fi
     sleep 0.5

@@ -1,12 +1,15 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: './',
-  build: { rollupOptions: { output: { manualChunks: { recharts: ['recharts'], markdown: ['react-markdown', 'remark-gfm'] } } } },
+  build: { chunkSizeWarningLimit: 700 },
+  test: { environment: 'jsdom', globals: true, setupFiles: './src/test/setup.ts' },
   server: {
     port: 5175,
-    proxy: { '/api': { target: process.env.API_URL || 'http://localhost:8091', changeOrigin: true } },
+    proxy: { '/api': { target: process.env.API_URL || 'http://localhost:8080', changeOrigin: true } },
   },
 })

@@ -1,6 +1,30 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Theme tokens map onto the CSS variables below, so opacity modifiers
+   (bg-accent/10) and both colour schemes work from one definition. */
+@theme inline {
+  --color-page: rgb(var(--page));
+  --color-surface: rgb(var(--surface));
+  --color-raised: rgb(var(--raised));
+  --color-sunken: rgb(var(--sunken));
+  --color-ink: rgb(var(--ink));
+  --color-ink2: rgb(var(--ink2));
+  --color-muted: rgb(var(--muted));
+  --color-line: rgb(var(--line));
+  --color-axis: rgb(var(--axis));
+  --color-accent: rgb(var(--accent));
+  --color-good: rgb(var(--good));
+  --color-bad: rgb(var(--bad));
+  --color-warn: rgb(var(--warn));
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+}
+
+@layer base {
+  *, ::after, ::before, ::backdrop { border-color: rgb(var(--line)); }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}
 
 /* Tokens. Chart chrome and ink follow the validated dataviz palette;
    the app chrome is built on the same neutrals. Values are "r g b". */
@@ -50,18 +74,15 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .recharts-wrapper:focus, .recharts-surface:focus { outline: none; }
 input, select, textarea { background: transparent; }
-@layer components {
-  .card { @apply rounded-2xl bg-surface border border-line; }
-  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 h-10 text-sm font-medium transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
-  .btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
-  .btn-ghost { @apply btn text-ink2 hover:bg-sunken; }
-  .btn-outline { @apply btn border border-line text-ink hover:bg-sunken; }
-  .btn-danger { @apply btn text-bad hover:bg-bad/10; }
-  .input { @apply w-full h-10 rounded-xl border border-line bg-raised px-3 text-sm text-ink placeholder:text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20; }
-  .label { @apply block text-xs font-medium text-ink2 mb-1; }
-  .chip { @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 h-7 text-xs text-ink2 whitespace-nowrap; }
-  .chip-on { @apply chip border-accent bg-accent/10 text-accent; }
-  .section-title { @apply text-xs font-semibold uppercase tracking-wide text-muted; }
-}
-.no-scrollbar { scrollbar-width: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
+@utility card { @apply rounded-2xl bg-surface border border-line; }
+@utility btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 h-10 text-sm font-medium transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
+@utility btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
+@utility btn-ghost { @apply btn text-ink2 hover:bg-sunken; }
+@utility btn-outline { @apply btn border border-line text-ink hover:bg-sunken; }
+@utility btn-danger { @apply btn text-bad hover:bg-bad/10; }
+@utility input { @apply w-full h-10 rounded-xl border border-line bg-raised px-3 text-sm text-ink placeholder:text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20; }
+@utility label { @apply block text-xs font-medium text-ink2 mb-1; }
+@utility chip { @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 h-7 text-xs text-ink2 whitespace-nowrap; }
+@utility chip-on { @apply chip border-accent bg-accent/10 text-accent; }
+@utility section-title { @apply text-xs font-semibold uppercase tracking-wide text-muted; }
+@utility no-scrollbar { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }

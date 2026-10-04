@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { HashRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api, ApiError } from './lib/api'
@@ -103,6 +103,14 @@ function Shell() {
             <Route path="/insights/*" element={<Insights />} />
             <Route path="/ai" element={<Assistant />} />
             <Route path="/settings/*" element={<Settings />} />
+            {/* v1 bookmarks */}
+            <Route path="/banking" element={<Navigate to="/settings/banks" replace />} />
+            <Route path="/transactions" element={<Navigate to="/ledger" replace />} />
+            <Route path="/budget" element={<Navigate to="/plan" replace />} />
+            <Route path="/balances" element={<Navigate to="/wealth" replace />} />
+            <Route path="/stocks" element={<Navigate to="/wealth/investments" replace />} />
+            <Route path="/reports" element={<Navigate to="/insights" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </main>
@@ -147,7 +155,7 @@ export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <HashRouter>
           <Gate />
         </HashRouter>
       </ToastProvider>
