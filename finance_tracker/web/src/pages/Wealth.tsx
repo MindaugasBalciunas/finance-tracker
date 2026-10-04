@@ -155,6 +155,7 @@ function Overview() {
 function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, SHORT.includes(range) ? 'week' : 'month', true)
   const { prefs, set } = usePrefs()
+  const [allShown, setAllShown] = useState(false)
   const off = new Set(prefs.hidden_accounts ?? [])
   const toggle = (id: string) => {
     const next = new Set(off)
@@ -187,17 +188,26 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
   const total = shown.reduce((t, a) => t + (a.balance ?? 0), 0)
   return (
     <Card title="Where my money is" action={<span className="text-xs text-muted">{liquidOnly ? 'liquid' : 'all assets'} · {shown.length} of {eligible.length} accounts</span>}>
-      {/* One switch per account: tap to leave it out of both charts. */}
-      <div className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto overflow-y-hidden px-4 sm:mx-0 sm:flex-wrap sm:px-0">
-        {eligible.map((a) => {
+      {/* The legend is the switchboard: amount and share of what is shown; tap to leave an account out. */}
+      <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {(allShown ? eligible : eligible.slice(0, 7)).map((a) => {
           const on = !off.has(a.id)
+          const v = a.balance ?? 0
           return (
-            <button key={a.id} type="button" onClick={() => toggle(a.id)} aria-pressed={on} className={clsx('chip shrink-0', on ? 'text-ink' : 'opacity-50 line-through')}>
-              <span className="h-2 w-2 rounded-[3px]" style={{ background: on ? colors[a.id] ?? 'var(--s-other)' : 'transparent', border: on ? undefined : '1px solid rgb(var(--axis))' }} />
-              {a.name}
+            <button key={a.id} type="button" onClick={() => toggle(a.id)} aria-pressed={on}
+              className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
+              <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: on ? colors[a.id] ?? 'var(--s-other)' : 'transparent', border: on ? undefined : '1px solid rgb(var(--axis))' }} />
+              <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>{a.name}</span>
+              <span className="tnum font-medium text-ink">{eurk(v)}</span>
+              <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
             </button>
           )
         })}
+        {eligible.length > 7 && (
+          <button type="button" className="btn-ghost h-8 justify-start px-2.5 text-xs" onClick={() => setAllShown(!allShown)}>
+            <Icon name="chevronD" size={14} className={clsx('transition', allShown && 'rotate-180')} />{allShown ? 'Fewer' : `+${eligible.length - 7} more`}
+          </button>
+        )}
       </div>
       {!shown.length ? <div className="py-8 text-center text-sm text-muted">Every account is switched off — tap one above.</div> : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_minmax(0,320px)]">
@@ -216,7 +226,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <Donut slices={slices} center={eurk(total)} sub="today" height={180} />
+          <Donut slices={slices} center={eurk(total)} sub="today" height={200} legend={false} />
         </div>
       )}
     </Card>

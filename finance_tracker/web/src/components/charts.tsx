@@ -105,8 +105,8 @@ export function Donut({ slices, center, sub, height = 200, legend = true }: { sl
   const total = slices.reduce((a, s) => a + s.value, 0)
   if (!total) return null
   return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
-      <div className="relative w-full max-w-[220px] shrink-0" style={{ height }}>
+    <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:items-center">
+      <div className="relative mx-auto w-full max-w-[220px] shrink-0" style={{ height, minWidth: Math.min(height, 220) }}>
         <ResponsiveContainer>
           <PieChart>
             <Pie data={slices} dataKey="value" nameKey="label" innerRadius="62%" outerRadius="92%" paddingAngle={slices.length > 1 ? 1.5 : 0}
