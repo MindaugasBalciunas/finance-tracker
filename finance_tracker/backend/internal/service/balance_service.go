@@ -107,6 +107,10 @@ type BalanceService interface {
 	// an error — the caller says so rather than failing the write that
 	// caused it.
 	SnapshotFromDeltas(deltas []AccountDelta) (string, error)
+	// SnapshotFromAbsolute sets accounts to the given values (as stated by
+	// the bank) in one new snapshot, and reports what each one was before.
+	// No snapshot is written when every account already matches.
+	SnapshotFromAbsolute(values map[string]float64, at time.Time) ([]AccountSet, error)
 	GetTrend(filter domain.BalanceFilter) (*domain.BalanceTrend, error)
 	GetAllocation() ([]domain.AccountAllocation, error)
 }
@@ -410,6 +414,91 @@ func (s *balanceService) snapshotLocked(deltas []AccountDelta) (string, error) {
 			stale, plural(stale, "y", "ies"), latest.Date.Format("2006-01-02")), nil
 	}
 	return "", nil
+}
+
+// AccountSet is one account moved to an absolute value.
+type AccountSet struct {
+	Account string  `json:"account"`
+	Before  float64 `json:"before"`
+	After   float64 `json:"after"`
+	Changed bool    `json:"changed"`
+}
+
+func (s *balanceService) SnapshotFromAbsolute(values map[string]float64, at time.Time) ([]AccountSet, error) {
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
+
+	latest, err := s.repo.GetLatest()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("no balance snapshot exists yet — add one on the Balances page first")
+		}
+		return nil, err
+	}
+	snap := *latest
+	var out []AccountSet
+	changed := false
+	for _, account := range sortedKeys(values) {
+		before, ok := accountValue(&snap, account)
+		if !ok {
+			return nil, &unknownAccountError{Account: account}
+		}
+		after := roundCents(values[account])
+		set := AccountSet{Account: account, Before: before, After: after, Changed: math.Abs(after-before) >= 0.005}
+		if set.Changed {
+			applyAccountDelta(&snap, account, after-before)
+			changed = true
+		}
+		out = append(out, set)
+	}
+	if !changed {
+		return out, nil
+	}
+	roundAllAccounts(&snap)
+	btcEur := snap.BtcPrice * (snap.RBTC + snap.MBTC)
+	snap.Total = roundCents(snap.Seb + snap.Swed + snap.SwedETF + snap.SebPen + snap.Luminor + snap.Art + snap.Cash + snap.RevM + snap.RevR + btcEur + snap.RevStocks + snap.IBKRStocks)
+	snap.ID = 0
+	// Never behind the snapshot it was cloned from, so it really is the
+	// latest and later commits are measured against it.
+	if at.Before(latest.Date) {
+		at = latest.Date
+	}
+	snap.Date = at
+	snap.CreatedAt = time.Time{}
+	snap.UpdatedAt = time.Time{}
+	if err := s.repo.Create(&snap); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// accountValue reads one account column by its code.
+func accountValue(b *domain.Balance, account string) (float64, bool) {
+	switch account {
+	case "seb":
+		return b.Seb, true
+	case "swed":
+		return b.Swed, true
+	case "swed_etf":
+		return b.SwedETF, true
+	case "seb_pen":
+		return b.SebPen, true
+	case "luminor":
+		return b.Luminor, true
+	case "art":
+		return b.Art, true
+	case "rev_m":
+		return b.RevM, true
+	case "rev_r":
+		return b.RevR, true
+	case "rev_stocks":
+		return b.RevStocks, true
+	case "ibkr_stocks":
+		return b.IBKRStocks, true
+	case "cash":
+		return b.Cash, true
+	}
+	return 0, false
 }
 
 func plural(n int, one, many string) string {

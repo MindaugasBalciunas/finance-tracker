@@ -403,3 +403,20 @@ func TestASPSPStillRejectsNonsense(t *testing.T) {
 		t.Fatal("expected a decode error for malformed JSON")
 	}
 }
+
+func TestPickBalancePrefersBooked(t *testing.T) {
+	bs := []Balance{
+		{BalanceType: "ITAV", BalanceAmount: Amount{Amount: "90.00"}},
+		{BalanceType: "CLBD", BalanceAmount: Amount{Amount: "100.00"}},
+		{BalanceType: "ITBD", BalanceAmount: Amount{Amount: "95.00"}},
+	}
+	if got := PickBalance(bs); got == nil || got.BalanceType != "ITBD" {
+		t.Fatalf("want ITBD, got %+v", got)
+	}
+	if got := PickBalance([]Balance{{BalanceType: "OTHR"}}); got == nil || got.BalanceType != "OTHR" {
+		t.Fatalf("unknown type should fall back to the first, got %+v", got)
+	}
+	if PickBalance(nil) != nil {
+		t.Fatal("no balances should give nil")
+	}
+}

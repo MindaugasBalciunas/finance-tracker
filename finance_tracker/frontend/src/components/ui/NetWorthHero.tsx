@@ -1,5 +1,5 @@
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts'
-import type { Balance, BalanceTrend } from '../../types'
+import type { AssetSummary, Balance, BalanceTrend } from '../../types'
 import { GROUPS as BALANCE_GROUPS, OTHER_COLOR, cryptoEur, cryptoSubtitle } from '../../utils/balanceGroups'
 import { formatEuro } from '../../utils/format'
 
@@ -9,13 +9,16 @@ interface Props {
   trend?: BalanceTrend
   change: number | null
   changePct: number | null
+  // Physical assets and their loans — shown as a secondary figure, never
+  // folded into the headline, which stays the account total.
+  assets?: AssetSummary
 }
 
 const GROUPS = BALANCE_GROUPS.map((g) => ({ key: g.key, fn: g.total, color: g.color }))
 
 // One hero card replacing five stat tiles: total, period change, trend
 // sparkline, and a composition bar showing where the money sits.
-export default function NetWorthHero({ balance, btcPrice, trend, change, changePct }: Props) {
+export default function NetWorthHero({ balance, btcPrice, trend, change, changePct, assets }: Props) {
   const total = balance.total
   const parts = GROUPS
     .map((g) => ({ ...g, value: g.fn(balance) }))
@@ -40,6 +43,14 @@ export default function NetWorthHero({ balance, btcPrice, trend, change, changeP
               {change >= 0 ? '▲' : '▼'} {formatEuro(Math.abs(change))}
               {changePct != null && ` · ${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%`}
               <span className="text-gray-400 font-normal"> in period</span>
+            </p>
+          )}
+          {assets && assets.count > 0 && (
+            <p
+              className="text-xs text-gray-400 mt-1"
+              title={`Assets ${formatEuro(assets.total_value)} − loans ${formatEuro(assets.total_loans)}`}
+            >
+              Incl. assets − loans: <span className="font-semibold text-gray-600">{formatEuro(total + assets.net_equity)}</span>
             </p>
           )}
         </div>

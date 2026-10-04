@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,9 @@ type syncResult struct {
 	Released int    `json:"released"`
 	DateFrom string `json:"date_from"`
 	DateTo   string `json:"date_to"`
+	// Balances reports the balance-sheet accounts set to the bank's own
+	// figure by this sync.
+	Balances []bankBalanceResult `json:"balances,omitempty"`
 }
 
 // SyncAccount pulls recent transactions for one mapped account and stages
@@ -108,6 +112,7 @@ func (h *BankHandler) SyncAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	res.Balances = h.applyBankBalances([]string{link.AccountKey})
 	c.JSON(http.StatusOK, res)
 }
 
@@ -187,12 +192,165 @@ func (h *BankHandler) fetchWindow(
 	// Deliberately best-effort: a bank that rejects the parameter, or does
 	// not serve pending rows at all, must not fail a sync whose booked half
 	// succeeded. Booked rows are the ledger; reservations are a preview.
+	h.readBankBalance(c, cl, link, headers)
+
 	pending, perr := cl.AllTransactions(c.Request.Context(), withStatus(base, openbanking.StatusPending))
 	if perr != nil {
 		log.Printf("bank sync: reservations unavailable for account %d: %v", link.ID, perr)
 		return txs, w, nil
 	}
 	return mergeByReference(txs, pending), w, nil
+}
+
+// readBankBalance records the bank's own balance on the link; stage() saves
+// it with the rest of the sync bookkeeping. Best-effort: a bank that will not
+// state a balance must not fail a sync whose transactions arrived fine — the
+// balance sheet then just stays as it was.
+func (h *BankHandler) readBankBalance(c *gin.Context, cl *openbanking.Client, link *domain.BankAccountLink, headers []string) {
+	bs, err := cl.Balances(c.Request.Context(), link.UID, psuFrom(c), headers)
+	if err != nil {
+		log.Printf("bank sync: balance unavailable for account %d: %v", link.ID, err)
+		return
+	}
+	b := openbanking.PickBalance(bs)
+	if b == nil {
+		return
+	}
+	amount, err := strconv.ParseFloat(strings.TrimSpace(b.BalanceAmount.Amount), 64)
+	if err != nil {
+		log.Printf("bank sync: unreadable balance %q for account %d", b.BalanceAmount.Amount, link.ID)
+		return
+	}
+	if strings.EqualFold(b.CreditDebitIndicator, "DBIT") && amount > 0 {
+		amount = -amount
+	}
+	now := time.Now()
+	ref := now
+	if d, err := time.Parse("2006-01-02", b.ReferenceDate); err == nil {
+		ref = d
+	} else if d, err := time.Parse(time.RFC3339, b.LastChangeDateTime); err == nil {
+		ref = d
+	}
+	link.BankBalance = amount
+	link.BankBalanceCurrency = strings.ToUpper(b.BalanceAmount.Currency)
+	link.BankBalanceType = strings.ToUpper(b.BalanceType)
+	link.BankBalanceDate = &ref
+	link.BankBalanceFetched = &now
+}
+
+// balanceFreshness bounds how old a sibling link's balance may be and still
+// be summed into a shared account. Two Swedbank accounts feed "swed"; adding
+// today's figure for one to last week's for the other would be a number no
+// bank ever stated.
+const balanceFreshness = 24 * time.Hour
+
+// bankBalanceResult is one balance-sheet account brought to the bank's figure.
+type bankBalanceResult struct {
+	Account string  `json:"account"`
+	Before  float64 `json:"before"`
+	After   float64 `json:"after"`
+	Changed bool    `json:"changed"`
+	// Skipped says why the account was left alone.
+	Skipped string `json:"skipped,omitempty"`
+}
+
+// applyBankBalances sets each named balance-sheet account to the sum of the
+// bank balances of every link that feeds it, as one new snapshot.
+func (h *BankHandler) applyBankBalances(keys []string) []bankBalanceResult {
+	if h.db == nil || len(keys) == 0 {
+		return nil
+	}
+	links, err := h.repo.ListAllLinks()
+	if err != nil {
+		log.Printf("bank sync: listing links for balances: %v", err)
+		return nil
+	}
+	want := map[string]bool{}
+	for _, k := range keys {
+		want[k] = true
+	}
+	now := time.Now()
+	values := map[string]float64{}
+	through := map[string]time.Time{}
+	var out []bankBalanceResult
+	for _, key := range sortedAccountKeys(want) {
+		var sum float64
+		var newest time.Time
+		skip := ""
+		feeding := 0
+		for i := range links {
+			l := &links[i]
+			if l.AccountKey != key || l.UID == "" {
+				continue
+			}
+			feeding++
+			switch {
+			case l.BankBalanceFetched == nil || now.Sub(*l.BankBalanceFetched) > balanceFreshness:
+				skip = fmt.Sprintf("%s has no fresh balance from the bank", firstNonEmpty(l.DisplayName, l.IBAN))
+			case l.BankBalanceCurrency != "" && l.BankBalanceCurrency != "EUR":
+				skip = fmt.Sprintf("%s is in %s — only EUR balances are applied", firstNonEmpty(l.DisplayName, l.IBAN), l.BankBalanceCurrency)
+			}
+			sum += l.BankBalance
+			if l.BankBalanceDate != nil && l.BankBalanceDate.After(newest) {
+				newest = *l.BankBalanceDate
+			}
+		}
+		if feeding == 0 {
+			continue
+		}
+		if skip != "" {
+			out = append(out, bankBalanceResult{Account: key, Skipped: skip})
+			continue
+		}
+		values[key] = sum
+		through[key] = newest
+	}
+	if len(values) == 0 {
+		return out
+	}
+
+	var sets []service.AccountSet
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		svc := service.NewBalanceService(repository.NewBalanceRepository(tx), nil)
+		var serr error
+		sets, serr = svc.SnapshotFromAbsolute(values, now)
+		if serr != nil {
+			return serr
+		}
+		repo := repository.NewBankRepository(tx)
+		for i := range links {
+			l := &links[i]
+			t, ok := through[l.AccountKey]
+			if !ok || l.UID == "" {
+				continue
+			}
+			l.BalanceAppliedThrough = &t
+			if err := repo.SaveLink(l); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("bank sync: applying bank balances: %v", err)
+		for key := range values {
+			out = append(out, bankBalanceResult{Account: key, Skipped: "could not update the balance sheet: " + err.Error()})
+		}
+		return out
+	}
+	for _, s := range sets {
+		out = append(out, bankBalanceResult{Account: s.Account, Before: s.Before, After: s.After, Changed: s.Changed})
+	}
+	return out
+}
+
+func sortedAccountKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func withStatus(q openbanking.TxQuery, status string) openbanking.TxQuery {
@@ -245,6 +403,9 @@ type syncAllResult struct {
 	// behind a dead consent. Not a failure, but not silence either.
 	Skipped int `json:"skipped"`
 	Failed  int `json:"failed"`
+	// Balances is applied once for the whole run — one snapshot, not one per
+	// account — after every account has reported its balance.
+	Balances []bankBalanceResult `json:"balances,omitempty"`
 }
 
 type accountSyncResult struct {
@@ -277,6 +438,7 @@ func (h *BankHandler) SyncAll(c *gin.Context) {
 
 	days := requestedDays(c)
 	out := syncAllResult{Accounts: []accountSyncResult{}}
+	synced := map[string]bool{}
 	for i := range conns {
 		conn := &conns[i]
 		links, lerr := h.repo.ListLinks(conn.ID)
@@ -315,6 +477,7 @@ func (h *BankHandler) SyncAll(c *gin.Context) {
 				res, ferr = h.stage(txs, link, w.from, w.to)
 				if ferr == nil {
 					row.Result = &res
+					synced[link.AccountKey] = true
 					out.Synced++
 					out.Totals.Fetched += res.Fetched
 					out.Totals.StagedNew += res.StagedNew
@@ -342,6 +505,7 @@ func (h *BankHandler) SyncAll(c *gin.Context) {
 			out.Accounts = append(out.Accounts, row)
 		}
 	}
+	out.Balances = h.applyBankBalances(sortedAccountKeys(synced))
 	c.JSON(http.StatusOK, out)
 }
 
@@ -766,6 +930,18 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 	if err != nil {
 		return res, fmt.Errorf("reading existing transactions for dedup: %w", err)
 	}
+	// A row dated on or before the bank balance last written for its link
+	// is already inside that figure; moving the account for it again would
+	// count it twice.
+	appliedThrough := map[uint]time.Time{}
+	if links, lerr := h.repo.ListAllLinks(); lerr == nil {
+		for _, l := range links {
+			if l.BalanceAppliedThrough != nil {
+				appliedThrough[l.ID] = l.BalanceAppliedThrough.Truncate(24 * time.Hour)
+			}
+		}
+	}
+	inBankBalance := 0
 	dedup := newDedupIndex(existing)
 	byExternal := make(map[string]uint, len(existing))
 	for i := range existing {
@@ -852,11 +1028,15 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 		}
 		dedup.add(row.Date, row.Type, row.Amount, row.Comment)
 		byExternal[row.ExternalID] = tx.ID
-		if row.DebitAccount != "" {
-			deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.DebitAccount, Amount: -row.Amount})
-		}
-		if row.CreditAccount != "" {
-			deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.CreditAccount, Amount: row.Amount})
+		if t, ok := appliedThrough[row.LinkID]; ok && !row.Date.After(t.Add(24*time.Hour-time.Nanosecond)) {
+			inBankBalance++
+		} else {
+			if row.DebitAccount != "" {
+				deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.DebitAccount, Amount: -row.Amount})
+			}
+			if row.CreditAccount != "" {
+				deltas = append(deltas, service.AccountDelta{Date: row.Date, Account: row.CreditAccount, Amount: row.Amount})
+			}
 		}
 
 		row.State = domain.StagedStateImported
@@ -868,6 +1048,10 @@ func (h *BankHandler) commit(ids []uint) (commitResult, error) {
 		res.ImportedTxIDs = append(res.ImportedTxIDs, tx.ID)
 	}
 
+	if len(deltas) == 0 && inBankBalance > 0 {
+		res.BalanceNote = "Account balances were not changed — the balance the bank reported at the last sync already includes these rows."
+		return res, nil
+	}
 	res.BalanceNote = h.snapshotCommit(deltas, res.Imported)
 	return res, nil
 }

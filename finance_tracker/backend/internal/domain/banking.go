@@ -156,8 +156,22 @@ type BankAccountLink struct {
 	// window. Preferred over LastSyncedAt: a sync that returned nothing must
 	// not advance the window past rows that had not posted yet.
 	LastTxDate *time.Time `json:"last_tx_date"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+
+	// The bank's own statement of the balance, read on every sync. It is
+	// the authority for the balance sheet: a sync sets the mapped account to
+	// it (summed across every link that feeds the same account).
+	BankBalance         float64    `json:"bank_balance"`
+	BankBalanceCurrency string     `json:"bank_balance_currency" gorm:"not null;default:''"`
+	BankBalanceType     string     `json:"bank_balance_type" gorm:"not null;default:''"`
+	BankBalanceDate     *time.Time `json:"bank_balance_date"`
+	BankBalanceFetched  *time.Time `json:"bank_balance_fetched_at"`
+	// BalanceAppliedThrough is the BankBalanceDate of the last bank balance
+	// written into the balance sheet. Committed rows dated on or before it
+	// are already inside that figure and must not move the account again.
+	BalanceAppliedThrough *time.Time `json:"balance_applied_through"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Synced reports whether this account is mapped and should be pulled.

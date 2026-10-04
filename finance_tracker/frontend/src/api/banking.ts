@@ -37,6 +37,19 @@ export type BankAccountLink = {
   last_synced_at: string | null
   last_tx_date: string | null
   pending: number
+  // What the bank last stated; null until it has said.
+  bank_balance?: number | null
+  bank_balance_currency?: string
+  bank_balance_at?: string | null
+}
+
+// One balance-sheet account set to the bank's own figure by a sync.
+export type BankBalanceResult = {
+  account: string
+  before: number
+  after: number
+  changed: boolean
+  skipped?: string
 }
 
 export type BankConnection = {
@@ -119,6 +132,7 @@ export type SyncResult = {
   released: number
   date_from: string
   date_to: string
+  balances?: BankBalanceResult[]
 }
 
 // One line per mapped account, plus the totals. Per-account detail stays
@@ -139,6 +153,7 @@ export type SyncAllResult = {
   synced: number
   skipped: number
   failed: number
+  balances?: BankBalanceResult[]
 }
 
 export type CommitResult = {
@@ -278,3 +293,4 @@ export const bankingApi = {
     await client.post(`/banking/staged/${id}/unmerge`)
   },
 }
+

@@ -12,6 +12,7 @@ import WhereMoneySits from '../components/ui/WhereMoneySits'
 import AccountMovement from '../components/ui/AccountMovement'
 import { formatEuro, formatDate, formatTime } from '../utils/format'
 import { useBtcEur } from '../hooks/useBtcPrice'
+import { useAssetSummary } from '../hooks/useAssets'
 import type { Balance, CreateBalanceInput } from '../types'
 
 // Per-account rows for the mobile snapshot cards; mirrors the desktop table columns.
@@ -38,6 +39,7 @@ export default function Balances() {
   const { dateRange } = useDateRange()
   const { price: liveBtcPrice } = useBtcEur()
   const { data: latest } = useLatestBalance(liveBtcPrice)
+  const { data: assetSummary } = useAssetSummary()
   const { data: projected } = useProjectedBalance(liveBtcPrice)
   const { data: allBalances, isLoading, isError, error, refetch } = useBalances({}, liveBtcPrice)
   // Auto-generated snapshots are internal projection caches — hide from history table
@@ -162,7 +164,14 @@ export default function Balances() {
       {/* Latest stats */}
       {latest && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-          <StatCard title="Total Net Worth" value={formatEuro(latest.total)} color="blue" />
+          <StatCard
+            title="Total Net Worth"
+            value={formatEuro(latest.total)}
+            subtitle={assetSummary && assetSummary.count > 0
+              ? `${formatEuro(latest.total + assetSummary.net_equity)} incl. assets − loans`
+              : undefined}
+            color="blue"
+          />
           <StatCard
             title="Free Cash"
             value={formatEuro(freeCash(latest))}

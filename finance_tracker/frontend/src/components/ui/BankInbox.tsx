@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { SyncAllResult } from '../../api/banking'
+import { balanceLines } from '../../utils/bankBalances'
+import { formatEuro } from '../../utils/format'
 import {
   useBankConnections,
   useBankSettings,
@@ -176,6 +178,9 @@ function SyncReport({ report }: { report: SyncAllResult }) {
   return (
     <div className="px-3 sm:px-4 pb-3 space-y-1">
       <p className={`text-xs ${failed ? 'text-gray-600' : 'text-emerald-600'}`}>{summary.join(' · ')}</p>
+      {balanceLines(report.balances, formatEuro).map((l) => (
+        <p key={l.text} className={`text-xs ${l.warn ? 'text-amber-700' : 'text-gray-600'}`}>{l.text}</p>
+      ))}
       {accounts
         .filter((a) => a.error || a.skipped)
         .map((a) => (

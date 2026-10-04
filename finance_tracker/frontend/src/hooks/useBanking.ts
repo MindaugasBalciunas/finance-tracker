@@ -95,7 +95,11 @@ export function useSyncBankAccount() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, days }: { id: number; days?: number }) => bankingApi.sync(id, days),
-    onSuccess: () => invalidateBanking(qc),
+    onSuccess: () => {
+      invalidateBanking(qc)
+      // A sync can set accounts to the bank's own balance.
+      invalidateTransactionQueries(qc)
+    },
   })
 }
 
@@ -103,7 +107,11 @@ export function useSyncAllBanks() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (days?: number) => bankingApi.syncAll(days),
-    onSuccess: () => invalidateBanking(qc),
+    onSuccess: () => {
+      invalidateBanking(qc)
+      // A sync can set accounts to the bank's own balance.
+      invalidateTransactionQueries(qc)
+    },
   })
 }
 

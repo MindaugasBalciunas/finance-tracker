@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { BankConnection, SyncResult } from '../../api/banking'
+import { balanceLines } from '../../utils/bankBalances'
+import { formatEuro } from '../../utils/format'
 import { ACCOUNT_LABELS, type AccountKey } from '../../types'
 import { useDisconnectBank, useMapBankAccount, useSyncBankAccount } from '../../hooks/useBanking'
 
@@ -26,7 +28,7 @@ function syncSummary(r: SyncResult): string {
   // "skipped" alone reads like something went wrong, when the honest answer
   // is "today's card payments are still reserved — they arrive tomorrow".
   if (r.auto_skipped) bits.push(`${r.auto_skipped} still pending at the bank`)
-  return bits.join(' · ')
+  return [bits.join(' · '), ...balanceLines(r.balances, formatEuro).map((l) => l.text)].join(' · ')
 }
 
 export default function BankConnectionCard({
@@ -174,6 +176,16 @@ export default function BankConnectionCard({
             {!acc.account_key && (
               <p className="mt-1.5 text-xs text-gray-400">
                 Pick which of your accounts this is before syncing.
+              </p>
+            )}
+            {acc.bank_balance != null && (
+              <p className="mt-1.5 text-xs text-gray-600">
+                Bank balance{' '}
+                <span className="font-semibold text-gray-800">
+                  {acc.bank_balance_currency && acc.bank_balance_currency !== 'EUR'
+                    ? `${acc.bank_balance.toFixed(2)} ${acc.bank_balance_currency}`
+                    : formatEuro(acc.bank_balance)}
+                </span>
               </p>
             )}
             {acc.last_synced_at && (

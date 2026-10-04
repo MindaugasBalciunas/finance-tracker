@@ -1,6 +1,7 @@
 import { useTransactionSummary, useAllExpenses } from '../hooks/useTransactions'
 import { useLatestBalance, useBalanceTrend, useAccountAllocation } from '../hooks/useBalances'
 import { useBtcEur } from '../hooks/useBtcPrice'
+import { useAssetSummary } from '../hooks/useAssets'
 import { freeCash } from '../utils/balanceGroups'
 import NetWorthHero from '../components/ui/NetWorthHero'
 import CashFlowCard from '../components/ui/CashFlowCard'
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const { dateRange } = useDateRange()
 
   const { price: liveBtcPrice } = useBtcEur()
+  const { data: assetSummary } = useAssetSummary()
   const { data: summary, isLoading: summaryLoading, isError, error, refetch } = useTransactionSummary(dateRange)
   const { data: allTimeSummary } = useTransactionSummary({})
   const { data: latestBalance, isLoading: balanceLoading } = useLatestBalance(liveBtcPrice)
@@ -128,6 +130,7 @@ export default function Dashboard() {
           trend={trend}
           change={netWorthChange}
           changePct={netWorthChangePct}
+          assets={assetSummary}
         />
       )}
 

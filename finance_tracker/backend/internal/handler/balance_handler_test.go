@@ -86,6 +86,12 @@ func (m *mockBalanceService) SnapshotFromDeltas(deltas []service.AccountDelta) (
 	return args.String(0), args.Error(1)
 }
 
+func (m *mockBalanceService) SnapshotFromAbsolute(values map[string]float64, at time.Time) ([]service.AccountSet, error) {
+	args := m.Called(values, at)
+	sets, _ := args.Get(0).([]service.AccountSet)
+	return sets, args.Error(1)
+}
+
 func setupBalanceRouter(svc service.BalanceService) *gin.Engine {
 	r := gin.New()
 	h := handler.NewBalanceHandler(svc)

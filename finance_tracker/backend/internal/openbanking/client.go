@@ -265,6 +265,16 @@ func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	return c.do(ctx, http.MethodDelete, "/sessions/"+url.PathEscape(sessionID), nil, nil, nil)
 }
 
+// Balances fetches every balance the bank reports for one account.
+func (c *Client) Balances(ctx context.Context, accountUID string, psu PSU, requiredPSUHeaders []string) ([]Balance, error) {
+	var out balancesResponse
+	path := "/accounts/" + url.PathEscape(accountUID) + "/balances"
+	if err := c.do(ctx, http.MethodGet, path, nil, &out, psu.headersFor(requiredPSUHeaders)); err != nil {
+		return nil, err
+	}
+	return out.Balances, nil
+}
+
 // TxQuery is one page request against one account.
 type TxQuery struct {
 	AccountUID string

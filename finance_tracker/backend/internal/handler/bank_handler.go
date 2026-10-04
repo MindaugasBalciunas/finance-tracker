@@ -279,6 +279,10 @@ type accountLinkResponse struct {
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	LastTxDate   *time.Time `json:"last_tx_date"`
 	Pending      int        `json:"pending"`
+	// BankBalance is what the bank last stated; nil until it has said.
+	BankBalance         *float64   `json:"bank_balance"`
+	BankBalanceCurrency string     `json:"bank_balance_currency,omitempty"`
+	BankBalanceAt       *time.Time `json:"bank_balance_at"`
 }
 
 type connectionResponse struct {
@@ -313,13 +317,20 @@ func (h *BankHandler) ListConnections(c *gin.Context) {
 		}
 		accs := make([]accountLinkResponse, 0, len(links))
 		for _, l := range links {
-			accs = append(accs, accountLinkResponse{
+			acc := accountLinkResponse{
 				ID: l.ID, ConnectionID: l.ConnectionID,
 				IBAN:        openbanking.MaskIBAN(l.IBAN),
 				DisplayName: l.DisplayName, AccountKey: l.AccountKey,
 				LastSyncedAt: l.LastSyncedAt, LastTxDate: l.LastTxDate,
 				Pending: pending[l.ID],
-			})
+			}
+			if l.BankBalanceFetched != nil {
+				bal := l.BankBalance
+				acc.BankBalance = &bal
+				acc.BankBalanceCurrency = l.BankBalanceCurrency
+				acc.BankBalanceAt = l.BankBalanceFetched
+			}
+			accs = append(accs, acc)
 		}
 		out = append(out, connectionResponse{
 			ID: conn.ID, ASPSPName: conn.ASPSPName, ASPSPCountry: conn.ASPSPCountry,

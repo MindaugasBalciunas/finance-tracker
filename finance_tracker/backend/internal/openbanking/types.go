@@ -338,3 +338,46 @@ func MaskIBAN(iban string) string {
 	}
 	return s[:4] + "…" + s[len(s)-4:]
 }
+
+// Balance is one balance the bank reports for an account. A bank usually
+// sends several at once (booked, available, expected…), told apart by
+// BalanceType — an ISO 20022 code.
+type Balance struct {
+	Name          string `json:"name"`
+	BalanceAmount Amount `json:"balance_amount"`
+	BalanceType   string `json:"balance_type"`
+	// CreditDebitIndicator is DBIT for an overdrawn balance at banks that
+	// send the amount unsigned.
+	CreditDebitIndicator string `json:"credit_debit_indicator"`
+	// ReferenceDate is the day the balance is stated for, YYYY-MM-DD; often
+	// empty, in which case it is "now".
+	ReferenceDate      string `json:"reference_date"`
+	LastChangeDateTime string `json:"last_change_date_time"`
+}
+
+type balancesResponse struct {
+	Balances []Balance `json:"balances"`
+}
+
+// balancePreference ranks balance types by how well they match the ledger.
+// Booked balances first: reservations are never committed as transactions,
+// so an available balance (which already nets them off) would disagree with
+// the ledger by exactly the holds in flight. Available and expected are the
+// fallback for a bank that sends nothing booked.
+var balancePreference = []string{"ITBD", "CLBD", "XPCD", "ITAV", "CLAV", "OPBD"}
+
+// PickBalance chooses the one balance that best describes what the ledger
+// holds, or nil when the bank sent none.
+func PickBalance(bs []Balance) *Balance {
+	for _, want := range balancePreference {
+		for i := range bs {
+			if strings.EqualFold(bs[i].BalanceType, want) {
+				return &bs[i]
+			}
+		}
+	}
+	if len(bs) > 0 {
+		return &bs[0]
+	}
+	return nil
+}
