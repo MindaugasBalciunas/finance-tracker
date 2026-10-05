@@ -275,6 +275,36 @@ func TestRangeFallbackIsNotAnalystCoverage(t *testing.T) {
 	}
 }
 
+func TestBalanceTablePages(t *testing.T) {
+	d := DB(t)
+	Bal(t, d, "swed", "2026-01-01", 100)
+	Bal(t, d, "swed", "2026-01-03", 300)
+	Bal(t, d, "ibkr", "2026-01-02", 1000)
+	book, _ := wealth.LoadBook(d)
+	tb := book.Table(1, 2)
+	if tb.Dates != 3 || tb.Pages != 2 || len(tb.Rows) != 2 || tb.Rows[0].Date != "2026-01-03" {
+		t.Fatalf("%+v", tb)
+	}
+	top := tb.Rows[0]
+	// swed recorded that day; ibkr carried from the 2nd.
+	if c := top.Cells["swed"]; !c.Recorded || c.Value != E(300) || c.Source != "manual" {
+		t.Errorf("recorded cell %+v", c)
+	}
+	if c := top.Cells["ibkr"]; c.Recorded || c.Value != E(1000) {
+		t.Errorf("carried cell %+v", c)
+	}
+	if top.NetWorth != E(1300) || top.Liquid != E(1300) {
+		t.Errorf("totals %v %v", top.NetWorth, top.Liquid)
+	}
+	last := book.Table(2, 2)
+	if last.Page != 2 || len(last.Rows) != 1 || last.Rows[0].Date != "2026-01-01" || len(last.Rows[0].Cells) != 1 {
+		t.Fatalf("page 2 %+v", last)
+	}
+	if over := book.Table(9, 2); over.Page != 2 {
+		t.Error("page past the end clamps to the last")
+	}
+}
+
 var errNone = errFn("no targets")
 
 type errFn string

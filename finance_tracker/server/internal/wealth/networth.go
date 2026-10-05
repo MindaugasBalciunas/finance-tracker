@@ -289,3 +289,88 @@ func (b *Book) Movement(from, to string) []Move {
 	sort.Slice(out, func(i, j int) bool { return out[i].Change.Abs() > out[j].Change.Abs() })
 	return out
 }
+
+// TableCell is one account on one snapshot date: the value in force, and
+// whether it was recorded that day (with its source) or carried forward.
+type TableCell struct {
+	Value    money.Cents `json:"value"`
+	Recorded bool        `json:"recorded,omitempty"`
+	Source   string      `json:"source,omitempty"`
+}
+
+type TableRow struct {
+	Date     string               `json:"date"`
+	Cells    map[string]TableCell `json:"cells"`
+	NetWorth money.Cents          `json:"net_worth"`
+	Liquid   money.Cents          `json:"liquid"`
+}
+
+// BalanceTable pages through every date any balance was recorded, newest first.
+type BalanceTable struct {
+	Accounts []string   `json:"accounts"` // accounts with any recorded value
+	Rows     []TableRow `json:"rows"`
+	Page     int        `json:"page"`
+	Pages    int        `json:"pages"`
+	Dates    int        `json:"dates"`
+	Size     int        `json:"size"`
+}
+
+// Table returns page (1-based) of size snapshot dates across all accounts.
+func (b *Book) Table(page, size int) BalanceTable {
+	if size <= 0 || size > 500 {
+		size = 50
+	}
+	recorded := map[string]map[string]Point{} // account → date → point
+	dateSet := map[string]bool{}
+	var accounts []string
+	for id, s := range b.series {
+		if len(s) == 0 {
+			continue
+		}
+		accounts = append(accounts, id)
+		m := make(map[string]Point, len(s))
+		for _, p := range s {
+			m[p.Date] = p
+			dateSet[p.Date] = true
+		}
+		recorded[id] = m
+	}
+	sort.Strings(accounts)
+	dates := make([]string, 0, len(dateSet))
+	for d := range dateSet {
+		dates = append(dates, d)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+	t := BalanceTable{Accounts: accounts, Rows: []TableRow{}, Dates: len(dates), Size: size}
+	t.Pages = (len(dates) + size - 1) / size
+	if t.Pages == 0 {
+		t.Pages = 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > t.Pages {
+		page = t.Pages
+	}
+	t.Page = page
+	lo := (page - 1) * size
+	hi := lo + size
+	if hi > len(dates) {
+		hi = len(dates)
+	}
+	for _, d := range dates[lo:hi] {
+		snap := b.SnapshotAt(d, true)
+		row := TableRow{Date: d, Cells: map[string]TableCell{}, NetWorth: snap.NetWorth, Liquid: snap.Liquid}
+		for _, id := range accounts {
+			c := TableCell{Value: snap.ByAccount[id]}
+			if p, ok := recorded[id][d]; ok {
+				c.Recorded, c.Source, c.Value = true, p.Source, p.Value
+			}
+			if c.Value != 0 || c.Recorded {
+				row.Cells[id] = c
+			}
+		}
+		t.Rows = append(t.Rows, row)
+	}
+	return t
+}

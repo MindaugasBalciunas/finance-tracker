@@ -9,7 +9,7 @@ import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../lib/format'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../lib/periods'
 import type { Account } from '../lib/types'
-import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
 import { Icon, IconTile } from '../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, volatility } from '../lib/brand'
@@ -23,11 +23,12 @@ export default function Wealth() {
     <div>
       <PageHeader title="Wealth" actions={<AskCFO q="Review my balance sheet: allocation across cash, investments, pension, crypto and property, against my framework. What should I change?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'overview' ? '/wealth' : `/wealth/${v}`)}
-        tabs={[{ value: 'overview', label: 'Net worth' }, { value: 'investments', label: 'Investments' }, { value: 'loans', label: 'Loans' }]} />
+        tabs={[{ value: 'overview', label: 'Net worth' }, { value: 'investments', label: 'Investments' }, { value: 'loans', label: 'Loans' }, { value: 'history', label: 'History' }]} />
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/loans" element={<Loans />} />
+        <Route path="/history" element={<BalanceHistory />} />
       </Routes>
     </div>
   )
@@ -919,3 +920,90 @@ function Loans() {
 }
 
 
+
+// ── balance history ─────────────────────────────────────────────────
+
+const SOURCE_COLOR: Record<string, string> = { bank: 'rgb(var(--accent))', manual: 'var(--s6)', import: 'var(--s-other)', computed: 'var(--s4)' }
+
+/** Every account on every snapshot date, 50 dates a page, newest first.
+ *  Recorded values in full ink with their source; carried-forward values grey. */
+function BalanceHistory() {
+  const [page, setPage] = useState(1)
+  const [showHidden, setShowHidden] = useState(false)
+  const { data: accounts } = useAccounts()
+  const { data: t, isLoading, isFetching } = useQuery({ queryKey: ['balance-table', page], queryFn: () => api.get<any>('/balances/table', { page, size: 50 }), placeholderData: (p) => p })
+  if (isLoading || !t) return <Loading />
+  const byId = Object.fromEntries((accounts ?? []).map((a) => [a.id, a]))
+  // Columns: bank order (Swedbank, SEB, Revolut, …); only accounts with a value on this page.
+  const cols = (accounts ?? []).filter((a) => t.accounts.includes(a.id) && (showHidden || !a.archived) && t.rows.some((r: any) => r.cells[a.id]))
+  const hiddenCount = (accounts ?? []).filter((a) => a.archived && t.accounts.includes(a.id)).length
+  const pager = (
+    <div className="flex items-center justify-between gap-2">
+      <button className="btn-outline h-8 px-2.5 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>Newest</button>
+      <div className="flex items-center gap-2">
+        <button className="btn-ghost h-8 w-8 px-0" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronL" size={16} /></button>
+        <span className="text-xs text-muted tnum">Page {t.page} of {t.pages} {isFetching && <Spinner />}</span>
+        <button className="btn-ghost h-8 w-8 px-0" disabled={page >= t.pages} onClick={() => setPage(page + 1)} aria-label="Next page"><Icon name="chevronR" size={16} /></button>
+      </div>
+      <button className="btn-outline h-8 px-2.5 text-xs" disabled={page >= t.pages} onClick={() => setPage(t.pages)}>Oldest</button>
+    </div>
+  )
+  return (
+    <div className="space-y-3">
+      <Card pad={false} icon="calendar" color="var(--s7)" title="Balance history"
+        action={<span className="text-xs text-muted tnum">{t.dates} snapshots · {t.rows[t.rows.length - 1]?.date ? shortDate(t.rows[t.rows.length - 1].date) : ''} – {t.rows[0] ? shortDate(t.rows[0].date) : ''}</span>}>
+        <div className="space-y-2 px-4 pb-3">
+          {pager}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+            <span><b className="text-ink">Bold</b> = recorded that day · <span className="opacity-60">grey</span> = carried forward</span>
+            {Object.entries(SOURCE_COLOR).map(([k, c]) => <span key={k} className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{k === 'import' ? 'imported' : k}</span>)}
+            {hiddenCount > 0 && <label className="ml-auto inline-flex items-center gap-1.5"><input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />show {hiddenCount} hidden</label>}
+          </div>
+        </div>
+        <div className="overflow-x-auto border-t border-line">
+          <table className="w-full border-separate border-spacing-0 text-xs tnum">
+            <thead>
+              <tr className="text-left text-muted">
+                <th className="sticky left-0 z-10 bg-surface px-3 py-2 font-medium">Date</th>
+                {cols.map((a) => (
+                  <th key={a.id} className="whitespace-nowrap px-2 py-2 text-right font-medium">
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-[3px]" style={{ background: brandColor(a) ?? 'var(--s-other)' }} />{a.name.length > 16 ? a.name.slice(0, 15) + '…' : a.name}</span>
+                  </th>
+                ))}
+                <th className="whitespace-nowrap px-2 py-2 text-right font-medium">Liquid</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Net worth</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.rows.map((r: any, i: number) => {
+                const older = t.rows[i + 1]
+                const change = older ? r.net_worth - older.net_worth : null
+                return (
+                  <tr key={r.date} className="hover:bg-sunken/40">
+                    <td className="sticky left-0 z-10 whitespace-nowrap border-t border-line bg-surface px-3 py-1.5 text-ink2">{r.date}</td>
+                    {cols.map((a) => {
+                      const c = r.cells[a.id]
+                      return (
+                        <td key={a.id} className={clsx('whitespace-nowrap border-t border-line px-2 py-1.5 text-right', c?.recorded ? 'font-medium text-ink' : 'text-muted/60')}
+                          title={c ? `${byId[a.id]?.name}: ${eurc(c.value)} — ${c.recorded ? c.source || 'recorded' : 'carried forward'}` : ''}>
+                          {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source] ?? 'var(--s-other)' }} />}{eur(c.value)}</span> : ''}
+                        </td>
+                      )
+                    })}
+                    <td className="whitespace-nowrap border-t border-line px-2 py-1.5 text-right text-ink2">{eur(r.liquid)}</td>
+                    <td className="whitespace-nowrap border-t border-line px-3 py-1.5 text-right font-semibold">{eur(r.net_worth)}</td>
+                    <td className={clsx('whitespace-nowrap border-t border-line px-3 py-1.5 text-right', change == null ? '' : change > 0 ? 'text-good' : change < 0 ? 'text-bad' : 'text-muted')}>
+                      {change == null ? '' : change === 0 ? '±0' : `${change > 0 ? '+' : '−'}${eur(Math.abs(change))}`}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-line px-4 py-3">{pager}</div>
+      </Card>
+    </div>
+  )
+}

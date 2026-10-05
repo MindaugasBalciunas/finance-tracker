@@ -657,6 +657,15 @@ func (s *Server) wealthRoutes() {
 		}
 		return mv, nil
 	})
+	s.handle("GET /api/balances/table", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		book, err := wealth.LoadBook(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+		return book.Table(page, size), nil
+	})
 	s.handle("GET /api/balances", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		book, err := wealth.LoadBook(s.DB)
 		if err != nil {
