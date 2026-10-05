@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"ft/internal/ai"
@@ -28,19 +30,31 @@ type Server struct {
 	AI      *ai.Assistant
 	Version string
 	mux     *http.ServeMux
+
+	// Demo mode (see demo.go): a second Server over fictional data.
+	isDemo bool
+	demoOn atomic.Bool
+	demoMu sync.Mutex
+	demo   *Server
 }
 
-func New(d *sql.DB, dbPath, version string) *Server {
-	s := &Server{DB: d, DBPath: dbPath, Version: version, Auth: &auth.Service{DB: d}, Bank: &bank.Service{DB: d}, mux: http.NewServeMux()}
+func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath, version, false) }
+
+func newServer(d *sql.DB, dbPath, version string, isDemo bool) *Server {
+	s := &Server{DB: d, DBPath: dbPath, Version: version, Auth: &auth.Service{DB: d}, Bank: &bank.Service{DB: d}, mux: http.NewServeMux(), isDemo: isDemo}
 	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Bank: s.Bank}
 	s.routes()
+	if !isDemo {
+		s.demoRoutes()
+		s.loadDemoFlag()
+	}
 	return s
 }
 
 // Handler is the full middleware chain: panic recovery → cross-site write
 // guard → body limits → lock/token auth → routes.
 func (s *Server) Handler() http.Handler {
-	return s.recoverer(crossOriginGuard(limitBodies(s.authenticate(s.mux))))
+	return s.recoverer(crossOriginGuard(limitBodies(s.authenticate(http.HandlerFunc(s.dispatch)))))
 }
 
 // crossOriginGuard rejects state-changing requests a browser sent on behalf

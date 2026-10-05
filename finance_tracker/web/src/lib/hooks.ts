@@ -42,6 +42,26 @@ export function usePeriod(key: string, fallback: string, allowed?: string[]): [s
   return [value, (v: string) => set({ periods: { [key]: v } })]
 }
 
+/** Demo mode: the whole app over fictional data (the real data is untouched). */
+export function useDemo() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['demo'], queryFn: () => api.get<{ on: boolean }>('/demo'), staleTime: Infinity })
+  // Never show one database's cache in the other: every other query is reset
+  // (data dropped, active ones refetched) — clear() would also detach the
+  // live subscriptions, so the banner wouldn't notice the switch.
+  const resetData = () => qc.resetQueries({ predicate: (x) => x.queryKey[0] !== 'demo' })
+  const switchTo = async (on: boolean) => {
+    await api.put('/demo', { on })
+    qc.setQueryData(['demo'], { on })
+    await resetData()
+  }
+  const reset = async () => {
+    await api.post('/demo/reset', {})
+    await resetData()
+  }
+  return { on: !!q.data?.on, switchTo, reset }
+}
+
 export interface TxFilter {
   from?: string; to?: string; kind?: string; category?: string[]; account?: string[]; tag?: string[]; tags_all?: boolean
   merchant?: string; q?: string; min?: string; max?: string; sort?: string; limit?: number; offset?: number

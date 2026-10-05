@@ -654,3 +654,66 @@ func TestPrefsPersist(t *testing.T) {
 }
 
 func today6() string { return time.Now().AddDate(0, 0, -3).Format("2006-01-02") }
+
+func TestDemoModeIsolated(t *testing.T) {
+	s, c := newServer(t)
+	Tx(t, s.DB, ledger.Tx{Date: "2026-09-01", Amount: E(12), Category: "food", AccountID: "swed", Merchant: "RealShop"})
+	var st map[string]bool
+	c.ok("GET", "/demo", nil, &st)
+	if st["on"] {
+		t.Fatal("demo starts off")
+	}
+	c.ok("PUT", "/demo", map[string]bool{"on": true}, nil)
+	var accts []map[string]any
+	c.ok("GET", "/accounts", nil, &accts)
+	ids := map[string]bool{}
+	for _, a := range accts {
+		ids[a["id"].(string)] = true
+	}
+	if !ids["broker"] || ids["ibkr"] {
+		t.Fatalf("demo accounts expected: %v", ids)
+	}
+	var list struct {
+		Total int `json:"total"`
+	}
+	c.ok("GET", "/transactions?limit=1&from=2000-01-01", nil, &list)
+	if list.Total < 600 {
+		t.Fatalf("demo transactions: %d", list.Total)
+	}
+	// Edits in demo mode land in the demo database only.
+	c.ok("POST", "/transactions", map[string]any{"date": "2026-09-02", "amount": 5, "category": "food", "account_id": "swed", "merchant": "DemoOnly"}, nil)
+	var n int
+	s.DB.QueryRow(`SELECT COUNT(*) FROM transactions WHERE merchant='DemoOnly'`).Scan(&n)
+	if n != 0 {
+		t.Fatal("a demo edit reached the real database")
+	}
+	// Real files, credentials and money flows are out of reach.
+	for _, p := range [][2]string{{"GET", "/backups"}, {"POST", "/backups"}, {"GET", "/export/backup.json"}, {"PUT", "/bank/settings"}, {"POST", "/bank/sync"},
+		{"PUT", "/ai/settings"}, {"POST", "/import/backup?confirm=replace"}} {
+		if code, _ := c.do(p[0], p[1], map[string]any{}); code != 409 {
+			t.Errorf("%s %s in demo: %d, want 409", p[0], p[1], code)
+		}
+	}
+	// The real lock still guards demo data, and API tokens can't flip the switch.
+	a := &auth.Service{DB: s.DB}
+	a.SetupPin("", "1234")
+	if code, _ := c.with("X-Fresh", "1").do("GET", "/overview", nil); code != 401 {
+		t.Errorf("demo data without a session: %d", code)
+	}
+	rw, _ := a.MintToken(true)
+	if code, _ := c.with("Authorization", "Bearer "+rw).do("PUT", "/demo", map[string]bool{"on": false}); code != 403 {
+		t.Errorf("token toggled demo: %d", code)
+	}
+	c.ok("POST", "/auth/pin/login", map[string]string{"pin": "1234"}, nil)
+	// Reset regenerates; switching off brings the real data back.
+	c.ok("POST", "/demo/reset", nil, nil)
+	c.ok("GET", "/transactions?q=DemoOnly&from=2000-01-01", nil, &list)
+	if list.Total != 0 {
+		t.Error("reset keeps edits")
+	}
+	c.ok("PUT", "/demo", map[string]bool{"on": false}, nil)
+	c.ok("GET", "/transactions?q=RealShop&from=2000-01-01", nil, &list)
+	if list.Total != 1 {
+		t.Error("real data after leaving demo")
+	}
+}

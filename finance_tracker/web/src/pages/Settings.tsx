@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearch
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
-import { useAccounts, usePrefs, useRefresh, useRules, useTags } from '../lib/hooks'
+import { useAccounts, useDemo, usePrefs, useRefresh, useRules, useTags } from '../lib/hooks'
 import { catColor, GROUPS, useCats } from '../lib/categories'
 import { eurc, parseNum, shortDate } from '../lib/format'
 import type { Account, Rule } from '../lib/types'
@@ -666,6 +666,7 @@ function Data() {
   }
   return (
     <div className="max-w-2xl space-y-4">
+      <DemoCard />
       <Card title="Backup">
         <div className="mb-3 text-sm text-muted">A full copy of every table. Without secrets it is safe to keep anywhere; a restore then keeps this instance's keys and PIN.{snaps?.last_download ? ` Last downloaded ${shortDate(snaps.last_download.slice(0, 10))}.` : ''}</div>
         <div className="flex flex-wrap gap-2">
@@ -801,5 +802,25 @@ function UsageView() {
         <Icon name="trash" size={16} />Delete recorded usage
       </button>
     </div>
+  )
+}
+
+/** Show the app with fictional data — for demos and screenshots. */
+function DemoCard() {
+  const { on, switchTo, reset } = useDemo()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const run = async (f: () => Promise<void>, msg: string) => {
+    setBusy(true)
+    try { await f(); toast(msg, 'good') } catch (e: any) { toast(e?.message ?? 'Failed', 'bad') } finally { setBusy(false) }
+  }
+  return (
+    <Card icon="spark" color="var(--s5)" title="Demo mode">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Toggle checked={on} onChange={(v) => !busy && run(() => switchTo(v), v ? 'Demo data on — your real data is untouched' : 'Back to your data')} label="Show demo data" />
+        {on && <button className="btn-outline h-8 text-xs" disabled={busy} onClick={() => confirm('Throw away changes made in the demo and generate fresh demo data?') && run(reset, 'Fresh demo data')}>{busy ? <Spinner /> : <Icon name="refresh" size={14} />}Reset demo data</button>}
+      </div>
+      <div className="mt-2 text-xs text-muted">Swaps every page to a separate database of a fictional household — two years of transactions, accounts, budgets, a mortgage and an ETF portfolio — to show the app without showing your money. Your login stays the same; backups, imports, bank sync and AI settings are switched off while it is on, and nothing you do in the demo touches your real data.</div>
+    </Card>
   )
 }
