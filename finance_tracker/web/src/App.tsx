@@ -5,6 +5,8 @@ import clsx from 'clsx'
 import { api, ApiError } from './lib/api'
 import { Icon } from './components/Icon'
 import { Logo, LogoMark } from './components/Logo'
+import { usePrefs } from './lib/hooks'
+import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
 import { TxEditorProvider } from './components/TxEditor'
@@ -89,7 +91,10 @@ function Shell() {
   const { data: inbox } = useQuery({ queryKey: ['overview'], queryFn: () => api.get<any>('/overview'), select: (o) => o?.inbox_open ?? 0 })
   useEffect(() => {
     window.scrollTo(0, 0)
+    trackView(loc.pathname)
   }, [loc.pathname])
+  const { prefs } = usePrefs()
+  useEffect(() => { setUsageEnabled(!prefs.usage_off); startUsage() }, [prefs.usage_off])
   // Bank consent redirect lands on ?code=&state= before the hash.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)

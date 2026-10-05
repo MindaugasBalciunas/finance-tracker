@@ -138,6 +138,8 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot set balances", tokRW, "POST", "/balances", map[string]any{"date": "2026-09-01", "values": []any{}}, 403},
 		{"ro cannot download the AI export", tokRO, "GET", "/export/ai.zip", nil, 403},
 		{"rw cannot run AI assist", tokRW, "POST", "/ai/assist", map[string]any{"text": "x"}, 403},
+		{"ro cannot read usage analytics", tokRO, "GET", "/usage/events", nil, 403},
+		{"rw cannot write usage analytics", tokRW, "POST", "/usage", map[string]any{"events": []any{}}, 403},
 		{"forged token", bad, "GET", "/transactions", nil, 401},
 		{"token in X-API-Token (behind basic auth)", c.with("X-API-Token", ro).with("Authorization", "Basic dTpw"), "GET", "/overview", nil, 200},
 	}

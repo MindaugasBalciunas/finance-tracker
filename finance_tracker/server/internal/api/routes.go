@@ -18,6 +18,7 @@ import (
 	"ft/internal/market"
 	"ft/internal/money"
 	"ft/internal/plan"
+	"ft/internal/usage"
 	"ft/internal/wealth"
 )
 
@@ -865,6 +866,35 @@ func (s *Server) planRoutes() {
 			return nil, bad(err.Error())
 		}
 		return p, savePrefs(s.DB, p)
+	})
+	s.handle("POST /api/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if loadPrefs(s.DB).UsageOff {
+			return map[string]int{"recorded": 0}, nil
+		}
+		var in struct {
+			Events []usage.Event `json:"events"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		n, err := usage.Record(s.DB, in.Events)
+		return map[string]int{"recorded": n}, err
+	})
+	usageDays := func(r *http.Request, def int) int {
+		d, _ := strconv.Atoi(r.URL.Query().Get("days"))
+		if d <= 0 || d > 180 {
+			return def
+		}
+		return d
+	}
+	s.handle("GET /api/usage/summary", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return usage.Summarise(s.DB, usageDays(r, 30), time.Now())
+	})
+	s.handle("GET /api/usage/events", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return usage.Events(s.DB, usageDays(r, 90), time.Now())
+	})
+	s.handle("DELETE /api/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return map[string]bool{"ok": true}, usage.Clear(s.DB)
 	})
 	s.handle("GET /api/plan/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		st := plan.LoadSettings(s.DB)

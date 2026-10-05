@@ -40,6 +40,20 @@ var migrations = []string{
 CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant ON recurring_items(lower(merchant));`,
 	// 4: card reservations can enter the ledger before they book.
 	`ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;`,
+	// 5: private, on-device usage analytics (which pages, how you get there).
+	`CREATE TABLE IF NOT EXISTS usage_events (
+    id       INTEGER PRIMARY KEY,
+    at       TEXT NOT NULL,             -- when the page was entered / the click happened (UTC)
+    kind     TEXT NOT NULL CHECK (kind IN ('view','action')),
+    path     TEXT NOT NULL,             -- route, no query string
+    from_path TEXT NOT NULL DEFAULT '',
+    label    TEXT NOT NULL DEFAULT '',  -- clicked control (digits masked)
+    dwell_ms INTEGER NOT NULL DEFAULT 0, -- time on the page (views)
+    x        REAL,                      -- click position as a share of page width (heat maps)
+    y        REAL,                      -- … and of page height
+    vw       INTEGER NOT NULL DEFAULT 0 -- viewport width in px (phone vs desktop)
+);
+CREATE INDEX IF NOT EXISTS usage_events_at ON usage_events(at);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema
