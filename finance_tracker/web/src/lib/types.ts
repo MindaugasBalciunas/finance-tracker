@@ -51,7 +51,8 @@ export interface Overview {
   liquid_30d: number; liquid_ytd: number; liquid_12m: number
   spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
-  plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number; over: { name: string; spent: number; budgeted: number; remaining: number }[] | null }
+  plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
+    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; expected_day: number; projected_left: number; over: { name: string; spent: number; budgeted: number; remaining: number }[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
   fi_progress: number; years_to_fi: number
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null

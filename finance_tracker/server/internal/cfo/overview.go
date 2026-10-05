@@ -27,14 +27,14 @@ type Overview struct {
 	Liquid        money.Cents            `json:"liquid"`
 	Debt          money.Cents            `json:"debt"`
 	ByGroup       map[string]money.Cents `json:"by_group"`
-	NetWorth30d   money.Cents            `json:"net_worth_30d"`  // change vs 30 days ago
-	NetWorthYTD   money.Cents            `json:"net_worth_ytd"`  // change since 31 Dec
-	NetWorth12m   money.Cents            `json:"net_worth_12m"`  // change vs a year ago
+	NetWorth30d   money.Cents            `json:"net_worth_30d"` // change vs 30 days ago
+	NetWorthYTD   money.Cents            `json:"net_worth_ytd"` // change since 31 Dec
+	NetWorth12m   money.Cents            `json:"net_worth_12m"` // change vs a year ago
 	Liquid30d     money.Cents            `json:"liquid_30d"`
 	LiquidYTD     money.Cents            `json:"liquid_ytd"`
 	Liquid12m     money.Cents            `json:"liquid_12m"`
-	Spark         []SparkPoint           `json:"spark"`          // 24 month-ends
-	Month         insights.Flow          `json:"month"`          // this month so far
+	Spark         []SparkPoint           `json:"spark"` // 24 month-ends
+	Month         insights.Flow          `json:"month"` // this month so far
 	LastMonth     insights.Flow          `json:"last_month"`
 	Avg12         insights.Flow          `json:"avg12"`          // trailing 12 complete months, monthly average
 	Year          insights.Flow          `json:"year"`           // year to date
@@ -59,11 +59,19 @@ type SparkPoint struct {
 }
 
 type PlanPulse struct {
-	SafeToSpend money.Cents `json:"safe_to_spend"`
+	SafeToSpend money.Cents `json:"safe_to_spend"` // free money left this month
 	IncomeBase  money.Cents `json:"income_base"`
-	Over        []LineBrief `json:"over"` // spending lines over budget
-	Spent       money.Cents `json:"spent"`
-	Budgeted    money.Cents `json:"budgeted"`
+	// Daily view of the same money.
+	FreeSpent     money.Cents `json:"free_spent"`     // free spending so far this month
+	DaysLeft      int         `json:"days_left"`      // including today
+	PerDayLeft    money.Cents `json:"per_day_left"`   // safe to spend ÷ days left
+	AvgDay        money.Cents `json:"avg_day"`        // this month's free spending per elapsed day
+	TypicalDay    money.Cents `json:"typical_day"`    // same, averaged over the previous 6 complete months
+	ExpectedDay   money.Cents `json:"expected_day"`   // pace used for the projection (this month blended with typical)
+	ProjectedLeft money.Cents `json:"projected_left"` // what is left at month end at the expected pace
+	Over          []LineBrief `json:"over"`           // spending lines over budget
+	Spent         money.Cents `json:"spent"`
+	Budgeted      money.Cents `json:"budgeted"`
 }
 
 type LineBrief struct {
@@ -182,6 +190,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 
 	if r, err := BudgetReport(d, thisM, now); err == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase}
+		o.Plan.fillDaily(r.FreeSpentByMonth, now)
 		for _, l := range r.Lines {
 			if l.Kind != "spending" {
 				continue
@@ -211,4 +220,43 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	rec, _ := ledger.List(d, ledger.Filter{Limit: 8})
 	o.Recent = rec.Items
 	return o, nil
+}
+
+// fillDaily turns the month's free money into a daily allowance and pace.
+func (p *PlanPulse) fillDaily(free map[string]money.Cents, now time.Time) {
+	month := now.Format("2006-01")
+	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	day := now.Day()
+	p.FreeSpent = free[month]
+	p.DaysLeft = dim - day + 1
+	if p.SafeToSpend > 0 {
+		p.PerDayLeft = p.SafeToSpend / money.Cents(p.DaysLeft)
+	}
+	if day > 0 {
+		p.AvgDay = p.FreeSpent / money.Cents(day)
+	}
+	var total money.Cents
+	var days int
+	for i := 1; i <= 6; i++ {
+		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC)
+		v, ok := free[m.Format("2006-01")]
+		if !ok {
+			continue
+		}
+		total += v
+		days += time.Date(m.Year(), m.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	}
+	if days > 0 {
+		p.TypicalDay = total / money.Cents(days)
+	}
+	// The rest of the month at an expected daily pace: early on this month's
+	// few days say little, so lean on the typical day and shift to the actual
+	// pace as the month fills in. Today counts as already spent.
+	progress := float64(day) / float64(dim)
+	pace := p.AvgDay.Float()
+	if p.TypicalDay > 0 {
+		pace = progress*p.AvgDay.Float() + (1-progress)*p.TypicalDay.Float()
+	}
+	p.ExpectedDay = money.FromFloat(pace)
+	p.ProjectedLeft = p.SafeToSpend - money.FromFloat(pace*float64(p.DaysLeft-1))
 }

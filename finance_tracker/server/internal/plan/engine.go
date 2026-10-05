@@ -80,22 +80,25 @@ type Unbudgeted struct {
 }
 
 type Report struct {
-	Month              string       `json:"month"`
-	Months             []string     `json:"months"`
-	IncomeBase         money.Cents  `json:"income_base"`
-	IncomeBaseSource   string       `json:"income_base_source"`
-	IncomeActual       money.Cents  `json:"income_actual"`
-	Lines              []Line       `json:"lines"`
-	FixedPlanned       money.Cents  `json:"fixed_planned"`
-	SavingPlanned      money.Cents  `json:"saving_planned"`
-	SpendingPlanned    money.Cents  `json:"spending_planned"`
-	FixedSpent         money.Cents  `json:"fixed_spent"`
-	SavedActual        money.Cents  `json:"saved_actual"`
-	DiscretionarySpent money.Cents  `json:"discretionary_spent"`
-	FundContributions  money.Cents  `json:"fund_contributions"`
-	FundSpent          money.Cents  `json:"fund_spent"`
-	SafeToSpend        money.Cents  `json:"safe_to_spend"`
-	Unbudgeted         []Unbudgeted `json:"unbudgeted"`
+	Month              string      `json:"month"`
+	Months             []string    `json:"months"`
+	IncomeBase         money.Cents `json:"income_base"`
+	IncomeBaseSource   string      `json:"income_base_source"`
+	IncomeActual       money.Cents `json:"income_actual"`
+	Lines              []Line      `json:"lines"`
+	FixedPlanned       money.Cents `json:"fixed_planned"`
+	SavingPlanned      money.Cents `json:"saving_planned"`
+	SpendingPlanned    money.Cents `json:"spending_planned"`
+	FixedSpent         money.Cents `json:"fixed_spent"`
+	SavedActual        money.Cents `json:"saved_actual"`
+	DiscretionarySpent money.Cents `json:"discretionary_spent"`
+	FundContributions  money.Cents `json:"fund_contributions"`
+	FundSpent          money.Cents `json:"fund_spent"`
+	SafeToSpend        money.Cents `json:"safe_to_spend"`
+	// Free spending per month (discretionary minus what funds covered) —
+	// the same money SafeToSpend draws on. For daily pace and "typical".
+	FreeSpentByMonth map[string]money.Cents `json:"-"`
+	Unbudgeted       []Unbudgeted           `json:"unbudgeted"`
 }
 
 func ym(date string) string { return date[:7] }
@@ -342,6 +345,10 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	}
 	r.DiscretionarySpent = discretionary[month]
 	r.FundSpent = fundSpent[month]
+	r.FreeSpentByMonth = map[string]money.Cents{}
+	for m, v := range discretionary {
+		r.FreeSpentByMonth[m] = v - fundSpent[m]
+	}
 	r.FixedSpent = fixedSpent[month]
 	r.SavedActual = saved[month]
 	r.IncomeActual = income[month]

@@ -1,3 +1,5 @@
+import clsx from 'clsx'
+import type { Overview } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
@@ -51,7 +53,9 @@ export default function Home() {
 
   return (
     <div className="space-y-4">
-      {/* Hero: net worth */}
+      <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
+
+      {/* Net worth */}
       <section className="card overflow-hidden">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
@@ -144,8 +148,8 @@ export default function Home() {
           tone={spendPace > 1.15 ? 'bad' : undefined} onClick={() => nav('/insights/spending')} />
         <Stat icon="piggy" color="var(--s6)" label="Saved this month" value={eur(m.saved)} sub={m.income > 0 ? `${pct(m.savings_rate)} of income · avg ${pct(avg.savings_rate)}` : 'no income booked yet'}
           tone={m.saved < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-        <Stat icon="wallet" color="var(--s1)" label="Safe to spend" value={eur(o.plan.safe_to_spend)} sub={`of ${eur(o.plan.income_base)} income base`}
-          tone={o.plan.safe_to_spend < 0 ? 'bad' : 'good'} onClick={() => nav('/plan')} />
+        <Stat icon="briefcase" color="var(--s6)" label="Income this month" value={eur(m.income)} sub={`typical month ${eur(avg.income)}`}
+          onClick={() => nav('/insights/cashflow')} />
         <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} cash · target ${o.emergency.target_months} mo`}
           tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/insights/fi')} />
       </div>
@@ -236,3 +240,51 @@ export default function Home() {
 }
 
 
+
+/** The everyday question: how much free money is left this month, and what
+ *  that means per day. Same money as Plan's "safe to spend". */
+function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: number; month: string }) {
+  const left = p.safe_to_spend
+  const total = Math.max(p.free_spent + Math.max(left, 0), 1)
+  const used = Math.min(1, Math.max(0, p.free_spent / total))
+  const vsTypical = p.typical_day > 0 ? p.avg_day / p.typical_day - 1 : 0
+  const tone = left < 0 ? 'bad' : p.projected_left < 0 ? 'warn' : 'good'
+  return (
+    <Link to="/plan" className="card block p-4 hover:bg-sunken/30 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm text-ink2"><IconTile name="wallet" color="var(--s1)" size={26} />Left to spend in {month}</div>
+          <div className={clsx('mt-1.5 text-4xl font-semibold tracking-tight tnum', left < 0 ? 'text-bad' : 'text-good')}>{eur(left)}</div>
+          <div className="mt-1 text-sm text-ink2">
+            {left > 0 ? <>≈ <b className="tnum text-ink">{eur(p.per_day_left)}</b> a day for the next {p.days_left} {p.days_left === 1 ? 'day' : 'days'}</>
+              : <span className="text-bad">Over by {eur(-left)} — every euro now comes from savings</span>}
+          </div>
+        </div>
+        <Icon name="chevronR" className="mt-1 shrink-0 text-muted" />
+      </div>
+      {/* Spent vs still free, with today's position in the month */}
+      <div className="relative mt-4 h-2.5 rounded-full bg-sunken">
+        <div className={clsx('h-full rounded-full', left < 0 ? 'bg-bad' : used > progress + 0.1 ? 'bg-warn' : 'bg-accent')} style={{ width: `${Math.max(2, used * 100)}%` }} />
+        <div className="absolute -top-1 h-4.5 w-0.5 rounded bg-ink/60" style={{ left: `${Math.min(100, progress * 100)}%` }} title="today" />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] text-muted"><span>{eur(p.free_spent)} spent</span><span>today · {Math.round(progress * 100)}% of the month</span></div>
+      <div className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-3 text-sm">
+        <div>
+          <div className="text-xs text-muted">Avg day this month</div>
+          <div className="font-semibold tnum">{eur(p.avg_day)}</div>
+          {p.typical_day > 0 && <div className={clsx('text-xs tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : 'text-muted')}>{vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)} vs typical</div>}
+        </div>
+        <div>
+          <div className="text-xs text-muted">Typical day</div>
+          <div className="font-semibold tnum">{eur(p.typical_day)}</div>
+          <div className="text-xs text-muted">last 6 months</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted">Month end, expected</div>
+          <div className={clsx('font-semibold tnum', tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-good')}>{p.projected_left >= 0 ? eur(p.projected_left) : `−${eur(-p.projected_left)}`}</div>
+          <div className="text-xs text-muted" title="This month's pace, blended with your typical day while the month is young">{p.projected_left >= 0 ? 'left over' : 'short'} at ~{eur(p.expected_day)}/day</div>
+        </div>
+      </div>
+    </Link>
+  )
+}
