@@ -5,10 +5,10 @@ import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useAccounts, useRefresh, useRules, useTags } from '../lib/hooks'
 import { catColor, GROUPS, useCats } from '../lib/categories'
-import { eurc, shortDate } from '../lib/format'
+import { eurc, parseNum, shortDate } from '../lib/format'
 import type { Account, Rule } from '../lib/types'
 import { applyTheme } from '../App'
-import { Card, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Spinner, Tabs, Toggle, useToast } from '../components/ui'
+import { Card, ErrorBox, Field, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, Toggle, useToast } from '../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TxRow } from '../components/TxEditor'
 import { Icon, IconTile } from '../components/Icon'
@@ -253,7 +253,7 @@ function RuleEditor({ rule, onClose }: { rule: Partial<Rule>; onClose: () => voi
           <div><div className="label">Add tags</div><TagInput value={r.add_tags ?? []} onChange={(v) => setR({ ...r, add_tags: v })} /></div>
           <div className="flex items-center gap-4">
             <Toggle checked={r.enabled ?? true} onChange={(v) => setR({ ...r, enabled: v })} label="Enabled" />
-            <Field label="Priority"><input className="input h-8 w-20 tnum" value={r.priority ?? 100} onChange={(e) => setR({ ...r, priority: Number(e.target.value) })} /></Field>
+            <Field label="Priority"><NumberInput integer className="input h-8 w-20 tnum" value={r.priority ?? 100} onChange={(v) => setR({ ...r, priority: v ?? 100 })} /></Field>
           </div>
         </div>
         <div>
@@ -541,7 +541,7 @@ function TopUps() {
       <div className="flex gap-2">
         <input className="input w-28 tnum" inputMode="decimal" placeholder="$ amount" value={amt} onChange={(e) => setAmt(e.target.value)} />
         <input className="input" placeholder="Note" value={note} onChange={(e) => setNote(e.target.value)} />
-        <button className="btn-outline" disabled={!(Number(amt) > 0)} onClick={async () => { await api.post('/ai/topups', { amount_usd: Number(amt), note }); setAmt(''); setNote(''); reload() }}>Add</button>
+        <button className="btn-outline" disabled={!((parseNum(amt) ?? 0) > 0)} onClick={async () => { await api.post('/ai/topups', { amount_usd: parseNum(amt), note }); setAmt(''); setNote(''); reload() }}>Add</button>
       </div>
       <div className="mt-2 divide-y divide-line text-sm">
         {(data ?? []).map((t) => (

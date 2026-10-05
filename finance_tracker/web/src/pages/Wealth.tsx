@@ -6,10 +6,10 @@ import { Area, AreaChart, CartesianGrid, ComposedChart, Line, LineChart, Referen
 import { api } from '../lib/api'
 import { useAccounts, useNetWorthHistory, usePeriod, usePrefs, useRefresh } from '../lib/hooks'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
-import { eur, eurc, eurk, pct, shortDate, todayISO } from '../lib/format'
+import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../lib/format'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../lib/periods'
 import type { Account } from '../lib/types'
-import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../components/charts'
 import { Icon, IconTile } from '../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, volatility } from '../lib/brand'
@@ -328,8 +328,16 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
     mutationFn: () => api.post<{ saved: number }>('/balances', {
       date,
       values: editable.flatMap((a): { account_id: string; value?: number; quantity?: number; price?: number }[] => {
-        if (a.kind === 'crypto' && qty[a.id]) return [{ account_id: a.id, quantity: Number(qty[a.id]), price: Number(price) }]
-        if (vals[a.id] !== undefined && vals[a.id] !== '') return [{ account_id: a.id, value: Number(vals[a.id]) }]
+        if (a.kind === 'crypto' && qty[a.id]) {
+          const q = parseNum(qty[a.id]), p = parseNum(price)
+          if (q === undefined || p === undefined) throw new Error(`${a.name}: quantity and BTC price must be numbers`)
+          return [{ account_id: a.id, quantity: q, price: p }]
+        }
+        if (vals[a.id] !== undefined && vals[a.id] !== '') {
+          const v = parseNum(vals[a.id])
+          if (v === undefined) throw new Error(`${a.name}: "${vals[a.id]}" is not a number`)
+          return [{ account_id: a.id, value: v }]
+        }
         return []
       }),
     }),
@@ -604,8 +612,8 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ticker"><input className="input uppercase" value={t.ticker ?? ''} onChange={(e) => setT({ ...t, ticker: e.target.value.toUpperCase() })} /></Field>
           <Field label="Date"><input type="date" className="input" value={t.date} onChange={(e) => setT({ ...t, date: e.target.value })} /></Field>
-          <Field label="Shares"><input className="input tnum" inputMode="decimal" value={t.shares ?? ''} onChange={(e) => setT({ ...t, shares: Number(e.target.value) })} /></Field>
-          <Field label="Price per share"><input className="input tnum" inputMode="decimal" value={t.price ?? ''} onChange={(e) => setT({ ...t, price: Number(e.target.value) })} /></Field>
+          <Field label="Shares"><NumberInput value={t.shares} onChange={(v) => setT({ ...t, shares: v })} /></Field>
+          <Field label="Price per share"><NumberInput value={t.price} onChange={(v) => setT({ ...t, price: v })} /></Field>
           <Field label="Currency"><select className="input select-pad" value={t.currency} onChange={(e) => setT({ ...t, currency: e.target.value })}>{['USD', 'EUR', 'GBP'].map((c) => <option key={c}>{c}</option>)}</select></Field>
           <Field label="Account"><select className="input select-pad" value={t.account_id ?? ''} onChange={(e) => setT({ ...t, account_id: e.target.value })}><option value="ibkr">IBKR</option><option value="revolut_stocks">Revolut Stocks</option><option value="">—</option></select></Field>
         </div>
@@ -625,7 +633,7 @@ type LoanTerms = {
   monthly_payment?: Num; payment_day?: Num; start_date?: string; start_principal?: Num; end_date?: string
 }
 const LOAN_NUMS = ['base_rate', 'margin', 'monthly_payment', 'payment_day', 'start_principal'] as const
-const toNum = (v?: Num) => (v == null || v === '' ? undefined : Number(String(v).replace(',', '.')))
+const toNum = (v?: Num) => (v == null || v === '' ? undefined : parseNum(String(v)) ?? NaN)
 
 /** Numbers as numbers; rejects anything that isn't one. */
 function cleanTerms(d: LoanTerms): LoanTerms {
@@ -690,7 +698,7 @@ function LoanEditor({ id, onClose }: { id: string; onClose: () => void }) {
     mutationFn: async () => {
       if (!a || !d) return
       await api.put(`/accounts/${a.id}`, { ...a, details: { ...(a.details ?? {}), ...cleanTerms(d) } })
-      if (owed.trim()) await api.post('/balances', { date: owedDate, values: [{ account_id: a.id, value: -Math.abs(Number(owed.replace(',', '.'))) }] })
+      if (owed.trim()) await api.post('/balances', { date: owedDate, values: [{ account_id: a.id, value: -Math.abs(parseNum(owed) ?? NaN) }] })
     },
     onSuccess: () => { refresh(); toast('Loan updated', 'good'); onClose() },
   })

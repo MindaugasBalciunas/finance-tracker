@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { Delta, Meter, Segmented, Stat } from '../components/ui'
+import { Delta, Meter, NumberInput, Segmented, Stat } from '../components/ui'
 
 describe('ui primitives', () => {
   it('Delta shows direction with an arrow and colours by meaning', () => {
@@ -34,5 +34,20 @@ describe('ui primitives', () => {
     render(<Stat label="Saved" value="€3,009" sub="97% of income" tone="good" />)
     expect(screen.getByText('€3,009')).toHaveClass('text-good')
     expect(screen.getByText('97% of income')).toBeInTheDocument()
+  })
+})
+
+describe('NumberInput', () => {
+  it('keeps what is typed, accepts commas and reports numbers only', () => {
+    const got: (number | undefined)[] = []
+    render(<NumberInput value={undefined} onChange={(v) => got.push(v)} aria-label="shares" />)
+    const el = screen.getByLabelText('shares') as HTMLInputElement
+    for (const t of ['0', '0,', '0,5', '0,5x']) fireEvent.change(el, { target: { value: t } })
+    expect(el.value).toBe('0,5x')                 // never rewritten to NaN
+    expect(got).toEqual([0, 0, 0.5, undefined])
+    expect(el).toHaveAttribute('aria-invalid', 'true')
+    fireEvent.change(el, { target: { value: '12.25' } })
+    expect(el).not.toHaveAttribute('aria-invalid')
+    expect(got[got.length - 1]).toBe(12.25)
   })
 })

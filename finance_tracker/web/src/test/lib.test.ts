@@ -1,4 +1,4 @@
-import { addMonths, eur, eurc, eurk, monthLabel, pct, signed } from '../lib/format'
+import { addMonths, eur, eurc, eurk, monthLabel, parseNum, pct, signed } from '../lib/format'
 import { qs } from '../lib/api'
 import { catColor, GROUPS } from '../lib/categories'
 
@@ -37,5 +37,24 @@ describe('chart colours', () => {
     expect(catColor('food')).not.toBe(catColor('housing'))
     expect(catColor('dating')).toBe('var(--s-other)')
     expect(new Set(GROUPS.map((g) => g.slot)).size).toBe(GROUPS.length)
+  })
+})
+
+describe('parseNum', () => {
+  it('reads decimals typed either way, never NaN', () => {
+    expect(parseNum('12,5')).toBe(12.5)
+    expect(parseNum('12.5')).toBe(12.5)
+    expect(parseNum('0,0091')).toBe(0.0091)
+    expect(parseNum('1 234,56')).toBe(1234.56)
+    expect(parseNum('1.234,56')).toBe(1234.56)
+    expect(parseNum('1,234.56')).toBe(1234.56)
+    expect(parseNum('1,234,567')).toBe(1234567)
+    expect(parseNum('€ 9.99')).toBe(9.99)
+    expect(parseNum('-3,5')).toBe(-3.5)
+    expect(parseNum('.5')).toBe(0.5)
+    expect(parseNum('12.')).toBe(12)
+    for (const bad of ['', 'abc', '1,2,3.4.5', '12a', '--1', '.']) expect(parseNum(bad)).toBeUndefined()
+    expect(parseNum(NaN)).toBeUndefined()
+    expect(parseNum(7)).toBe(7)
   })
 })

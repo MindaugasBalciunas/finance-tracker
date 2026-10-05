@@ -8,7 +8,7 @@ import { usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth } from '../lib/format'
 import type { Budget, PlanLine, PlanReport } from '../lib/types'
-import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { CategoryPicker, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -257,7 +257,7 @@ function BudgetEditor({ b: init, month, onClose }: { b: Partial<Budget>; month: 
           <Segmented value={b.kind ?? 'spending'} onChange={(k) => setB({ ...b, kind: k })} options={[{ value: 'fixed', label: 'Fixed' }, { value: 'saving', label: 'Saving' }, { value: 'spending', label: 'Spending' }]} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label={b.period === 'yearly' ? 'Amount per year (€)' : 'Amount per month (€)'}><input className="input tnum" inputMode="decimal" value={b.amount ?? ''} onChange={(e) => setB({ ...b, amount: Number(e.target.value) })} /></Field>
+          <Field label={b.period === 'yearly' ? 'Amount per year (€)' : 'Amount per month (€)'}><NumberInput value={b.amount} onChange={(v) => setB({ ...b, amount: v })} /></Field>
           <div><div className="label">Period</div><Segmented value={b.period ?? 'monthly'} onChange={(p) => setB({ ...b, period: p })} options={[{ value: 'monthly', label: 'Monthly' }, { value: 'yearly', label: 'Yearly' }]} /></div>
         </div>
         <div>
@@ -356,7 +356,7 @@ function PlanSettings() {
     toast('Saved', 'good')
     refresh()
   }
-  const num = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...v, [k]: Number(e.target.value) })
+  const num = (k: string) => (n: number | undefined) => setS({ ...v, [k]: n ?? 0 })
   return (
     <div className="max-w-xl space-y-4">
       <Card title="Income base">
@@ -365,23 +365,23 @@ function PlanSettings() {
             options={[{ value: 'median', label: 'From history' }, { value: 'gross', label: 'Gross salary' }, { value: 'manual', label: 'Fixed amount' }]} />
           {v.income_mode === 'gross' && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Gross salary €/month"><input className="input tnum" value={v.gross_salary || ''} onChange={num('gross_salary')} /></Field>
-              <Field label="Other deductions €/month"><input className="input tnum" value={v.monthly_deductions || ''} onChange={num('monthly_deductions')} /></Field>
+              <Field label="Gross salary €/month"><NumberInput value={v.gross_salary || undefined} onChange={num('gross_salary')} /></Field>
+              <Field label="Other deductions €/month"><NumberInput value={v.monthly_deductions || undefined} onChange={num('monthly_deductions')} /></Field>
               <div className="col-span-2 text-xs text-muted">Net after Lithuanian taxes ≈ {eur(data.net_from_gross)} (saved settings)</div>
             </div>
           )}
-          {v.income_mode === 'manual' && <Field label="Monthly income €"><input className="input tnum" value={v.manual_income || ''} onChange={num('manual_income')} /></Field>}
+          {v.income_mode === 'manual' && <Field label="Monthly income €"><NumberInput value={v.manual_income || undefined} onChange={num('manual_income')} /></Field>}
           {(!v.income_mode || v.income_mode === 'median') && <div className="text-xs text-muted">Median of the last 12 complete months of income.</div>}
         </div>
       </Card>
       <Card title="Financial independence">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Birth year"><input className="input tnum" value={v.birth_year || ''} onChange={num('birth_year')} /></Field>
-          <Field label="Target age"><input className="input tnum" value={v.target_age || ''} onChange={num('target_age')} /></Field>
-          <Field label="Spending in FI €/month" hint="Empty = last 12 months"><input className="input tnum" value={v.fi_monthly_spend || ''} onChange={num('fi_monthly_spend')} /></Field>
-          <Field label="Withdrawal rate %"><input className="input tnum" value={v.withdrawal_rate || ''} onChange={num('withdrawal_rate')} /></Field>
-          <Field label="Real return % p.a."><input className="input tnum" value={v.expected_return ?? ''} onChange={num('expected_return')} /></Field>
-          <Field label="Emergency fund (months)"><input className="input tnum" value={v.emergency_months || ''} onChange={num('emergency_months')} /></Field>
+          <Field label="Birth year"><NumberInput value={v.birth_year || undefined} onChange={num('birth_year')} /></Field>
+          <Field label="Target age"><NumberInput value={v.target_age || undefined} onChange={num('target_age')} /></Field>
+          <Field label="Spending in FI €/month" hint="Empty = last 12 months"><NumberInput value={v.fi_monthly_spend || undefined} onChange={num('fi_monthly_spend')} /></Field>
+          <Field label="Withdrawal rate %"><NumberInput value={v.withdrawal_rate || undefined} onChange={num('withdrawal_rate')} /></Field>
+          <Field label="Real return % p.a."><NumberInput value={v.expected_return} onChange={num('expected_return')} /></Field>
+          <Field label="Emergency fund (months)"><NumberInput value={v.emergency_months || undefined} onChange={num('emergency_months')} /></Field>
         </div>
       </Card>
       <button className="btn-primary" onClick={save}>Save</button>

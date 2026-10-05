@@ -1,7 +1,7 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, InputHTMLAttributes, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Icon, IconTile } from './Icon'
-import { eur, signed } from '../lib/format'
+import { eur, parseNum, signed } from '../lib/format'
 
 export function Card({ children, className = '', title, action, pad = true, icon, color = 'rgb(var(--accent))' }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
   return (
@@ -208,5 +208,33 @@ export function AskCFO({ q, label = 'Ask CFO' }: { q: string; label?: string }) 
     <a href={`#/ai?q=${encodeURIComponent(q)}`} className="btn-ghost h-8 px-2.5 text-xs text-accent">
       <Icon name="spark" size={15} />{label}
     </a>
+  )
+}
+
+/** A number field that keeps exactly what is typed ("0,", "12.") and reports
+ *  a number only once it parses — no NaN, commas accepted. Invalid text gets
+ *  a red outline. */
+export function NumberInput({ value, onChange, integer = false, className = 'input tnum', placeholder, ...rest }: {
+  value: number | null | undefined; onChange: (v: number | undefined) => void; integer?: boolean; className?: string; placeholder?: string
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const show = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '' : String(v))
+  const [text, setText] = useState(show(value))
+  const last = useRef(value)
+  useEffect(() => {
+    // Follow outside changes (e.g. AI fill), not our own echo.
+    if (value !== last.current) { last.current = value; setText(show(value)) }
+  }, [value])
+  const n = parseNum(text)
+  const invalid = text.trim() !== '' && (n === undefined || (integer && !Number.isInteger(n)))
+  return (
+    <input {...rest} className={clsx(className, invalid && 'border-bad focus:border-bad')} inputMode={integer ? 'numeric' : 'decimal'} placeholder={placeholder}
+      aria-invalid={invalid || undefined} value={text}
+      onChange={(e) => {
+        setText(e.target.value)
+        const v = parseNum(e.target.value)
+        const ok = v !== undefined && (!integer || Number.isInteger(v))
+        last.current = ok ? v : undefined
+        onChange(ok ? v : undefined)
+      }} />
   )
 }

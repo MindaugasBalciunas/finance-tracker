@@ -49,3 +49,24 @@ export function daysAgo(n: number): string {
   d.setDate(d.getDate() - n)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+/** Parse a typed amount: "12,5", "12.5", "1 234,56", "1,234.56", "€ 9.99".
+ *  The last "," or "." is the decimal point; the other is a thousands
+ *  separator. Returns undefined (never NaN) when it isn't a number. */
+export function parseNum(input: string | number | null | undefined): number | undefined {
+  if (input == null) return undefined
+  if (typeof input === 'number') return Number.isFinite(input) ? input : undefined
+  let s = input.replace(/[\s €$£]/g, '')
+  if (!s) return undefined
+  const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.')
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Both present: whichever comes last is the decimal separator.
+    s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+  } else if (lastComma >= 0) {
+    // "1,234,567" (several commas) is thousands; a single comma is a decimal.
+    s = (s.match(/,/g) ?? []).length > 1 ? s.replace(/,/g, '') : s.replace(',', '.')
+  }
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(s)) return undefined
+  const n = Number(s)
+  return Number.isFinite(n) ? n : undefined
+}

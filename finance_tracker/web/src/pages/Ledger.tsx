@@ -7,7 +7,7 @@ import { TxFilter, useInbox, useOverview, useRefresh, useTransactions } from '..
 import { useCats } from '../lib/categories'
 import { dayLabel, daysAgo, eur, eurc, todayISO } from '../lib/format'
 import type { InboxRow, Tx } from '../lib/types'
-import { Empty, ErrorBox, Loading, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
+import { Empty, ErrorBox, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { AccountSelect, CategoryPicker, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
 import { Icon } from '../components/Icon'
@@ -486,7 +486,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
             : <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-[10px]">{JSON.stringify(JSON.parse(raw || '{}'), null, 2)}</pre>}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label><span className="label">Amount €</span><input className="input tnum" inputMode="decimal" value={r.amount} onChange={(e) => setR({ ...r, amount: Number(e.target.value) })} /></label>
+          <label><span className="label">Amount €</span><NumberInput value={r.amount} onChange={(v) => setR({ ...r, amount: v as number })} /></label>
           <label><span className="label">Date</span><input type="date" className="input" value={r.date} onChange={(e) => setR({ ...r, date: e.target.value })} /></label>
         </div>
         <label className="block"><span className="label">Merchant</span><input className="input" value={r.merchant} onChange={(e) => setR({ ...r, merchant: e.target.value })} /></label>

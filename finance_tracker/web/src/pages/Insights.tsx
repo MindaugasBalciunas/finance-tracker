@@ -6,7 +6,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, R
 import { api } from '../lib/api'
 import { useCashflow, usePeriod, useRefresh } from '../lib/hooks'
 import { catColor, catIcon, CORE, useCats } from '../lib/categories'
-import { addMonths, eur, eurc, eurk, monthLabel, pct, shortDate, thisMonth, todayISO } from '../lib/format'
+import { addMonths, eur, eurc, eurk, monthLabel, parseNum, pct, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Flow, Recurring, Tx } from '../lib/types'
 import { AskCFO, Card, Delta, Empty, ErrorBox, Field, Loading, Meter, PageHeader, Segmented, Sheet, Stat, Tabs, useToast } from '../components/ui'
 import { CategoryPicker } from '../components/pickers'
@@ -386,9 +386,9 @@ function RecurringEditor({ r, onClose }: { r: Recurring | null; onClose: () => v
   const toast = useToast()
   const done = (msg: string) => { refresh(); toast(msg, 'good'); onClose() }
   const body = (extra: object = {}) => {
-    const amount = Number(v.amount.replace(',', '.'))
+    const amount = parseNum(v.amount)
     if (!v.merchant.trim()) throw new Error('Name it — the merchant or payee')
-    if (!Number.isFinite(amount) || amount < 0) throw new Error('Amount must be a number')
+    if (amount === undefined || amount < 0) throw new Error('Amount must be a number')
     return { ...v, merchant: v.merchant.trim(), amount, ...extra }
   }
   const save = useMutation({

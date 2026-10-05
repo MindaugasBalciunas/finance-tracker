@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
-import { dayLabel, eurc, todayISO } from '../lib/format'
+import { dayLabel, eurc, parseNum, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
@@ -88,7 +88,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   }, [t.merchant, t.note, t.kind])
 
   const submit = async () => {
-    const value = parseFloat(amount.replace(',', '.'))
+    const value = parseNum(amount) ?? NaN
     if (!(value > 0)) return toast('Enter an amount', 'bad')
     if (!t.category) return toast('Pick a category', 'bad')
     try {
@@ -141,7 +141,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     refresh()
     onClose()
   }
-  if (splitOpen && t.id) return <SplitSheet tx={{ ...(t as Tx), amount: parseFloat(amount) || (t.amount as number) }} onClose={() => setSplitOpen(false)} onDone={onClose} />
+  if (splitOpen && t.id) return <SplitSheet tx={{ ...(t as Tx), amount: parseNum(amount) ?? (t.amount as number) }} onClose={() => setSplitOpen(false)} onDone={onClose} />
   return (
     <Sheet open onClose={onClose} title={isNew ? 'New transaction' : 'Edit transaction'}
       footer={<>
@@ -230,10 +230,10 @@ function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDo
   const refresh = useRefresh()
   const toast = useToast()
   const cats = useCats()
-  const used = parts.reduce((a, p) => a + (parseFloat(p.amount) || 0), 0)
+  const used = parts.reduce((a, p) => a + (parseNum(p.amount) ?? 0), 0)
   const save = async () => {
     try {
-      await api.post(`/transactions/${tx.id}/split`, { parts: parts.filter((p) => parseFloat(p.amount) > 0).map((p) => ({ ...p, amount: parseFloat(p.amount) })) })
+      await api.post(`/transactions/${tx.id}/split`, { parts: parts.filter((p) => (parseNum(p.amount) ?? 0) > 0).map((p) => ({ ...p, amount: parseNum(p.amount) })) })
       toast('Split saved', 'good')
       refresh()
       onDone()
