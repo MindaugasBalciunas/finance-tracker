@@ -14,6 +14,7 @@ export interface Tx {
   external_id?: string
   split_of?: number
   source: string
+  pending?: boolean
 }
 
 export interface TxList { items: Tx[]; total: number; income: number; expense: number; transfer: number }

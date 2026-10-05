@@ -1102,7 +1102,8 @@ func (s *Server) bankRoutes() {
 	s.handle("GET /api/bank/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		st := bank.LoadSettings(s.DB)
 		return map[string]any{"application_id": st.ApplicationID, "has_key": st.PrivateKeyPEM != "", "environment": st.Environment,
-			"redirect_url": st.RedirectURL, "owner_names": st.OwnerNames, "consent_days": st.ConsentDays, "configured": st.Configured()}, nil
+			"redirect_url": st.RedirectURL, "owner_names": st.OwnerNames, "consent_days": st.ConsentDays, "configured": st.Configured(),
+			"keep_reserved_in_inbox": st.KeepReservedInInbox}, nil
 	})
 	s.handle("PUT /api/bank/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {
@@ -1112,11 +1113,15 @@ func (s *Server) bankRoutes() {
 			RedirectURL   *string   `json:"redirect_url"`
 			OwnerNames    *[]string `json:"owner_names"`
 			ConsentDays   *int      `json:"consent_days"`
+			KeepReserved  *bool     `json:"keep_reserved_in_inbox"`
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
 		st := bank.LoadSettings(s.DB)
+		if in.KeepReserved != nil {
+			st.KeepReservedInInbox = *in.KeepReserved
+		}
 		if in.ApplicationID != nil {
 			st.ApplicationID = strings.TrimSpace(*in.ApplicationID)
 		}

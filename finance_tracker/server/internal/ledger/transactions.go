@@ -25,6 +25,7 @@ type Tx struct {
 	ExternalID  string      `json:"external_id,omitempty"`
 	SplitOf     int64       `json:"split_of,omitempty"`
 	Source      string      `json:"source"`
+	Pending     bool        `json:"pending,omitempty"` // a card reservation the bank hasn't booked yet
 	CreatedAt   string      `json:"created_at,omitempty"`
 }
 
@@ -40,12 +41,12 @@ func (t Tx) Signed() money.Cents {
 	return 0
 }
 
-const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,created_at`
+const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at`
 
 func scanTx(s interface{ Scan(...any) error }) (Tx, error) {
 	var t Tx
 	var tags string
-	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.CreatedAt)
+	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt)
 	t.Tags = SplitTags(tags)
 	if t.Tags == nil {
 		t.Tags = []string{}
@@ -281,10 +282,10 @@ func nullInt(i int64) any {
 // Insert writes a validated transaction.
 func Insert(e execer, t *Tx) error {
 	now := db.Now()
-	res, err := e.Exec(`INSERT INTO transactions(date,kind,amount,account_id,to_account_id,category,merchant,note,tags,external_id,split_of,source,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	res, err := e.Exec(`INSERT INTO transactions(date,kind,amount,account_id,to_account_id,category,merchant,note,tags,external_id,split_of,source,pending,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.Date, t.Kind, int64(t.Amount), nullStr(t.AccountID), nullStr(t.ToAccountID), t.Category, t.Merchant, t.Note,
-		JoinTags(t.Tags), nullStr(t.ExternalID), nullInt(t.SplitOf), t.Source, now, now)
+		JoinTags(t.Tags), nullStr(t.ExternalID), nullInt(t.SplitOf), t.Source, t.Pending, now, now)
 	if err != nil {
 		return err
 	}
@@ -299,6 +300,27 @@ func Update(e execer, t *Tx) error {
 		t.Date, t.Kind, int64(t.Amount), nullStr(t.AccountID), nullStr(t.ToAccountID), t.Category, t.Merchant, t.Note,
 		JoinTags(t.Tags), db.Now(), t.ID)
 	return err
+}
+
+// SettleReservation turns a pending card reservation into the booked
+// transaction: the bank's final amount, date and id; the owner's category,
+// merchant, tags and notes stay as they are.
+func SettleReservation(e execer, id int64, amount money.Cents, date, externalID string) error {
+	_, err := e.Exec(`UPDATE transactions SET amount=?, date=?, external_id=?, pending=0, updated_at=? WHERE id=? AND pending=1`,
+		int64(amount), date, externalID, db.Now(), id)
+	return err
+}
+
+// DropReservation removes a reservation the bank released without booking
+// (and any split parts made from it). Booked transactions are never touched.
+func DropReservation(e execer, id int64) (bool, error) {
+	res, err := e.Exec(`DELETE FROM transactions WHERE (id=? OR split_of=?) AND (pending=1 OR split_of=?)
+		AND EXISTS (SELECT 1 FROM transactions WHERE id=? AND pending=1)`, id, id, id, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 func Delete(e execer, id int64) error {

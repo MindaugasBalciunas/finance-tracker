@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -73,15 +74,18 @@ func TestBackupRetention(t *testing.T) {
 
 func TestPensionsBecomeLiquid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "p.db")
-	d, err := Open(path)
+	// A genuine schema-1 instance (as v2.0 left it) with a non-liquid pension.
+	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An instance still on schema 1 with a non-liquid pension.
-	d.Exec(`INSERT INTO accounts(id,name,kind,liquid,created_at,updated_at) VALUES('p','P','pension',0,'x','x'),('h','H','property',0,'x','x')`)
-	d.Exec(`PRAGMA user_version = 1`)
-	d.Close()
-	d, err = Open(path)
+	if _, err := raw.Exec(schemaV1); err != nil {
+		t.Fatal(err)
+	}
+	raw.Exec(`INSERT INTO accounts(id,name,kind,liquid,created_at,updated_at) VALUES('p','P','pension',0,'x','x'),('h','H','property',0,'x','x')`)
+	raw.Exec(`PRAGMA user_version = 1`)
+	raw.Close()
+	d, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

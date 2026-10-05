@@ -24,11 +24,11 @@ import (
 
 // Windows and tolerances — each learned from live syncs in v1.
 const (
-	firstSyncDays        = 90               // what LT banks serve without a second SCA
-	resyncOverlapDays    = 7                // late-posting card rows
+	firstSyncDays        = 90 // what LT banks serve without a second SCA
+	resyncOverlapDays    = 7  // late-posting card rows
 	reservationWindow    = 10 * 24 * time.Hour
-	reservationTolerance = 0.20             // tips and fuel pre-auths move the amount
-	matchDayWindow       = 3                // hand-entered vs bank date drift
+	reservationTolerance = 0.20 // tips and fuel pre-auths move the amount
+	matchDayWindow       = 3    // hand-entered vs bank date drift
 	autoLinkDayWindow    = 1
 	balanceFreshness     = 24 * time.Hour
 )
@@ -265,7 +265,7 @@ func (s *Service) Disconnect(ctx context.Context, id int64) error {
 	return err
 }
 
-// MapAccount sets which ledger account a bank account feeds ('' = don't sync).
+// MapAccount sets which ledger account a bank account feeds (” = don't sync).
 func (s *Service) MapAccount(id int64, accountID string) error {
 	a, err := getBankAccount(s.DB, id)
 	if err != nil {
@@ -283,17 +283,19 @@ func (s *Service) MapAccount(id int64, accountID string) error {
 // ── sync ────────────────────────────────────────────────────────────
 
 type SyncResult struct {
-	Accounts   []AccountSync `json:"accounts"`
-	Fetched    int           `json:"fetched"`
-	New        int           `json:"new"`
-	Updated    int           `json:"updated"`
-	Duplicates int           `json:"duplicates"`
-	Pending    int           `json:"pending"`
-	Superseded int           `json:"superseded"`
-	Released   int           `json:"released"`
-	AutoLinked int           `json:"auto_linked"`
-	Balances   []BalanceSet  `json:"balances"`
-	Failed     int           `json:"failed"`
+	Accounts      []AccountSync `json:"accounts"`
+	Fetched       int           `json:"fetched"`
+	New           int           `json:"new"`
+	Updated       int           `json:"updated"`
+	Duplicates    int           `json:"duplicates"`
+	Pending       int           `json:"pending"`
+	Superseded    int           `json:"superseded"`
+	Released      int           `json:"released"`
+	AutoLinked    int           `json:"auto_linked"`
+	ReservedAdded int           `json:"reserved_added"` // card reservations put straight into the ledger
+	Settled       int           `json:"settled"`        // ledger reservations the bank has now booked
+	Balances      []BalanceSet  `json:"balances"`
+	Failed        int           `json:"failed"`
 }
 
 type AccountSync struct {
@@ -374,6 +376,7 @@ func (s *Service) SyncAll(ctx context.Context, psu openbanking.PSU, days int, on
 	}
 	res.Balances = s.applyBankBalances(synced)
 	res.AutoLinked = s.autoLink()
+	res.ReservedAdded = s.addReservations()
 	return res, nil
 }
 
@@ -492,6 +495,16 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 			holds = append(holds, &open[i])
 		}
 	}
+	// Reservations already in the ledger (pending) can be settled or released too.
+	imported, err := listInbox(s.DB, "imported")
+	if err != nil {
+		return 0, err
+	}
+	for i := range imported {
+		if imported[i].Pending && imported[i].BankAccountID == a.ID && imported[i].ImportedTxID > 0 {
+			holds = append(holds, &imported[i])
+		}
+	}
 	taken := map[int64]bool{}
 	seen := map[string]bool{}
 	newest := a.LastTxDate
@@ -557,6 +570,16 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 				r.State = "imported"
 				r.ImportedTxID = r.MatchedTxID
 			}
+			// The reservation is already in the ledger: settle that transaction
+			// with the bank's final amount instead of adding a second one.
+			if claimed != nil && claimed.State == "imported" && claimed.ImportedTxID > 0 {
+				if err := ledger.SettleReservation(tx, claimed.ImportedTxID, r.Amount, r.Date, r.ExternalID); err != nil {
+					return 0, err
+				}
+				r.State, r.ImportedTxID, r.MatchedTxID = "imported", claimed.ImportedTxID, claimed.ImportedTxID
+				r.Verdict, r.VerdictNote = "duplicate", "booked — settled the transaction added while it was reserved"
+				res.Settled++
+			}
 			if err := saveInbox(tx, &r); err != nil {
 				return 0, fmt.Errorf("staging %s: %w", r.ExternalID, err)
 			}
@@ -597,6 +620,12 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 	for _, h := range holds {
 		if taken[h.ID] || seen[h.ExternalID] || h.Date < from.Format("2006-01-02") {
 			continue
+		}
+		if h.State == "imported" && h.ImportedTxID > 0 {
+			// Added while reserved, never booked: take it back out.
+			if _, err := ledger.DropReservation(tx, h.ImportedTxID); err != nil {
+				return 0, err
+			}
 		}
 		h.State, h.VerdictNote = "superseded", "the bank released this reservation without booking it"
 		saveInbox(tx, h)
@@ -961,11 +990,6 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 			res.Notes = append(res.Notes, label+" was already "+r.State)
 			continue
 		}
-		if r.Pending {
-			res.Skipped++
-			res.Notes = append(res.Notes, label+" is still only reserved by the bank — it can be added once it books")
-			continue
-		}
 		var dup int64
 		if tx.QueryRow(`SELECT id FROM transactions WHERE external_id=?`, r.ExternalID).Scan(&dup) == nil {
 			r.State, r.ImportedTxID, r.Verdict = "imported", dup, "duplicate"
@@ -974,8 +998,9 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 			res.Notes = append(res.Notes, label+" is already in your ledger")
 			continue
 		}
+		// A reservation enters as pending; the booking settles it later.
 		t := ledger.Tx{Date: r.Date, Kind: r.Kind, Amount: r.Amount, AccountID: r.AccountID, ToAccountID: r.ToAccountID, Category: r.Category,
-			Merchant: r.Merchant, Note: r.Note, Tags: r.Tags, ExternalID: r.ExternalID, Source: "bank"}
+			Merchant: r.Merchant, Note: r.Note, Tags: r.Tags, ExternalID: r.ExternalID, Source: "bank", Pending: r.Pending}
 		if err := ledger.Validate(tx, &t); err != nil {
 			res.Skipped++
 			res.Notes = append(res.Notes, label+": "+err.Error())
@@ -1024,4 +1049,32 @@ func (s *Service) OpenCount() int {
 	var n int
 	s.DB.QueryRow(`SELECT COUNT(*) FROM bank_inbox WHERE state='open'`).Scan(&n)
 	return n
+}
+
+// addReservations puts fresh card reservations straight into the ledger as
+// pending transactions, so today's spending counts today. Only rows that are
+// ready (category known, not flagged for review or as duplicates).
+func (s *Service) addReservations() int {
+	if LoadSettings(s.DB).KeepReservedInInbox {
+		return 0
+	}
+	open, err := listInbox(s.DB, "open")
+	if err != nil {
+		return 0
+	}
+	var ids []int64
+	for i := range open {
+		r := &open[i]
+		if r.Pending && r.Ready() && r.Verdict == "pending" {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0
+	}
+	res, err := s.Commit(ids)
+	if err != nil {
+		return 0
+	}
+	return len(res.Imported)
 }

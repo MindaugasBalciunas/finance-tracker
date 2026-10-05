@@ -38,6 +38,8 @@ var migrations = []string{
     updated_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant ON recurring_items(lower(merchant));`,
+	// 4: card reservations can enter the ledger before they book.
+	`ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

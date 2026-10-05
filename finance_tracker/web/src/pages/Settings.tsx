@@ -429,6 +429,11 @@ function Banks() {
           </div>
         )}
       </Card>
+      <Card title="Card reservations">
+        <Toggle checked={!st?.keep_reserved_in_inbox} onChange={async (v) => { await api.put('/bank/settings', { keep_reserved_in_inbox: !v }); qc.invalidateQueries({ queryKey: ['bank-settings'] }) }}
+          label="Add to the ledger right away" />
+        <div className="mt-2 text-xs text-muted">Card payments the bank has only reserved go straight into the ledger, marked <span className="text-warn">pending</span>, so today's spending counts today. When the bank books one, the same transaction gets the final amount and date — your category and tags stay. A reservation the bank releases is removed. Off: they wait in the inbox until they book.</div>
+      </Card>
       <Card title="Enable Banking application" action={!form && <button className="btn-ghost h-8 text-xs" onClick={() => setForm({ ...st, owner_names: (st?.owner_names ?? []).join('\n'), private_key_pem: '' })}>Edit</button>}>
         {!form ? (
           <div className="space-y-1 text-sm">

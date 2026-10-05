@@ -383,7 +383,8 @@ function Inbox() {
           {review.length > 0 && <InboxGroup title="Needs your input" rows={review} picked={picked} setPicked={setPicked} onEdit={setEdit} onLink={link} onDismiss={(id) => state([id], 'dismiss')} />}
           <InboxGroup title="Ready" rows={ready} picked={picked} setPicked={setPicked} onEdit={setEdit} onLink={link} onDismiss={(id) => state([id], 'dismiss')}
             action={picked.size > 0 && <button className="btn-primary h-8 text-xs" disabled={busy} onClick={() => commit([...picked])}>Add {picked.size} to ledger</button>} />
-          {pending.length > 0 && <InboxGroup title="Reserved by the bank (not booked yet)" rows={pending} picked={new Set()} setPicked={() => {}} onEdit={setEdit} onLink={link} onDismiss={(id) => state([id], 'dismiss')} muted />}
+          {pending.length > 0 && <InboxGroup title="Reserved by the bank (not booked yet)" rows={pending} picked={new Set()} setPicked={() => {}} onEdit={setEdit} onLink={link} onDismiss={(id) => state([id], 'dismiss')} muted
+            action={<button className="btn-outline h-8 text-xs" disabled={busy} onClick={() => commit(pending.filter((r) => r.category).map((r) => r.id))}>Add as pending</button>} />}
         </div>
       )}
       {edit && <InboxEditor row={edit} onClose={() => setEdit(null)} />}
@@ -464,7 +465,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
   const save = async (andAdd: boolean) => {
     try {
       await api.put(`/bank/inbox/${r.id}`, { date: r.date, amount: r.amount, category: r.category, merchant: r.merchant, note: r.note, tags: r.tags, account_id: r.account_id, to_account_id: r.to_account_id })
-      if (andAdd && !r.pending) await api.post('/bank/inbox/commit', { ids: [r.id] })
+      if (andAdd) await api.post('/bank/inbox/commit', { ids: [r.id] })
       toast(andAdd ? 'Added to ledger' : 'Saved', 'good')
       refresh()
       onClose()
@@ -475,7 +476,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
   return (
     <Sheet open onClose={onClose} title="Bank transaction" footer={<>
       <button className="btn-ghost" onClick={() => save(false)}>Save</button>
-      {!r.pending && <button className="btn-primary" onClick={() => save(true)}>Save & add</button>}
+      <button className="btn-primary" onClick={() => save(true)}>{r.pending ? 'Save & add as pending' : 'Save & add'}</button>
     </>}>
       <div className="space-y-4">
         <div className="rounded-xl bg-sunken px-3 py-2 text-xs text-ink2">

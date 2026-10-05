@@ -167,16 +167,19 @@ func TestDismissedStaysDismissedAndCommitMarksDuplicate(t *testing.T) {
 }
 
 func TestReservationSupersededOrReleased(t *testing.T) {
-	_, s, fb := setup(t)
+	d, s, fb := setup(t)
+	st := bank.LoadSettings(d)
+	st.KeepReservedInInbox = true // the review-first path
+	bank.SaveSettings(d, st)
 	fb.pending["u1"] = []openbanking.Transaction{card("hold-1", "PDNG", today(-3), "60.00", "NESTE"), card("hold-2", "PDNG", today(-3), "15.00", "CAFE")}
 	res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
 	if res.Pending != 2 {
 		t.Fatalf("%+v", res)
 	}
-	// Reservations can't be committed.
+	// Kept in the inbox: nothing reached the ledger on its own.
 	rows := inbox(t, s, "open")
-	if c, _ := s.Commit([]int64{rows[0].ID}); len(c.Imported) != 0 {
-		t.Fatal("a reservation was committed")
+	if res.ReservedAdded != 0 || len(rows) != 2 {
+		t.Fatalf("review-first: %+v", res)
 	}
 	// The fuel hold books for a different amount under a new reference; the
 	// café hold disappears.
@@ -280,5 +283,54 @@ func TestNotConfigured(t *testing.T) {
 	}
 	if bank.LoadSettings(d).ConsentDays != 180 {
 		t.Error("defaults")
+	}
+}
+
+// Default: reservations go straight into the ledger as pending, the booking
+// settles the same transaction (owner's edits kept), a release removes it.
+func TestReservationsAddedSettledReleased(t *testing.T) {
+	d, s, fb := setup(t)
+	fb.pending["u1"] = []openbanking.Transaction{card("hold-1", "PDNG", today(-3), "60.00", "NESTE"), card("hold-2", "PDNG", today(-3), "15.00", "CAFE")}
+	res, err := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := ledger.All(d, ledger.Filter{})
+	if res.ReservedAdded != 2 || len(pending) != 2 || !pending[0].Pending || !pending[1].Pending {
+		t.Fatalf("reservations should be in the ledger at once: %+v / %+v", res, pending)
+	}
+	var fuel ledger.Tx
+	for _, x := range pending {
+		if x.Amount == E(60) {
+			fuel = x
+		}
+	}
+	// The owner files the fuel hold while it is pending.
+	fuel.Category, fuel.Tags = "transport.fuel", []string{"car"}
+	if err := ledger.Update(d, &fuel); err != nil {
+		t.Fatal(err)
+	}
+	// It books for less under a new reference; the café hold is released.
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{card("book-1", "BOOK", today(-1), "58.20", "NESTE")}
+	res, err = s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, _ := ledger.All(d, ledger.Filter{})
+	if res.Settled != 1 || res.Released != 1 || len(all) != 1 {
+		t.Fatalf("settle + release: %+v / %+v", res, all)
+	}
+	got := all[0]
+	if got.ID != fuel.ID || got.Pending || got.Amount != E(58.20) || got.Date != today(-1) || got.Category != "transport.fuel" || len(got.Tags) != 1 {
+		t.Fatalf("booking settles the same transaction, keeping edits: %+v", got)
+	}
+	if n := len(inbox(t, s, "open")); n != 0 {
+		t.Fatalf("nothing left to review, got %d", n)
+	}
+	// A later sync changes nothing.
+	res, _ = s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if again, _ := ledger.All(d, ledger.Filter{}); len(again) != 1 || res.New != 0 {
+		t.Fatalf("idempotent: %+v %+v", res, again)
 	}
 }

@@ -19,6 +19,9 @@ type Settings struct {
 	RedirectURL   string   `json:"redirect_url"`
 	OwnerNames    []string `json:"owner_names"`
 	ConsentDays   int      `json:"consent_days"`
+	// Card reservations go straight into the ledger (marked pending) unless
+	// the owner prefers to review them in the inbox first.
+	KeepReservedInInbox bool `json:"keep_reserved_in_inbox"`
 }
 
 func (s Settings) Configured() bool {
@@ -51,16 +54,16 @@ func SaveSettings(e interface {
 }
 
 type Connection struct {
-	ID          int64          `json:"id"`
-	ASPSPName   string         `json:"aspsp_name"`
-	Country     string         `json:"aspsp_country"`
-	SessionID   string         `json:"-"`
-	Status      string         `json:"status"`
-	ValidUntil  string         `json:"valid_until"`
-	AuthState   string         `json:"-"`
-	LastError   string         `json:"last_error,omitempty"`
-	DaysLeft    int            `json:"days_left"`
-	Accounts    []BankAccount  `json:"accounts"`
+	ID         int64         `json:"id"`
+	ASPSPName  string        `json:"aspsp_name"`
+	Country    string        `json:"aspsp_country"`
+	SessionID  string        `json:"-"`
+	Status     string        `json:"status"`
+	ValidUntil string        `json:"valid_until"`
+	AuthState  string        `json:"-"`
+	LastError  string        `json:"last_error,omitempty"`
+	DaysLeft   int           `json:"days_left"`
+	Accounts   []BankAccount `json:"accounts"`
 }
 
 // Effective reports a consent past its validity as expired.
@@ -242,7 +245,7 @@ type InboxRow struct {
 }
 
 // Ready reports whether a row may become a transaction.
-func (r *InboxRow) Ready() bool { return r.State == "open" && !r.Pending && r.Amount > 0 && r.Category != "" }
+func (r *InboxRow) Ready() bool { return r.State == "open" && r.Amount > 0 && r.Category != "" }
 
 // Preticked: the rows a one-tap "Accept all" should take.
 func (r *InboxRow) Preticked() bool {
