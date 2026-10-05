@@ -101,11 +101,11 @@ export function foldSlices(slices: Slice[], max = 8): Slice[] {
 }
 
 /** Donut with the total in the middle, a tooltip, and an HTML legend with shares. */
-export function Donut({ slices, center, sub, height = 200, legend = true }: { slices: Slice[]; center?: ReactNode; sub?: ReactNode; height?: number; legend?: boolean }) {
+export function Donut({ slices, center, sub, height = 200, legend = true, stacked = false }: { slices: Slice[]; center?: ReactNode; sub?: ReactNode; height?: number; legend?: boolean; stacked?: boolean }) {
   const total = slices.reduce((a, s) => a + s.value, 0)
   if (!total) return null
   return (
-    <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:items-center">
+    <div className={`flex w-full flex-col items-center gap-3 ${stacked ? '' : 'sm:flex-row sm:items-center'}`}>
       <div className="relative mx-auto w-full max-w-[220px] shrink-0" style={{ height, minWidth: Math.min(height, 220) }}>
         <ResponsiveContainer>
           <PieChart>

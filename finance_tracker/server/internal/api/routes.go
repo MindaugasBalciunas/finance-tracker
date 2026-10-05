@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -729,6 +730,29 @@ func (s *Server) wealthRoutes() {
 			return nil, err
 		}
 		return wealth.BuildPortfolio(trades, r.URL.Query().Get("live") != "0"), nil
+	})
+	s.handle("GET /api/portfolio/history", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		trades, err := wealth.ListTrades(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		// Closes: daily up to 3 months, weekly beyond (Yahoo's own split).
+		rng, from := "max", ""
+		now := time.Now()
+		switch r.URL.Query().Get("range") {
+		case "3m":
+			rng, from = "3mo", now.AddDate(0, -3, 0).Format("2006-01-02")
+		case "6m":
+			rng, from = "6mo", now.AddDate(0, -6, 0).Format("2006-01-02")
+		case "ytd":
+			rng, from = "ytd", strconv.Itoa(now.Year())+"-01-01"
+		case "1y":
+			rng, from = "1y", now.AddDate(-1, 0, 0).Format("2006-01-02")
+		case "3y":
+			rng, from = "5y", now.AddDate(-3, 0, 0).Format("2006-01-02")
+		}
+		return wealth.PortfolioHistory(trades, from, now.Format("2006-01-02"),
+			func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, rng) }, wealth.LiveEUR()), nil
 	})
 	s.handle("GET /api/portfolio/scenarios", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		trades, err := wealth.ListTrades(s.DB)

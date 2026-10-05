@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"ft/internal/ledger"
+	"ft/internal/market"
 	"ft/internal/money"
 	. "ft/internal/testutil"
 	"ft/internal/wealth"
@@ -215,10 +216,61 @@ func TestMovementAndScenarios(t *testing.T) {
 		if t == "AAA" {
 			return 40, 60, 80, 12, "analyst targets", nil
 		}
+		if t == "ETF" {
+			return 0, 0, 0, 0, "", errNone // ETFs: no coverage
+		}
 		return 0, 0, 0, 0, "", errNone
 	})
 	// AAA: 2 shares × target × 0.92 EUR/USD; ETF counts at today's value.
 	if s.LowEUR != 73.6+92 || s.MeanEUR != 110.4+92 || s.HighEUR != 147.2+92 || s.Covered != 0.5 {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestPortfolioHistory(t *testing.T) {
+	trades := []wealth.Trade{
+		{Date: "2026-01-10", Action: "buy", Ticker: "AAA", Shares: 10, Price: 10, Currency: "USD"},
+		{Date: "2026-02-10", Action: "buy", Ticker: "BBB", Shares: 1, Price: 100, Currency: "EUR"},
+		{Date: "2026-03-10", Action: "sell", Ticker: "AAA", Shares: 5, Price: 20, Currency: "USD"},
+	}
+	closes := map[string][]market.HistoryPoint{
+		"AAA": {{Date: "2026-01-31", Close: 12}, {Date: "2026-02-28", Close: 15}, {Date: "2026-03-31", Close: 18}},
+		"BBB": {{Date: "2026-03-31", Close: 110}}, // no close in February: its earliest close stands in
+		"CCC": nil,                                // no prices at all: counts at cost
+	}
+	usd := func(a float64, c string) float64 {
+		if c == "USD" {
+			return a * 0.5
+		}
+		return a
+	}
+	pts := wealth.PortfolioHistory(trades, "2026-01-01", "2026-04-01", func(tk string) ([]market.HistoryPoint, error) { return closes[tk], nil }, usd)
+	want := []wealth.PerfPoint{
+		{Date: "2026-01-31", Value: 60, Cost: 50},   // 10×12 USD → €60; cost 100 USD → €50
+		{Date: "2026-02-28", Value: 185, Cost: 150}, // 10×15×.5 + BBB at its first close 110
+		{Date: "2026-03-31", Value: 155, Cost: 125}, // 5×18×.5 + 110; cost 5×10×.5 + 100
+		{Date: "2026-04-01", Value: 155, Cost: 125}, // today: last closes carried
+	}
+	if len(pts) != len(want) {
+		t.Fatalf("%+v", pts)
+	}
+	for i := range want {
+		if pts[i] != want[i] {
+			t.Errorf("%d: got %+v want %+v", i, pts[i], want[i])
+		}
+	}
+	if len(wealth.PortfolioHistory(nil, "", "2026-04-01", nil, usd)) != 0 {
+		t.Error("no trades, no points")
+	}
+}
+
+func TestRangeFallbackIsNotAnalystCoverage(t *testing.T) {
+	v, ve := 100.0, 100.0
+	p := wealth.Portfolio{Holdings: []wealth.Holding{{Ticker: "ETF", Shares: 1, Value: &v, ValueEUR: &ve}}}
+	s := wealth.BuildScenarios(p, func(string) (float64, float64, float64, int, string, error) {
+		return 80, 100, 120, 0, "52-week range", nil
+	})
+	if s.Covered != 0 || s.MeanEUR != 100 || s.Positions[0].Basis != "52-week range" {
 		t.Fatalf("%+v", s)
 	}
 }

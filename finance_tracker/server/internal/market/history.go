@@ -109,14 +109,20 @@ func getYahooCrumb() (string, http.CookieJar, error) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
 
-	// Visit Yahoo Finance to set session cookies
-	req, _ := http.NewRequest("GET", "https://finance.yahoo.com", nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", nil, fmt.Errorf("yahoo session init: %w", err)
+	// Session cookie: fc.yahoo.com sets it directly (a 404 with Set-Cookie);
+	// finance.yahoo.com redirects EU visitors to a consent page instead.
+	for _, u := range []string{"https://fc.yahoo.com", "https://finance.yahoo.com"} {
+		req, _ := http.NewRequest("GET", u, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if pu, _ := url.Parse("https://query1.finance.yahoo.com"); len(jar.Cookies(pu)) > 0 {
+			break
+		}
 	}
-	resp.Body.Close()
 
 	// Fetch crumb token
 	req2, _ := http.NewRequest("GET", "https://query1.finance.yahoo.com/v1/test/getcrumb", nil)
@@ -128,7 +134,10 @@ func getYahooCrumb() (string, http.CookieJar, error) {
 	defer resp2.Body.Close()
 	body, _ := io.ReadAll(resp2.Body)
 	crumb := strings.TrimSpace(string(body))
-	if crumb == "" || crumb == "null" {
+	if resp2.StatusCode == http.StatusTooManyRequests {
+		return "", nil, ErrRateLimited
+	}
+	if resp2.StatusCode != http.StatusOK || crumb == "" || crumb == "null" {
 		return "", nil, fmt.Errorf("empty crumb from Yahoo Finance")
 	}
 

@@ -41,6 +41,10 @@ type Meta struct {
 	FiftyTwoWeekHigh   float64 `json:"fiftyTwoWeekHigh"`
 	FiftyTwoWeekLow    float64 `json:"fiftyTwoWeekLow"`
 	Currency           string  `json:"currency"`
+	ChartPreviousClose float64 `json:"chartPreviousClose"`
+	PreviousClose      float64 `json:"previousClose"`
+	LongName           string  `json:"longName"`
+	ShortName          string  `json:"shortName"`
 }
 
 // Quote is a resolved live quote for a ticker.
@@ -51,6 +55,8 @@ type Quote struct {
 	Currency       string    `json:"currency"`
 	Week52High     float64   `json:"week_52_high"`
 	Week52Low      float64   `json:"week_52_low"`
+	PrevClose      float64   `json:"prev_close,omitempty"` // last session's close, for today's move
+	Name           string    `json:"name,omitempty"`
 	AsOf           time.Time `json:"as_of"` // when the price last traded — zero if Yahoo omitted it; callers can judge staleness
 }
 
@@ -132,6 +138,13 @@ func Fetch(ticker string) (*Quote, error) {
 				Ticker: ticker, ResolvedTicker: candidate,
 				Price: m.RegularMarketPrice, Currency: m.Currency,
 				Week52High: m.FiftyTwoWeekHigh, Week52Low: m.FiftyTwoWeekLow,
+				PrevClose: m.PreviousClose, Name: m.LongName,
+			}
+			if q.PrevClose <= 0 {
+				q.PrevClose = m.ChartPreviousClose
+			}
+			if q.Name == "" {
+				q.Name = m.ShortName
 			}
 			if m.RegularMarketTime > 0 {
 				q.AsOf = time.Unix(m.RegularMarketTime, 0).UTC()
