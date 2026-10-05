@@ -43,7 +43,7 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
     }
   }
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6">
+    <div data-no-track className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6">
       <div className="flex flex-col items-center gap-2">
         <LogoMark size={52} />
         <div className="text-lg font-semibold">Finance is locked</div>

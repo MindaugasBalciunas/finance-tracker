@@ -283,8 +283,11 @@ func (s *Server) ledgerRoutes() {
 		if err != nil {
 			return nil, notFound("transaction not found")
 		}
-		// A deleted bank row goes back to the inbox rather than vanishing.
-		s.DB.Exec(`UPDATE bank_inbox SET state='open', imported_tx_id=NULL, matched_tx_id=NULL, verdict='new' WHERE imported_tx_id=?`, id)
+		// A deleted bank row goes back to the inbox rather than vanishing (a
+		// reservation is dismissed, so sync doesn't re-add it).
+		if err := s.Bank.ReturnToInbox(s.DB, id); err != nil {
+			return nil, err
+		}
 		if err := ledger.Delete(s.DB, id); err != nil {
 			return nil, err
 		}

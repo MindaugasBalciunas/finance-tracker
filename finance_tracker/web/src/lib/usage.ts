@@ -32,7 +32,11 @@ export function trackView(path: string) {
   if (queue.length >= 20) flush()
 }
 
-function label(el: Element): string {
+export function clickLabel(el: Element): string {
+  // Drill-down links carry merchant, tag or category names in their text
+  // (and query): record where they lead, never what they say.
+  const href = el.getAttribute('href')
+  if (href && href.includes('?')) return `link → ${href.replace(/^#/, '').split('?')[0]}`
   const a = el.getAttribute('aria-label') || el.getAttribute('title') || (el as HTMLElement).innerText || ''
   return a.replace(/\s+/g, ' ').trim().slice(0, 48)
 }
@@ -43,11 +47,13 @@ export function startUsage() {
   started = true
   document.addEventListener('click', (e) => {
     if (!enabled || !current) return
-    const el = (e.target as Element)?.closest('button, a, [role=tab], [role=switch], select, summary, input[type=checkbox]')
+    const target = e.target as Element
+    if (target?.closest('[data-no-track]')) return // e.g. the PIN pad
+    const el = target?.closest('button, a, [role=tab], [role=switch], select, summary, input[type=checkbox]')
     if (!el) return
     const doc = document.documentElement
     queue.push({
-      at: new Date().toISOString(), kind: 'action', path: current.path, label: label(el),
+      at: new Date().toISOString(), kind: 'action', path: current.path, label: clickLabel(el),
       x: Math.min(1, Math.max(0, e.pageX / Math.max(1, doc.scrollWidth))),
       y: Math.min(1, Math.max(0, e.pageY / Math.max(1, doc.scrollHeight))),
       vw: window.innerWidth,

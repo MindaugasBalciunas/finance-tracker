@@ -25,7 +25,7 @@ type Trip struct {
 	To         string        `json:"to"`
 	Days       int           `json:"days"`
 	Count      int           `json:"count"`
-	Total      money.Cents   `json:"total"` // expenses − refunds
+	Total      money.Cents   `json:"total"`                 // expenses − refunds
 	BookedFrom string        `json:"booked_from,omitempty"` // earliest row when paid ahead of the trip
 	PerDay     money.Cents   `json:"per_day"`
 	ByCategory []NamedAmount `json:"by_category"`

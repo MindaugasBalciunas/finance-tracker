@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"ft/internal/db"
-	"ft/internal/testutil"
 	"ft/internal/money"
+	"ft/internal/testutil"
 	"ft/internal/wealth"
 )
 
@@ -76,7 +76,7 @@ func TestRuleFor(t *testing.T) {
 		{V1Rule{"kristina", "Dating", ""}, true, "", "", "kristina", "dating"},
 		{V1Rule{"trip:rome", "", "roma"}, true, "", "", "trip:rome", ""},
 		{V1Rule{"utilities", "Utilities", "ignitis"}, false, "", "", "", ""}, // only restated its category
-		{V1Rule{"groceries", "Vacation", "coop"}, false, "", "", "", ""},         // groceries on a trip stay trip money: nothing to translate
+		{V1Rule{"groceries", "Vacation", "coop"}, false, "", "", "", ""},     // groceries on a trip stay trip money: nothing to translate
 		{V1Rule{"hotel", "Vacation", "booking"}, true, "travel.lodging", "", "", "travel"},
 	}
 	for _, c := range cases {
@@ -305,8 +305,8 @@ func TestVerifyCatchesLoss(t *testing.T) {
 // last value carried forward (prod export 2026-10-04: BTC (M) +€509 for years).
 func TestJSONExportOmittedZerosRestored(t *testing.T) {
 	bs := []V1Balance{
-		{ID: 3, Date: "2018-03-31", Values: map[string]float64{"swed": 240}},                                   // btc gone
-		{ID: 1, Date: "2017-12-31", Values: map[string]float64{"swed": 10}},                                    // before btc existed
+		{ID: 3, Date: "2018-03-31", Values: map[string]float64{"swed": 240}},                                  // btc gone
+		{ID: 1, Date: "2017-12-31", Values: map[string]float64{"swed": 10}},                                   // before btc existed
 		{ID: 2, Date: "2018-02-28", Values: map[string]float64{"swed": 2, "mbtc": 509.05, "btc_price": 9000}}, // btc appears
 		{ID: 4, Date: "2026-02-21", Values: map[string]float64{"swed": 5, "mbtc": 0.01, "btc_price": 60000}},  // back again
 	}

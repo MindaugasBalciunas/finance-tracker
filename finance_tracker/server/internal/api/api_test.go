@@ -99,6 +99,11 @@ func TestAuthBoundaries(t *testing.T) {
 	if code, _ := c.do("GET", "/overview", nil); code != 401 {
 		t.Fatal("locked without a session")
 	}
+	for _, p := range [][2]string{{"POST", "/usage"}, {"GET", "/usage/events"}, {"GET", "/balances/table"}, {"GET", "/portfolio/history"}} {
+		if code, _ := c.do(p[0], p[1], map[string]any{"events": []any{}}); code != 401 {
+			t.Errorf("%s %s without a session: %d", p[0], p[1], code)
+		}
+	}
 	if code, _ := c.do("POST", "/auth/pin/login", map[string]string{"pin": "0000"}); code != 401 {
 		t.Fatal("wrong PIN")
 	}
@@ -138,6 +143,10 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot set balances", tokRW, "POST", "/balances", map[string]any{"date": "2026-09-01", "values": []any{}}, 403},
 		{"ro cannot download the AI export", tokRO, "GET", "/export/ai.zip", nil, 403},
 		{"rw cannot run AI assist", tokRW, "POST", "/ai/assist", map[string]any{"text": "x"}, 403},
+		{"ro reads the balance table (same data as /balances)", tokRO, "GET", "/balances/table?page=1", nil, 200},
+		{"ro reads portfolio history (same data as /portfolio)", tokRO, "GET", "/portfolio/history?range=1y", nil, 200},
+		{"ro cannot read the usage summary", tokRO, "GET", "/usage/summary", nil, 403},
+		{"rw cannot clear usage", tokRW, "DELETE", "/usage", nil, 403},
 		{"ro cannot read usage analytics", tokRO, "GET", "/usage/events", nil, 403},
 		{"rw cannot write usage analytics", tokRW, "POST", "/usage", map[string]any{"events": []any{}}, 403},
 		{"forged token", bad, "GET", "/transactions", nil, 401},
@@ -167,9 +176,19 @@ func TestCrossSiteWritesBlocked(t *testing.T) {
 	if code, _ := evil.do("GET", "/health", nil); code != 200 {
 		t.Fatal("cross-site reads are not CSRF")
 	}
+	// A beacon from another site can't plant usage events or clear them.
+	if code, _ := evil.do("POST", "/usage", map[string]any{"events": []any{map[string]any{"kind": "view", "path": "/"}}}); code != 403 {
+		t.Fatal("cross-site usage write accepted")
+	}
+	if code, _ := evil.do("DELETE", "/usage", nil); code != 403 {
+		t.Fatal("cross-site usage clear accepted")
+	}
 	same := c.with("Sec-Fetch-Site", "same-origin")
 	if code, _ := same.do("POST", "/tags/rename", map[string]string{"from": "a", "to": "b"}); code != 200 {
 		t.Fatal("same-origin write refused")
+	}
+	if code, _ := same.do("POST", "/usage", map[string]any{"events": []any{map[string]any{"kind": "view", "path": "/"}}}); code != 200 {
+		t.Fatal("same-origin usage beacon refused")
 	}
 	if code, _ := c.do("POST", "/rules", bytes.Repeat([]byte("x"), 3<<20)); code == 200 {
 		t.Fatal("oversized body accepted")

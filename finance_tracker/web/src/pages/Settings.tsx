@@ -712,12 +712,6 @@ function Appearance() {
 
 // ── usage analytics ─────────────────────────────────────────────────
 
-const PAGE_NAMES: Record<string, string> = { '/': 'Home', '/ledger': 'Ledger', '/ledger/inbox': 'Bank inbox', '/ledger/tidy': 'Tidy up', '/plan': 'Plan',
-  '/plan/trips': 'Trips', '/plan/income': 'Income & goals', '/wealth': 'Net worth', '/wealth/investments': 'Investments', '/wealth/loans': 'Loans',
-  '/wealth/history': 'Balance history', '/insights': 'Cash flow', '/insights/spending': 'Spending', '/insights/trends': 'Trends', '/insights/recurring': 'Recurring',
-  '/insights/review': 'Review', '/insights/fi': 'Independence', '/ai': 'Ask CFO' }
-const pageName = (p: string) => PAGE_NAMES[p] ?? (p.startsWith('/settings/') ? `Settings → ${p.slice(10, 11).toUpperCase()}${p.slice(11)}` : p)
-
 /** What you open, how long you stay, and which pages you have to hunt for. */
 function UsageView() {
   const [days, setDays] = useState('30')
@@ -726,6 +720,8 @@ function UsageView() {
   const toast = useToast()
   if (isLoading || !u) return <Loading />
   for (const k of ['days', 'pages', 'actions', 'hunts', 'unused', 'suggestions']) u[k] ??= []
+  // Page names come from the server (one source of truth).
+  const pageName = (p: string) => u.names?.[p] ?? p
   const maxDay = Math.max(1, ...u.days.map((d: any) => d.views))
   const maxViews = Math.max(1, ...u.pages.map((p: any) => p.views))
   return (

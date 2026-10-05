@@ -573,12 +573,17 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 			// The reservation is already in the ledger: settle that transaction
 			// with the bank's final amount instead of adding a second one.
 			if claimed != nil && claimed.State == "imported" && claimed.ImportedTxID > 0 {
-				if err := ledger.SettleReservation(tx, claimed.ImportedTxID, r.Amount, r.Date, r.ExternalID); err != nil {
+				settled, err := ledger.SettleReservation(tx, claimed.ImportedTxID, r.Amount, r.Date, r.ExternalID)
+				if err != nil {
 					return 0, err
 				}
-				r.State, r.ImportedTxID, r.MatchedTxID = "imported", claimed.ImportedTxID, claimed.ImportedTxID
-				r.Verdict, r.VerdictNote = "duplicate", "booked — settled the transaction added while it was reserved"
-				res.Settled++
+				if settled {
+					r.State, r.ImportedTxID, r.MatchedTxID = "imported", claimed.ImportedTxID, claimed.ImportedTxID
+					r.Verdict, r.VerdictNote = "duplicate", "booked — settled the transaction added while it was reserved"
+					res.Settled++
+				}
+				// Not settled: the pending transaction was deleted meanwhile, so
+				// the booking stays open in the inbox rather than vanishing.
 			}
 			if err := saveInbox(tx, &r); err != nil {
 				return 0, fmt.Errorf("staging %s: %w", r.ExternalID, err)
@@ -1077,4 +1082,19 @@ func (s *Service) addReservations() int {
 		return 0
 	}
 	return len(res.Imported)
+}
+
+// ReturnToInbox handles a bank-sourced transaction the owner deleted. A booked
+// row goes back to the inbox for review; a reservation is dismissed instead —
+// otherwise the next sync would add it straight back.
+func (s *Service) ReturnToInbox(e interface {
+	Exec(string, ...any) (sql.Result, error)
+}, txID int64) error {
+	if _, err := e.Exec(`UPDATE bank_inbox SET state='dismissed', imported_tx_id=NULL, matched_tx_id=NULL,
+		verdict_note='removed from the ledger while reserved', last_seen_at=? WHERE imported_tx_id=? AND pending=1`, db.Now(), txID); err != nil {
+		return err
+	}
+	_, err := e.Exec(`UPDATE bank_inbox SET state='open', imported_tx_id=NULL, matched_tx_id=NULL, verdict='new', last_seen_at=?
+		WHERE imported_tx_id=? AND pending=0`, db.Now(), txID)
+	return err
 }

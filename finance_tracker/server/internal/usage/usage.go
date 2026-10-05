@@ -8,6 +8,7 @@ import (
 	"errors"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -166,15 +167,16 @@ type DayCount struct {
 }
 
 type Summary struct {
-	Since       string       `json:"since"`
-	Sessions    int          `json:"sessions"`
-	Views       int          `json:"views"`
-	Pages       []PageStat   `json:"pages"`
-	Actions     []ActionStat `json:"actions"`
-	Hunts       []Hunt       `json:"hunts"`
-	Days        []DayCount   `json:"days"`
-	Unused      []string     `json:"unused"` // known pages not opened in the window
-	Suggestions []string     `json:"suggestions"`
+	Since       string            `json:"since"`
+	Sessions    int               `json:"sessions"`
+	Views       int               `json:"views"`
+	Pages       []PageStat        `json:"pages"`
+	Actions     []ActionStat      `json:"actions"`
+	Hunts       []Hunt            `json:"hunts"`
+	Days        []DayCount        `json:"days"`
+	Unused      []string          `json:"unused"` // known pages not opened in the window
+	Suggestions []string          `json:"suggestions"`
+	Names       map[string]string `json:"names"` // display name of every path above (one source of truth)
 }
 
 // Pages the app has, for "never used" detection.
@@ -336,6 +338,28 @@ func Summarise(d *sql.DB, days int, now time.Time) (*Summary, error) {
 	if s.Suggestions = suggest(s); s.Suggestions == nil {
 		s.Suggestions = []string{}
 	}
+	s.Names = map[string]string{}
+	name := func(p string) {
+		if p != "" {
+			s.Names[p] = Label(p)
+		}
+	}
+	for _, p := range s.Pages {
+		name(p.Path)
+	}
+	for _, a := range s.Actions {
+		name(a.Path)
+	}
+	for _, h := range s.Hunts {
+		name(h.Target)
+		name(h.Entry)
+		for _, p := range h.TypicalP {
+			name(p)
+		}
+	}
+	for _, p := range s.Unused {
+		name(p)
+	}
 	return s, nil
 }
 
@@ -346,7 +370,7 @@ func suggest(s *Summary) []string {
 		if i >= 3 {
 			break
 		}
-		out = append(out, "You hunted for "+Label(h.Target)+" "+plural(h.Count, "time")+" (≈"+fmtFloat(h.AvgHops)+" hops, usually starting on "+Label(h.Entry)+") — put a shortcut to it on "+Label(h.Entry)+".")
+		out = append(out, "You hunted for "+Label(h.Target)+" "+plural(h.Count, "time")+" (≈"+strconv.FormatFloat(h.AvgHops, 'f', 1, 64)+" hops, usually starting on "+Label(h.Entry)+") — put a shortcut to it on "+Label(h.Entry)+".")
 	}
 	for _, p := range s.Pages {
 		if p.Views >= 5 && float64(p.Bounces)/float64(p.Views) >= 0.4 {
@@ -375,8 +399,15 @@ func Label(p string) string {
 	if n, ok := names[p]; ok {
 		return n
 	}
-	if strings.HasPrefix(p, "/settings/") {
-		return "Settings → " + strings.ToUpper(p[10:11]) + p[11:]
+	settings := map[string]string{"categories": "Categories", "accounts": "Accounts", "rules": "Rules", "tags": "Tags", "banks": "Banks", "ai": "AI",
+		"security": "Security", "data": "Data & backup", "usage": "Usage", "appearance": "Appearance"}
+	if sec, ok := strings.CutPrefix(p, "/settings/"); ok {
+		if n, ok := settings[sec]; ok {
+			return "Settings → " + n
+		}
+	}
+	if p == "/settings" {
+		return "Settings"
 	}
 	return p
 }
@@ -396,5 +427,5 @@ func plural(n int, w string) string {
 	if n == 1 {
 		return "1 " + w
 	}
-	return itoa(n) + " " + w + "s"
+	return strconv.Itoa(n) + " " + w + "s"
 }

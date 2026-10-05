@@ -18,23 +18,23 @@ import (
 // MonthReview answers "how did the month go, and is anything in the data
 // stale or waiting on me?" — deterministic, free and instant.
 type MonthReview struct {
-	Month       string             `json:"month"`
-	Complete    bool               `json:"complete"`
-	Flow        insights.Flow      `json:"flow"`
-	Previous    insights.Flow      `json:"previous"`
-	SixMonthAvg insights.Flow      `json:"six_month_avg"`
-	Verdict     string             `json:"verdict"`
-	Tone        string             `json:"tone"` // good | neutral | bad
-	Highlights  []Highlight        `json:"highlights"`
-	NetWorth    NetWorthMove       `json:"net_worth"`
-	Categories  []CategoryVsNorm   `json:"categories"`
-	TopExpenses []ledger.Tx        `json:"top_expenses"`
-	TopIncome   []ledger.Tx        `json:"top_income"`
-	Daily       []DaySpend         `json:"daily"`
-	Trend       []insights.Flow    `json:"trend"` // twelve months ending with this one
-	Budget      *BudgetBrief       `json:"budget,omitempty"`
-	OwedToYou   money.Cents        `json:"owed_to_you"`
-	Checks      []Check            `json:"checks"`
+	Month       string           `json:"month"`
+	Complete    bool             `json:"complete"`
+	Flow        insights.Flow    `json:"flow"`
+	Previous    insights.Flow    `json:"previous"`
+	SixMonthAvg insights.Flow    `json:"six_month_avg"`
+	Verdict     string           `json:"verdict"`
+	Tone        string           `json:"tone"` // good | neutral | bad
+	Highlights  []Highlight      `json:"highlights"`
+	NetWorth    NetWorthMove     `json:"net_worth"`
+	Categories  []CategoryVsNorm `json:"categories"`
+	TopExpenses []ledger.Tx      `json:"top_expenses"`
+	TopIncome   []ledger.Tx      `json:"top_income"`
+	Daily       []DaySpend       `json:"daily"`
+	Trend       []insights.Flow  `json:"trend"` // twelve months ending with this one
+	Budget      *BudgetBrief     `json:"budget,omitempty"`
+	OwedToYou   money.Cents      `json:"owed_to_you"`
+	Checks      []Check          `json:"checks"`
 	lateSalary  money.Cents
 }
 
@@ -447,4 +447,3 @@ func plural(n int, one, many string) string {
 	}
 	return many
 }
-

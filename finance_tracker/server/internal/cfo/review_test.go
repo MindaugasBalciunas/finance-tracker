@@ -15,7 +15,9 @@ func TestMonthReview(t *testing.T) {
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	for i := 1; i <= 7; i++ {
 		m := now.AddDate(0, -i, 0)
-		day := func(n int) string { return time.Date(m.Year(), m.Month(), n, 0, 0, 0, 0, time.UTC).Format("2006-01-02") }
+		day := func(n int) string {
+			return time.Date(m.Year(), m.Month(), n, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		}
 		Tx(t, d, ledger.Tx{Date: day(15), Amount: E(5000), Category: "salary", AccountID: "swed"})
 		Tx(t, d, ledger.Tx{Date: day(5), Amount: E(400), Category: "food.groceries", AccountID: "swed"})
 		if i == 1 { // September: restaurants blow up

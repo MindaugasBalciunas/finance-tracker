@@ -108,7 +108,7 @@ type Holding struct {
 	CostEUR      *float64 `json:"cost_eur,omitempty"`
 	Week52High   float64  `json:"week52_high,omitempty"`
 	Week52Low    float64  `json:"week52_low,omitempty"`
-	CostShare    float64  `json:"cost_share"` // of total book cost (EUR)
+	CostShare    float64  `json:"cost_share"`               // of total book cost (EUR)
 	DayPct       *float64 `json:"day_pct,omitempty"`        // today's move vs the previous close
 	DayChangeEUR *float64 `json:"day_change_eur,omitempty"` // that move on this position, EUR
 	Weight       float64  `json:"weight"`                   // share of market value (EUR)
@@ -116,15 +116,15 @@ type Holding struct {
 }
 
 type Portfolio struct {
-	Holdings   []Holding `json:"holdings"`
-	Closed     []Holding `json:"closed"`
-	CostEUR    float64   `json:"cost_eur"`
-	ValueEUR   float64   `json:"value_eur"`
-	GainEUR    float64   `json:"gain_eur"`
-	RealizedEUR float64  `json:"realized_eur"`
-	USDPerEUR  float64   `json:"usd_per_eur"`
-	DayChangeEUR float64 `json:"day_change_eur"`
-	Live       bool      `json:"live"`
+	Holdings     []Holding `json:"holdings"`
+	Closed       []Holding `json:"closed"`
+	CostEUR      float64   `json:"cost_eur"`
+	ValueEUR     float64   `json:"value_eur"`
+	GainEUR      float64   `json:"gain_eur"`
+	RealizedEUR  float64   `json:"realized_eur"`
+	USDPerEUR    float64   `json:"usd_per_eur"`
+	DayChangeEUR float64   `json:"day_change_eur"`
+	Live         bool      `json:"live"`
 }
 
 // fx converts a currency amount to EUR using Yahoo rates (cached).
@@ -160,7 +160,7 @@ func (f *fx) toEUR(amount float64, cur string) (float64, bool) {
 func BuildPortfolio(trades []Trade, live bool) Portfolio {
 	type pos struct {
 		ticker, acct, cur, first string
-		shares, cost, realized  float64
+		shares, cost, realized   float64
 	}
 	positions := map[string]*pos{}
 	var order []string
@@ -307,13 +307,13 @@ func round3(v float64) float64 { return math.Round(v*1000) / 1000 }
 // Scenario values a position at analyst targets (or its 52-week range for
 // ETFs without coverage), in EUR.
 type Scenario struct {
-	Ticker    string   `json:"ticker"`
-	ValueEUR  float64  `json:"value_eur"`
-	LowEUR    *float64 `json:"low_eur,omitempty"`
-	MeanEUR   *float64 `json:"mean_eur,omitempty"`
-	HighEUR   *float64 `json:"high_eur,omitempty"`
-	Analysts  int      `json:"analysts"`
-	Basis     string   `json:"basis"`
+	Ticker   string   `json:"ticker"`
+	ValueEUR float64  `json:"value_eur"`
+	LowEUR   *float64 `json:"low_eur,omitempty"`
+	MeanEUR  *float64 `json:"mean_eur,omitempty"`
+	HighEUR  *float64 `json:"high_eur,omitempty"`
+	Analysts int      `json:"analysts"`
+	Basis    string   `json:"basis"`
 }
 
 type Scenarios struct {

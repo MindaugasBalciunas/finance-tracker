@@ -58,11 +58,11 @@ func (u *owner) WebAuthnDisplayName() string                { return "Finance Tr
 func (u *owner) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
 type Status struct {
-	Enabled       bool `json:"enabled"`
-	Unlocked      bool `json:"unlocked"`
-	Passkeys      int  `json:"passkeys"`
-	HasToken      bool `json:"has_token"`
-	HasTokenRW    bool `json:"has_token_rw"`
+	Enabled    bool `json:"enabled"`
+	Unlocked   bool `json:"unlocked"`
+	Passkeys   int  `json:"passkeys"`
+	HasToken   bool `json:"has_token"`
+	HasTokenRW bool `json:"has_token_rw"`
 }
 
 type Service struct {

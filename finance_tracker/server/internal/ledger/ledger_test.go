@@ -192,7 +192,9 @@ func TestRenameTagUpdatesRulesAndBudgets(t *testing.T) {
 }
 
 func TestRuleMatching(t *testing.T) {
-	tx := func(cat, m, note string) *ledger.Tx { return &ledger.Tx{Kind: "expense", Category: cat, Merchant: m, Note: note} }
+	tx := func(cat, m, note string) *ledger.Tx {
+		return &ledger.Tx{Kind: "expense", Category: cat, Merchant: m, Note: note}
+	}
 	cases := []struct {
 		r    ledger.Rule
 		t    *ledger.Tx

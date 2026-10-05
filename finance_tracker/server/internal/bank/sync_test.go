@@ -334,3 +334,32 @@ func TestReservationsAddedSettledReleased(t *testing.T) {
 		t.Fatalf("idempotent: %+v %+v", res, again)
 	}
 }
+
+// Deleting a pending transaction dismisses its reservation (sync must not add
+// it back), and when it later books the booking waits in the inbox rather
+// than vanishing into a transaction that no longer exists.
+func TestDeletedReservationStaysGoneAndBookingSurvives(t *testing.T) {
+	d, s, fb := setup(t)
+	fb.pending["u1"] = []openbanking.Transaction{card("hold-9", "PDNG", today(-2), "42.00", "NESTE")}
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.ReservedAdded != 1 {
+		t.Fatalf("%+v", res)
+	}
+	txs, _ := ledger.All(d, ledger.Filter{})
+	if err := s.ReturnToInbox(d, txs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	ledger.Delete(d, txs[0].ID)
+	// Still reserved at the bank: not re-added.
+	res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if again, _ := ledger.All(d, ledger.Filter{}); len(again) != 0 || res.ReservedAdded != 0 {
+		t.Fatalf("a deleted reservation came back: %+v %+v", res, again)
+	}
+	// It books: the booking is staged for review, not lost.
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{card("book-9", "BOOK", today(-1), "42.00", "NESTE")}
+	s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	open := inbox(t, s, "open")
+	if len(open) != 1 || open[0].Pending || open[0].Amount != E(42) {
+		t.Fatalf("booking should wait in the inbox: %+v", open)
+	}
+}

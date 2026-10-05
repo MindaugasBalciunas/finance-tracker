@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"ft/internal/api"
-	"ft/internal/db"
 	"ft/internal/boot"
+	"ft/internal/db"
 )
 
 var version = "dev"

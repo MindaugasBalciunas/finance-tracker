@@ -121,9 +121,9 @@ func Convert(d *sql.DB, src *Data) (*Report, error) {
 	// ── balances ───────────────────────────────────────────────────────
 	type bkey struct{ acct, date string }
 	type bval struct {
-		value    money.Cents
-		qty      *float64
-		price    *money.Cents
+		value money.Cents
+		qty   *float64
+		price *money.Cents
 	}
 	bal := map[bkey]bval{}
 	nonZero := map[string]bool{}

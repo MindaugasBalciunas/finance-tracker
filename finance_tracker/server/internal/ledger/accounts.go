@@ -65,7 +65,7 @@ type LoanDetails struct {
 	AssetID        string  `json:"asset_id,omitempty"` // the account it is secured on
 	BaseRate       float64 `json:"base_rate"`          // e.g. 6M EURIBOR, %
 	BaseRateName   string  `json:"base_rate_name,omitempty"`
-	Margin         float64 `json:"margin"`             // %
+	Margin         float64 `json:"margin"` // %
 	RateResetDate  string  `json:"rate_reset_date,omitempty"`
 	MonthlyPayment float64 `json:"monthly_payment"`
 	PaymentDay     int     `json:"payment_day,omitempty"`

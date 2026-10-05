@@ -211,11 +211,11 @@ type Settings struct {
 	GrossSalary       float64 `json:"gross_salary"`
 	MonthlyDeductions float64 `json:"monthly_deductions"`
 	// FI planning
-	TargetAge      int     `json:"target_age"`
-	BirthYear      int     `json:"birth_year"`
-	FIMonthlySpend float64 `json:"fi_monthly_spend"` // target spend in FI; 0 = use trailing 12-month spend
-	WithdrawalRate float64 `json:"withdrawal_rate"`  // e.g. 4
-	ExpectedReturn float64 `json:"expected_return"`  // real, % p.a.
+	TargetAge       int     `json:"target_age"`
+	BirthYear       int     `json:"birth_year"`
+	FIMonthlySpend  float64 `json:"fi_monthly_spend"` // target spend in FI; 0 = use trailing 12-month spend
+	WithdrawalRate  float64 `json:"withdrawal_rate"`  // e.g. 4
+	ExpectedReturn  float64 `json:"expected_return"`  // real, % p.a.
 	EmergencyMonths float64 `json:"emergency_months"`
 }
 

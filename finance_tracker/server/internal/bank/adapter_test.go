@@ -53,10 +53,10 @@ func TestStatementDateFormatPreferred(t *testing.T) {
 
 func TestClassification(t *testing.T) {
 	cases := []struct {
-		name               string
-		tx                 openbanking.Transaction
-		kind, cat, to      string
-		verdict, merchant  string
+		name              string
+		tx                openbanking.Transaction
+		kind, cat, to     string
+		verdict, merchant string
 	}{
 		{"ATM withdrawal", row("a", "DBIT", "600", "", "GRYNIEJI 516793******2950 26.08.22 09:22 600.00 EUR (465020) H836/HB LUKSIO"), "transfer", "transfer.internal", "cash", "new", ""},
 		{"bank fee", row("b", "DBIT", "1.5", "", "Mokestis už kortelę"), "expense", "finance.bank_fees", "", "new", ""},

@@ -47,7 +47,6 @@ func yahooCacheSet(key string, val any, ttl time.Duration) {
 	yahooCache.m[key] = yahooCacheEntry{val: val, expires: now.Add(ttl)}
 }
 
-
 type HistoryPoint struct {
 	Date  string  `json:"date"`
 	Close float64 `json:"close"`

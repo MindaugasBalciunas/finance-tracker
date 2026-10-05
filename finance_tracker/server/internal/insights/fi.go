@@ -12,7 +12,7 @@ import (
 
 // FI is progress to financial independence.
 type FI struct {
-	AnnualSpend     money.Cents `json:"annual_spend"`     // trailing 12 months, or the target from settings
+	AnnualSpend     money.Cents `json:"annual_spend"` // trailing 12 months, or the target from settings
 	SpendSource     string      `json:"spend_source"`
 	Target          money.Cents `json:"target"`           // annual spend / withdrawal rate
 	Investable      money.Cents `json:"investable"`       // investments + pension + crypto + cash above the emergency buffer

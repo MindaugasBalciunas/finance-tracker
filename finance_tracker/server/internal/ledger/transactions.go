@@ -305,10 +305,16 @@ func Update(e execer, t *Tx) error {
 // SettleReservation turns a pending card reservation into the booked
 // transaction: the bank's final amount, date and id; the owner's category,
 // merchant, tags and notes stay as they are.
-func SettleReservation(e execer, id int64, amount money.Cents, date, externalID string) error {
-	_, err := e.Exec(`UPDATE transactions SET amount=?, date=?, external_id=?, pending=0, updated_at=? WHERE id=? AND pending=1`,
+// Reports false when there is no pending transaction to settle (deleted by
+// the owner meanwhile) — the booking must then be staged like any other.
+func SettleReservation(e execer, id int64, amount money.Cents, date, externalID string) (bool, error) {
+	res, err := e.Exec(`UPDATE transactions SET amount=?, date=?, external_id=?, pending=0, updated_at=? WHERE id=? AND pending=1`,
 		int64(amount), date, externalID, db.Now(), id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // DropReservation removes a reservation the bank released without booking

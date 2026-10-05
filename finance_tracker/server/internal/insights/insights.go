@@ -44,18 +44,18 @@ func IsInvesting(t *ledger.Tx) bool {
 
 // Flow is one period of cash flow.
 type Flow struct {
-	Period        string                 `json:"period"` // 2026-09 or 2026
-	Income        money.Cents            `json:"income"`
-	Spending      money.Cents            `json:"spending"`
-	Essential     money.Cents            `json:"essential"`
-	Discretionary money.Cents            `json:"discretionary"`
-	Saved         money.Cents            `json:"saved"`
-	SavingsRate   float64                `json:"savings_rate"` // 0..1, NaN-safe
-	Invested      money.Cents            `json:"invested"`
-	Principal     money.Cents            `json:"principal"`      // debt principal (part of invested)
-	PayrollPension money.Cents           `json:"payroll_pension"` // pension paid by payroll, never touched a bank
-	IncomeBy      map[string]money.Cents `json:"income_by"`
-	SpendingBy    map[string]money.Cents `json:"spending_by"` // by top-level category
+	Period         string                 `json:"period"` // 2026-09 or 2026
+	Income         money.Cents            `json:"income"`
+	Spending       money.Cents            `json:"spending"`
+	Essential      money.Cents            `json:"essential"`
+	Discretionary  money.Cents            `json:"discretionary"`
+	Saved          money.Cents            `json:"saved"`
+	SavingsRate    float64                `json:"savings_rate"` // 0..1, NaN-safe
+	Invested       money.Cents            `json:"invested"`
+	Principal      money.Cents            `json:"principal"`       // debt principal (part of invested)
+	PayrollPension money.Cents            `json:"payroll_pension"` // pension paid by payroll, never touched a bank
+	IncomeBy       map[string]money.Cents `json:"income_by"`
+	SpendingBy     map[string]money.Cents `json:"spending_by"` // by top-level category
 }
 
 func periodKey(date, granularity string) string {
@@ -127,14 +127,14 @@ func round3(v float64) float64 {
 // CategoryStat is one category over a window, compared with the window
 // before it and with its own typical month.
 type CategoryStat struct {
-	Category    string      `json:"category"`
-	Total       money.Cents `json:"total"`
-	Share       float64     `json:"share"`
-	Count       int         `json:"count"`
-	MonthlyAvg  money.Cents `json:"monthly_avg"`
-	Previous    money.Cents `json:"previous"` // same-length window before
-	Change      float64     `json:"change"`   // vs previous, ratio
-	TopMerchant string      `json:"top_merchant,omitempty"`
+	Category    string         `json:"category"`
+	Total       money.Cents    `json:"total"`
+	Share       float64        `json:"share"`
+	Count       int            `json:"count"`
+	MonthlyAvg  money.Cents    `json:"monthly_avg"`
+	Previous    money.Cents    `json:"previous"` // same-length window before
+	Change      float64        `json:"change"`   // vs previous, ratio
+	TopMerchant string         `json:"top_merchant,omitempty"`
 	Children    []CategoryStat `json:"children,omitempty"`
 }
 
@@ -238,18 +238,18 @@ func Breakdown(txs []ledger.Tx, from, to string) []CategoryStat {
 // Recurring is a cost that repeats on a schedule (subscriptions, bills,
 // obligations), detected from the ledger rather than declared.
 type Recurring struct {
-	ID        int64       `json:"id,omitempty"`     // saved owner edit, if any
-	Source    string      `json:"source"`           // detected | edited | manual
-	Note      string      `json:"note,omitempty"`
-	Merchant  string      `json:"merchant"`
-	Category  string      `json:"category"`
-	Cadence   string      `json:"cadence"` // monthly | quarterly | yearly
-	Amount    money.Cents `json:"amount"`  // typical charge
-	Monthly   money.Cents `json:"monthly"` // monthly equivalent
-	Last      string      `json:"last"`
-	Next      string      `json:"next"`
-	Count     int         `json:"count"`
-	Changed   bool        `json:"changed"` // last charge differs from typical by >10%
+	ID         int64       `json:"id,omitempty"` // saved owner edit, if any
+	Source     string      `json:"source"`       // detected | edited | manual
+	Note       string      `json:"note,omitempty"`
+	Merchant   string      `json:"merchant"`
+	Category   string      `json:"category"`
+	Cadence    string      `json:"cadence"` // monthly | quarterly | yearly
+	Amount     money.Cents `json:"amount"`  // typical charge
+	Monthly    money.Cents `json:"monthly"` // monthly equivalent
+	Last       string      `json:"last"`
+	Next       string      `json:"next"`
+	Count      int         `json:"count"`
+	Changed    bool        `json:"changed"` // last charge differs from typical by >10%
 	LastAmount money.Cents `json:"last_amount"`
 }
 
@@ -326,10 +326,10 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 
 // Anomaly is a category running well above its own normal this month.
 type Anomaly struct {
-	Category string      `json:"category"`
-	Spent    money.Cents `json:"spent"`
-	Typical  money.Cents `json:"typical"` // median of the previous 12 months
-	Ratio    float64     `json:"ratio"`
+	Category  string      `json:"category"`
+	Spent     money.Cents `json:"spent"`
+	Typical   money.Cents `json:"typical"` // median of the previous 12 months
+	Ratio     float64     `json:"ratio"`
 	Projected money.Cents `json:"projected"` // month-end pace (current month only)
 }
 

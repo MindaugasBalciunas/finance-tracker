@@ -374,11 +374,11 @@ func (c *Client) Test(ctx context.Context, s Settings) error {
 
 // Spend summarises AI cost: this month, all time, balance from top-ups.
 type Spend struct {
-	MonthUSD   float64 `json:"month_usd"`
-	TotalUSD   float64 `json:"total_usd"`
-	TopupsUSD  float64 `json:"topups_usd"`
-	BalanceUSD float64 `json:"balance_usd"`
-	Calls      int     `json:"calls"`
+	MonthUSD   float64            `json:"month_usd"`
+	TotalUSD   float64            `json:"total_usd"`
+	TopupsUSD  float64            `json:"topups_usd"`
+	BalanceUSD float64            `json:"balance_usd"`
+	Calls      int                `json:"calls"`
 	ByKind     map[string]float64 `json:"by_kind"`
 }
 

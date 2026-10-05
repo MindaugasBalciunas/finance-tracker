@@ -135,7 +135,7 @@ func Known(raw string) string {
 }
 
 var (
-	legalForms = regexp.MustCompile(`(?i)\b(UAB|AB|MB|VSI|VŠĮ|VŠI|IĮ|II|SIA|OY|AS|LTD|LIMITED|GMBH|INC|LLC|S\.?A\.?|APS|BUDŽETINĖ ĮSTAIGA|BIUDŽETINĖ ĮSTAIGA|UŽDAROJI AKCINĖ BENDROVĖ|AKCINĖ BENDROVĖ|VIEŠOJI ĮSTAIGA|VALSTYBĖS ĮMONĖ|SAVIVALDYBĖS ĮMONĖ)\b\.?,?`)
+	legalForms   = regexp.MustCompile(`(?i)\b(UAB|AB|MB|VSI|VŠĮ|VŠI|IĮ|II|SIA|OY|AS|LTD|LIMITED|GMBH|INC|LLC|S\.?A\.?|APS|BUDŽETINĖ ĮSTAIGA|BIUDŽETINĖ ĮSTAIGA|UŽDAROJI AKCINĖ BENDROVĖ|AKCINĖ BENDROVĖ|VIEŠOJI ĮSTAIGA|VALSTYBĖS ĮMONĖ|SAVIVALDYBĖS ĮMONĖ)\b\.?,?`)
 	terminalTail = regexp.MustCompile(`(?i)(\s+(LT-)?\d{3,}.*$)|(\s+[A-Z]{1,3}-?\d+.*$)|(\*\S*)`)
 	cityTail     = regexp.MustCompile(`(?i)\s+(VILNIUS|VILNIAUS|VILNI|VILN|KAUNAS|KLAIPEDA|LUXEMBOURG|LONDON|DUBLIN|RIGA|000LT|LT)\.?$`)
 	spaces       = regexp.MustCompile(`\s+`)

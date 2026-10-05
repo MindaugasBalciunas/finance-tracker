@@ -59,6 +59,9 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 	if len(s.Actions) != 1 || s.Actions[0].Label != "Add # to ledger €#" {
 		t.Errorf("numbers masked in labels: %+v", s.Actions)
 	}
+	if s.Names["/wealth/history"] != "Balance history" || usage.Label("/settings/ai") != "Settings → AI" || usage.Label("/settings/x") != "/settings/x" {
+		t.Errorf("names: %v", s.Names)
+	}
 	if len(s.Suggestions) == 0 {
 		t.Error("a repeated hunt should produce a suggestion")
 	}

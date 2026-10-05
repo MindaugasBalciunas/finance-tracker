@@ -1,3 +1,4 @@
+import { clickLabel } from '../lib/usage'
 import { addMonths, eur, eurc, eurk, monthLabel, parseNum, pct, signed } from '../lib/format'
 import { qs } from '../lib/api'
 import { catColor, GROUPS } from '../lib/categories'
@@ -63,5 +64,17 @@ describe('parseNum', () => {
     for (const bad of ['', 'abc', '1,2,3.4.5', '12a', '--1', '.']) expect(parseNum(bad)).toBeUndefined()
     expect(parseNum(NaN)).toBeUndefined()
     expect(parseNum(7)).toBe(7)
+  })
+})
+
+describe('usage click labels', () => {
+  it('never record what a drill-down link says, only where it leads', () => {
+    const a = document.createElement('a')
+    a.href = '#/ledger?merchant=Evelina&from=2026-01-01'
+    a.textContent = 'Evelina ×6 €5,452'
+    expect(clickLabel(a)).toBe('link → /ledger')
+    const b = document.createElement('button')
+    b.setAttribute('aria-label', 'Collapse menu')
+    expect(clickLabel(b)).toBe('Collapse menu')
   })
 })
