@@ -5,7 +5,7 @@ const P: Record<string, string> = {
   target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-4a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   bank: 'M3 9.5 12 4l9 5.5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18',
   chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
-  spark: 'M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z',
+  spark: 'M12 3.75l1.95 6.3 6.3 1.95-6.3 1.95L12 20.25l-1.95-6.3L3.75 12l6.3-1.95z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
   // Categories and account kinds (coloured tiles).
   utensils: 'M7 3v8a2 2 0 0 0 2 2v8M11 3v8a2 2 0 0 1-2 2M9 3v7M17 21V3c-2.2 1.2-3 4-3 7 0 1.6 1 2.5 3 2.5',
@@ -66,10 +66,14 @@ const P: Record<string, string> = {
   download: 'M12 4v11m0 0 4-4m-4 4-4-4M4 20h16',
   upload: 'M12 16V5m0 0 4 4m-4-4-4 4M4 20h16',
 }
+// Optical centring for drawings whose bounding box isn't centred in 24×24
+// (measured with getBBox); keeps icons level with the text beside them.
+const NUDGE: Record<string, string> = { plane: 'translate(1.15 -0.9)', heart: 'translate(0 -0.93)' }
+
 export function Icon({ name, size = 20, className = '' }: { name: keyof typeof P | string; size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-      <path d={P[name] ?? ''} />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`} aria-hidden>
+      <path d={P[name] ?? ''} transform={NUDGE[name]} />
     </svg>
   )
 }

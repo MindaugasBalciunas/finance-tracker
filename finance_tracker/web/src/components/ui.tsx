@@ -3,12 +3,14 @@ import clsx from 'clsx'
 import { Icon, IconTile } from './Icon'
 import { eur, parseNum, signed } from '../lib/format'
 
+// The header wraps: the title keeps its line and a long action drops
+// underneath on narrow screens instead of squeezing the title.
 export function Card({ children, className = '', title, action, pad = true, icon, color = 'rgb(var(--accent))' }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
   return (
     <section className={clsx('card', pad && 'p-4', className)}>
       {(title || action) && (
-        <div className={clsx('flex items-center justify-between gap-2', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
-          {title && <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">{icon && <IconTile name={icon} color={color} size={26} />}{title}</h2>}
+        <div className={clsx('flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
+          {title && <h2 className="flex min-w-0 shrink-0 items-center gap-2 text-sm font-semibold text-ink">{icon && <IconTile name={icon} color={color} size={26} />}{title}</h2>}
           {action}
         </div>
       )}

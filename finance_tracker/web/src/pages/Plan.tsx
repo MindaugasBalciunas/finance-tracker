@@ -111,12 +111,12 @@ function Summary({ r, current }: { r: PlanReport; current: boolean }) {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
       <section className="card p-4 lg:col-span-2">
-        <div className="flex items-baseline justify-between">
-          <div>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div className="shrink-0">
             <div className="text-sm text-ink2">{current ? 'Safe to spend this month' : 'Left after the plan'}</div>
             <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : 'text-good')}>{eur(r.safe_to_spend)}</div>
           </div>
-          <div className="text-right text-xs text-muted">income − fixed − saving − fund set-asides − spent outside funds</div>
+          <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds</div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
           {rows.map((x) => (
