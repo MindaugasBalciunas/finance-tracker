@@ -469,11 +469,19 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
         </div>
         <Field label="Notes"><textarea className="input h-20 py-2" value={v.notes ?? ''} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
         {v.kind === 'loan' && <LoanFields d={safeParse(details)} onChange={(d) => setDetails(JSON.stringify(d, null, 2))} />}
-        {['property', 'vehicle'].includes(v.kind ?? '') && (
-          <Field label="Details (JSON)" hint="purchase_date, purchase_price, address">
-            <textarea className="input h-36 py-2 font-mono text-xs" value={details} onChange={(e) => setDetails(e.target.value)} />
-          </Field>
-        )}
+        {['property', 'vehicle'].includes(v.kind ?? '') && (() => {
+          const d = safeParse(details)
+          const put = (k: string, val: unknown) => setDetails(JSON.stringify({ ...d, [k]: val === '' || val === undefined ? undefined : val }, null, 2))
+          return (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Purchased on"><input type="date" className="input" value={d.purchase_date ?? ''} onChange={(e) => put('purchase_date', e.target.value)} /></Field>
+                <Field label="Purchase price €"><NumberInput value={d.purchase_price} onChange={(n) => put('purchase_price', n)} /></Field>
+              </div>
+              <Field label={v.kind === 'vehicle' ? 'Description' : 'Address'}><input className="input" value={d.address ?? ''} onChange={(e) => put('address', e.target.value)} /></Field>
+            </div>
+          )
+        })()}
         <ErrorBox error={save.error || del.error} />
       </div>
     </Sheet>
@@ -892,6 +900,41 @@ function Loans() {
               <div><div className="text-xs text-muted">Last 12 months</div><div className="tnum">{eur(l.paid_interest_12m)} interest · {eur(l.paid_principal_12m)} principal</div></div>
               <div><div className="text-xs text-muted">Interest still to pay</div><div className="tnum">{eur(l.total_interest_left)}</div></div>
             </div>
+            {l.start_principal > 0 && (
+              <div className="mt-4">
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="text-ink2">Repaid <b className="tnum text-ink">{eurc(l.repaid)}</b> of {eurc(l.start_principal)}</span>
+                  <span className="tnum text-xs text-muted">{pct(l.repaid_pct, 1)} · since {shortDate(l.details.start_date)}</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-sunken"><div className="h-full rounded-full bg-good" style={{ width: `${Math.min(100, Math.max(1, l.repaid_pct * 100))}%` }} /></div>
+              </div>
+            )}
+            {l.purchase_price > 0 && l.equity > 0 && (() => {
+              // Where the equity came from (the three parts sum to value − owed).
+              const parts = [
+                { label: 'Down payment', v: l.down_payment ?? 0, color: 'var(--s1)', hint: `${eurc(l.purchase_price)} purchase − ${eurc(l.start_principal)} borrowed` },
+                { label: 'Principal repaid', v: l.repaid ?? 0, color: 'var(--s6)', hint: 'paid off the loan so far' },
+                { label: l.appreciation >= 0 ? 'Rise in value' : 'Fall in value', v: l.appreciation ?? 0, color: 'var(--s5)', hint: `${eurc(l.purchase_price)} → ${eurc(l.asset_value)}` },
+              ].filter((x) => x.v !== 0)
+              const pos = parts.filter((x) => x.v > 0).reduce((a, x) => a + x.v, 0) || 1
+              return (
+                <div className="mt-4">
+                  <div className="flex items-baseline justify-between text-sm"><span className="text-ink2">Where your equity comes from</span><b className="tnum">{eurc(l.equity)}</b></div>
+                  <div className="mt-1.5 flex h-2.5 gap-0.5 overflow-hidden rounded-full">
+                    {parts.filter((x) => x.v > 0).map((x) => <div key={x.label} style={{ width: `${(x.v / pos) * 100}%`, background: x.color }} title={`${x.label}: ${eurc(x.v)}`} />)}
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-3">
+                    {parts.map((x) => (
+                      <div key={x.label} className="flex items-center gap-1.5" title={x.hint}>
+                        <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: x.color }} />
+                        <span className="text-ink2">{x.label}</span>
+                        <b className={clsx('ml-auto tnum sm:ml-1', x.v < 0 && 'text-bad')}>{x.v < 0 ? '−' : ''}{eurc(Math.abs(x.v))}</b>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
             {l.days_to_reset > 0 && <div className="mt-3 flex items-center gap-1.5 text-sm text-warn"><Icon name="alert" size={16} />Rate resets in {l.days_to_reset} days ({l.details.rate_reset_date})</div>}
             {series.length > 1 && (
               <div className="mt-4">

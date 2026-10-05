@@ -456,7 +456,14 @@ func (s *Server) ledgerRoutes() {
 				return nil, bad("an account with this name already exists")
 			}
 		}
-		return ledger.SaveAccount(s.DB, a)
+		saved, err := ledger.SaveAccount(s.DB, a)
+		if err == nil && a.Kind == "loan" {
+			// Start date / original principal re-draw the reconstructed history.
+			if _, rerr := wealth.RebuildLoanHistory(s.DB, a.ID); rerr != nil {
+				return nil, rerr
+			}
+		}
+		return saved, err
 	}
 	s.handle("POST /api/accounts", saveAccount)
 	s.handle("PUT /api/accounts/{id}", saveAccount)

@@ -305,6 +305,64 @@ func TestBalanceTablePages(t *testing.T) {
 	}
 }
 
+func TestRebuildLoanHistory(t *testing.T) {
+	d := DB(t)
+	det := `{"base_rate":2.65,"margin":1.3,"monthly_payment":1361.66,"payment_day":17,"start_date":"2022-08-17","start_principal":285000}`
+	if _, err := d.Exec(`UPDATE accounts SET details=? WHERE id='mortgage'`, det); err != nil {
+		t.Fatal(err)
+	}
+	// An old reconstruction that started too high, and the real balance.
+	d.Exec(`INSERT INTO balances(account_id,date,value,source,updated_at) VALUES('mortgage','2022-08-17',-28793013,'computed','x')`)
+	Bal(t, d, "mortgage", "2026-09-17", -262596.03)
+	// The bank split principal out in August 2026.
+	Tx(t, d, ledger.Tx{Date: "2026-08-17", Amount: E(506.43), Category: "transfer.debt", AccountID: "seb", ToAccountID: "mortgage"})
+	n, err := wealth.RebuildLoanHistory(d, "mortgage")
+	if err != nil || n < 48 {
+		t.Fatalf("months %d err %v", n, err)
+	}
+	book, _ := wealth.LoadBook(d)
+	if p, _ := book.At("mortgage", "2022-08-17"); p.Value != -E(285000) || p.Source != "computed" {
+		t.Errorf("starts at the original principal: %+v", p)
+	}
+	if p, _ := book.At("mortgage", "2026-09-17"); p.Value != -E(262596.03) || p.Source != "manual" {
+		t.Errorf("real balance untouched: %+v", p)
+	}
+	// August's recorded principal is exact: July − August = 506.43.
+	jul, _ := book.At("mortgage", "2026-07-17")
+	aug, _ := book.At("mortgage", "2026-08-17")
+	if aug.Value-jul.Value != E(506.43) {
+		t.Errorf("recorded principal month: jul %v aug %v", jul.Value, aug.Value)
+	}
+	// And August + September's principal lands on the anchor.
+	if aug.Value >= -E(262596.03) {
+		t.Errorf("owed before the anchor should be higher: %v", aug.Value)
+	}
+	// Owed only ever goes down.
+	prev := -E(285001)
+	for _, p := range book.Series("mortgage") {
+		if p.Value < prev {
+			t.Fatalf("owed rose on %s: %v after %v", p.Date, p.Value, prev)
+		}
+		prev = p.Value
+	}
+	// Equity explained: down payment + repaid + appreciation = value − owed.
+	Bal(t, d, "house", "2025-12-01", 410000)
+	d.Exec(`UPDATE accounts SET details='{"purchase_date":"2022-08-17","purchase_price":355000}' WHERE id='house'`)
+	d.Exec(`UPDATE accounts SET details=json_set(details,'$.asset_id','house') WHERE id='mortgage'`)
+	bk, _ := wealth.LoadBook(d)
+	lv := wealth.Loans(bk, nil, time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC))[0]
+	if lv.DownPayment != E(70000) || lv.Appreciation != E(55000) || lv.Repaid != E(22403.97) ||
+		lv.DownPayment+lv.Repaid+lv.Appreciation != lv.Equity {
+		t.Errorf("equity breakdown: %+v", lv)
+	}
+	// Saving again is stable.
+	n2, _ := wealth.RebuildLoanHistory(d, "mortgage")
+	book2, _ := wealth.LoadBook(d)
+	if n2 != n || len(book2.Series("mortgage")) != len(book.Series("mortgage")) {
+		t.Error("rebuild is idempotent")
+	}
+}
+
 var errNone = errFn("no targets")
 
 type errFn string
