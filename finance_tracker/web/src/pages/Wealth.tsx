@@ -120,7 +120,7 @@ function Overview() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {GROUPS.filter((g) => byGroup[g.id]?.length).map((g) => (
           <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
-            action={<span className="tnum text-sm font-semibold">{eur(byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0))}</span>}>
+            action={<span className="tnum text-sm font-semibold">{eurc(byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0))}</span>}>
             <div className="divide-y divide-line border-t border-line">
               {byGroup[g.id].map((a) => <AccountRow key={a.id} a={a} onClick={() => setAcct(a)} />)}
             </div>
@@ -302,7 +302,7 @@ function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
           {[a.institution !== a.name && a.institution, a.quantity ? `${a.quantity} units` : '', a.balance_date ? (stale ? `${age} days old` : shortDate(a.balance_date)) : 'no balance', a.source === 'bank' ? 'from bank' : a.source === 'computed' ? 'estimated' : ''].filter(Boolean).join(' · ')}
         </div>
       </div>
-      <div className="tnum text-sm font-semibold">{a.balance != null ? eur(a.balance) : '—'}</div>
+      <div className="tnum text-sm font-semibold">{a.balance != null ? eurc(a.balance) : '—'}</div>
     </button>
   )
 }
@@ -929,36 +929,35 @@ const SOURCE_COLOR: Record<string, string> = { bank: 'rgb(var(--accent))', manua
  *  Recorded values in full ink with their source; carried-forward values grey. */
 function BalanceHistory() {
   const [page, setPage] = useState(1)
-  const [showHidden, setShowHidden] = useState(false)
+  const [picking, setPicking] = useState(false)
   const { data: accounts } = useAccounts()
+  const { prefs, set } = usePrefs()
   const { data: t, isLoading, isFetching } = useQuery({ queryKey: ['balance-table', page], queryFn: () => api.get<any>('/balances/table', { page, size: 50 }), placeholderData: (p) => p })
   if (isLoading || !t) return <Loading />
   const byId = Object.fromEntries((accounts ?? []).map((a) => [a.id, a]))
-  // Columns: bank order (Swedbank, SEB, Revolut, …); only accounts with a value on this page.
-  const cols = (accounts ?? []).filter((a) => t.accounts.includes(a.id) && (showHidden || !a.archived) && t.rows.some((r: any) => r.cells[a.id]))
-  const hiddenCount = (accounts ?? []).filter((a) => a.archived && t.accounts.includes(a.id)).length
-  const pager = (
-    <div className="flex items-center justify-between gap-2">
-      <button className="btn-outline h-8 px-2.5 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>Newest</button>
-      <div className="flex items-center gap-2">
-        <button className="btn-ghost h-8 w-8 px-0" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronL" size={16} /></button>
-        <span className="text-xs text-muted tnum">Page {t.page} of {t.pages} {isFetching && <Spinner />}</span>
-        <button className="btn-ghost h-8 w-8 px-0" disabled={page >= t.pages} onClick={() => setPage(page + 1)} aria-label="Next page"><Icon name="chevronR" size={16} /></button>
-      </div>
-      <button className="btn-outline h-8 px-2.5 text-xs" disabled={page >= t.pages} onClick={() => setPage(t.pages)}>Oldest</button>
-    </div>
-  )
+  const inTable = (accounts ?? []).filter((a) => t.accounts.includes(a.id))
+  // Columns you chose to hide; never configured → valuations (house, car, solar)
+  // and hidden accounts are off, since they rarely change.
+  const hidden = new Set(prefs.history_hidden ?? inTable.filter((a) => a.kind === 'property' || a.kind === 'vehicle' || a.archived).map((a) => a.id))
+  const cols = inTable.filter((a) => !hidden.has(a.id) && t.rows.some((r: any) => r.cells[a.id]))
+  const toggle = (id: string) => { const n = new Set(hidden); n.has(id) ? n.delete(id) : n.add(id); set({ history_hidden: [...n] }) }
+  const from = (t.page - 1) * t.size + 1, to = from + t.rows.length - 1
+  // Numbered pages: first, last, and two either side of the current one.
+  const nums = [...new Set([1, t.pages, ...[-2, -1, 0, 1, 2].map((d) => t.page + d)])].filter((n) => n >= 1 && n <= t.pages).sort((a, b) => a - b)
   return (
     <div className="space-y-3">
-      <Card pad={false} icon="calendar" color="var(--s7)" title="Balance history"
-        action={<span className="text-xs text-muted tnum">{t.dates} snapshots · {t.rows[t.rows.length - 1]?.date ? shortDate(t.rows[t.rows.length - 1].date) : ''} – {t.rows[0] ? shortDate(t.rows[0].date) : ''}</span>}>
-        <div className="space-y-2 px-4 pb-3">
-          {pager}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
-            <span><b className="text-ink">Bold</b> = recorded that day · <span className="opacity-60">grey</span> = carried forward</span>
-            {Object.entries(SOURCE_COLOR).map(([k, c]) => <span key={k} className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{k === 'import' ? 'imported' : k}</span>)}
-            {hiddenCount > 0 && <label className="ml-auto inline-flex items-center gap-1.5"><input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />show {hiddenCount} hidden</label>}
-          </div>
+      <Card pad={false} className="full-bleed" icon="calendar" color="var(--s7)" title="Balance history" action={
+        <div className="flex items-center gap-1">
+          <span className="mr-1 hidden text-xs text-muted tnum sm:inline">{from}–{to} of {t.dates}</span>
+          {isFetching && <Spinner />}
+          <button className="btn-ghost h-8 w-8 px-0" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Newer"><Icon name="chevronL" size={16} /></button>
+          <button className="btn-ghost h-8 w-8 px-0" disabled={page >= t.pages} onClick={() => setPage(page + 1)} aria-label="Older"><Icon name="chevronR" size={16} /></button>
+          <button className="btn-outline h-8 px-2.5 text-xs" onClick={() => setPicking(true)}><Icon name="filter" size={14} />Columns</button>
+        </div>}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-2.5 text-[11px] text-muted">
+          <span><b className="text-ink">Bold</b> = recorded that day · <span className="opacity-60">grey</span> = carried forward</span>
+          {Object.entries(SOURCE_COLOR).map(([k, c]) => <span key={k} className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{k === 'import' ? 'imported' : k}</span>)}
+          {hidden.size > 0 && <button className="ml-auto text-accent" onClick={() => setPicking(true)}>{hidden.size} column{hidden.size === 1 ? '' : 's'} hidden</button>}
         </div>
         <div className="overflow-x-auto border-t border-line">
           <table className="w-full border-separate border-spacing-0 text-xs tnum">
@@ -987,14 +986,14 @@ function BalanceHistory() {
                       return (
                         <td key={a.id} className={clsx('whitespace-nowrap border-t border-line px-2 py-1.5 text-right', c?.recorded ? 'font-medium text-ink' : 'text-muted/60')}
                           title={c ? `${byId[a.id]?.name}: ${eurc(c.value)} — ${c.recorded ? c.source || 'recorded' : 'carried forward'}` : ''}>
-                          {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source] ?? 'var(--s-other)' }} />}{eur(c.value)}</span> : ''}
+                          {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source] ?? 'var(--s-other)' }} />}{eurc(c.value)}</span> : ''}
                         </td>
                       )
                     })}
-                    <td className="whitespace-nowrap border-t border-line px-2 py-1.5 text-right text-ink2">{eur(r.liquid)}</td>
-                    <td className="whitespace-nowrap border-t border-line px-3 py-1.5 text-right font-semibold">{eur(r.net_worth)}</td>
+                    <td className="whitespace-nowrap border-t border-line px-2 py-1.5 text-right text-ink2">{eurc(r.liquid)}</td>
+                    <td className="whitespace-nowrap border-t border-line px-3 py-1.5 text-right font-semibold">{eurc(r.net_worth)}</td>
                     <td className={clsx('whitespace-nowrap border-t border-line px-3 py-1.5 text-right', change == null ? '' : change > 0 ? 'text-good' : change < 0 ? 'text-bad' : 'text-muted')}>
-                      {change == null ? '' : change === 0 ? '±0' : `${change > 0 ? '+' : '−'}${eur(Math.abs(change))}`}
+                      {change == null ? '' : Math.abs(change) < 0.005 ? '±0' : `${change > 0 ? '+' : '−'}${eurc(Math.abs(change))}`}
                     </td>
                   </tr>
                 )
@@ -1002,8 +1001,40 @@ function BalanceHistory() {
             </tbody>
           </table>
         </div>
-        <div className="border-t border-line px-4 py-3">{pager}</div>
+        {t.pages > 1 && (
+          <nav className="flex items-center justify-center gap-1 border-t border-line px-4 py-2.5" aria-label="Pages">
+            <button className="btn-ghost h-8 w-8 px-0" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Newer"><Icon name="chevronL" size={16} /></button>
+            {nums.map((n, i) => (
+              <Fragment key={n}>
+                {i > 0 && n - nums[i - 1] > 1 && <span className="px-1 text-xs text-muted">…</span>}
+                <button onClick={() => setPage(n)} aria-current={n === t.page ? 'page' : undefined}
+                  className={clsx('h-8 min-w-8 rounded-lg px-2 text-xs tnum transition', n === t.page ? 'bg-accent text-white' : 'text-ink2 hover:bg-sunken')}>{n}</button>
+              </Fragment>
+            ))}
+            <button className="btn-ghost h-8 w-8 px-0" disabled={page >= t.pages} onClick={() => setPage(page + 1)} aria-label="Older"><Icon name="chevronR" size={16} /></button>
+          </nav>
+        )}
       </Card>
+      {picking && (
+        <Sheet open onClose={() => setPicking(false)} title="Columns" footer={<>
+          <button className="btn-ghost mr-auto" onClick={() => set({ history_hidden: inTable.filter((a) => a.kind === 'property' || a.kind === 'vehicle' || a.archived).map((a) => a.id) })}>Reset</button>
+          <button className="btn-primary" onClick={() => setPicking(false)}>Done</button>
+        </>}>
+          <div className="mb-3 flex gap-2">
+            <button className="btn-outline h-8 text-xs" onClick={() => set({ history_hidden: [] })}>Show all</button>
+            <button className="btn-outline h-8 text-xs" onClick={() => set({ history_hidden: inTable.filter((a) => !LIQUID_GROUPS.includes(a.group)).map((a) => a.id) })}>Liquid only</button>
+          </div>
+          <div className="divide-y divide-line">
+            {inTable.map((a) => (
+              <label key={a.id} className="flex cursor-pointer items-center gap-3 py-2">
+                <IconTile name={accountIcon(a)} color={brandColor(a) ?? 'var(--s-other)'} size={28} />
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm">{a.name}</span>{a.archived && <span className="text-xs text-muted">hidden account</span>}</span>
+                <Toggle checked={!hidden.has(a.id)} onChange={() => toggle(a.id)} />
+              </label>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   )
 }

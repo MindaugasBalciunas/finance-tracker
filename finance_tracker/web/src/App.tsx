@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { HashRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api, ApiError } from './lib/api'
 import { Icon } from './components/Icon'
+import { Logo, LogoMark } from './components/Logo'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
 import { TxEditorProvider } from './components/TxEditor'
@@ -36,6 +37,20 @@ const NAV = [
 // Each section has its own hue when active (tinted pill on desktop, coloured icon on mobile).
 const activeStyle = (color: string) => ({ color: `color-mix(in oklab, ${color} 85%, rgb(var(--ink)))`, background: `color-mix(in oklab, ${color} var(--tint), transparent)` })
 
+/** A sidebar entry: icon + label, or just the icon (with a tooltip) on the rail. */
+function SideLink({ to, icon, label, color, collapsed = false, badge = 0 }: { to: string; icon: string; label: string; color: string; collapsed?: boolean; badge?: number }) {
+  return (
+    <NavLink to={to} end={to === '/'} title={collapsed ? label : undefined} style={({ isActive }) => (isActive ? activeStyle(color) : undefined)}
+      className={({ isActive }) => clsx('relative flex h-10 items-center gap-3 rounded-xl text-sm font-medium transition', collapsed ? 'justify-center px-0' : 'px-3', isActive ? '' : 'text-ink2 hover:bg-sunken')}>
+      <Icon name={icon} />
+      {!collapsed && label}
+      {!!badge && (collapsed
+        ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
+        : <span className="ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{badge}</span>)}
+    </NavLink>
+  )
+}
+
 export function applyTheme() {
   let t: string | null = null
   try {
@@ -48,6 +63,29 @@ export function applyTheme() {
 function Shell() {
   const loc = useLocation()
   const nav = useNavigate()
+  // Desktop sidebar: full or icon rail (a per-device choice).
+  const [collapsed, setCollapsedState] = useState(() => { try { return localStorage.getItem('nav-collapsed') === '1' } catch { return false } })
+  const setCollapsed = (v: boolean) => { setCollapsedState(v); try { localStorage.setItem('nav-collapsed', v ? '1' : '0') } catch {} }
+  const [drawer, setDrawer] = useState(false)
+  useEffect(() => setDrawer(false), [loc.pathname])
+  // --bleed-w: the full width next to the sidebar (minus the page gutters), so
+  // a wide table can break out of the page's max width without moving the header.
+  const shellRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = shellRef.current
+    if (!el) return
+    const update = () => {
+      const cs = getComputedStyle(el)
+      const main = el.querySelector('main')
+      const gutter = main ? parseFloat(getComputedStyle(main).paddingLeft) : 16
+      const w = el.clientWidth - parseFloat(cs.paddingLeft) - 2 * gutter
+      document.documentElement.style.setProperty('--bleed-w', `${Math.max(0, w)}px`)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [collapsed])
   const { data: inbox } = useQuery({ queryKey: ['overview'], queryFn: () => api.get<any>('/overview'), select: (o) => o?.inbox_open ?? 0 })
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -61,41 +99,59 @@ function Shell() {
     }
   }, [nav])
   return (
-    <div className="min-h-dvh sm:pl-56">
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-line bg-surface sm:flex">
-        <div className="flex h-16 items-center gap-2 px-5 text-base font-semibold"><span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-white text-sm">€</span> Finance</div>
-        <nav className="flex flex-1 flex-col gap-0.5 px-3">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.to === '/'} style={({ isActive }) => (isActive ? activeStyle(n.color) : undefined)}
-              className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? '' : 'text-ink2 hover:bg-sunken')}>
-              <Icon name={n.icon} />
-              {n.label}
-              {n.to === '/ledger' && !!inbox && <span className="ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{inbox}</span>}
-            </NavLink>
-          ))}
+    <div ref={shellRef} className={clsx('min-h-dvh transition-[padding]', collapsed ? 'sm:pl-16' : 'sm:pl-56')}>
+      {/* Desktop sidebar — collapses to an icon rail */}
+      <aside className={clsx('fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-line bg-surface transition-[width] sm:flex', collapsed ? 'w-16' : 'w-56')}>
+        <div className={clsx('flex h-16 items-center', collapsed ? 'justify-center' : 'justify-between pl-4 pr-2')}>
+          {!collapsed && <Logo />}
+          <button className="btn-ghost h-9 w-9 px-0" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
+            {collapsed ? <LogoMark size={28} /> : <Icon name="menu" />}
+          </button>
+        </div>
+        <nav className={clsx('flex flex-1 flex-col gap-0.5', collapsed ? 'px-2' : 'px-3')}>
+          {NAV.map((n) => <SideLink key={n.to} to={n.to} icon={n.icon} label={n.label} color={n.color} collapsed={collapsed} badge={n.to === '/ledger' ? inbox : 0} />)}
           <div className="my-2 border-t border-line" />
-          <NavLink to="/ai" style={({ isActive }) => (isActive ? activeStyle('var(--s4)') : undefined)} className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? '' : 'text-ink2 hover:bg-sunken')}>
-            <Icon name="spark" /> Ask CFO
-          </NavLink>
+          <SideLink to="/ai" icon="spark" label="Ask CFO" color="var(--s4)" collapsed={collapsed} />
         </nav>
-        <div className="px-3 pb-4">
-          <NavLink to="/settings" className={({ isActive }) => clsx('flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition', isActive ? 'bg-accent/10 text-accent' : 'text-ink2 hover:bg-sunken')}>
-            <Icon name="settings" /> Settings
-          </NavLink>
+        <div className={clsx('pb-4', collapsed ? 'px-2' : 'px-3')}>
+          <SideLink to="/settings" icon="settings" label="Settings" color="var(--s-other)" collapsed={collapsed} />
         </div>
       </aside>
 
-      {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-line bg-page/90 px-4 backdrop-blur sm:hidden">
-        <div className="flex items-center gap-2 text-sm font-semibold"><span className="grid h-6 w-6 place-items-center rounded-md bg-accent text-white text-xs">€</span> Finance</div>
+      {/* Mobile top bar with a hamburger menu */}
+      <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-line bg-page/90 px-2 backdrop-blur sm:hidden">
+        <div className="flex items-center gap-1">
+          <button className="btn-ghost h-9 w-9 px-0" onClick={() => setDrawer(true)} aria-label="Open menu"><Icon name="menu" /></button>
+          <Logo />
+        </div>
         <div className="flex items-center gap-1">
           <NavLink to="/ai" className="btn-ghost h-9 w-9 px-0" aria-label="Ask CFO"><Icon name="spark" /></NavLink>
           <NavLink to="/settings" className="btn-ghost h-9 w-9 px-0" aria-label="Settings"><Icon name="settings" /></NavLink>
         </div>
       </header>
+      {drawer && (
+        <div className="fixed inset-0 z-50 sm:hidden" role="dialog" aria-modal>
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-xl">
+            <div className="flex h-14 items-center justify-between border-b border-line pl-4 pr-2">
+              <Logo />
+              <button className="btn-ghost h-9 w-9 px-0" onClick={() => setDrawer(false)} aria-label="Close menu"><Icon name="x" /></button>
+            </div>
+            <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3" onClick={() => setDrawer(false)}>
+              {NAV.map((n) => <SideLink key={n.to} to={n.to} icon={n.icon} label={n.label} color={n.color} badge={n.to === '/ledger' ? inbox : 0} />)}
+              <div className="my-2 border-t border-line" />
+              <SideLink to="/ai" icon="spark" label="Ask CFO" color="var(--s4)" />
+              <SideLink to="/insights/review" icon="chart" label="Month review" color="var(--s5)" />
+              <SideLink to="/wealth/history" icon="calendar" label="Balance history" color="var(--s7)" />
+              <div className="mt-auto" />
+              <SideLink to="/settings" icon="settings" label="Settings" color="var(--s-other)" />
+            </nav>
+          </div>
+        </div>
+      )}
 
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-4 sm:px-8 sm:pt-8 sm:pb-12">
+      {/* One width for every page (no jumps between tabs); wide enough for tables. */}
+      <main className="mx-auto max-w-screen-2xl px-4 pb-28 pt-4 sm:px-6 sm:pt-8 sm:pb-12 lg:px-8">
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route path="/" element={<Home />} />

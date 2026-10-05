@@ -1,3 +1,4 @@
+import { LogoMark } from '../components/Logo'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { Icon } from '../components/Icon'
@@ -44,7 +45,7 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6">
       <div className="flex flex-col items-center gap-2">
-        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-accent text-white text-xl font-semibold">€</div>
+        <LogoMark size={52} />
         <div className="text-lg font-semibold">Finance is locked</div>
         <div className="h-5 text-sm text-bad">{err}</div>
       </div>

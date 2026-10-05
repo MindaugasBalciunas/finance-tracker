@@ -14,10 +14,16 @@ type Prefs struct {
 	// Accounts switched off in "Where my money is". A full list on every
 	// write (unlike periods, which merge per key).
 	HiddenAccounts []string `json:"hidden_accounts"`
+	// Columns switched off in Wealth → History. nil = never configured (the
+	// client then hides valuations like house, car and solar by default).
+	HistoryHidden *[]string `json:"history_hidden,omitempty"`
 }
 
 // validPrefs keeps the stored blob small and boring.
 func validPrefs(p Prefs) error {
+	if p.HistoryHidden != nil && len(*p.HistoryHidden) > 200 {
+		return errors.New("too many hidden columns")
+	}
 	if len(p.HiddenAccounts) > 200 {
 		return errors.New("too many hidden accounts")
 	}

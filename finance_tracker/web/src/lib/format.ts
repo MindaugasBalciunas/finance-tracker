@@ -1,8 +1,13 @@
 const eur0 = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const eur2 = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** €1,234 — whole euros for overviews. */
-export const eur = (v: number | null | undefined) => (v == null || isNaN(v) ? '—' : eur0.format(Math.round(v) === 0 ? 0 : v))
+// Cents matter on small amounts: €11.46 must never read "€11". Below €1,000 a
+// value with cents keeps them; larger overview figures round to whole euros.
+const hasCents = (v: number) => Math.abs(Math.round(v * 100) - Math.round(v) * 100) > 0
+const smallExact = (v: number) => Math.abs(v) < 1000 && hasCents(v)
+
+/** €1,234 for overviews; €11.46 when a small amount has cents. */
+export const eur = (v: number | null | undefined) => (v == null || isNaN(v) ? '—' : smallExact(v) ? eur2.format(v) : eur0.format(Math.round(v) === 0 ? 0 : v))
 /** €1,234.56 — exact amounts in lists. */
 export const eurc = (v: number | null | undefined) => (v == null || isNaN(v) ? '—' : eur2.format(v))
 /** €12.3k / €1.2M — axis ticks and tight tiles. */
@@ -11,9 +16,9 @@ export function eurk(v: number): string {
   const s = v < 0 ? '−' : ''
   if (a >= 1e6) return `${s}€${(a / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`
   if (a >= 1e3) return `${s}€${(a / 1e3).toFixed(a >= 1e5 ? 0 : 1)}k`
-  return `${s}€${Math.round(a)}`
+  return `${s}€${hasCents(a) ? a.toFixed(2) : Math.round(a)}`
 }
-export const signed = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + eur0.format(Math.abs(v))
+export const signed = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + (smallExact(v) ? eur2 : eur0).format(Math.abs(v))
 export const pct = (v: number | null | undefined, digits = 0) => (v == null || isNaN(v) ? '—' : `${(v * 100).toFixed(digits)}%`)
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

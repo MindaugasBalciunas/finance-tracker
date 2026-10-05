@@ -616,6 +616,14 @@ func TestPrefsPersist(t *testing.T) {
 	if h := p["hidden_accounts"].([]any); len(h) != 1 || h[0] != "car" {
 		t.Fatal("hidden accounts", h)
 	}
+	if _, set := p["history_hidden"]; set {
+		t.Fatal("history columns start unconfigured (client default applies)")
+	}
+	c.ok("PUT", "/prefs", map[string]any{"history_hidden": []string{}}, nil) // configured: show everything
+	c.ok("GET", "/prefs", nil, &p)
+	if h, ok := p["history_hidden"].([]any); !ok || len(h) != 0 {
+		t.Fatal("an empty choice is remembered as a choice", p["history_hidden"])
+	}
 	if per := p["periods"].(map[string]any); per["wealth"] != "6m" || per["cashflow"] != "ytd" {
 		t.Fatal("periods", per)
 	}

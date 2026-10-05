@@ -19,7 +19,7 @@ export const useCashflow = (from: string, to: string, granularity: 'month' | 'ye
 export const useMerchants = () =>
   useQuery({ queryKey: ['merchants'], queryFn: () => api.get<{ merchant: string; count: number; category: string }[]>('/merchants'), staleTime: 300_000 })
 
-export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[] }
+export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[]; history_hidden?: string[] }
 
 /** View choices stored on the server so they follow the owner across devices. */
 export function usePrefs() {

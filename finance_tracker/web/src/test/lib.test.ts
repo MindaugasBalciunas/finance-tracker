@@ -5,7 +5,14 @@ import { catColor, GROUPS } from '../lib/categories'
 describe('format', () => {
   it('formats euros for overviews, lists and axes', () => {
     expect(eur(1234.4)).toBe('€1,234')
-    expect(eur(-0.4)).toBe('€0')
+    // Small amounts keep their cents (Revolut €11.46 must not read €11).
+    expect(eur(11.46)).toBe('€11.46')
+    expect(eur(707.95)).toBe('€707.95')
+    expect(eur(-0.4)).toBe('-€0.40')
+    expect(eur(12)).toBe('€12')
+    expect(eurk(11.46)).toBe('€11.46')
+    expect(eurk(609)).toBe('€609')
+    expect(signed(-2.49)).toBe('−€2.49')
     expect(eur(null)).toBe('—')
     expect(eurc(1234.5)).toBe('€1,234.50')
     expect(eurk(1500)).toBe('€1.5k')
