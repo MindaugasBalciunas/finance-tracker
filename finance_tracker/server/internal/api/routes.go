@@ -1004,7 +1004,12 @@ func (s *Server) insightRoutes() {
 	})
 	s.handle("GET /api/insights/cashflow", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		q := r.URL.Query()
-		txs, err := ledger.All(s.DB, ledger.Filter{From: q.Get("from"), To: q.Get("to")})
+		from, to := q.Get("from"), q.Get("to")
+		loadTo := to
+		if t, err := time.Parse("2006-01-02", to); err == nil { // a late salary still reaches its month
+			loadTo = t.AddDate(0, 0, insights.SalaryGraceDays).Format("2006-01-02")
+		}
+		txs, err := ledger.All(s.DB, ledger.Filter{From: from, To: loadTo})
 		if err != nil {
 			return nil, err
 		}
@@ -1013,7 +1018,7 @@ func (s *Server) insightRoutes() {
 		if g != "year" {
 			g = "month"
 		}
-		return insights.CashFlow(txs, cats, g), nil
+		return insights.CashFlowRange(txs, cats, g, from, to), nil
 	})
 	s.handle("GET /api/insights/breakdown", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		from, to := window(r)

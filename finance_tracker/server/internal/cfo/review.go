@@ -91,7 +91,12 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	sel, _ := time.Parse("2006-01", month)
 	from, to := monthBounds(month)
 	r := &MonthReview{Month: month, Complete: to < now.Format("2006-01-02")}
-	txs, err := ledger.All(d, ledger.Filter{From: sel.AddDate(0, -11, 0).Format("2006-01-02"), To: to})
+	// A few days past the month, so a salary paid on the 1st–3rd counts here.
+	toPlus := to
+	if t, err := time.Parse("2006-01-02", to); err == nil {
+		toPlus = t.AddDate(0, 0, insights.SalaryGraceDays).Format("2006-01-02")
+	}
+	txs, err := ledger.All(d, ledger.Filter{From: sel.AddDate(0, -11, 0).Format("2006-01-02"), To: toPlus})
 	if err != nil {
 		return nil, err
 	}
@@ -216,11 +221,10 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 		r.Budget = b
 	}
 	r.OwedToYou = OwedTotal(d)
-	// Salary paid at month end sometimes books on the 1st–3rd of the next
-	// month; then this month looks poor and the next one rich.
-	next := sel.AddDate(0, 1, 0)
-	if late, err := ledger.All(d, ledger.Filter{From: next.Format("2006-01-02"), To: next.AddDate(0, 0, 2).Format("2006-01-02"), Categories: []string{"salary"}}); err == nil {
-		for _, t := range late {
+	// Cash flow already counts a salary paid on the 1st–3rd of next month here;
+	// say so, since the bank statement shows it in the other month.
+	for i := range txs {
+		if t := &txs[i]; t.Date > to && insights.FlowDate(t) <= to && t.Kind == "income" {
 			r.lateSalary += t.Amount
 		}
 	}
@@ -242,16 +246,8 @@ func verdict(r *MonthReview) (string, string, []Highlight) {
 	var hs []Highlight
 	tone := "neutral"
 	head := "An ordinary month."
-	if r.lateSalary > 0 && avg.Income > 0 && f.Income.Float() < 0.85*avg.Income.Float() {
-		adj := f.Income + r.lateSalary
-		rate := 0.0
-		if adj > 0 {
-			rate = (adj - f.Spending).Float() / adj.Float()
-		}
-		hs = append(hs, Highlight{"neutral", fmt.Sprintf("Salary of %s booked in the first days of next month; counting it, you kept %s of income.", eurS(r.lateSalary), pctS(rate))})
-		if rate >= avg.SavingsRate-0.1 {
-			return fmt.Sprintf("A normal month once the late salary is counted — about %s saved.", pctS(rate)), "neutral", append(hs, tail(r)...)
-		}
+	if r.lateSalary > 0 {
+		hs = append(hs, Highlight{"neutral", fmt.Sprintf("Salary of %s arrived in the first days of next month and is counted in this month.", eurS(r.lateSalary))})
 	}
 	switch {
 	case f.Income == 0 && f.Spending == 0:

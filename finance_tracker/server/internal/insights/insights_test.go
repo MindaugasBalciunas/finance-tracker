@@ -295,3 +295,27 @@ func TestRecurringEditsHideAndManual(t *testing.T) {
 		}
 	}
 }
+
+func TestSalaryOnFirstDaysCountsInPreviousMonth(t *testing.T) {
+	sal := func(date string) ledger.Tx { return tx(date, "income", "salary", 3000) }
+	cases := map[string]string{"2026-10-01": "2026-09-30", "2026-10-03": "2026-09-30", "2026-10-04": "2026-10-04", "2026-01-02": "2025-12-31"}
+	for in, want := range cases {
+		s := sal(in)
+		if got := insights.FlowDate(&s); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
+	}
+	other := tx("2026-10-01", "income", "side_income", 100) // only salary moves
+	if insights.FlowDate(&other) != "2026-10-01" {
+		t.Error("non-salary income moved")
+	}
+	txs := []ledger.Tx{sal("2026-10-01"), tx("2026-09-10", "expense", "food", 1000), tx("2026-10-02", "expense", "food", 50)}
+	flows := insights.CashFlowRange(txs, nil, "month", "2026-09-01", "2026-09-30")
+	if len(flows) != 1 || flows[0].Income != E(3000) || flows[0].Spending != E(1000) {
+		t.Fatalf("September with its salary, October's spending excluded: %+v", flows)
+	}
+	years := insights.CashFlow([]ledger.Tx{sal("2026-01-02")}, nil, "year")
+	if years[0].Period != "2025" {
+		t.Errorf("December's salary paid on 2 January belongs to the year before: %+v", years)
+	}
+}

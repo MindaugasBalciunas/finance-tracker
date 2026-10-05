@@ -332,9 +332,9 @@ func (s *Server) yearReview(year string) (*Review, error) {
 	}
 	rv := &Review{Year: year}
 	var yearTx []ledger.Tx
-	for _, t := range txs {
-		if t.Date >= from && t.Date <= to {
-			yearTx = append(yearTx, t)
+	for i := range txs {
+		if d := insights.FlowDate(&txs[i]); d >= from && d <= to {
+			yearTx = append(yearTx, txs[i])
 		}
 	}
 	rv.Years = insights.CashFlow(txs, cats, "year")

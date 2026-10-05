@@ -65,7 +65,36 @@ func periodKey(date, granularity string) string {
 	return date[:7]
 }
 
-// CashFlow aggregates by month or year.
+// SalaryGraceDays: a salary paid on the 1st–3rd is last month's pay (payroll
+// runs at month end; the bank books it a day or two later).
+const SalaryGraceDays = 3
+
+// FlowDate is the date a transaction counts on in cash flow: its booking date,
+// except a salary paid in the first days of a month, which belongs to the
+// month before — otherwise that month looks like you saved nothing and the
+// next like you saved everything.
+func FlowDate(t *ledger.Tx) string {
+	if t.Kind == "income" && ledger.Top(t.Category) == "salary" && len(t.Date) == 10 && t.Date[8:] <= fmt.Sprintf("%02d", SalaryGraceDays) {
+		if d, err := time.Parse("2006-01-02", t.Date); err == nil {
+			return time.Date(d.Year(), d.Month(), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		}
+	}
+	return t.Date
+}
+
+// CashFlowRange is CashFlow over [from, to] for callers that loaded a few days
+// past `to` (so a late salary reaches its month); periods outside are dropped.
+func CashFlowRange(txs []ledger.Tx, cats map[string]ledger.Category, granularity, from, to string) []Flow {
+	out := []Flow{}
+	for _, f := range CashFlow(txs, cats, granularity) {
+		if (from == "" || f.Period >= periodKey(from, granularity)) && (to == "" || f.Period <= periodKey(to, granularity)) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// CashFlow aggregates by month or year (salary per FlowDate).
 func CashFlow(txs []ledger.Tx, cats map[string]ledger.Category, granularity string) []Flow {
 	byP := map[string]*Flow{}
 	get := func(p string) *Flow {
@@ -78,7 +107,7 @@ func CashFlow(txs []ledger.Tx, cats map[string]ledger.Category, granularity stri
 	}
 	for i := range txs {
 		t := &txs[i]
-		f := get(periodKey(t.Date, granularity))
+		f := get(periodKey(FlowDate(t), granularity))
 		switch {
 		case isRefund(t):
 			f.Spending -= t.Amount

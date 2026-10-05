@@ -90,7 +90,8 @@ func TestLateSalaryIsExplained(t *testing.T) {
 	Tx(t, d, ledger.Tx{Date: "2026-09-05", Amount: E(3000), Category: "food", AccountID: "swed"})
 	Tx(t, d, ledger.Tx{Date: "2026-10-01", Amount: E(3000), Category: "salary", AccountID: "swed"})
 	r, _ := cfo.BuildMonthReview(d, "2026-09", now)
-	if r.Tone == "bad" || !strings.Contains(r.Verdict, "late salary") || !strings.Contains(r.Highlights[0].Text, "€3,000") {
-		t.Fatalf("%s %s %+v", r.Tone, r.Verdict, r.Highlights)
+	// The 1 October salary is September's: €5,000 income, not €2,000.
+	if r.Flow.Income != E(5000) || r.Tone == "bad" || !strings.Contains(r.Highlights[0].Text, "€3,000") {
+		t.Fatalf("income %v tone %s %s %+v", r.Flow.Income, r.Tone, r.Verdict, r.Highlights)
 	}
 }
