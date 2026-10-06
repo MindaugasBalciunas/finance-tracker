@@ -3,8 +3,8 @@ package db
 import (
 	"database/sql"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
