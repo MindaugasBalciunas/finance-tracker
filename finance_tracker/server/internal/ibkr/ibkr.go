@@ -42,10 +42,12 @@ const (
 
 // ReadTools are the only IBKR tools this app calls.
 var ReadTools = map[string]bool{
-	"get_account_summary":   true,
-	"get_account_positions": true,
-	"get_account_balances":  true,
-	"get_account_trades":    true,
+	"get_account_summary":    true,
+	"get_account_positions":  true,
+	"get_account_balances":   true,
+	"get_account_trades":     true,
+	"get_account_orders":     true, // live orders — read only
+	"get_order_instructions": true, // saved instructions — read only
 }
 
 var (

@@ -119,6 +119,10 @@ func (f *fakeIBKR) handler(t *testing.T) http.Handler {
 				{"trade_id":"w1","symbol":"VWCE","sec_type":"STK","currency":"EUR","side":"BUY","size":93,"price":162.32,"commission":1.25,"trade_time":"2026-06-05T20:12:51Z"},
 				{"trade_id":"x1","symbol":"SPCX","company_name":"SPACE EXPLORATION","sec_type":"STK","currency":"USD","side":"BUY","size":1,"price":164.43,"commission":0.35,"trade_time":"2026-06-12T15:58:59Z"},
 				{"trade_id":"x2","symbol":"SPCX","sec_type":"STK","currency":"USD","side":"SELL","size":1,"price":195,"commission":0.35,"trade_time":"2026-06-15T20:35:26Z"}]}`
+		case "get_account_orders":
+			text = `{"orders":[{"order_id":"o1","symbol":"VWCE","side":"BUY","order_type":"LIMIT","status":"Submitted","quantity":5,"limit_price":170.5,"filled_quantity":0}]}`
+		case "get_order_instructions":
+			text = `{"instructions":[{"id":"i1","description":"Buy 10 VALL","direction":"BUY","quantity":10,"order_type":"LIMIT","limit_price":4.2,"time_in_force":"GTC"}]}`
 		default:
 			t.Errorf("unexpected tool %s", msg.Params.Name)
 		}
@@ -202,6 +206,11 @@ func TestIBKRReadOnlyConnectionAndSync(t *testing.T) {
 		t.Errorf("local date %s", got["x2"].Date)
 	}
 
+	// Orders and instructions are read, whatever IBKR calls the fields.
+	if len(r.Orders) != 1 || r.Orders[0].Symbol != "VWCE" || r.Orders[0].Price != 170.5 || r.Orders[0].Status != "Submitted" ||
+		len(r.Instructions) != 1 || r.Instructions[0].Side != "buy" || r.Instructions[0].Quantity != 10 || r.OrdersError != "" {
+		t.Errorf("orders %+v instructions %+v err %q", r.Orders, r.Instructions, r.OrdersError)
+	}
 	n, err := s.Import([]string{"x1", "x2", "w1"})
 	if err != nil || n != 2 {
 		t.Fatalf("imported %d, %v", n, err)

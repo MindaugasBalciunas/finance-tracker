@@ -31,6 +31,93 @@ type Report struct {
 	Trades         []Proposal `json:"trades"`
 	New            int        `json:"new"`
 	Mismatches     int        `json:"mismatches"`
+	// Read only: live orders and saved order instructions (not yet orders).
+	Orders       []Order `json:"orders"`
+	Instructions []Order `json:"instructions"`
+	OrdersError  string  `json:"orders_error,omitempty"`
+}
+
+// Order is a live order or a saved instruction, read as IBKR describes it.
+type Order struct {
+	ID          string  `json:"id"`
+	Symbol      string  `json:"symbol"`
+	Description string  `json:"description,omitempty"`
+	Side        string  `json:"side"`
+	Type        string  `json:"type"`
+	Status      string  `json:"status,omitempty"`
+	Quantity    float64 `json:"quantity"`
+	Price       float64 `json:"price,omitempty"`
+	Filled      float64 `json:"filled,omitempty"`
+	TimeInForce string  `json:"tif,omitempty"`
+	Created     string  `json:"created,omitempty"`
+	Expires     string  `json:"expires,omitempty"`
+}
+
+// parseOrders reads IBKR's order list without depending on exact field
+// names: the first array in the answer, each entry's usual keys.
+func parseOrders(raw json.RawMessage) ([]Order, error) {
+	var arr []map[string]any
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(obj))
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if json.Unmarshal(obj[k], &arr) == nil {
+				break
+			}
+		}
+	}
+	str := func(m map[string]any, keys ...string) string {
+		for _, k := range keys {
+			switch v := m[k].(type) {
+			case string:
+				if v != "" {
+					return v
+				}
+			case float64:
+				return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%f", v), "0"), ".")
+			}
+		}
+		return ""
+	}
+	num := func(m map[string]any, keys ...string) float64 {
+		for _, k := range keys {
+			switch v := m[k].(type) {
+			case float64:
+				return v
+			case string:
+				var f float64
+				if _, err := fmt.Sscanf(v, "%g", &f); err == nil {
+					return f
+				}
+			}
+		}
+		return 0
+	}
+	out := []Order{}
+	for _, m := range arr {
+		out = append(out, Order{
+			ID:          str(m, "order_id", "orderId", "instruction_id", "id"),
+			Symbol:      strings.ToUpper(str(m, "symbol", "ticker", "contract_description")),
+			Description: str(m, "description", "company_name"),
+			Side:        strings.ToLower(str(m, "side", "action", "direction")),
+			Type:        strings.ToLower(str(m, "order_type", "orderType", "type")),
+			Status:      str(m, "status", "order_status"),
+			Quantity:    num(m, "quantity", "total_size", "totalSize", "size"),
+			Price:       num(m, "limit_price", "limitPrice", "price"),
+			Filled:      num(m, "filled_quantity", "filledQuantity", "filled", "cum_fill"),
+			TimeInForce: str(m, "time_in_force", "tif"),
+			Created:     str(m, "creation_time", "created", "created_at", "order_time"),
+			Expires:     str(m, "expiration", "expires", "expires_at"),
+		})
+	}
+	return out, nil
 }
 
 type Position struct {
@@ -260,6 +347,21 @@ func (s *Service) sync(ctx context.Context, balanceOnly bool) (*Report, error) {
 		r.Trades = append(r.Trades, p)
 	}
 	sort.SliceStable(r.Trades, func(i, j int) bool { return r.Trades[i].Date > r.Trades[j].Date })
+
+	// Open orders and saved instructions: shown, never acted on. A refusal
+	// (an older sign-in, say) doesn't fail the sync.
+	r.Orders, r.Instructions = []Order{}, []Order{}
+	for tool, dst := range map[string]*[]Order{"get_account_orders": &r.Orders, "get_order_instructions": &r.Instructions} {
+		raw, err := c.call(ctx, tool, nil)
+		if err == nil {
+			var list []Order
+			if list, err = parseOrders(raw); err == nil {
+				*dst = list
+				continue
+			}
+		}
+		r.OrdersError = "orders couldn't be read: " + err.Error()
+	}
 	return s.saveReport(r, false)
 }
 
