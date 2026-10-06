@@ -11,7 +11,7 @@ RUN VERSION=$(sed -n 's/^version: *"\(.*\)"/\1/p' /config.yaml) \
  && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/finance-tracker-mcp ./cmd/mcp
 
 # Stage 2 — web app (arch-independent output)
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./
 RUN npm ci
