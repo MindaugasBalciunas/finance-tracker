@@ -180,7 +180,7 @@ type Summary struct {
 }
 
 // Pages the app has, for "never used" detection.
-var KnownPages = []string{"/", "/ledger", "/ledger/inbox", "/ledger/tidy", "/plan", "/plan/trips", "/plan/income", "/wealth", "/wealth/investments",
+var KnownPages = []string{"/", "/ledger", "/ledger/inbox", "/ledger/tidy", "/plan", "/plan/trips", "/plan/settings", "/wealth", "/wealth/investments",
 	"/wealth/loans", "/wealth/history", "/insights", "/insights/spending", "/insights/trends", "/insights/recurring", "/insights/review", "/insights/fi",
 	"/ai", "/settings/categories", "/settings/accounts", "/settings/rules", "/settings/tags", "/settings/banks", "/settings/ai", "/settings/security",
 	"/settings/data", "/settings/appearance"}
@@ -393,7 +393,7 @@ func suggest(s *Summary) []string {
 // Label names a route the way the app does.
 func Label(p string) string {
 	names := map[string]string{"/": "Home", "/ledger": "Ledger", "/ledger/inbox": "Bank inbox", "/ledger/tidy": "Tidy up", "/plan": "Plan", "/plan/trips": "Trips",
-		"/plan/income": "Income & goals", "/wealth": "Net worth", "/wealth/investments": "Investments", "/wealth/loans": "Loans", "/wealth/history": "Balance history",
+		"/plan/settings": "Income & goals", "/wealth": "Net worth", "/wealth/investments": "Investments", "/wealth/loans": "Loans", "/wealth/history": "Balance history",
 		"/insights": "Cash flow", "/insights/spending": "Spending", "/insights/trends": "Trends", "/insights/recurring": "Recurring", "/insights/review": "Review",
 		"/insights/fi": "Independence", "/ai": "Ask CFO"}
 	if n, ok := names[p]; ok {

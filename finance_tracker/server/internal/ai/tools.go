@@ -163,7 +163,7 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		if g != "year" {
 			g = "month"
 		}
-		return jsonOut(insights.CashFlow(txs, cats, g))
+		return jsonOut(insights.CashFlow(txs, cats, g, plan.LoadSettings(a.DB).Salary()))
 	case "spending_breakdown":
 		from, to := args.s("from"), args.s("to")
 		if from == "" || to == "" {

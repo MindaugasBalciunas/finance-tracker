@@ -908,6 +908,9 @@ func (s *Server) planRoutes() {
 		if err := decode(r, &st); err != nil {
 			return nil, err
 		}
+		if err := plan.ValidSalaryRules(st.SalaryRules); err != nil {
+			return nil, bad(err.Error())
+		}
 		return st, plan.SaveSettings(s.DB, st)
 	})
 	s.handle("GET /api/budgets", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1005,9 +1008,10 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/insights/cashflow", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		q := r.URL.Query()
 		from, to := q.Get("from"), q.Get("to")
+		salary := plan.LoadSettings(s.DB).Salary()
 		loadTo := to
 		if t, err := time.Parse("2006-01-02", to); err == nil { // a late salary still reaches its month
-			loadTo = t.AddDate(0, 0, insights.SalaryGraceDays).Format("2006-01-02")
+			loadTo = t.AddDate(0, 0, plan.MaxSalaryDays(salary)).Format("2006-01-02")
 		}
 		txs, err := ledger.All(s.DB, ledger.Filter{From: from, To: loadTo})
 		if err != nil {
@@ -1018,7 +1022,7 @@ func (s *Server) insightRoutes() {
 		if g != "year" {
 			g = "month"
 		}
-		return insights.CashFlowRange(txs, cats, g, from, to), nil
+		return insights.CashFlowRange(txs, cats, g, from, to, salary), nil
 	})
 	s.handle("GET /api/insights/breakdown", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		from, to := window(r)

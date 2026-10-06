@@ -227,3 +227,36 @@ func TestTrips(t *testing.T) {
 		t.Fatalf("suggestions %+v", sugg)
 	}
 }
+
+// A job change: month-end payroll paid by the 3rd until 11 Oct 2026, then a
+// new employer paying once a month by the 10th.
+func TestSalaryRulesAcrossAJobChange(t *testing.T) {
+	rules := []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-10-12", PaidByDay: 10}}
+	sal := func(d string) *ledger.Tx { return &ledger.Tx{Date: d, Kind: "income", Category: "salary"} }
+	cases := map[string]string{
+		"2026-10-01": "2026-09-30", // old employer, September's final payment
+		"2026-10-07": "2026-10-07", // before the new rule: day 7 > 3, stays in October
+		"2026-10-15": "2026-10-15", // old employer's advance for October
+		"2026-11-01": "2026-10-31", // old employer's final pay for 1–11 October
+		"2026-11-07": "2026-10-31", // new employer, first salary (12–31 October)
+		"2026-12-09": "2026-11-30",
+		"2026-12-12": "2026-12-12", // later than the 10th: counted when it arrived
+	}
+	for in, want := range cases {
+		if got := plan.FlowDate(sal(in), rules); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
+	}
+	if got := plan.FlowDate(&ledger.Tx{Date: "2026-11-05", Kind: "income", Category: "side_income"}, rules); got != "2026-11-05" {
+		t.Error("only salary moves")
+	}
+	if plan.MaxSalaryDays(rules) != 10 {
+		t.Error("load window")
+	}
+	if plan.ValidSalaryRules([]plan.SalaryRule{{From: "x", PaidByDay: 3}}) == nil || plan.ValidSalaryRules([]plan.SalaryRule{{PaidByDay: 31}}) == nil {
+		t.Error("validation")
+	}
+	if len((plan.Settings{}).Salary()) != 1 {
+		t.Error("default rule when none saved")
+	}
+}

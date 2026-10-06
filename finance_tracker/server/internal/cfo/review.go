@@ -12,6 +12,7 @@ import (
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
+	"ft/internal/plan"
 	"ft/internal/wealth"
 )
 
@@ -91,17 +92,18 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	sel, _ := time.Parse("2006-01", month)
 	from, to := monthBounds(month)
 	r := &MonthReview{Month: month, Complete: to < now.Format("2006-01-02")}
-	// A few days past the month, so a salary paid on the 1st–3rd counts here.
+	// A few days past the month, so a salary paid early next month counts here.
+	salary := plan.LoadSettings(d).Salary()
 	toPlus := to
 	if t, err := time.Parse("2006-01-02", to); err == nil {
-		toPlus = t.AddDate(0, 0, insights.SalaryGraceDays).Format("2006-01-02")
+		toPlus = t.AddDate(0, 0, plan.MaxSalaryDays(salary)).Format("2006-01-02")
 	}
 	txs, err := ledger.All(d, ledger.Filter{From: sel.AddDate(0, -11, 0).Format("2006-01-02"), To: toPlus})
 	if err != nil {
 		return nil, err
 	}
 	cats, _ := ledger.CategoryMap(d)
-	flows := insights.CashFlow(txs, cats, "month")
+	flows := insights.CashFlow(txs, cats, "month", salary)
 	byPeriod := map[string]insights.Flow{}
 	for _, f := range flows {
 		byPeriod[f.Period] = f
@@ -224,7 +226,7 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	// Cash flow already counts a salary paid on the 1st–3rd of next month here;
 	// say so, since the bank statement shows it in the other month.
 	for i := range txs {
-		if t := &txs[i]; t.Date > to && insights.FlowDate(t) <= to && t.Kind == "income" {
+		if t := &txs[i]; t.Date > to && plan.FlowDate(t, salary) <= to && t.Kind == "income" {
 			r.lateSalary += t.Amount
 		}
 	}

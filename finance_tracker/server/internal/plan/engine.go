@@ -193,9 +193,13 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	income := map[string]money.Cents{}
 	unbudgeted := map[string]map[string]money.Cents{}
 	firstYM := ""
+	salary := settings.Salary()
 	for i := range txs {
 		t := &txs[i]
 		m := ym(t.Date)
+		if t.Kind == "income" { // salary counts in the month it pays for
+			m = ym(FlowDate(t, salary))
+		}
 		if m > month {
 			continue
 		}

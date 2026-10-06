@@ -6,7 +6,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { api } from '../lib/api'
 import { usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
-import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth } from '../lib/format'
+import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Budget, PlanLine, PlanReport } from '../lib/types'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { CategoryPicker, TagInput } from '../components/pickers'
@@ -352,10 +352,17 @@ function PlanSettings() {
   if (isLoading || !data) return <Loading />
   const v = s ?? data.settings
   const save = async () => {
-    await api.put('/plan/settings', v)
-    toast('Saved', 'good')
-    refresh()
+    try {
+      await api.put('/plan/settings', v)
+      toast('Saved', 'good')
+      refresh()
+    } catch (e: any) { toast(e?.message ?? 'Could not save', 'bad') }
   }
+  // Salary timing: when the salary for a month arrives early the next month.
+  type Rule = { from: string; paid_by_day: number }
+  const rules: Rule[] = v.salary_rules?.length ? v.salary_rules : [{ from: '', paid_by_day: 3 }]
+  const setRules = (r: Rule[]) => setS({ ...v, salary_rules: r })
+  const sorted = [...rules].map((r, i) => ({ ...r, i })).sort((a, b) => a.from.localeCompare(b.from))
   const num = (k: string) => (n: number | undefined) => setS({ ...v, [k]: n ?? 0 })
   return (
     <div className="max-w-xl space-y-4">
@@ -372,6 +379,30 @@ function PlanSettings() {
           )}
           {v.income_mode === 'manual' && <Field label="Monthly income €"><NumberInput value={v.manual_income || undefined} onChange={num('manual_income')} /></Field>}
           {(!v.income_mode || v.income_mode === 'median') && <div className="text-xs text-muted">Median of the last 12 complete months of income.</div>}
+        </div>
+      </Card>
+      <Card title="Salary timing" action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setRules([...rules, { from: todayISO(), paid_by_day: 10 }])}><Icon name="plus" size={14} />New job</button>}>
+        <div className="mb-3 text-xs text-muted">If your salary for a month arrives early the next month, count it in the month it pays for — otherwise one month looks like you saved nothing and the next like you saved everything. Add a rule when the pay schedule changes (a new job).</div>
+        <div className="space-y-2">
+          {sorted.map((r, n) => (
+            <div key={r.i} className="rounded-xl border border-line p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <Field label={n === 0 && !r.from ? 'From' : 'From (payment date)'}>
+                  {n === 0 && !r.from ? <div className="input flex items-center text-muted">the beginning</div>
+                    : <input type="date" className="input" value={r.from} onChange={(e) => setRules(rules.map((x, j) => (j === r.i ? { ...x, from: e.target.value } : x)))} />}
+                </Field>
+                <Field label="Counts for last month if paid by day">
+                  <NumberInput integer className="input w-24 tnum" value={r.paid_by_day} onChange={(d) => setRules(rules.map((x, j) => (j === r.i ? { ...x, paid_by_day: Math.max(0, Math.min(15, d ?? 0)) } : x)))} />
+                </Field>
+                {rules.length > 1 && <button className="btn-ghost h-10 w-10 px-0 text-muted hover:text-bad" onClick={() => setRules(rules.filter((_, j) => j !== r.i))} aria-label="Remove rule"><Icon name="trash" size={16} /></button>}
+              </div>
+              <div className="mt-2 text-xs text-ink2">
+                {r.paid_by_day > 0
+                  ? <>A salary paid on the 1st–{r.paid_by_day}{r.paid_by_day === 1 ? 'st' : r.paid_by_day === 2 ? 'nd' : r.paid_by_day === 3 ? 'rd' : 'th'} counts for the previous month{r.from ? ` (payments from ${shortDate(r.from)})` : ''}.</>
+                  : <>Salary counts in the month it arrives{r.from ? ` (from ${shortDate(r.from)})` : ''}.</>}
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
       <Card title="Financial independence">

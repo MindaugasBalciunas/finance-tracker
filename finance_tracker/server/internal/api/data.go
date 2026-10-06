@@ -186,7 +186,7 @@ func (s *Server) aiZip() ([]byte, error) {
 	add("cashflow_monthly.csv", func(w io.Writer) error {
 		cw := csv.NewWriter(w)
 		cw.Write([]string{"month", "income", "spending", "essential", "discretionary", "saved", "savings_rate", "invested", "mortgage_principal"})
-		for _, f := range insights.CashFlow(txs, cats, "month") {
+		for _, f := range insights.CashFlow(txs, cats, "month", plan.LoadSettings(s.DB).Salary()) {
 			cw.Write([]string{f.Period, f.Income.String(), f.Spending.String(), f.Essential.String(), f.Discretionary.String(), f.Saved.String(),
 				fmt.Sprintf("%.3f", f.SavingsRate), f.Invested.String(), f.Principal.String()})
 		}
@@ -331,13 +331,14 @@ func (s *Server) yearReview(year string) (*Review, error) {
 		to = t
 	}
 	rv := &Review{Year: year}
+	salary := plan.LoadSettings(s.DB).Salary()
 	var yearTx []ledger.Tx
 	for i := range txs {
-		if d := insights.FlowDate(&txs[i]); d >= from && d <= to {
+		if d := plan.FlowDate(&txs[i], salary); d >= from && d <= to {
 			yearTx = append(yearTx, txs[i])
 		}
 	}
-	rv.Years = insights.CashFlow(txs, cats, "year")
+	rv.Years = insights.CashFlow(txs, cats, "year", salary)
 	for _, f := range rv.Years {
 		switch f.Period {
 		case year:
@@ -346,7 +347,7 @@ func (s *Server) yearReview(year string) (*Review, error) {
 			rv.Previous = f
 		}
 	}
-	rv.Months = insights.CashFlow(yearTx, cats, "month")
+	rv.Months = insights.CashFlow(yearTx, cats, "month", salary)
 	rv.Categories = insights.Breakdown(txs, from, to)
 	rv.Merchants = insights.MerchantTotals(txs, from, to, 15)
 	rv.Largest = insights.TopExpenses(txs, from, to, 10)

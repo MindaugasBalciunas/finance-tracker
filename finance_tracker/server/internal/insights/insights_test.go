@@ -42,7 +42,7 @@ func TestCashFlowDefinitions(t *testing.T) {
 		tx("2026-09-02", "transfer", "transfer.internal", 1400, "swed", "seb"),
 		tx("2026-09-25", "transfer", "transfer.pension", 120, "", "artea"), // via payroll
 	}
-	f := insights.CashFlow(txs, cats(t), "month")
+	f := insights.CashFlow(txs, cats(t), "month", plan.DefaultSalaryRules)
 	if len(f) != 1 {
 		t.Fatal(f)
 	}
@@ -65,7 +65,7 @@ func TestCashFlowDefinitions(t *testing.T) {
 	if m.PayrollPension != E(120) {
 		t.Error("payroll pension", m.PayrollPension)
 	}
-	y := insights.CashFlow(txs, cats(t), "year")
+	y := insights.CashFlow(txs, cats(t), "year", plan.DefaultSalaryRules)
 	if y[0].Period != "2026" {
 		t.Error(y[0].Period)
 	}
@@ -301,20 +301,20 @@ func TestSalaryOnFirstDaysCountsInPreviousMonth(t *testing.T) {
 	cases := map[string]string{"2026-10-01": "2026-09-30", "2026-10-03": "2026-09-30", "2026-10-04": "2026-10-04", "2026-01-02": "2025-12-31"}
 	for in, want := range cases {
 		s := sal(in)
-		if got := insights.FlowDate(&s); got != want {
+		if got := plan.FlowDate(&s, plan.DefaultSalaryRules); got != want {
 			t.Errorf("%s → %s, want %s", in, got, want)
 		}
 	}
 	other := tx("2026-10-01", "income", "side_income", 100) // only salary moves
-	if insights.FlowDate(&other) != "2026-10-01" {
+	if plan.FlowDate(&other, plan.DefaultSalaryRules) != "2026-10-01" {
 		t.Error("non-salary income moved")
 	}
 	txs := []ledger.Tx{sal("2026-10-01"), tx("2026-09-10", "expense", "food", 1000), tx("2026-10-02", "expense", "food", 50)}
-	flows := insights.CashFlowRange(txs, nil, "month", "2026-09-01", "2026-09-30")
+	flows := insights.CashFlowRange(txs, nil, "month", "2026-09-01", "2026-09-30", plan.DefaultSalaryRules)
 	if len(flows) != 1 || flows[0].Income != E(3000) || flows[0].Spending != E(1000) {
 		t.Fatalf("September with its salary, October's spending excluded: %+v", flows)
 	}
-	years := insights.CashFlow([]ledger.Tx{sal("2026-01-02")}, nil, "year")
+	years := insights.CashFlow([]ledger.Tx{sal("2026-01-02")}, nil, "year", plan.DefaultSalaryRules)
 	if years[0].Period != "2025" {
 		t.Errorf("December's salary paid on 2 January belongs to the year before: %+v", years)
 	}

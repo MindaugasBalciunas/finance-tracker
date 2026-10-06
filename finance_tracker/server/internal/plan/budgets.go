@@ -3,6 +3,8 @@
 package plan
 
 import (
+	"time"
+	"fmt"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -217,6 +219,73 @@ type Settings struct {
 	WithdrawalRate  float64 `json:"withdrawal_rate"`  // e.g. 4
 	ExpectedReturn  float64 `json:"expected_return"`  // real, % p.a.
 	EmergencyMonths float64 `json:"emergency_months"`
+	// When salary arrives after the month it pays for. Each rule applies to
+	// salary booked on or after From; one paid on day ≤ PaidByDay counts for
+	// the previous month. A new job gets a new rule from its start date.
+	SalaryRules []SalaryRule `json:"salary_rules"`
+}
+
+type SalaryRule struct {
+	From      string `json:"from"`        // YYYY-MM-DD; "" = since always
+	PaidByDay int    `json:"paid_by_day"` // 0 = salary counts in the month it arrives
+}
+
+// DefaultSalaryRules: month-end payroll booked on the 1st–3rd.
+var DefaultSalaryRules = []SalaryRule{{From: "", PaidByDay: 3}}
+
+// Salary returns the rules in force (the default when none were saved).
+func (s Settings) Salary() []SalaryRule {
+	if len(s.SalaryRules) == 0 {
+		return DefaultSalaryRules
+	}
+	return s.SalaryRules
+}
+
+// FlowDate is the date a transaction counts on in cash flow: its booking date,
+// except salary paid in the first days of a month (per the rule in force on the
+// booking date), which counts on the last day of the month before.
+func FlowDate(t *ledger.Tx, rules []SalaryRule) string {
+	if t.Kind != "income" || ledger.Top(t.Category) != "salary" || len(t.Date) != 10 {
+		return t.Date
+	}
+	by := 0
+	from := ""
+	for _, r := range rules {
+		if r.From <= t.Date && r.From >= from {
+			by, from = r.PaidByDay, r.From
+		}
+	}
+	d, err := time.Parse("2006-01-02", t.Date)
+	if err != nil || by <= 0 || d.Day() > by {
+		return t.Date
+	}
+	return time.Date(d.Year(), d.Month(), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+}
+
+// MaxSalaryDays is how far past a period to load so late salary reaches it.
+func MaxSalaryDays(rules []SalaryRule) int {
+	n := 0
+	for _, r := range rules {
+		if r.PaidByDay > n {
+			n = r.PaidByDay
+		}
+	}
+	return n
+}
+
+// ValidSalaryRules checks what the owner saved.
+func ValidSalaryRules(rules []SalaryRule) error {
+	for _, r := range rules {
+		if r.PaidByDay < 0 || r.PaidByDay > 15 {
+			return fmt.Errorf("salary paid by day must be 0–15, got %d", r.PaidByDay)
+		}
+		if r.From != "" {
+			if _, err := time.Parse("2006-01-02", r.From); err != nil {
+				return fmt.Errorf("invalid date %q", r.From)
+			}
+		}
+	}
+	return nil
 }
 
 func LoadSettings(q interface{ QueryRow(string, ...any) *sql.Row }) Settings {

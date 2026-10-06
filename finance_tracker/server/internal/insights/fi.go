@@ -62,7 +62,7 @@ func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Bo
 			recent = append(recent, t)
 		}
 	}
-	for _, f := range CashFlow(recent, cats, "year") {
+	for _, f := range CashFlow(recent, cats, "year", s.Salary()) {
 		spend += f.Spending
 		essential += f.Essential
 		saved += f.Saved

@@ -95,7 +95,9 @@ func BudgetReport(d *sql.DB, month string, now time.Time) (*plan.Report, error) 
 			from = b.StartMonth + "-01"
 		}
 	}
-	txs, err := ledger.All(d, ledger.Filter{From: from, To: sel.AddDate(0, 1, -1).Format("2006-01-02")})
+	// A few days into the next month, so its early salary reaches this month.
+	extra := plan.MaxSalaryDays(plan.LoadSettings(d).Salary())
+	txs, err := ledger.All(d, ledger.Filter{From: from, To: sel.AddDate(0, 1, extra-1).Format("2006-01-02")})
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +142,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		return nil, err
 	}
 	cats, _ := ledger.CategoryMap(d)
-	flows := insights.CashFlow(txs, cats, "month")
+	flows := insights.CashFlow(txs, cats, "month", plan.LoadSettings(d).Salary())
 	thisM := now.Format("2006-01")
 	lastM := now.AddDate(0, -1, 0).Format("2006-01")
 	var avg insights.Flow
