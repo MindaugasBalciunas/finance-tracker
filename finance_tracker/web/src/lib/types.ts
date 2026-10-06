@@ -47,6 +47,8 @@ export interface Recurring {
 
 export interface Anomaly { category: string; spent: number; typical: number; ratio: number; projected: number }
 
+export interface LineBrief { name: string; spent: number; budgeted: number; remaining: number }
+
 export interface Overview {
   date: string; net_worth: number; liquid: number; debt: number; by_group: Record<string, number>
   net_worth_30d: number; net_worth_ytd: number; net_worth_12m: number
@@ -54,7 +56,7 @@ export interface Overview {
   spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
-    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; expected_day: number; projected_left: number; over: { name: string; spent: number; budgeted: number; remaining: number }[] | null }
+    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
   fi_progress: number; years_to_fi: number
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null

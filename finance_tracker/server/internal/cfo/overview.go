@@ -70,6 +70,7 @@ type PlanPulse struct {
 	ExpectedDay   money.Cents `json:"expected_day"`   // pace used for the projection (this month blended with typical)
 	ProjectedLeft money.Cents `json:"projected_left"` // what is left at month end at the expected pace
 	Over          []LineBrief `json:"over"`           // spending lines over budget
+	Lines         []LineBrief `json:"lines"`          // busiest spending lines (most of budget used first)
 	Spent         money.Cents `json:"spent"`
 	Budgeted      money.Cents `json:"budgeted"`
 }
@@ -199,9 +200,19 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			}
 			o.Plan.Spent += l.Spent
 			o.Plan.Budgeted += l.Budgeted
+			b := LineBrief{l.Name, l.Spent, l.Budgeted, l.Remaining}
 			if l.Remaining < 0 {
-				o.Plan.Over = append(o.Plan.Over, LineBrief{l.Name, l.Spent, l.Budgeted, l.Remaining})
+				o.Plan.Over = append(o.Plan.Over, b)
 			}
+			if l.Budgeted > 0 {
+				o.Plan.Lines = append(o.Plan.Lines, b)
+			}
+		}
+		sort.SliceStable(o.Plan.Lines, func(i, j int) bool {
+			return float64(o.Plan.Lines[i].Spent)/float64(o.Plan.Lines[i].Budgeted) > float64(o.Plan.Lines[j].Spent)/float64(o.Plan.Lines[j].Budgeted)
+		})
+		if len(o.Plan.Lines) > 5 {
+			o.Plan.Lines = o.Plan.Lines[:5]
 		}
 	}
 	fi := insights.ComputeFI(txs, cats, book, plan.LoadSettings(d), now)

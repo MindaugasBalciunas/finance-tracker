@@ -24,7 +24,7 @@ export function Stat({ label, value, sub, tone, onClick, icon, color = 'rgb(var(
   const C = onClick ? 'button' : 'div'
   return (
     <C onClick={onClick} className={clsx('card p-3.5 text-left min-w-0', onClick && 'hover:bg-sunken/50 transition')}>
-      <div className="flex items-center gap-2 text-xs text-ink2 min-w-0">{icon && <IconTile name={icon} color={color} size={28} />}<span className="truncate">{label}</span></div>
+      <div className="flex items-center gap-2 text-xs text-ink2 min-w-0">{icon && <IconTile name={icon} color={color} size={28} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
       <div className={clsx('mt-1 text-xl font-semibold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted truncate">{sub}</div>}
     </C>

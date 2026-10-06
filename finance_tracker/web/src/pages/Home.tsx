@@ -10,7 +10,7 @@ import { TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Icon, IconTile } from '../components/Icon'
 import { catIcon, useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
-import { Checks } from './Insights'
+import { Checks } from './insights/MonthReview'
 
 export default function Home() {
   const { data: o, isLoading, error } = useOverview()
@@ -52,7 +52,7 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Net worth */}
       <section className="card overflow-hidden">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
@@ -78,7 +78,8 @@ export default function Home() {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
-          <span className="text-xs text-muted">{rangeLabel(range)} <Delta value={periodChange} /></span>
+          {/* YTD and 1Y repeat a figure already in the headline row */}
+          <span className="text-xs text-muted">{range !== 'ytd' && range !== '1y' && <>{rangeLabel(range)} <Delta value={periodChange} /></>}</span>
           <Segmented size="sm" value={range} onChange={setRange} options={RANGES} />
         </div>
         <div className="h-36 sm:h-44">
@@ -148,7 +149,8 @@ export default function Home() {
         <Stat icon="bag" color="var(--s2)" label={`Spent in ${monthLabel(m.period || o.date.slice(0, 7))}`} value={eur(m.spending)}
           sub={<>typical month {eur(avg.spending)} · {pct(o.month_progress)} through</>}
           tone={spendPace > 1.15 ? 'bad' : undefined} onClick={() => nav('/insights/spending')} />
-        <Stat icon="piggy" color="var(--s6)" label="Saved this month" value={eur(m.saved)} sub={m.income > 0 ? `${pct(m.savings_rate)} of income · avg ${pct(avg.savings_rate)}` : 'no income booked yet'}
+        <Stat icon="piggy" color="var(--s6)" label="Left over this month" value={eur(m.saved)}
+          sub={[m.income > 0 ? `${pct(m.savings_rate)} of income` : 'no income booked yet', m.invested + m.principal > 0 && `${eur(m.invested + m.principal)} invested`].filter(Boolean).join(' · ')}
           tone={m.saved < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
         <Stat icon="briefcase" color="var(--s6)" label="Income this month" value={eur(m.income)} sub={`typical month ${eur(avg.income)}`}
           onClick={() => nav('/insights/cashflow')} />
@@ -156,7 +158,7 @@ export default function Home() {
           tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/insights/fi')} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="order-2 grid grid-cols-1 gap-4 lg:order-none lg:grid-cols-2">
         <Card icon="target" color="var(--s3)" title="Plan this month" action={<div className="flex items-center gap-1"><AskCFO q="Give me a short briefing on this month: spending vs plan, anything unusual, and what to watch before month end." label="Brief me" /><Link to="/plan" className="text-sm text-accent">Open plan</Link></div>}>
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span className="text-ink2">Spending budgets</span>
@@ -173,8 +175,25 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          ) : o.plan.projected_left < 0 && o.plan.safe_to_spend > 0 ? (
+            <div className="mt-3 flex items-start gap-1.5 text-sm text-warn"><Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+              <span>No budget is over yet, but at your usual pace this month ends <b className="tnum">{eur(-o.plan.projected_left)}</b> short</span></div>
           ) : (
             <div className="mt-3 flex items-center gap-1.5 text-sm text-good"><Icon name="check" size={16} />Every budget is on track</div>
+          )}
+          {(o.plan.lines ?? []).length > 0 && (
+            <div className="mt-4 space-y-2.5">
+              <div className="section-title">Busiest budgets</div>
+              {o.plan.lines!.map((l) => (
+                <div key={l.name}>
+                  <div className="mb-1 flex items-baseline justify-between text-sm">
+                    <span className="truncate">{l.name}</span>
+                    <span className="shrink-0 tnum"><b>{eur(l.spent)}</b> <span className="text-muted">of {eur(l.budgeted)}</span></span>
+                  </div>
+                  <Meter value={l.spent} max={l.budgeted} pace={o.month_progress} />
+                </div>
+              ))}
+            </div>
           )}
           {(o.anomalies ?? []).length > 0 && (
             <div className="mt-4 space-y-1.5">
@@ -214,16 +233,16 @@ export default function Home() {
       </div>
 
       {o.review_month && (
-        <Link to={`/insights/review?month=${o.review_month}`} className="card flex items-center gap-3 p-3.5 hover:bg-sunken/50">
+        <Link to={`/insights/review?month=${o.review_month}`} className="card order-2 flex lg:order-none items-center gap-3 p-3.5 hover:bg-sunken/50">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="chart" /></span>
           <span className="flex-1 text-sm">Your <b>{monthLabel(o.review_month, true)}</b> review is ready — how the month went and what needs a look.</span>
           <Icon name="chevronR" className="text-muted" />
         </Link>
       )}
 
-      <Checks checks={(o.checks ?? []).filter((c) => !c.link.startsWith('/ledger/inbox'))} />
+      <div className="order-2 lg:order-none"><Checks checks={(o.checks ?? []).filter((c) => !c.link.startsWith('/ledger/inbox'))} /></div>
 
-      <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
+      <Card className="order-1 lg:order-none" pad={false} icon="list" color="var(--s2)" title="Recent" action={
         <div className="flex gap-1">
           <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
           <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>
@@ -270,7 +289,10 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
         <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
-        <span title="This month's pace, blended with your typical day while the month is young">Month end <b className={clsx('tnum', outlook)}>{p.projected_left >= 0 ? eur(p.projected_left) : `−${eur(-p.projected_left)}`}</b> {p.projected_left >= 0 ? 'left' : 'short'}</span>
+        {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">
+          {p.projected_left >= 0 ? <>At this pace <b className={clsx('tnum', outlook)}>{eur(p.projected_left)}</b> left at month end</>
+            : <>At your usual pace you'd overspend by <b className={clsx('tnum', outlook)}>{eur(-p.projected_left)}</b></>}
+        </span>}
       </div>
     </Link>
   )

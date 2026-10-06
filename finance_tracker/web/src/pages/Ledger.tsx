@@ -32,7 +32,7 @@ export default function Ledger() {
 }
 
 const PERIODS = [
-  { value: '30', label: '30 days' }, { value: 'month', label: 'This month' }, { value: '90', label: '3 months' },
+  { value: 'month', label: 'This month' }, { value: '30', label: '30 days' }, { value: '90', label: '3 months' },
   { value: 'year', label: 'This year' }, { value: '365', label: '12 months' }, { value: 'all', label: 'All time' },
 ]
 
@@ -50,7 +50,7 @@ function Transactions() {
   const [sp, setSp] = useSearchParams()
   const editor = useTxEditor()
   const cats = useCats()
-  const period = sp.get('period') || (sp.get('from') ? 'custom' : '30')
+  const period = sp.get('period') || (sp.get('from') ? 'custom' : 'month')
   const [q, setQ] = useState(sp.get('q') || '')
   const [limit, setLimit] = useState(100)
   const [selected, setSelected] = useState<Set<number>>(new Set())

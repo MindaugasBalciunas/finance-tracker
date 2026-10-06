@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { Checks, SpendCalendar } from '../pages/Insights'
+import { Checks, SpendCalendar } from '../pages/insights/MonthReview'
 
 describe('month review pieces', () => {
   it('Checks links each finding and flags warnings', () => {

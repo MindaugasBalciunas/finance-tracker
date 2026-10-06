@@ -44,6 +44,12 @@ function Month() {
       api.put(`/budgets/${line.id}`, { ...line, amount, fund: fund ?? line.fund, start_month: fund && !line.fund ? month : line.start_month, from_month: month }),
     onSuccess: () => { refresh(); toast('Budget updated', 'good') },
   })
+  const applyAll = useMutation({
+    mutationFn: async (ls: PlanLine[]) => {
+      for (const l of ls) await api.put(`/budgets/${l.id}`, { ...l, amount: l.suggestion!.amount, from_month: month })
+    },
+    onSuccess: (_, ls) => { refresh(); toast(`${ls.length} budgets updated`, 'good') },
+  })
   if (isLoading) return <Loading />
   if (error || !r) return <ErrorBox error={error} />
   const groups: { kind: string; title: string; hint: string }[] = [
@@ -59,7 +65,9 @@ function Month() {
         <div className="text-base font-semibold">{monthLabel(month, true)}</div>
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
-      <Summary r={r} current={current} />
+      <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
+      <Suggestions lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
+        onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
       <YearGrid r={r} />
       {groups.map((g) => {
         const lines = r.lines.filter((l) => l.kind === g.kind)
@@ -69,7 +77,7 @@ function Month() {
             <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
             {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
               <div className="divide-y divide-line border-t border-line">
-                {lines.map((l) => <LineRow key={l.id} l={l} onEdit={() => setEdit(l)} onApply={(amount, fund) => applySuggestion.mutate({ line: l, amount, fund })} />)}
+                {lines.map((l) => <LineRow key={l.id} l={l} onEdit={() => setEdit(l)} />)}
               </div>
             )}
           </Card>
@@ -100,7 +108,47 @@ function Month() {
   )
 }
 
-function Summary({ r, current }: { r: PlanReport; current: boolean }) {
+/** Every "the last 12 months disagree with this budget" in one place, instead
+ *  of a box under each line. */
+function Suggestions({ lines, unallocated, busy, onApply, onApplyAll }: { lines: PlanLine[]; unallocated: number; busy: boolean; onApply: (l: PlanLine, fund?: boolean) => void; onApplyAll: (ls: PlanLine[]) => void }) {
+  const [open, setOpen] = useState(false)
+  if (lines.length === 0) return null
+  const delta = lines.reduce((a, l) => a + l.suggestion!.amount - l.monthly_share, 0)
+  return (
+    <section className="card p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
+        <div className="min-w-0 flex-1 text-sm">
+          <b>{lines.length} {lines.length === 1 ? 'budget differs' : 'budgets differ'}</b> from what the last 12 months suggest
+          <div className="text-xs text-muted">Applying {lines.length === 1 ? 'it' : 'all'} changes budgets by <span className="whitespace-nowrap tnum">{delta >= 0 ? '+' : '−'}{eur(Math.abs(delta))}/mo</span>
+            {unallocated - delta < 0 && <span className="text-warn"> — the plan would then exceed the income base by <span className="whitespace-nowrap tnum">{eur(delta - unallocated)}</span></span>}</div>
+        </div>
+        <div className="flex w-full justify-end gap-1.5 sm:w-auto">
+          <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Review'}</button>
+          {lines.length > 1 && <button className="btn-primary h-8 px-2.5 text-xs" disabled={busy} onClick={() => onApplyAll(lines)}>Apply all</button>}
+        </div>
+      </div>
+      {open && (
+        <div className="mt-3 divide-y divide-line border-t border-line">
+          {lines.map((l) => (
+            <div key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+              <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] sm:basis-0">
+                <div className="text-sm"><span className="font-medium">{l.name}</span> <span className="tnum text-muted">{eur(l.monthly_share)} →</span> <b className="tnum">{eur(l.suggestion!.amount)}</b></div>
+                <div className="text-xs text-muted">{l.suggestion!.basis}</div>
+              </div>
+              <div className="flex w-full justify-end gap-1.5 sm:w-auto">
+                {l.suggestion!.lumpy && !l.fund && l.kind === 'spending' && <button className="chip hover:bg-sunken" disabled={busy} onClick={() => onApply(l, true)}>Make it a fund</button>}
+                <button className="chip-on" disabled={busy} onClick={() => onApply(l)}>Apply</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTrim: (l: PlanLine, amount: number) => void }) {
   const planned = r.fixed_planned + r.saving_planned + r.spending_planned
   const rows = [
     { label: 'Income base', value: r.income_base, sub: r.income_base_source },
@@ -109,6 +157,8 @@ function Summary({ r, current }: { r: PlanReport; current: boolean }) {
     { label: 'Spending budgets', value: -r.spending_planned },
   ]
   const unallocated = r.income_base - planned
+  // Over-allocated: offer to take the excess off the biggest monthly spending budget.
+  const trim = unallocated < 0 ? r.lines.filter((l) => l.kind === 'spending' && l.period === 'monthly' && !l.fund && l.monthly_share > -unallocated).sort((a, b) => b.monthly_share - a.monthly_share)[0] : undefined
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
       <section className="card p-4 lg:col-span-2">
@@ -127,8 +177,9 @@ function Summary({ r, current }: { r: PlanReport; current: boolean }) {
             </div>
           ))}
         </div>
-        <div className={clsx('mt-3 text-xs', unallocated < 0 ? 'text-bad' : 'text-muted')}>
-          {unallocated >= 0 ? `${eur(unallocated)} of the income base is not allocated to any line.` : `The plan allocates ${eur(-unallocated)} more than the income base.`}
+        <div className={clsx('mt-3 flex flex-wrap items-center gap-2 text-xs', unallocated < 0 ? 'text-bad' : 'text-muted')}>
+          <span>{unallocated >= 0 ? `${eur(unallocated)} of the income base is not allocated to any line.` : `The plan allocates ${eur(-unallocated)} more than the income base.`}</span>
+          {trim && current && <button className="chip hover:bg-sunken" onClick={() => onTrim(trim, Math.floor((trim.monthly_share + unallocated) * 100) / 100)}>Take it off {trim.name} ({eur(trim.monthly_share)} → {eur(Math.floor((trim.monthly_share + unallocated) * 100) / 100)})</button>}
         </div>
       </section>
       <section className="card p-4 text-sm">
@@ -176,7 +227,7 @@ function YearGrid({ r }: { r: PlanReport }) {
   )
 }
 
-function LineRow({ l, onEdit, onApply }: { l: PlanLine; onEdit: () => void; onApply: (amount: number, fund?: boolean) => void }) {
+function LineRow({ l, onEdit }: { l: PlanLine; onEdit: () => void }) {
   const cats = useCats()
   const [open, setOpen] = useState(false)
   const over = l.remaining < 0
@@ -199,13 +250,6 @@ function LineRow({ l, onEdit, onApply }: { l: PlanLine; onEdit: () => void; onAp
         </div>
         <Meter className="mt-2" value={l.spent} max={l.budgeted} pace={pace} goal={l.kind === 'saving'} />
       </button>
-      {l.suggestion && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-ink2">Last {l.suggestion.months} months suggest {eur(l.suggestion.amount)} — {l.suggestion.basis}</span>
-          <button className="chip-on" onClick={() => onApply(l.suggestion!.amount)}>Apply from this month</button>
-          {l.suggestion.lumpy && !l.fund && l.kind === 'spending' && <button className="chip hover:bg-sunken" onClick={() => onApply(l.suggestion!.amount, true)}>Make it a fund</button>}
-        </div>
-      )}
       {open && (
         <div className="mt-3 space-y-2">
           {l.fund_state && (

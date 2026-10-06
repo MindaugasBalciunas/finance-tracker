@@ -25,6 +25,8 @@ func TestBuildOverview(t *testing.T) {
 	Bal(t, d, "mortgage", now.AddDate(0, 0, -400).Format("2006-01-02"), -200000)
 	b := plan.Budget{Name: "Food", Kind: "spending", Categories: []string{"food"}, Amount: E(500)}
 	plan.Save(d, &b, "")
+	quiet := plan.Budget{Name: "Gifts", Kind: "spending", Categories: []string{"gifts"}, Amount: E(100)}
+	plan.Save(d, &quiet, "")
 	o, err := cfo.BuildOverview(d, now, 3)
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +46,10 @@ func TestBuildOverview(t *testing.T) {
 	}
 	if o.Month.Spending != E(1000) || len(o.Plan.Over) != 1 || o.Plan.Over[0].Name != "Food" {
 		t.Errorf("month + plan pulse %+v %+v", o.Month, o.Plan)
+	}
+	// Busiest budgets first: Food (200% used) before Gifts (0%).
+	if len(o.Plan.Lines) != 2 || o.Plan.Lines[0].Name != "Food" || o.Plan.Lines[1].Name != "Gifts" {
+		t.Errorf("plan lines %+v", o.Plan.Lines)
 	}
 	if len(o.Spark) < 24 || len(o.Recent) == 0 || o.Emergency.Months <= 0 {
 		t.Errorf("spark %d recent %d emergency %+v", len(o.Spark), len(o.Recent), o.Emergency)

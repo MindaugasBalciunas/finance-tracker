@@ -17,6 +17,8 @@ import { cleanTerms, LoanFields } from './Loans'
 
 export function Overview() {
   const [range, setRange] = usePeriod('wealth', '3y', RANGES.map((r) => r.value))
+  // One chart, three cuts of the same money: asset groups, accounts or banks.
+  const [view, setView] = usePeriod('wealth-view', 'groups', ['groups', 'accounts', 'banks'])
   const { prefs, set: setPrefs } = usePrefs()
   const liquidOnly = prefs.liquid_only
   const setLiquidOnly = (v: boolean) => setPrefs({ liquid_only: v })
@@ -39,6 +41,7 @@ export function Overview() {
   const last = hist?.[hist.length - 1]
   const first = hist?.[0]
   const head = last ? (liquidOnly ? last.liquid : last.net_worth) : 0
+  const assetSum = last ? groups.filter((g) => g.id !== 'debt').reduce((t, g) => t + Math.max(0, last.by_group[g.id] ?? 0), 0) : 0
   const change = last && first ? head - (liquidOnly ? first.liquid : first.net_worth) : 0
 
   const byGroup = useMemo(() => {
@@ -64,7 +67,10 @@ export function Overview() {
             <Segmented value={range} onChange={setRange} options={RANGES} size="sm" />
           </div>
         </div>
-        <div className="mt-4 h-64 sm:h-80">
+        <div className="mt-3"><Segmented size="sm" value={view} onChange={setView} options={[{ value: 'groups', label: 'Groups' }, { value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} /></div>
+        {view === 'groups' ? <>
+        <div className="mt-4 grid grid-cols-1 items-center gap-4 lg:grid-cols-[1fr_minmax(0,300px)]">
+        <div className="h-64 sm:h-80">
           {isLoading ? <Loading /> : (
             <ResponsiveContainer>
               <ComposedChart data={data} stackOffset="sign" margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
@@ -84,11 +90,12 @@ export function Overview() {
             </ResponsiveContainer>
           )}
         </div>
-        <div className="mt-3"><Legend items={[...groups.map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? eurk(last.by_group[g.id] ?? 0) : undefined })),
+        {last && <GroupDonut byGroup={last.by_group} liquidOnly={liquidOnly} />}
+        </div>
+        <div className="mt-3"><Legend items={[...groups.filter((g) => last?.by_group[g.id]).map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? <>{eurk(last.by_group[g.id] ?? 0)}{g.id !== 'debt' && assetSum > 0 && <span className="text-muted"> · {pct((last.by_group[g.id] ?? 0) / assetSum)}</span>}</> : undefined })),
           { color: 'rgb(var(--ink))', label: liquidOnly ? 'Liquid (line)' : 'Net worth (line)', value: eurk(head) }]} /></div>
-        {last && <Allocation byGroup={last.by_group} liquidOnly={liquidOnly} />}
+        </> : <div className="mt-4"><WhereMoneyIs from={rangeFrom(range)} range={range} liquidOnly={liquidOnly} accounts={accounts ?? []} view={view} /></div>}
       </section>
-      <WhereMoneyIs from={rangeFrom(range)} range={range} liquidOnly={liquidOnly} accounts={accounts ?? []} />
       <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={rangeLabel(range)} />
 
       <div className="flex items-center justify-between gap-2">
@@ -125,10 +132,9 @@ export function Overview() {
  *  split, by account or by bank. Bank colours; Swedbank, SEB and Revolut form
  *  the base in that order, other holdings follow steadiest-first, and each
  *  bank's accounts sit together (steadiest first within the bank). */
-function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; range: string; liquidOnly: boolean; accounts: Account[] }) {
+function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: string; range: string; liquidOnly: boolean; accounts: Account[]; view: string }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, rangeStep(range), true)
   const { prefs, set } = usePrefs()
-  const [view, setView] = usePeriod('wmi-view', 'accounts', ['accounts', 'banks'])
   const [allShown, setAllShown] = useState(false)
   const off = new Set(prefs.hidden_accounts ?? [])
   const toggle = (ids: string[]) => {
@@ -166,14 +172,14 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
     for (const x of shown) row[x.key] = x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0)
     return row
   }), [hist, shown, off])
-  if (isLoading) return <Card title="Where my money is"><Loading /></Card>
-  if (!eligible.length) return null
+  if (isLoading) return <Loading />
+  if (!eligible.length) return <div className="py-8 text-center text-sm text-muted">No account balances yet.</div>
   const total = shown.reduce((t, x) => t + valueOf(x), 0)
   const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color }))
   const limit = view === 'banks' ? 99 : 8
   const visible = allShown ? series : series.slice(0, limit)
   return (
-    <Card title="Where my money is" action={<Segmented size="sm" value={view} onChange={setView} options={[{ value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} />}>
+    <>
       <div className="mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts · same total in both views · tap to leave one out</div>
       {/* The legend is the switchboard: amount and share of what is shown. */}
       <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -223,27 +229,17 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts }: { from: string; ran
           <Donut slices={slices} center={eurk(total)} sub="today" height={200} legend={false} />
         </div>
       )}
-    </Card>
+    </>
   )
 }
 
-/** Where the money sits now: one composition bar of the positive groups. */
-function Allocation({ byGroup, liquidOnly }: { byGroup: Record<string, number>; liquidOnly: boolean }) {
-  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
-    .map((g) => ({ ...g, v: Math.max(0, byGroup[g.id] ?? 0) })).filter((g) => g.v > 0)
-  const total = parts.reduce((a, g) => a + g.v, 0)
+/** Where the money sits now, by asset group (debt is not a slice). */
+function GroupDonut({ byGroup, liquidOnly }: { byGroup: Record<string, number>; liquidOnly: boolean }) {
+  const slices: Slice[] = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
+    .map((g) => ({ key: g.id, label: g.name, value: Math.max(0, byGroup[g.id] ?? 0), color: `var(--s${g.slot})` })).filter((x) => x.value > 0)
+  const total = slices.reduce((a, x) => a + x.value, 0)
   if (!total) return null
-  return (
-    <div className="mt-4">
-      <div className="section-title mb-1.5">Allocation</div>
-      <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
-        {parts.map((g) => <div key={g.id} title={`${g.name} ${pct(g.v / total, 1)}`} style={{ width: `${(g.v / total) * 100}%`, background: `var(--s${g.slot})` }} />)}
-      </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink2">
-        {parts.map((g) => <span key={g.id}>{g.name} <b className="tnum text-ink">{pct(g.v / total)}</b></span>)}
-      </div>
-    </div>
-  )
+  return <Donut slices={slices} center={eurk(total)} sub={liquidOnly ? 'liquid today' : 'assets today'} height={200} legend={false} />
 }
 
 /** Which accounts drove the change over the selected range. */
