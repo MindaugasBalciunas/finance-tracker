@@ -66,7 +66,7 @@ export function applyTheme() {
 // The installed app's status and navigation bars take their colour from
 // theme-color: keep it equal to the page background in the theme actually
 // shown (a forced light/dark setting beats the system preference).
-const darkQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+const darkQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
 function syncThemeColor() {
   const forced = document.documentElement.dataset.theme
   const dark = forced ? forced === 'dark' : !!darkQuery?.matches
