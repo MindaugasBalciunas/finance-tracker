@@ -12,6 +12,21 @@ export type IBKRReport = {
   positions: { ticker: string; description: string; currency: string; shares: number; app_shares: number; price: number; value: number; avg_price: number; unrealized: number }[]
   trades: { external_id: string; date: string; action: string; ticker: string; name: string; currency: string; shares: number; price: number; commission: number; recorded: boolean }[]
   new: number; mismatches: number
+  orders?: IBKROrder[] | null; instructions?: IBKROrder[] | null; orders_error?: string
+}
+export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; tif?: string; created?: string; expires?: string }
+
+function OrderRow({ o }: { o: IBKROrder }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 text-sm">
+      <span className={clsx('w-9 shrink-0 text-xs font-medium uppercase', o.side === 'sell' ? 'text-bad' : 'text-good')}>{o.side || '—'}</span>
+      <span className="min-w-0 flex-1">
+        <b>{o.symbol || o.description}</b> <span className="text-xs text-muted">{o.quantity}{o.filled ? ` (${o.filled} filled)` : ''} · {o.type}{o.price ? ` ${o.price}` : ''}{o.tif ? ` · ${o.tif}` : ''}</span>
+        {o.symbol && o.description && <span className="block truncate text-xs text-muted">{o.description}</span>}
+      </span>
+      {o.status && <span className="shrink-0 rounded-full bg-sunken px-2 py-0.5 text-[11px] text-ink2">{o.status}</span>}
+    </div>
+  )
 }
 
 export const useIBKR = () => useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<{ status: IBKRStatus; report: IBKRReport | null }>('/ibkr'), staleTime: 60_000, retry: false })
@@ -90,6 +105,20 @@ export function IBKRPanel() {
             {r.mismatches > 0 && <div className="mt-1.5 text-xs text-warn">Different share counts usually mean a trade is missing below, or one was entered on another account.</div>}
           </div>
 
+          {((r.orders ?? []).length > 0 || (r.instructions ?? []).length > 0 || r.orders_error) && (
+            <div>
+              <div className="section-title mb-1.5">Open orders</div>
+              {r.orders_error && <div className="mb-1.5 text-xs text-warn">{r.orders_error}</div>}
+              {(r.orders ?? []).length > 0 && <div className="divide-y divide-line rounded-xl border border-line">{r.orders!.map((o) => <OrderRow key={o.id || o.symbol} o={o} />)}</div>}
+              {(r.instructions ?? []).length > 0 && (
+                <>
+                  <div className="mb-1 mt-2 text-xs text-muted">Saved instructions — not orders until you submit them in IBKR</div>
+                  <div className="divide-y divide-line rounded-xl border border-line">{r.instructions!.map((o) => <OrderRow key={o.id || o.description} o={o} />)}</div>
+                </>
+              )}
+              <div className="mt-1 text-[11px] text-muted">Shown for information — the app can't place, change or cancel orders.</div>
+            </div>
+          )}
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <div className="section-title">Trades this year</div>

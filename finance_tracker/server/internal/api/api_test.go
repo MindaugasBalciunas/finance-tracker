@@ -16,7 +16,10 @@ import (
 	"ft/internal/api"
 	"ft/internal/auth"
 	"ft/internal/ledger"
+	"ft/internal/market"
+	"ft/internal/money"
 	. "ft/internal/testutil"
+	"ft/internal/wealth"
 )
 
 type client struct {
@@ -793,5 +796,41 @@ func TestIBKRTokensStayPrivate(t *testing.T) {
 	_, body = c.do("GET", "/export/backup.json?secrets=1", nil)
 	if !strings.Contains(string(body), "RT-secret") {
 		t.Fatal("a backup with secrets should keep the IBKR sign-in")
+	}
+}
+
+// One-tap sync: crypto revalued at today's price (only today's point, a
+// figure typed today is kept), and the answer lists what moved.
+func TestSyncRevaluesCrypto(t *testing.T) {
+	s, c := newServer(t)
+	market.SetQuoteForTest(market.Quote{Ticker: "BTC-EUR", Price: 100000, Currency: "EUR"})
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	q := 0.01
+	p := money.FromFloat(90000)
+	wealth.SetBalance(s.DB, "btc_m", yesterday, E(900), &q, &p, "manual")
+	var out struct {
+		Balances []struct {
+			Account string  `json:"account"`
+			From    float64 `json:"from"`
+			To      float64 `json:"to"`
+			Source  string  `json:"source"`
+		} `json:"balances"`
+		Problems []string `json:"problems"`
+	}
+	c.ok("POST", "/sync", nil, &out)
+	if len(out.Balances) != 1 || out.Balances[0].Account != "btc_m" || out.Balances[0].From != 900 || out.Balances[0].To != 1000 || out.Balances[0].Source != "market" {
+		t.Fatalf("changes %+v problems %v", out.Balances, out.Problems)
+	}
+	var old int64
+	s.DB.QueryRow(`SELECT value FROM balances WHERE account_id='btc_m' AND date=?`, yesterday).Scan(&old)
+	if old != int64(E(900)) {
+		t.Fatalf("yesterday's value changed: %d", old)
+	}
+	// Typed by hand today: the sync leaves it alone.
+	wealth.SetBalance(s.DB, "btc_m", today, E(950), &q, &p, "manual")
+	c.ok("POST", "/sync", nil, &out)
+	if len(out.Balances) != 0 {
+		t.Fatalf("overwrote a manual figure: %+v", out.Balances)
 	}
 }

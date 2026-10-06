@@ -36,24 +36,29 @@ function useQuickActions(after?: () => void) {
   const last = connected.flatMap((c) => (c.accounts ?? []).map((a: any) => a.last_synced_at as string)).filter(Boolean).sort().pop()
   const { data: ib } = useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<any>('/ibkr'), staleTime: 60_000, retry: false })
   const ibkr = !!ib?.status?.connected
+  // One call: banks, Interactive Brokers and crypto prices, each writing
+  // today's value only; the answer says which balances moved.
   const sync = async () => {
-    if (!connected.length && !ibkr) return nav('/settings/banks')
+    if (!connected.length && !ibkr) {
+      // No bank or broker yet: still revalue crypto, then offer to connect.
+      try { await api.post<any>('/sync', {}) } catch { /* nothing to sync */ }
+      refresh()
+      return nav('/settings/banks')
+    }
     setSyncing(true)
     try {
-      // IBKR too, when connected: today's account value and the trade check.
-      if (ibkr) {
-        try {
-          const x = await api.post<any>('/ibkr/sync', {})
-          if (x.new || x.mismatches) toast(`IBKR: ${x.new ? `${x.new} trade${x.new === 1 ? '' : 's'} to add` : ''}${x.new && x.mismatches ? ' · ' : ''}${x.mismatches ? `${x.mismatches} position${x.mismatches === 1 ? '' : 's'} differ` : ''}`, 'bad')
-        } catch (e) { toast(`IBKR: ${(e as Error).message}`, 'bad') }
-      }
-      if (!connected.length) { refresh(); after?.(); return }
-      const r = await api.post<any>('/bank/sync', {})
-      const failed = (r.accounts ?? []).filter((a: any) => a.error || a.skipped)
-      toast(`${r.new} new · ${r.auto_linked} linked${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
+      const r = await api.post<any>('/sync', {})
+      const moved: any[] = r.balances ?? []
+      const parts = [
+        r.bank ? `${r.bank.new} new from the bank` : '',
+        moved.length ? `${moved.length} balance${moved.length === 1 ? '' : 's'} updated (${moved.map((b) => b.name).join(', ')})` : 'balances unchanged',
+        r.ibkr?.new ? `IBKR: ${r.ibkr.new} trade${r.ibkr.new === 1 ? '' : 's'} to add` : '',
+      ].filter(Boolean)
+      toast(parts.join(' · ') + ((r.problems ?? []).length ? ` · ${r.problems.join('; ')}` : ''), (r.problems ?? []).length ? 'bad' : 'good')
       refresh(); refetch()
       after?.()
-      if (r.new > 0) nav('/ledger/inbox')
+      if (r.bank?.new > 0) nav('/ledger/inbox')
+      else if (r.ibkr?.new > 0 || r.ibkr?.mismatches > 0) nav('/wealth/investments')
     } catch (e) {
       toast((e as Error).message, 'bad')
     } finally {

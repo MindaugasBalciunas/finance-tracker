@@ -217,3 +217,10 @@ func FetchMeta(ticker string) (*Meta, error) {
 	m := result.Chart.Result[0].Meta
 	return &m, nil
 }
+
+// SetQuoteForTest puts a quote in the cache so tests elsewhere don't reach
+// the network.
+func SetQuoteForTest(q Quote) {
+	t := strings.ToUpper(q.Ticker)
+	cacheSet(t, cacheEntry{q: &q, expires: time.Now().Add(time.Hour)})
+}
