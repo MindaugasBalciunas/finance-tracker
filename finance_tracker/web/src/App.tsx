@@ -7,6 +7,7 @@ import { Icon } from './components/Icon'
 import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
 import { useExitDemo } from './components/ExitDemo'
+import { NotificationsButton } from './components/Notifications'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
@@ -137,6 +138,7 @@ function Shell() {
           {NAV.map((n) => <SideLink key={n.to} to={n.to} icon={n.icon} label={n.label} color={n.color} collapsed={collapsed} badge={n.to === '/ledger' ? inbox : 0} />)}
           <div className="my-2 border-t border-line" />
           <SideLink to="/ai" icon="spark" label="Ask CFO" color="var(--s4)" collapsed={collapsed} />
+          <NotificationsButton variant="sidebar" collapsed={collapsed} />
         </nav>
         <div className={clsx('pb-4', collapsed ? 'px-2' : 'px-3')}>
           <SideLink to="/settings" icon="settings" label="Settings" color="var(--s-other)" collapsed={collapsed} />
@@ -150,6 +152,7 @@ function Shell() {
           <Logo />
         </div>
         <div className="flex items-center gap-1">
+          <NotificationsButton variant="header" />
           <NavLink to="/ai" className="btn-ghost h-9 w-9 px-0" aria-label="Ask CFO"><Icon name="spark" /></NavLink>
           <NavLink to="/settings" className="btn-ghost h-9 w-9 px-0" aria-label="Settings"><Icon name="settings" /></NavLink>
         </div>

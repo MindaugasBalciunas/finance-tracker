@@ -3,13 +3,13 @@
 package plan
 
 import (
-	"time"
-	"fmt"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"ft/internal/db"
 	"ft/internal/ledger"
@@ -223,6 +223,11 @@ type Settings struct {
 	// salary booked on or after From; one paid on day ≤ PaidByDay counts for
 	// the previous month. A new job gets a new rule from its start date.
 	SalaryRules []SalaryRule `json:"salary_rules"`
+	// Where salary is paid into ("" = the account the last salary went to).
+	SalaryAccount string `json:"salary_account"`
+	// Buffers: what each everyday account should never drop below, in euros,
+	// by account id. Missing or 0 = worked out from the account's history.
+	Buffers map[string]float64 `json:"buffers,omitempty"`
 }
 
 type SalaryRule struct {

@@ -101,7 +101,7 @@ type Report struct {
 	// The same free spending by day of month ("2026-10" → day → amount), for
 	// the month timeline and the typical-month curve.
 	FreeSpentByDay map[string]map[int]money.Cents `json:"-"`
-	Unbudgeted       []Unbudgeted           `json:"unbudgeted"`
+	Unbudgeted     []Unbudgeted                   `json:"unbudgeted"`
 }
 
 func ym(date string) string { return date[:7] }

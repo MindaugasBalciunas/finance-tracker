@@ -9,7 +9,7 @@ import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Budget, PlanLine, PlanReport, TxList } from '../lib/types'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
-import { CategoryPicker, TagInput } from '../components/pickers'
+import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
@@ -457,7 +457,10 @@ function PlanSettings() {
       </Card>
       <Card title="Salary timing" action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setRules([...rules, { from: todayISO(), paid_by_day: 10 }])}><Icon name="plus" size={14} />New job</button>}>
         <div className="mb-3 text-xs text-muted">If your salary for a month arrives early the next month, count it in the month it pays for — otherwise one month looks like you saved nothing and the next like you saved everything. Add a rule when the pay schedule changes (a new job).</div>
-        <div className="space-y-2">
+        <Field label="Paid into" hint="Where salary lands — Cash until payday counts it there. Empty = the account the last salary went to.">
+          <AccountSelect value={v.salary_account ?? ''} onChange={(id) => setS({ ...v, salary_account: id })} kinds={SPEND_KINDS} placeholder="Automatic (last salary's account)" />
+        </Field>
+        <div className="mt-3 space-y-2">
           {sorted.map((r, n) => (
             <div key={r.i} className="rounded-xl border border-line p-3">
               <div className="flex flex-wrap items-end gap-3">

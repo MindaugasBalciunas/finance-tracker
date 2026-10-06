@@ -68,8 +68,8 @@ type Status struct {
 type Service struct {
 	DB *sql.DB
 
-	mu           sync.Mutex
-	pendingReg   *webauthn.SessionData
+	mu         sync.Mutex
+	pendingReg *webauthn.SessionData
 	// Login challenges in flight, by challenge: anyone may start a passkey
 	// login (it needs no password), so one stranger's attempt must not
 	// replace the owner's. Few, and short-lived.

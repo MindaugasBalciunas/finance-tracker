@@ -115,13 +115,15 @@ func (s *Server) insightRoutes() {
 		if err != nil {
 			return nil, err
 		}
-		rec, hidden, err := insights.RecurringCosts(s.DB, txs, time.Now())
+		rec, hidden, err := insights.RecurringAll(s.DB, txs, time.Now())
 		if err != nil {
 			return nil, err
 		}
-		var total money.Cents
+		var total money.Cents // costs only: transfers and income are not spending
 		for _, x := range rec {
-			total += x.Monthly
+			if x.Kind == "bill" {
+				total += x.Monthly
+			}
 		}
 		if hidden == nil {
 			hidden = []insights.Recurring{}

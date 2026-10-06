@@ -76,6 +76,19 @@ func (s *Server) planRoutes() {
 		if err := plan.ValidSalaryRules(st.SalaryRules); err != nil {
 			return nil, bad(err.Error())
 		}
+		if st.SalaryAccount != "" {
+			if _, err := ledger.GetAccount(s.DB, st.SalaryAccount); err != nil {
+				return nil, bad("unknown salary account")
+			}
+		}
+		for id, v := range st.Buffers {
+			if _, err := ledger.GetAccount(s.DB, id); err != nil {
+				return nil, bad("unknown account in buffers: " + id)
+			}
+			if v < 0 || v > 1e6 {
+				return nil, bad("a buffer is between €0 and €1,000,000")
+			}
+		}
 		return st, plan.SaveSettings(s.DB, st)
 	})
 	s.handle("GET /api/budgets", func(w http.ResponseWriter, r *http.Request) (any, error) {

@@ -268,6 +268,14 @@ type Recurring struct {
 	Count      int         `json:"count"`
 	Changed    bool        `json:"changed"` // last charge differs from typical by >10%
 	LastAmount money.Cents `json:"last_amount"`
+	// Money movements as well as bills: kind bill | transfer | income, the
+	// accounts involved, the usual day of the month, and this month's state.
+	Kind        string `json:"kind"`
+	FromAccount string `json:"from_account,omitempty"`
+	ToAccount   string `json:"to_account,omitempty"`
+	Day         int    `json:"day,omitempty"`
+	Done        bool   `json:"done"`    // already happened this month
+	Overdue     bool   `json:"overdue"` // its day this month has passed and it hasn't happened
 }
 
 // DetectRecurring finds merchants charged in most of the last 6 months at a
@@ -278,6 +286,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 		date string
 		amt  money.Cents
 		cat  string
+		acct string
 	}
 	by := map[string][]hit{}
 	for _, t := range txs {
@@ -288,7 +297,19 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 		if key == "" {
 			continue
 		}
-		by[key] = append(by[key], hit{t.Date, t.Amount, t.Category})
+		by[key] = append(by[key], hit{t.Date, t.Amount, t.Category, t.AccountID})
+	}
+	// The account a bill is usually paid from (most recent wins a tie).
+	payer := func(hs []hit) string {
+		n := map[string]int{}
+		best := ""
+		for _, h := range hs {
+			n[h.acct]++
+			if h.acct != "" && n[h.acct] >= n[best] {
+				best = h.acct
+			}
+		}
+		return best
 	}
 	var out []Recurring
 	recent := now.AddDate(0, -6, 0).Format("2006-01")
@@ -320,7 +341,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 			}
 			lastMonth := months[last.date[:7]]
 			lt, _ := time.Parse("2006-01-02", last.date)
-			out = append(out, Recurring{Source: "detected", Merchant: m, Category: last.cat, Cadence: "monthly", Amount: money.FromFloat(med),
+			out = append(out, Recurring{Source: "detected", Kind: "bill", FromAccount: payer(hs), Merchant: m, Category: last.cat, Cadence: "monthly", Amount: money.FromFloat(med),
 				Monthly: money.FromFloat(med), Last: last.date, Next: lt.AddDate(0, 1, 0).Format("2006-01-02"), Count: len(hs),
 				LastAmount: lastMonth, Changed: math.Abs(lastMonth.Float()-med) > 0.1*med+1})
 			continue
@@ -332,7 +353,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 			tb, _ := time.Parse("2006-01-02", b.date)
 			gap := tb.Sub(ta).Hours() / 24
 			if gap > 330 && gap < 400 && math.Abs(a.amt.Float()-b.amt.Float()) <= 0.25*b.amt.Float() && b.amt >= 1000 {
-				out = append(out, Recurring{Source: "detected", Merchant: m, Category: b.cat, Cadence: "yearly", Amount: b.amt, Monthly: b.amt / 12,
+				out = append(out, Recurring{Source: "detected", Kind: "bill", FromAccount: b.acct, Merchant: m, Category: b.cat, Cadence: "yearly", Amount: b.amt, Monthly: b.amt / 12,
 					Last: b.date, Next: tb.AddDate(1, 0, 0).Format("2006-01-02"), Count: len(hs), LastAmount: b.amt})
 			}
 		}

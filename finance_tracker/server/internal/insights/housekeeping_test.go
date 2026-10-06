@@ -102,3 +102,67 @@ func TestCategoryAndAccountUsage(t *testing.T) {
 		t.Errorf("accounts %+v", a)
 	}
 }
+
+// Standing orders are found; irregular top-ups are not. Saved movements keep
+// their accounts and day, and know whether this month's one has happened.
+func TestRecurringTransfers(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
+	mk := func(date, from, to, cat, merchant string, eur float64) {
+		Tx(t, d, ledger.Tx{Date: date, Kind: "transfer", Amount: E(eur), AccountID: from, ToAccountID: to, Category: cat, Merchant: merchant})
+	}
+	for _, m := range []string{"2026-07", "2026-08", "2026-09", "2026-10"} {
+		mk(m+"-10", "swed", "artea", "transfer.pension", "Artea", 200)
+	}
+	for _, day := range []string{"2026-07-03", "2026-07-29", "2026-08-17", "2026-09-01"} { // whenever there's spare cash
+		mk(day, "swed", "ibkr", "transfer.invest", "IBKR", 1000)
+	}
+	txs, _ := ledger.All(d, ledger.Filter{})
+	det := insights.DetectTransfers(txs, now, map[string]string{"artea": "Artea"})
+	if len(det) != 1 || det[0].Merchant != "Artea" || det[0].Day != 10 || det[0].FromAccount != "swed" || det[0].ToAccount != "artea" || det[0].Amount != E(200) {
+		t.Fatalf("detected %+v", det)
+	}
+
+	// A planned transfer (no history yet) and validation.
+	bad := []insights.RecurringItem{
+		{Merchant: "x", Kind: "loan"},
+		{Merchant: "x", Kind: "transfer", FromAccount: "nope"},
+		{Merchant: "x", Kind: "transfer", FromAccount: "swed", ToAccount: "swed"},
+		{Merchant: "x", Day: 40},
+	}
+	for _, it := range bad {
+		if err := insights.SaveRecurringItem(d, &it); err == nil {
+			t.Errorf("accepted %+v", it)
+		}
+	}
+	ibkr := insights.RecurringItem{Merchant: "IBKR monthly", Kind: "transfer", FromAccount: "swed", ToAccount: "ibkr", Amount: E(1000), Day: 11}
+	if err := insights.SaveRecurringItem(d, &ibkr); err != nil {
+		t.Fatal(err)
+	}
+	all, _, err := insights.RecurringAll(d, txs, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(name string) insights.Recurring {
+		for _, r := range all {
+			if r.Merchant == name {
+				return r
+			}
+		}
+		t.Fatalf("%s missing from %+v", name, all)
+		return insights.Recurring{}
+	}
+	if a := get("Artea"); a.Kind != "transfer" || !a.Done || a.Next != "2026-11-10" {
+		t.Errorf("Artea %+v", a)
+	}
+	if p := get("IBKR monthly"); p.Kind != "transfer" || p.Done || p.Next != "2026-10-11" || !p.Overdue {
+		t.Errorf("planned IBKR %+v", p)
+	}
+	// Costs stay costs: transfers never reach the bills list.
+	bills, _, _ := insights.RecurringCosts(d, txs, now)
+	for _, b := range bills {
+		if b.Kind != "bill" {
+			t.Errorf("transfer among costs: %+v", b)
+		}
+	}
+}

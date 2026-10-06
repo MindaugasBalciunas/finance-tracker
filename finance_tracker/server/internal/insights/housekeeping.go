@@ -56,7 +56,9 @@ func topN(m map[string]*NameAmount, n int) []NameAmount {
 	for _, v := range m {
 		out = append(out, *v)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Amount > out[j].Amount || out[i].Amount == out[j].Amount && out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Amount > out[j].Amount || out[i].Amount == out[j].Amount && out[i].Name < out[j].Name
+	})
 	if len(out) > n {
 		out = out[:n]
 	}
@@ -278,7 +280,7 @@ type CategoryUse struct {
 	Count    int         `json:"count"`
 	Year     money.Cents `json:"year"` // last 12 months, own rows only
 	Last     string      `json:"last"`
-	Rules    int         `json:"rules"`   // rules that set it
+	Rules    int         `json:"rules"`    // rules that set it
 	Budgeted bool        `json:"budgeted"` // some budget line covers it
 }
 

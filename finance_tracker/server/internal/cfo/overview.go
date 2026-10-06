@@ -23,6 +23,8 @@ type Change struct {
 }
 
 type Overview struct {
+	Cash          *CashPlan              `json:"cash,omitempty"` // per-account cash until the next payday
+	Actions       []Action               `json:"actions"`        // "needs you": one list of things to do, most urgent first
 	Date          string                 `json:"date"`
 	NetWorth      money.Cents            `json:"net_worth"`
 	Liquid        money.Cents            `json:"liquid"`
@@ -264,8 +266,12 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	o.Anomalies = insights.Anomalies(txs, thisM, now)
 	soon := now.AddDate(0, 0, 14).Format("2006-01-02")
 	recurring, _, _ := insights.RecurringCosts(d, txs, now)
+	var obligationCats []string // shown under "still to pay" already
+	for _, c := range fixedCats {
+		obligationCats = append(obligationCats, c...)
+	}
 	for _, r := range recurring {
-		if r.Next >= today && r.Next <= soon {
+		if r.Next >= today && r.Next <= soon && !within(r.Category, obligationCats) {
 			o.Upcoming = append(o.Upcoming, r)
 		}
 	}
@@ -293,6 +299,24 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		}
 	}
 	o.Plan.addEvents(txs, fixedCats, plan.LoadSettings(d).Salary(), now)
+	o.Cash = buildCashPlan(d, txs, &o.Plan, fixedCats, book, now)
+	budgetDiffs := 0
+	if r, err := BudgetReport(d, thisM, now); err == nil {
+		for _, l := range r.Lines {
+			if l.Suggestion != nil && l.Kind != "saving" {
+				budgetDiffs++
+			}
+		}
+	}
+	plannedLate := []insights.Recurring{}
+	if all, _, err := insights.RecurringAll(d, txs, now); err == nil {
+		for _, r := range all {
+			if r.Kind == "transfer" && r.Overdue && !r.Done {
+				plannedLate = append(plannedLate, r)
+			}
+		}
+	}
+	defer func() { o.Actions = buildActions(o, budgetDiffs, plannedLate, now) }()
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")

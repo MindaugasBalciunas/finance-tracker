@@ -7,14 +7,23 @@ import { catIcon, useCats } from '../../lib/categories'
 import { eur, eurc, parseNum, shortDate } from '../../lib/format'
 import type { Recurring } from '../../lib/types'
 import { Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, Stat, useToast } from '../../components/ui'
-import { CategoryPicker } from '../../components/pickers'
+import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../../components/pickers'
+import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
 
 // ── recurring ───────────────────────────────────────────────────────
 
 const CADENCE_LABEL: Record<string, string> = { monthly: 'monthly', quarterly: 'quarterly', yearly: 'yearly' }
+const KIND_TITLE: Record<string, string> = { bill: 'Bills', transfer: 'Transfers & standing orders', income: 'Income' }
+const KIND_HINT: Record<string, string> = {
+  bill: 'Money leaving on a schedule',
+  transfer: 'Between your accounts — standing orders, or ones you plan to make. Not spending.',
+  income: 'Money arriving on a schedule',
+}
 
 export function RecurringView() {
+  const { data: accounts } = useAccounts()
+  const acctName = (id?: string) => (id ? accounts?.find((a) => a.id === id)?.name ?? id : '')
   const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number; suggestions?: any[] }>('/insights/recurring') })
   const cats = useCats()
   const [edit, setEdit] = useState<{ r: Recurring | null; prefill?: Partial<EditorValues> } | null>(null)
@@ -27,7 +36,7 @@ export function RecurringView() {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
-        <Stat icon="repeat" color="var(--s7)" label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.length} merchants`} />
+        <Stat icon="repeat" color="var(--s7)" label="Recurring costs" value={`${eur(data.monthly_total)}/mo`} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.filter((r) => r.kind === 'bill').length} bills`} />
         <button className="btn-primary shrink-0" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>
       </div>
       {suggestions.length > 0 && (
@@ -51,32 +60,45 @@ export function RecurringView() {
           </div>
         </Card>
       )}
-      {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance or anything billed on a schedule.</Empty> : (
-        <Card pad={false}>
-          <div className="divide-y divide-line">
-            {data.items.map((r) => (
-              <button key={r.merchant} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
-                <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 truncate text-sm font-medium">
-                    <span className="truncate">{r.merchant}</span>
-                    {r.every_days ? <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2" title={`about every ${r.every_days} days`}>~{r.every_days}d</span>
-                      : r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
-                    {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">added</span>}
-                    {r.source === 'edited' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">edited</span>}
+      {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance, standing orders or anything on a schedule.</Empty> : (['bill', 'transfer', 'income'] as const).map((kind) => {
+        const rows = data.items.filter((r) => (r.kind ?? 'bill') === kind)
+        if (!rows.length) return null
+        return (
+          <Card key={kind} pad={false} title={<span>{KIND_TITLE[kind]} <span className="font-normal text-muted">{rows.length}</span></span>}>
+            <div className="-mt-1 px-4 pb-2 text-xs text-muted">{KIND_HINT[kind]}</div>
+            <div className="divide-y divide-line border-t border-line">
+              {rows.map((r) => (
+                <button key={r.merchant} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
+                  {kind === 'bill' ? <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
+                    : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      <span className="truncate">{r.merchant}</span>
+                      {r.every_days ? <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2" title={`about every ${r.every_days} days`}>~{r.every_days}d</span>
+                        : r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
+                      {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">{kind === 'transfer' && !r.last ? 'planned' : 'added'}</span>}
+                      {r.source === 'edited' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">edited</span>}
+                      {r.done && <span className="shrink-0 rounded-full bg-good/15 px-1.5 text-[10px] text-good">done this month</span>}
+                      {r.overdue && <span className="shrink-0 rounded-full bg-warn/15 px-1.5 text-[10px] text-warn">not yet</span>}
+                    </div>
+                    <div className="truncate text-xs text-muted">
+                      {kind === 'transfer' ? `${acctName(r.from_account) || '?'} → ${acctName(r.to_account) || '?'}`
+                        : kind === 'income' ? `into ${acctName(r.to_account) || '—'}`
+                        : [r.category ? cats.path(r.category) : 'No category', r.from_account && `from ${acctName(r.from_account)}`].filter(Boolean).join(' · ')}
+                      {r.next && <> · {r.done ? 'next' : r.overdue ? 'was due' : 'next'} {r.source === 'detected' && !r.day ? 'around ' : ''}{shortDate(r.next)}</>}{r.note ? ` · ${r.note}` : ''}
+                    </div>
                   </div>
-                  <div className="truncate text-xs text-muted">{r.category ? cats.path(r.category) : 'No category'} · next {r.source === 'detected' || r.every_days ? 'around ' : ''}{shortDate(r.next)}{r.note ? ` · ${r.note}` : ''}</div>
-                </div>
-                <div className="text-right">
-                  <div className="tnum text-sm font-semibold">{eur(r.amount)}</div>
-                  {r.cadence !== 'monthly' || r.every_days ? <div className="text-xs text-muted tnum">{eur(r.monthly)}/mo</div> : r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>}
-                </div>
-                <Icon name="chevronR" size={14} className="text-muted" />
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
+                  <div className="text-right">
+                    <div className={clsx('tnum text-sm font-semibold', kind === 'income' && 'text-good')}>{kind === 'income' ? '+' : ''}{eur(r.amount)}</div>
+                    {kind === 'bill' && (r.cadence !== 'monthly' || r.every_days ? <div className="text-xs text-muted tnum">{eur(r.monthly)}/mo</div> : r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>)}
+                  </div>
+                  <Icon name="chevronR" size={14} className="text-muted" />
+                </button>
+              ))}
+            </div>
+          </Card>
+        )
+      })}
       {data.hidden.length > 0 && (
         <div>
           <button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
@@ -102,14 +124,19 @@ export function RecurringView() {
   )
 }
 
-const toItem = (r: Recurring) => ({ merchant: r.merchant, category: r.category, cadence: r.cadence, amount: r.amount, next_date: r.next, note: r.note ?? '', every_days: r.every_days ?? 0 })
+const toItem = (r: Recurring) => ({ merchant: r.merchant, category: r.category, cadence: r.cadence, amount: r.amount, next_date: r.next, note: r.note ?? '', every_days: r.every_days ?? 0,
+  kind: r.kind ?? 'bill', from_account: r.from_account ?? '', to_account: r.to_account ?? '', day: r.day ?? 0 })
 
-type EditorValues = { merchant: string; category: string; cadence: string; amount: string; next_date: string; note: string; every_days: string }
+type EditorValues = { merchant: string; category: string; cadence: string; amount: string; next_date: string; note: string; every_days: string
+  kind: string; from_account: string; to_account: string; day: string }
 
 /** Add a recurring cost, correct a detected one, or mark it not recurring. */
 function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill?: Partial<EditorValues>; onClose: () => void }) {
   const [v, setV] = useState<EditorValues>({ merchant: r?.merchant ?? '', category: r?.category ?? '', cadence: r?.every_days ? 'flexible' : r?.cadence ?? 'monthly',
-    amount: r ? String(r.amount) : '', next_date: r?.next ?? '', note: r?.note ?? '', every_days: r?.every_days ? String(r.every_days) : '', ...prefill })
+    amount: r ? String(r.amount) : '', next_date: r?.next ?? '', note: r?.note ?? '', every_days: r?.every_days ? String(r.every_days) : '',
+    kind: r?.kind ?? 'bill', from_account: r?.from_account ?? '', to_account: r?.to_account ?? '', day: r?.day ? String(r.day) : '', ...prefill })
+  const isBill = v.kind === 'bill'
+  const kindLocked = !!r && r.source !== 'manual' // a detected bill stays a bill
   const refresh = useRefresh()
   const toast = useToast()
   const done = (msg: string) => { refresh(); toast(msg, 'good'); onClose() }
@@ -120,7 +147,11 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
     // Flexible = "about every N days" (stored as a monthly item with a rhythm).
     const every = v.cadence === 'flexible' ? parseNum(v.every_days) : 0
     if (v.cadence === 'flexible' && (!every || every < 7 || every > 400)) throw new Error('About every how many days? (7–400)')
-    return { ...v, merchant: v.merchant.trim(), amount, cadence: v.cadence === 'flexible' ? 'monthly' : v.cadence, every_days: Math.round(every ?? 0), ...extra }
+    const day = v.day ? parseNum(v.day) : 0
+    if (day === undefined || day < 0 || day > 31) throw new Error('Day of month is 1–31')
+    if (v.kind === 'transfer' && (!v.from_account || !v.to_account)) throw new Error('Pick both accounts for the transfer')
+    if (v.kind === 'transfer' && v.from_account === v.to_account) throw new Error('A transfer needs two different accounts')
+    return { ...v, merchant: v.merchant.trim(), amount, cadence: v.cadence === 'flexible' ? 'monthly' : v.cadence, every_days: Math.round(every ?? 0), day: Math.round(day), ...extra }
   }
   const save = useMutation({
     mutationFn: () => (r?.id ? api.put(`/recurring/${r.id}`, body()) : api.post('/recurring', body())),
@@ -133,7 +164,7 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
   const remove = useMutation({ mutationFn: () => api.del(`/recurring/${r!.id}`), onSuccess: () => done(r?.source === 'manual' ? 'Removed' : 'Back to the detected values') })
   const err = save.error || hide.error || remove.error
   return (
-    <Sheet open onClose={onClose} title={r ? r.merchant : 'Add recurring cost'} footer={<>
+    <Sheet open onClose={onClose} title={r ? r.merchant : 'Add recurring'} footer={<>
       {r && r.source !== 'manual' && <button className="btn-danger mr-auto" onClick={() => hide.mutate()}>Not recurring</button>}
       {r?.source === 'manual' && <button className="btn-danger mr-auto" onClick={() => confirm(`Remove ${r.merchant}?`) && remove.mutate()}>Remove</button>}
       <button className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -141,8 +172,23 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
     </>}>
       <div className="space-y-4">
         {r?.source === 'detected' && <div className="rounded-xl bg-sunken p-3 text-xs text-ink2">Found in your transactions: {r.count} charges, last {shortDate(r.last)} ({eurc(r.last_amount)}). Saving keeps your values from now on.</div>}
-        <Field label="Merchant or payee"><input className="input" value={v.merchant} disabled={!!r && r.source !== 'manual'} onChange={(e) => setV({ ...v, merchant: e.target.value })} placeholder="e.g. Landlord" /></Field>
-        <Field label="Category"><CategoryPicker value={v.category} kind="expense" onChange={(id) => setV({ ...v, category: id })} /></Field>
+        {!kindLocked && <Segmented value={v.kind} onChange={(k) => setV({ ...v, kind: k, category: '' })} options={[{ value: 'bill', label: 'Bill' }, { value: 'transfer', label: 'Transfer' }, { value: 'income', label: 'Income' }]} />}
+        {v.kind === 'transfer' && <div className="rounded-xl bg-sunken p-3 text-xs text-ink2">A standing order, or a transfer you plan to make each month. It counts in <b>Cash until payday</b> and is ticked off when the real transfer appears — the app never moves money or creates transactions.</div>}
+        <Field label={isBill ? 'Merchant or payee' : 'Name'}><input className="input" value={v.merchant} disabled={!!r && r.source !== 'manual'} onChange={(e) => setV({ ...v, merchant: e.target.value })} placeholder={v.kind === 'transfer' ? 'e.g. IBKR monthly' : v.kind === 'income' ? 'e.g. Child benefit' : 'e.g. Landlord'} /></Field>
+        {v.kind === 'transfer' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="From"><AccountSelect value={v.from_account} onChange={(id) => setV({ ...v, from_account: id })} kinds={TRANSFER_FROM_KINDS} placeholder="Choose" /></Field>
+            <Field label="To"><AccountSelect value={v.to_account} onChange={(id) => setV({ ...v, to_account: id })} kinds={TRANSFER_TO_KINDS} placeholder="Choose" /></Field>
+          </div>
+        ) : v.kind === 'income' ? (
+          <Field label="Paid into"><AccountSelect value={v.to_account} onChange={(id) => setV({ ...v, to_account: id })} kinds={SPEND_KINDS} placeholder="Choose" /></Field>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Category"><CategoryPicker value={v.category} kind="expense" onChange={(id) => setV({ ...v, category: id })} /></Field>
+            <Field label="Paid from" hint="For Cash until payday"><AccountSelect value={v.from_account} onChange={(id) => setV({ ...v, from_account: id })} kinds={SPEND_KINDS} placeholder="Usual account" /></Field>
+          </div>
+        )}
+        {v.kind === 'income' && <Field label="Category"><CategoryPicker value={v.category} kind="income" onChange={(id) => setV({ ...v, category: id })} /></Field>}
         <Field label="How often"><Segmented value={v.cadence} onChange={(c) => setV({ ...v, cadence: c, every_days: c === 'flexible' && !v.every_days ? '35' : v.every_days })}
           options={[{ value: 'monthly', label: 'Monthly' }, { value: 'quarterly', label: 'Quarterly' }, { value: 'yearly', label: 'Yearly' }, { value: 'flexible', label: 'Flexible' }]} /></Field>
         {v.cadence === 'flexible' && (
@@ -152,7 +198,9 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount €"><input className="input tnum" inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
-          <Field label="Next charge"><input type="date" className="input" value={v.next_date} onChange={(e) => setV({ ...v, next_date: e.target.value })} /></Field>
+          {isBill || v.cadence === 'flexible'
+            ? <Field label="Next charge"><input type="date" className="input" value={v.next_date} onChange={(e) => setV({ ...v, next_date: e.target.value })} /></Field>
+            : <Field label="Day of month"><input className="input w-24 tnum" inputMode="numeric" value={v.day} placeholder="e.g. 11" onChange={(e) => setV({ ...v, day: e.target.value })} /></Field>}
         </div>
         <Field label="Note"><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional" /></Field>
         {r?.source === 'edited' && <button className="btn-ghost h-8 px-2 text-xs" onClick={() => remove.mutate()}><Icon name="refresh" size={14} />Reset to detected values</button>}

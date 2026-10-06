@@ -41,6 +41,7 @@ export interface Snapshot {
 
 export interface Recurring {
   id?: number; source: 'detected' | 'edited' | 'manual'; note?: string; every_days?: number
+  kind: 'bill' | 'transfer' | 'income'; from_account?: string; to_account?: string; day?: number; done: boolean; overdue: boolean
   merchant: string; category: string; cadence: string; amount: number; monthly: number; last: string; next: string
   count: number; changed: boolean; last_amount: number
 }
@@ -66,7 +67,23 @@ export interface Overview {
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null
   inbox_open: number; recent: Tx[] | null
   checks: { level: string; text: string; link: string }[] | null; review_month?: string
+  cash?: CashPlan
+  actions?: Action[] | null
 }
+
+export interface CashItem { date: string; label: string; kind: 'obligation' | 'bill' | 'transfer' | 'income' | 'spending'; amount: number; within?: boolean }
+export interface CashAccount {
+  id: string; name: string; balance: number; balance_date: string; items: CashItem[] | null
+  end: number; low: number; low_date: string; needed: number; needed_by: string
+  stages: { amount: number; by: string; for: string }[] | null
+  buffer: number; buffer_auto: boolean; buffer_why: string; idle: number
+}
+export interface CashPlan {
+  payday: string; salary_account: string; accounts: CashAccount[]; moves: { from: string; from_name: string; to: string; to_name: string; amount: number; by: string; for: string }[]
+  short: number; daily_account: string; daily: number; cash: number
+  to_savings: { from: string; from_name: string; to: string; to_name: string; amount: number; by: string; for: string }[] | null
+}
+export interface Action { level: 'bad' | 'warn' | 'info'; kind: string; text: string; detail?: string; link?: string; due?: string }
 
 export interface Step { from_month: string; amount: number }
 export interface Budget {

@@ -56,6 +56,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant ON recurring_items(lo
 CREATE INDEX IF NOT EXISTS usage_events_at ON usage_events(at);`,
 	// 6: recurring costs on a flexible rhythm ("about every 5 weeks").
 	`ALTER TABLE recurring_items ADD COLUMN every_days INTEGER NOT NULL DEFAULT 0;`,
+	// 7: recurring money movements, not just bills — standing orders between
+	// accounts and expected income — with the accounts involved and the usual
+	// day, so cash can be planned per account. Existing items stay bills.
+	`ALTER TABLE recurring_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'bill' CHECK (kind IN ('bill','transfer','income'));
+ALTER TABLE recurring_items ADD COLUMN from_account TEXT NOT NULL DEFAULT '';
+ALTER TABLE recurring_items ADD COLUMN to_account TEXT NOT NULL DEFAULT '';
+ALTER TABLE recurring_items ADD COLUMN day INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema
