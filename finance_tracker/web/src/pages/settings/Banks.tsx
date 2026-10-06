@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { IBKRConnection } from '../../components/IBKRPanel'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -25,7 +26,10 @@ export function Banks() {
   useEffect(() => {
     const code = sp.get('code'), state = sp.get('state'), err = sp.get('error_description') || sp.get('error')
     if (err) { toast(`The bank refused: ${err}`, 'bad'); setSp({}, { replace: true }) }
-    if (code && state) {
+    if (code && state && state.startsWith('ibkr.')) { // Interactive Brokers sign-in, not a bank
+      setSp({}, { replace: true })
+      api.post('/ibkr/callback', { code, state }).then(() => { toast('Interactive Brokers connected — read-only', 'good'); qc.invalidateQueries({ queryKey: ['ibkr'] }) }).catch((e) => toast(e.message, 'bad'))
+    } else if (code && state) {
       setSp({}, { replace: true })
       api.post('/bank/callback', { code, state }).then(() => { toast('Bank connected — map its accounts below', 'good'); reload() }).catch((e) => toast(e.message, 'bad'))
     }
@@ -69,6 +73,7 @@ export function Banks() {
   }
   return (
     <div className="space-y-4">
+      <IBKRConnection />
       <Card title="Connections" action={st?.configured && (
         <div className="flex items-center gap-2">
           <select className="input select-pad h-8 w-auto text-xs" value={bank} onChange={(e) => setBank(e.target.value)}>{['Swedbank', 'SEB', 'Luminor', 'Revolut', 'Šiaulių bankas'].map((b) => <option key={b}>{b}</option>)}</select>

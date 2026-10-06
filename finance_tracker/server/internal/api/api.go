@@ -20,6 +20,7 @@ import (
 	"ft/internal/auth"
 	"ft/internal/bank"
 	"ft/internal/bank/openbanking"
+	"ft/internal/ibkr"
 )
 
 type Server struct {
@@ -27,6 +28,7 @@ type Server struct {
 	DBPath  string
 	Auth    *auth.Service
 	Bank    *bank.Service
+	IBKR    *ibkr.Service
 	AI      *ai.Assistant
 	Version string
 	mux     *http.ServeMux
@@ -42,7 +44,8 @@ func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath
 
 func newServer(d *sql.DB, dbPath, version string, isDemo bool) *Server {
 	s := &Server{DB: d, DBPath: dbPath, Version: version, Auth: &auth.Service{DB: d}, Bank: &bank.Service{DB: d}, mux: http.NewServeMux(), isDemo: isDemo}
-	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Bank: s.Bank}
+	s.IBKR = ibkr.New(d)
+	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Bank: s.Bank, IBKR: s.IBKR}
 	s.routes()
 	if !isDemo {
 		s.demoRoutes()

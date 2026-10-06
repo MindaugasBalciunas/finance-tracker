@@ -13,6 +13,7 @@ import (
 	"ft/internal/bank"
 	"ft/internal/cfo"
 	"ft/internal/db"
+	"ft/internal/ibkr"
 	"ft/internal/ledger"
 	"ft/internal/money"
 	"ft/internal/plan"
@@ -30,6 +31,7 @@ type Assistant struct {
 	DB     *sql.DB
 	Client *Client
 	Bank   *bank.Service
+	IBKR   *ibkr.Service // read-only Interactive Brokers, when connected
 }
 
 func (a *Assistant) Overview(now time.Time) *cfo.Overview {

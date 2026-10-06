@@ -24,6 +24,8 @@ type Trade struct {
 	Price     float64 `json:"price"`
 	Currency  string  `json:"currency"`
 	Notes     string  `json:"notes"`
+	// ExternalID is the broker's trade id when the trade came from a sync.
+	ExternalID string `json:"external_id,omitempty"`
 }
 
 var tickerRe = regexp.MustCompile(`^[A-Z0-9.\-=^]{1,15}$`)
@@ -31,7 +33,7 @@ var tickerRe = regexp.MustCompile(`^[A-Z0-9.\-=^]{1,15}$`)
 func ValidTicker(t string) bool { return tickerRe.MatchString(t) }
 
 func ListTrades(q *sql.DB) ([]Trade, error) {
-	rows, err := q.Query(`SELECT id,date,COALESCE(account_id,''),action,ticker,shares,price,currency,notes FROM trades ORDER BY date, id`)
+	rows, err := q.Query(`SELECT id,date,COALESCE(account_id,''),action,ticker,shares,price,currency,notes,external_id FROM trades ORDER BY date, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +41,7 @@ func ListTrades(q *sql.DB) ([]Trade, error) {
 	out := []Trade{}
 	for rows.Next() {
 		var t Trade
-		rows.Scan(&t.ID, &t.Date, &t.AccountID, &t.Action, &t.Ticker, &t.Shares, &t.Price, &t.Currency, &t.Notes)
+		rows.Scan(&t.ID, &t.Date, &t.AccountID, &t.Action, &t.Ticker, &t.Shares, &t.Price, &t.Currency, &t.Notes, &t.ExternalID)
 		out = append(out, t)
 	}
 	return out, nil
@@ -69,8 +71,8 @@ func SaveTrade(d *sql.DB, t *Trade) error {
 		acct = t.AccountID
 	}
 	if t.ID == 0 {
-		res, err := d.Exec(`INSERT INTO trades(date,account_id,action,ticker,shares,price,currency,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-			t.Date, acct, t.Action, t.Ticker, t.Shares, t.Price, t.Currency, t.Notes, db.Now())
+		res, err := d.Exec(`INSERT INTO trades(date,account_id,action,ticker,shares,price,currency,notes,external_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			t.Date, acct, t.Action, t.Ticker, t.Shares, t.Price, t.Currency, t.Notes, strings.TrimSpace(t.ExternalID), db.Now())
 		if err != nil {
 			return err
 		}
@@ -89,30 +91,36 @@ func DeleteTrade(d *sql.DB, id int64) error {
 
 // Holding is one position, average-cost basis, in its trade currency, plus
 // a live valuation in EUR when the quote is available.
+type AccountShares struct {
+	AccountID string  `json:"account_id"` // "" = trades with no account
+	Shares    float64 `json:"shares"`
+}
+
 type Holding struct {
-	Ticker       string   `json:"ticker"`
-	Name         string   `json:"name,omitempty"`
-	AccountID    string   `json:"account_id"`
-	Currency     string   `json:"currency"`
-	Shares       float64  `json:"shares"`
-	AvgCost      float64  `json:"avg_cost"`
-	Cost         float64  `json:"cost"`
-	Realized     float64  `json:"realized"`
-	FirstBuy     string   `json:"first_buy"`
-	Price        *float64 `json:"price,omitempty"`
-	PriceAsOf    string   `json:"price_as_of,omitempty"`
-	Value        *float64 `json:"value,omitempty"`
-	Gain         *float64 `json:"gain,omitempty"`
-	GainPct      *float64 `json:"gain_pct,omitempty"`
-	ValueEUR     *float64 `json:"value_eur,omitempty"`
-	CostEUR      *float64 `json:"cost_eur,omitempty"`
-	Week52High   float64  `json:"week52_high,omitempty"`
-	Week52Low    float64  `json:"week52_low,omitempty"`
-	CostShare    float64  `json:"cost_share"`               // of total book cost (EUR)
-	DayPct       *float64 `json:"day_pct,omitempty"`        // today's move vs the previous close
-	DayChangeEUR *float64 `json:"day_change_eur,omitempty"` // that move on this position, EUR
-	Weight       float64  `json:"weight"`                   // share of market value (EUR)
-	QuoteError   string   `json:"quote_error,omitempty"`
+	Accounts     []AccountShares `json:"accounts,omitempty"`
+	Ticker       string          `json:"ticker"`
+	Name         string          `json:"name,omitempty"`
+	AccountID    string          `json:"account_id"`
+	Currency     string          `json:"currency"`
+	Shares       float64         `json:"shares"`
+	AvgCost      float64         `json:"avg_cost"`
+	Cost         float64         `json:"cost"`
+	Realized     float64         `json:"realized"`
+	FirstBuy     string          `json:"first_buy"`
+	Price        *float64        `json:"price,omitempty"`
+	PriceAsOf    string          `json:"price_as_of,omitempty"`
+	Value        *float64        `json:"value,omitempty"`
+	Gain         *float64        `json:"gain,omitempty"`
+	GainPct      *float64        `json:"gain_pct,omitempty"`
+	ValueEUR     *float64        `json:"value_eur,omitempty"`
+	CostEUR      *float64        `json:"cost_eur,omitempty"`
+	Week52High   float64         `json:"week52_high,omitempty"`
+	Week52Low    float64         `json:"week52_low,omitempty"`
+	CostShare    float64         `json:"cost_share"`               // of total book cost (EUR)
+	DayPct       *float64        `json:"day_pct,omitempty"`        // today's move vs the previous close
+	DayChangeEUR *float64        `json:"day_change_eur,omitempty"` // that move on this position, EUR
+	Weight       float64         `json:"weight"`                   // share of market value (EUR)
+	QuoteError   string          `json:"quote_error,omitempty"`
 }
 
 type Portfolio struct {
@@ -161,13 +169,14 @@ func BuildPortfolio(trades []Trade, live bool) Portfolio {
 	type pos struct {
 		ticker, acct, cur, first string
 		shares, cost, realized   float64
+		byAcct                   map[string]float64 // shares per account ("" = no account)
 	}
 	positions := map[string]*pos{}
 	var order []string
 	for _, t := range trades {
 		p := positions[t.Ticker]
 		if p == nil {
-			p = &pos{ticker: t.Ticker, acct: t.AccountID, cur: t.Currency, first: t.Date}
+			p = &pos{ticker: t.Ticker, acct: t.AccountID, cur: t.Currency, first: t.Date, byAcct: map[string]float64{}}
 			positions[t.Ticker] = p
 			order = append(order, t.Ticker)
 		}
@@ -178,7 +187,9 @@ func BuildPortfolio(trades []Trade, live bool) Portfolio {
 			}
 			p.cost += t.Shares * t.Price
 			p.shares += t.Shares
+			p.byAcct[t.AccountID] += t.Shares
 		case "sell":
+			p.byAcct[t.AccountID] -= t.Shares
 			sold := math.Min(t.Shares, p.shares)
 			if sold > 0 {
 				avg := p.cost / p.shares
@@ -198,6 +209,19 @@ func BuildPortfolio(trades []Trade, live bool) Portfolio {
 	for i, tk := range order {
 		p := positions[tk]
 		h := Holding{Ticker: tk, AccountID: p.acct, Currency: p.cur, Shares: p.shares, Cost: round2(p.cost), Realized: round2(p.realized), FirstBuy: p.first}
+		// One ticker held at several brokers: say where the shares are (and
+		// flag trades without an account) instead of naming the first broker.
+		for a, n := range p.byAcct {
+			if math.Abs(n) > 1e-6 {
+				h.Accounts = append(h.Accounts, AccountShares{AccountID: a, Shares: round3(n)})
+			}
+		}
+		sort.Slice(h.Accounts, func(i, j int) bool { return h.Accounts[i].Shares > h.Accounts[j].Shares })
+		if len(h.Accounts) > 1 {
+			h.AccountID = ""
+		} else if len(h.Accounts) == 1 {
+			h.AccountID = h.Accounts[0].AccountID
+		}
 		if p.shares > 0 {
 			h.AvgCost = p.cost / p.shares
 		}

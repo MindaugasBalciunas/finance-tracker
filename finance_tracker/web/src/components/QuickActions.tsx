@@ -34,10 +34,20 @@ function useQuickActions(after?: () => void) {
   const [syncing, setSyncing] = useState(false)
   const connected = (conns ?? []).filter((c) => c.status === 'authorized')
   const last = connected.flatMap((c) => (c.accounts ?? []).map((a: any) => a.last_synced_at as string)).filter(Boolean).sort().pop()
+  const { data: ib } = useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<any>('/ibkr'), staleTime: 60_000, retry: false })
+  const ibkr = !!ib?.status?.connected
   const sync = async () => {
-    if (!connected.length) return nav('/settings/banks')
+    if (!connected.length && !ibkr) return nav('/settings/banks')
     setSyncing(true)
     try {
+      // IBKR too, when connected: today's account value and the trade check.
+      if (ibkr) {
+        try {
+          const x = await api.post<any>('/ibkr/sync', {})
+          if (x.new || x.mismatches) toast(`IBKR: ${x.new ? `${x.new} trade${x.new === 1 ? '' : 's'} to add` : ''}${x.new && x.mismatches ? ' · ' : ''}${x.mismatches ? `${x.mismatches} position${x.mismatches === 1 ? '' : 's'} differ` : ''}`, 'bad')
+        } catch (e) { toast(`IBKR: ${(e as Error).message}`, 'bad') }
+      }
+      if (!connected.length) { refresh(); after?.(); return }
       const r = await api.post<any>('/bank/sync', {})
       const failed = (r.accounts ?? []).filter((a: any) => a.error || a.skipped)
       toast(`${r.new} new · ${r.auto_linked} linked${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
@@ -55,7 +65,7 @@ function useQuickActions(after?: () => void) {
     { key: 'add', icon: 'plus', label: 'Add', sub: 'expense or income', onClick: then(() => editor.open()), primary: true },
     { key: 'transfer', icon: 'swap', label: 'Transfer', sub: 'between accounts', onClick: then(() => editor.open({ kind: 'transfer', category: 'transfer.internal' })) },
     { key: 'scan', icon: 'camera', label: 'Scan', sub: 'a receipt', onClick: then(editor.scan) },
-    { key: 'sync', icon: 'refresh', label: connected.length ? 'Sync' : 'Bank', sub: connected.length ? (last ? `synced ${ago(last)}` : 'from your bank') : 'connect for auto sync', onClick: sync, busy: syncing },
+    { key: 'sync', icon: 'refresh', label: connected.length || ibkr ? 'Sync' : 'Bank', sub: connected.length ? (last ? `synced ${ago(last)}` : 'from your bank') : ibkr ? 'IBKR' : 'connect for auto sync', onClick: sync, busy: syncing },
     { key: 'balances', icon: 'bank', label: 'Balances', sub: 'update by hand', onClick: then(() => nav('/wealth?update=1')) },
   ]
   return { tiles, nav }

@@ -689,7 +689,7 @@ func TestDemoModeIsolated(t *testing.T) {
 	}
 	// Real files, credentials and money flows are out of reach.
 	for _, p := range [][2]string{{"GET", "/backups"}, {"POST", "/backups"}, {"GET", "/export/backup.json"}, {"PUT", "/bank/settings"}, {"POST", "/bank/sync"},
-		{"PUT", "/ai/settings"}, {"POST", "/import/backup?confirm=replace"}} {
+		{"PUT", "/ai/settings"}, {"POST", "/import/backup?confirm=replace"}, {"POST", "/ibkr/sync"}, {"GET", "/ibkr"}} {
 		if code, _ := c.do(p[0], p[1], map[string]any{}); code != 409 {
 			t.Errorf("%s %s in demo: %d, want 409", p[0], p[1], code)
 		}
@@ -774,5 +774,24 @@ func TestAuthGate(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "ft_session", Value: "forged"})
 	if res, _ := http.DefaultClient.Do(req); res.StatusCode != 401 {
 		t.Error("forged session passed")
+	}
+}
+
+// IBKR tokens are secrets: never in the status the UI reads, never in a
+// backup without secrets.
+func TestIBKRTokensStayPrivate(t *testing.T) {
+	s, c := newServer(t)
+	s.DB.Exec(`INSERT INTO settings(key,value) VALUES('ibkr','{"client_id":"cid","access_token":"AT-secret","refresh_token":"RT-secret","scope":"mcp.read"}')`)
+	_, body := c.do("GET", "/ibkr", nil)
+	if strings.Contains(string(body), "secret") || !strings.Contains(string(body), `"connected":true`) {
+		t.Fatalf("status leaks or is wrong: %s", body)
+	}
+	_, body = c.do("GET", "/export/backup.json", nil)
+	if strings.Contains(string(body), "AT-secret") || strings.Contains(string(body), "RT-secret") {
+		t.Fatal("IBKR tokens in a backup without secrets")
+	}
+	_, body = c.do("GET", "/export/backup.json?secrets=1", nil)
+	if !strings.Contains(string(body), "RT-secret") {
+		t.Fatal("a backup with secrets should keep the IBKR sign-in")
 	}
 }

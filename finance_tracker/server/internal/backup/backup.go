@@ -25,7 +25,7 @@ var tables = []string{"settings", "accounts", "categories", "balances", "transac
 
 // Secret-only tables and settings keys.
 var secretTables = map[string]bool{"webauthn_credentials": true, "bank_connections": true, "bank_accounts": true, "bank_inbox": true}
-var secretSettings = map[string]bool{"auth": true, "bank": true}
+var secretSettings = map[string]bool{"auth": true, "bank": true, "ibkr": true} // ibkr: OAuth tokens
 
 type Table struct {
 	Columns []string `json:"columns"`

@@ -63,6 +63,10 @@ CREATE INDEX IF NOT EXISTS usage_events_at ON usage_events(at);`,
 ALTER TABLE recurring_items ADD COLUMN from_account TEXT NOT NULL DEFAULT '';
 ALTER TABLE recurring_items ADD COLUMN to_account TEXT NOT NULL DEFAULT '';
 ALTER TABLE recurring_items ADD COLUMN day INTEGER NOT NULL DEFAULT 0;`,
+	// 8: trades remember the broker's own trade id (IBKR sync), so a trade is
+	// never imported twice. Existing trades keep '' (entered by hand).
+	`ALTER TABLE trades ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS trades_external_id ON trades(external_id) WHERE external_id <> '';`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

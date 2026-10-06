@@ -15,6 +15,7 @@ import (
 	"ft/internal/api"
 	"ft/internal/boot"
 	"ft/internal/db"
+	"ft/internal/ibkr"
 )
 
 var version = "dev"
@@ -29,6 +30,7 @@ func main() {
 	defer d.Close()
 
 	go nightly(d, path)
+	go ibkrDaily(d)
 
 	srv := api.New(d, path, version)
 	addr := ":" + envOr("PORT", "8080")
@@ -64,4 +66,25 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// ibkrDaily refreshes the IBKR account value once a day when it is
+// connected (only today's balance; trades are proposed on a manual sync).
+// Using the sign-in daily also keeps it from lapsing.
+func ibkrDaily(d *sql.DB) {
+	svc := ibkr.New(d)
+	time.Sleep(2 * time.Minute) // let start-up settle
+	for {
+		if st := svc.Status(); st.Connected {
+			last, _ := time.Parse(time.RFC3339, st.LastSync)
+			if time.Since(last) > 20*time.Hour {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				if _, err := svc.Sync(ctx, true); err != nil {
+					log.Printf("ibkr daily refresh: %v", err)
+				}
+				cancel()
+			}
+		}
+		time.Sleep(time.Hour)
+	}
 }

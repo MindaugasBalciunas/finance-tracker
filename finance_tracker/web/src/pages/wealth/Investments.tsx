@@ -8,6 +8,7 @@ import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeLabel, rangeTick } from '../../lib/periods'
 import { Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, useToast } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
+import { IBKRPanel } from '../../components/IBKRPanel'
 import { Icon } from '../../components/Icon'
 import { brandColor } from '../../lib/brand'
 
@@ -41,7 +42,15 @@ export function Investments() {
     ? foldSlices(hs.map((h) => ({ key: h.ticker, label: h.ticker, value: val(h), color: color[h.ticker] })))
     : (() => {
       const m = new Map<string, number>()
-      for (const h of hs) { const k = split === 'brokers' ? (h.account_id || 'other') : h.currency; m.set(k, (m.get(k) ?? 0) + val(h)) }
+      for (const h of hs) {
+        if (split === 'brokers' && h.accounts?.length && h.shares > 0) {
+          // A ticker held at several brokers is split by shares.
+          for (const a of h.accounts) m.set(a.account_id || 'other', (m.get(a.account_id || 'other') ?? 0) + val(h) * (a.shares / h.shares))
+          continue
+        }
+        const k = split === 'brokers' ? (h.account_id || 'other') : h.currency
+        m.set(k, (m.get(k) ?? 0) + val(h))
+      }
       return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, label: split === 'brokers' ? brokerName(k) : k, value: v, color: split === 'brokers' ? (brandColor({ institution: brokerName(k), name: k, kind: 'brokerage' }) ?? `var(--s${i + 1})`) : `var(--s${i + 1})` }))
     })()
   const gainPct = p.cost_eur ? p.gain_eur / p.cost_eur : 0
@@ -49,6 +58,7 @@ export function Investments() {
   const last = perf?.[perf.length - 1], first = perf?.[0]
   return (
     <div className="space-y-4">
+      <IBKRPanel />
       {/* Headline + money in vs worth now */}
       <section className="card p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -129,6 +139,11 @@ export function Investments() {
                         style={{ background: `color-mix(in oklab, ${color[h.ticker]} var(--tint), transparent)`, color: `color-mix(in oklab, ${color[h.ticker]} 80%, rgb(var(--ink)))` }}>{h.ticker.replace(/\..*$/, '').slice(0, 5)}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-1.5"><span className="text-sm font-semibold">{h.ticker}</span><span className="truncate text-xs text-muted">{h.name ?? brokerName(h.account_id)}</span></div>
+                        {h.accounts?.length > 1 && (
+                          <div className="truncate text-[11px] text-ink2">
+                            {h.accounts.map((a: any, i: number) => <span key={i} className={clsx(!a.account_id && 'text-warn')}>{i > 0 && ' · '}{a.account_id ? brokerName(a.account_id) : 'no account'} {+a.shares.toFixed(4)}</span>)}
+                          </div>
+                        )}
                         <div className="truncate text-xs text-muted tnum">{+h.shares.toFixed(4)} × {h.price != null ? h.price.toFixed(2) : '—'} {h.currency} · avg {h.avg_cost.toFixed(2)}</div>
                       </div>
                       <div className="text-right">
