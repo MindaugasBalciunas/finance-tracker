@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
 import type { Overview } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
@@ -263,6 +263,64 @@ export default function Home() {
 
 
 
+/** The whole month's income as one bar: what is committed (fixed, saving,
+ *  funds — solid once paid, striped while still to go), what was spent, and
+ *  what is left. The tick marks where spending would be at an even pace. */
+function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number; warn: boolean }) {
+  const fixedPaid = Math.min(p.fixed_spent, p.fixed_planned)
+  const savedDone = Math.min(p.saved_actual, p.saving_planned)
+  const segs = [
+    { key: 'fixed-paid', label: 'Fixed paid', v: fixedPaid, color: 'var(--s7)', faded: false },
+    { key: 'fixed-due', label: 'Fixed still to pay', v: p.fixed_planned - fixedPaid, color: 'var(--s7)', faded: true },
+    { key: 'saved', label: 'Saved', v: savedDone, color: 'var(--s6)', faded: false },
+    { key: 'saving-due', label: 'Saving still to do', v: p.saving_planned - savedDone, color: 'var(--s6)', faded: true },
+    { key: 'funds', label: 'Set aside in funds', v: p.fund_set_aside, color: 'var(--s4)', faded: false },
+    { key: 'spent', label: 'Spent', v: p.free_spent, color: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : warn ? 'rgb(var(--warn))' : 'var(--s1)', faded: false },
+  ].filter((x) => x.v > 0.005)
+  const committed = p.fixed_planned + p.saving_planned + p.fund_set_aside
+  const total = Math.max(p.income_base, committed + p.free_spent, 1)
+  const pctOf = (v: number) => `${(v / total) * 100}%`
+  // Free money = what was spent + what is left; an even pace spends it evenly.
+  const free = p.free_spent + Math.max(p.safe_to_spend, 0)
+  const tick = Math.min(1, (committed + free * progress) / total)
+  return (
+    <div className="mt-2.5">
+      <div className="relative">
+        <div className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-sunken">
+          {segs.map((x) => (
+            <div key={x.key} title={`${x.label} ${eur(x.v)}`} className="h-full" style={{ width: pctOf(x.v), ...(x.faded ? hatch(x.color) : { background: x.color }) }} />
+          ))}
+        </div>
+        <div className="absolute -top-1 h-[18px] w-0.5 rounded bg-ink/70" style={{ left: `${tick * 100}%` }} title="where spending would be today at an even pace" />
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+        <Swatch color="var(--s7)" label="Fixed" v={p.fixed_planned} />
+        <Swatch color="var(--s6)" label="Saving" v={p.saving_planned} />
+        {p.fund_set_aside > 0 && <Swatch color="var(--s4)" label="Funds" v={p.fund_set_aside} />}
+        <Swatch color="var(--s1)" label="Spent" v={p.free_spent} />
+        <Swatch color="rgb(var(--sunken))" label="Left" v={Math.max(p.safe_to_spend, 0)} border />
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2.5 rounded-sm" style={hatch('rgb(var(--ink2))')} />striped = still to pay</span>
+      </div>
+    </div>
+  )
+}
+
+// Committed but not yet paid: the series colour in 135° stripes. A small
+// tile (Firefox draws long repeating gradients unevenly on wide bars).
+const hatch = (c: string): CSSProperties => {
+  const f = `color-mix(in oklab, ${c} 25%, transparent)`
+  return { backgroundImage: `linear-gradient(135deg, ${c} 25%, ${f} 25%, ${f} 50%, ${c} 50%, ${c} 75%, ${f} 75%, ${f})`, backgroundSize: '6px 6px' }
+}
+
+function Swatch({ color, label, v, border = false }: { color: string; label: string; v: number; border?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={clsx('h-2 w-2 rounded-sm', border && 'border border-axis')} style={{ background: color }} />
+      {label} <span className="tnum text-ink2">{eur(v)}</span>
+    </span>
+  )
+}
+
 /** The everyday question: how much free money is left this month, and what
  *  that means per day. Same money as Plan's "safe to spend" — with what is
  *  still to pay (alimony, loan) in view and the sum behind it one tap away. */
@@ -298,10 +356,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           </div>
           <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
         </div>
-        <div className="relative mt-2.5 h-1.5 rounded-full bg-sunken">
-          <div className={clsx('h-full rounded-full', left < 0 ? 'bg-bad' : used > progress + 0.1 ? 'bg-warn' : 'bg-accent')} style={{ width: `${Math.max(2, used * 100)}%` }} />
-          <div className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink/60" style={{ left: `${Math.min(100, progress * 100)}%` }} title="today" />
-        </div>
+        <MonthBar p={p} progress={progress} warn={used > progress + 0.1} />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 pb-2.5 text-xs text-muted">
           <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
           {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">
