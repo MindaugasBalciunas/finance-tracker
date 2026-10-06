@@ -76,6 +76,7 @@ type LoanDetails struct {
 
 func (a *Account) normalize() {
 	a.Group = KindGroup(a.Kind)
+	a.Name, a.Institution = strings.TrimSpace(a.Name), strings.TrimSpace(a.Institution)
 	if a.Currency == "" {
 		a.Currency = "EUR"
 	}

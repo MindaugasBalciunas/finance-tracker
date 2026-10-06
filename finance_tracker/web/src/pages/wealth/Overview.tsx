@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -23,6 +23,8 @@ export function Overview() {
   const liquidOnly = prefs.liquid_only
   const setLiquidOnly = (v: boolean) => setPrefs({ liquid_only: v })
   const { data: hist, isLoading } = useNetWorthHistory(rangeFrom(range), rangeStep(range))
+  // Per-account history too, so switching to Accounts or Banks is instant.
+  useNetWorthHistory(rangeFrom(range), rangeStep(range), true)
   const { data: accounts } = useAccounts()
   const [sp, setSp] = useSearchParams()
   const [updateOpen, setUpdateOpen] = useState(sp.get('update') === '1')
@@ -56,21 +58,21 @@ export function Overview() {
   return (
     <div className="space-y-4">
       <section className="card p-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        {/* What: the headline and the liquid filter. How: one toolbar for the cut and the period. */}
+        <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm text-ink2">{liquidOnly ? 'Liquid assets' : 'Net worth'}</div>
             <div className="text-3xl font-semibold tracking-tight">{eur(head)}</div>
             <div className="text-sm text-muted">{rangeLabel(range)} <Delta value={change} /></div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Toggle checked={liquidOnly} onChange={setLiquidOnly} label="Liquid only" />
-            <Segmented value={range} onChange={setRange} options={RANGES} size="sm" />
-          </div>
+          <span className="pt-1 text-xs"><Toggle checked={liquidOnly} onChange={setLiquidOnly} label="Liquid only" /></span>
         </div>
-        <div className="mt-3"><Segmented size="sm" value={view} onChange={setView} options={[{ value: 'groups', label: 'Groups' }, { value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} /></div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'groups', label: 'Groups' }, { value: 'accounts', label: 'Accounts' }, { value: 'banks', label: 'Banks' }]} />
+          <div className="no-scrollbar -mx-4 max-w-[calc(100%+2rem)] overflow-x-auto overflow-y-hidden px-4 sm:mx-0 sm:max-w-none sm:px-0"><Segmented value={range} onChange={setRange} options={RANGES} size="sm" /></div>
+        </div>
         {view === 'groups' ? <>
-        <div className="mt-4 grid grid-cols-1 items-center gap-4 lg:grid-cols-[1fr_minmax(0,300px)]">
-        <div className="h-64 sm:h-80">
+        <ChartFrame donut={last && <GroupDonut byGroup={last.by_group} liquidOnly={liquidOnly} />}>
           {isLoading ? <Loading /> : (
             <ResponsiveContainer>
               <ComposedChart data={data} stackOffset="sign" margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
@@ -89,9 +91,7 @@ export function Overview() {
               </ComposedChart>
             </ResponsiveContainer>
           )}
-        </div>
-        {last && <GroupDonut byGroup={last.by_group} liquidOnly={liquidOnly} />}
-        </div>
+        </ChartFrame>
         <div className="mt-3"><Legend items={[...groups.filter((g) => last?.by_group[g.id]).map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: last ? <>{eurk(last.by_group[g.id] ?? 0)}{g.id !== 'debt' && assetSum > 0 && <span className="text-muted"> · {pct((last.by_group[g.id] ?? 0) / assetSum)}</span>}</> : undefined })),
           { color: 'rgb(var(--ink))', label: liquidOnly ? 'Liquid (line)' : 'Net worth (line)', value: eurk(head) }]} /></div>
         </> : <div className="mt-4"><WhereMoneyIs from={rangeFrom(range)} range={range} liquidOnly={liquidOnly} accounts={accounts ?? []} view={view} /></div>}
@@ -172,17 +172,34 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
     for (const x of shown) row[x.key] = x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0)
     return row
   }), [hist, shown, off])
-  if (isLoading) return <Loading />
-  if (!eligible.length) return <div className="py-8 text-center text-sm text-muted">No account balances yet.</div>
+  if (isLoading) return <ChartFrame><Loading /></ChartFrame>
+  if (!eligible.length) return <ChartFrame><div className="grid h-full place-items-center text-sm text-muted">No account balances yet.</div></ChartFrame>
   const total = shown.reduce((t, x) => t + valueOf(x), 0)
   const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color }))
   const limit = view === 'banks' ? 99 : 8
   const visible = allShown ? series : series.slice(0, limit)
   return (
     <>
-      <div className="mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts · same total in both views · tap to leave one out</div>
+      <ChartFrame donut={shown.length > 0 && <Donut slices={slices} center={eurk(total)} sub="today" height={200} legend={false} />}>
+        {!shown.length ? <div className="grid h-full place-items-center text-sm text-muted">Everything is switched off — tap one below.</div> : (
+          <ResponsiveContainer>
+            <AreaChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
+              <YAxis {...axisProps} tickFormatter={eurk} width={48} />
+              <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                <TooltipBox title={shortDate(label)} rows={[...shown.filter((x) => payload[0].payload[x.key] > 0).map((x) => ({ color: x.color, label: x.name, value: eur(payload[0].payload[x.key]) })).reverse(),
+                  { label: 'Total', value: eur(shown.reduce((t, x) => t + (payload[0].payload[x.key] ?? 0), 0)), bold: true }]} />) : null} />
+              {shown.map((x) => (
+                <Area key={x.key} type="monotone" dataKey={x.key} name={x.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={x.color} fillOpacity={0.9} isAnimationActive={false} />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </ChartFrame>
+      <div className="mt-4 mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''} · tap one to leave it out of the chart</div>
       {/* The legend is the switchboard: amount and share of what is shown. */}
-      <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((x, i) => {
           const on = !x.ids.every((id) => off.has(id))
           const onCount = x.ids.filter((id) => !off.has(id)).length
@@ -195,7 +212,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
                 className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
                 <IconTile name={x.icon} color={on ? x.color : 'var(--s-other)'} size={24} />
                 <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>
-                  {x.name}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length}` : x.ids.length}</span>}
+                  {x.name}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length} accounts` : `${x.ids.length} accounts`}</span>}
                 </span>
                 <span className="tnum font-medium text-ink">{eurk(v)}</span>
                 <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
@@ -209,27 +226,18 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
           </button>
         )}
       </div>
-      {!shown.length ? <div className="py-8 text-center text-sm text-muted">Everything is switched off — tap one above.</div> : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_minmax(0,320px)]">
-          <div className="h-56 sm:h-64">
-            <ResponsiveContainer>
-              <AreaChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
-                <CartesianGrid {...gridProps} />
-                <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
-                <YAxis {...axisProps} tickFormatter={eurk} width={48} />
-                <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                  <TooltipBox title={shortDate(label)} rows={[...shown.filter((x) => payload[0].payload[x.key] > 0).map((x) => ({ color: x.color, label: x.name, value: eur(payload[0].payload[x.key]) })).reverse(),
-                    { label: 'Total', value: eur(shown.reduce((t, x) => t + (payload[0].payload[x.key] ?? 0), 0)), bold: true }]} />) : null} />
-                {shown.map((x) => (
-                  <Area key={x.key} type="monotone" dataKey={x.key} name={x.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={x.color} fillOpacity={0.9} isAnimationActive={false} />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <Donut slices={slices} center={eurk(total)} sub="today" height={200} legend={false} />
-        </div>
-      )}
     </>
+  )
+}
+
+/** Same footprint in every view, so switching Groups / Accounts / Banks never
+ *  moves the page: a fixed-height chart with the donut beside (below on phones). */
+function ChartFrame({ children, donut }: { children: ReactNode; donut?: ReactNode }) {
+  return (
+    <div className="mt-4 grid grid-cols-1 items-center gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="h-64 sm:h-80">{children}</div>
+      <div className="grid h-[200px] place-items-center">{donut}</div>
+    </div>
   )
 }
 

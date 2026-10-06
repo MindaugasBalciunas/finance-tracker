@@ -356,3 +356,17 @@ func TestSuggestTagMerges(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountInstitutionTrimmed(t *testing.T) {
+	d := DB(t)
+	// A stray space ("Revolut ") split one bank into two in the Banks view.
+	d.Exec(`INSERT INTO accounts(id,name,institution,kind,currency,liquid,archived,sort,notes,details,created_at,updated_at) VALUES('btc_x',' BTC ','Revolut ','crypto','EUR',1,0,0,'','{}','x','x')`)
+	a, err := ledger.GetAccount(d, "btc_x")
+	if err != nil || a.Institution != "Revolut" || a.Name != "BTC" {
+		t.Fatalf("%q %q %v", a.Institution, a.Name, err)
+	}
+	saved, err := ledger.SaveAccount(d, ledger.Account{ID: "x2", Name: "X", Institution: " SEB ", Kind: "checking"})
+	if err != nil || saved.Institution != "SEB" {
+		t.Fatalf("%+v %v", saved, err)
+	}
+}

@@ -380,11 +380,29 @@ type Spend struct {
 	BalanceUSD float64            `json:"balance_usd"`
 	Calls      int                `json:"calls"`
 	ByKind     map[string]float64 `json:"by_kind"`
+	// Last30USD is the burn rate behind "credit lasts about N days".
+	Last30USD float64      `json:"last30_usd"`
+	LastCall  string       `json:"last_call"`
+	Months    []MonthSpend `json:"months"` // last 6 months, oldest first
+}
+
+type MonthSpend struct {
+	Month string  `json:"month"`
+	USD   float64 `json:"usd"`
+	Calls int     `json:"calls"`
 }
 
 func (c *Client) Spend() Spend {
 	s := Spend{ByKind: map[string]float64{}}
-	month := time.Now().UTC().Format("2006-01")
+	now := time.Now().UTC()
+	month := now.Format("2006-01")
+	since30 := now.AddDate(0, 0, -30).Format(time.RFC3339)
+	idx := map[string]int{}
+	for i := 5; i >= 0; i-- {
+		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+		idx[m] = len(s.Months)
+		s.Months = append(s.Months, MonthSpend{Month: m})
+	}
 	rows, err := c.DB.Query(`SELECT kind, cost_usd, created_at FROM ai_spend`)
 	if err == nil {
 		for rows.Next() {
@@ -396,6 +414,18 @@ func (c *Client) Spend() Spend {
 			s.Calls++
 			if strings.HasPrefix(at, month) {
 				s.MonthUSD += cost
+			}
+			if at >= since30 {
+				s.Last30USD += cost
+			}
+			if at > s.LastCall {
+				s.LastCall = at
+			}
+			if len(at) >= 7 {
+				if i, ok := idx[at[:7]]; ok {
+					s.Months[i].USD += cost
+					s.Months[i].Calls++
+				}
 			}
 		}
 		rows.Close()

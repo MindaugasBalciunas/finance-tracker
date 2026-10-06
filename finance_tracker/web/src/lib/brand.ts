@@ -55,7 +55,10 @@ export const accountIcon = (a: Pick<Account, 'kind' | 'name'>) => (/solar/i.test
 
 /** The bank (or kind) an account belongs to, for grouping. */
 export function bankOf(a: Pick<Account, 'institution' | 'name' | 'kind'>): string {
-  if (a.institution) return a.institution
+  // A house or car is not money held at a bank, even when the bank lent for it.
+  if (a.kind === 'property') return 'Property'
+  if (a.kind === 'vehicle') return 'Vehicles'
+  if (a.institution?.trim()) return a.institution.trim()
   if (/btc|bitcoin/i.test(a.name)) return 'Bitcoin'
   return ({ cash: 'Cash', property: 'Property', vehicle: 'Vehicles', loan: 'Loans' } as Record<string, string>)[a.kind] ?? 'Other'
 }
