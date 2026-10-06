@@ -229,9 +229,6 @@ export default function Home() {
       </div>
 
 
-      <button onClick={() => editor.open()} className="fixed bottom-20 right-4 z-20 grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-lg sm:hidden" aria-label="Add transaction">
-        <Icon name="plus" size={26} />
-      </button>
     </div>
   )
 }

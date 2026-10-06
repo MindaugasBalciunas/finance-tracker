@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useRefresh } from '../lib/hooks'
 import { useTxEditor } from './TxEditor'
-import { Spinner, useToast } from './ui'
+import { Sheet, Spinner, useToast } from './ui'
 import { Icon } from './Icon'
 
 function ago(iso: string) {
@@ -18,10 +19,13 @@ function ago(iso: string) {
   return `${Math.round(h / 24)} d ago`
 }
 
-/** The ledger comes first: enter, scan or sync a transaction in one tap from
- *  the landing page, plus the two other things you do by hand — a transfer
- *  between your accounts and updating balances of manual accounts. */
-export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
+type Tile = { key: string; icon: string; label: string; sub?: string; onClick: () => void; primary?: boolean; busy?: boolean }
+
+/** The ledger comes first: enter, scan or sync a transaction in one tap, plus
+ *  the two other things done by hand — a transfer between your accounts and
+ *  updating balances of manual accounts. Shared by the desktop bar on Home
+ *  and the phone's "+" in the tab bar. */
+function useQuickActions(after?: () => void) {
   const editor = useTxEditor()
   const nav = useNavigate()
   const toast = useToast()
@@ -38,6 +42,7 @@ export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
       const failed = (r.accounts ?? []).filter((a: any) => a.error || a.skipped)
       toast(`${r.new} new · ${r.auto_linked} linked${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
       refresh(); refetch()
+      after?.()
       if (r.new > 0) nav('/ledger/inbox')
     } catch (e) {
       toast((e as Error).message, 'bad')
@@ -45,15 +50,22 @@ export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
       setSyncing(false)
     }
   }
-  const tiles: { key: string; icon: string; label: string; sub?: string; onClick: () => void; primary?: boolean; busy?: boolean }[] = [
-    { key: 'add', icon: 'plus', label: 'Add', sub: 'expense or income', onClick: () => editor.open(), primary: true },
-    { key: 'transfer', icon: 'swap', label: 'Transfer', sub: 'between accounts', onClick: () => editor.open({ kind: 'transfer', category: 'transfer.internal' }) },
-    { key: 'scan', icon: 'camera', label: 'Scan', sub: 'a receipt', onClick: editor.scan },
+  const then = (f: () => void) => () => { after?.(); f() }
+  const tiles: Tile[] = [
+    { key: 'add', icon: 'plus', label: 'Add', sub: 'expense or income', onClick: then(() => editor.open()), primary: true },
+    { key: 'transfer', icon: 'swap', label: 'Transfer', sub: 'between accounts', onClick: then(() => editor.open({ kind: 'transfer', category: 'transfer.internal' })) },
+    { key: 'scan', icon: 'camera', label: 'Scan', sub: 'a receipt', onClick: then(editor.scan) },
     { key: 'sync', icon: 'refresh', label: connected.length ? 'Sync' : 'Bank', sub: connected.length ? (last ? `synced ${ago(last)}` : 'from your bank') : 'connect for auto sync', onClick: sync, busy: syncing },
-    { key: 'balances', icon: 'bank', label: 'Balances', sub: 'update by hand', onClick: () => nav('/wealth?update=1') },
+    { key: 'balances', icon: 'bank', label: 'Balances', sub: 'update by hand', onClick: then(() => nav('/wealth?update=1')) },
   ]
+  return { tiles, nav }
+}
+
+/** Desktop: a bar at the top of Home. Phones use the tab bar's "+". */
+export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
+  const { tiles, nav } = useQuickActions()
   return (
-    <section className="card p-2">
+    <section className="card hidden p-2 sm:block">
       <div className="grid grid-cols-5 gap-1">
         {tiles.map((t) => (
           <button key={t.key} onClick={t.onClick} disabled={t.busy}
@@ -76,5 +88,48 @@ export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
         </button>
       )}
     </section>
+  )
+}
+
+/** Phones: the raised "+" in the middle of the tab bar — within thumb reach on
+ *  every page — opens the same actions as a sheet. */
+export function QuickActionsButton({ inboxOpen }: { inboxOpen: number }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)} aria-label="Add, scan or sync" className="flex h-14 items-center justify-center">
+        <span className="-mt-5 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-lg ring-4 ring-page"><Icon name="plus" size={24} /></span>
+      </button>
+      {/* Portal: the tab bar's backdrop blur would trap the fixed-position sheet. */}
+      {open && createPortal(<QuickActionsSheet inboxOpen={inboxOpen} onClose={() => setOpen(false)} />, document.body)}
+    </>
+  )
+}
+
+function QuickActionsSheet({ inboxOpen, onClose }: { inboxOpen: number; onClose: () => void }) {
+  const { tiles, nav } = useQuickActions(onClose)
+  return (
+    <Sheet open onClose={onClose} title="Add or update">
+      <div className="grid grid-cols-1 gap-1">
+        {tiles.map((t) => (
+          <button key={t.key} onClick={t.onClick} disabled={t.busy} className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-sunken/60">
+            <span className={clsx('grid h-11 w-11 shrink-0 place-items-center rounded-full', t.primary ? 'bg-accent text-white' : 'bg-sunken text-ink')}>
+              {t.busy ? <Spinner className="h-4 w-4" /> : <Icon name={t.icon} size={20} />}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t.label}</span>
+              {t.sub && <span className="block text-xs text-muted">{t.sub}</span>}
+            </span>
+          </button>
+        ))}
+      </div>
+      {inboxOpen > 0 && (
+        <button onClick={() => { onClose(); nav('/ledger/inbox') }} className="mt-2 flex w-full items-center gap-2 rounded-xl bg-sunken/50 px-3 py-2.5 text-left text-sm text-ink2">
+          <Icon name="inbox" size={16} className="text-accent" />
+          <span className="flex-1"><b className="text-ink">{inboxOpen}</b> synced {inboxOpen === 1 ? 'transaction waits' : 'transactions wait'} for review</span>
+          <Icon name="chevronR" size={16} className="text-muted" />
+        </button>
+      )}
+    </Sheet>
   )
 }

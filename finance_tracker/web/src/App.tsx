@@ -8,6 +8,7 @@ import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
 import { useExitDemo } from './components/ExitDemo'
 import { NotificationsButton } from './components/Notifications'
+import { QuickActionsButton } from './components/QuickActions'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
@@ -210,8 +211,8 @@ function Shell() {
 
       {/* Mobile tab bar */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur pb-safe sm:hidden">
-        <div className="grid grid-cols-5">
-          {NAV.map((n) => (
+        <div className="grid grid-cols-6">
+          {NAV.flatMap((n, i) => [...(i === 2 ? [<QuickActionsButton key="quick" inboxOpen={inbox} />] : []), (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}
               className={({ isActive }) => clsx('relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
               {({ isActive }) => (<>
@@ -220,7 +221,7 @@ function Shell() {
                 {n.to === '/ledger' && !!inbox && <span className="absolute right-[22%] top-1.5 rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">{inbox}</span>}
               </>)}
             </NavLink>
-          ))}
+          )])}
         </div>
       </nav>
       {exitDemo.sheet}
