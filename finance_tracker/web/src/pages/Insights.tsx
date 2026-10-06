@@ -75,10 +75,17 @@ function CashFlow() {
               <YAxis {...axisProps} tickFormatter={eurk} width={48} />
               <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? (() => {
                 const f = payload[0].payload as Flow
+                // Spending is net of refunds; show the gross and everything that left
+                // the accounts too, so a heavy month reads as heavy.
+                const refunds = f.refunds ?? 0
                 return <TooltipBox title={monthLabel(f.period, true)} rows={[
-                  { color: 'var(--s1)', label: 'Income', value: eurc(f.income) }, { color: 'var(--s2)', label: 'Spending', value: eurc(f.spending) },
+                  { color: 'var(--s1)', label: 'Income', value: eurc(f.income) },
+                  { color: 'var(--s2)', label: refunds ? 'Spending (net)' : 'Spending', value: eurc(f.spending) },
+                  ...(refunds ? [{ label: <span className="pl-3 text-muted">gross, before refunds</span>, value: <span className="text-muted">{eurc(f.spending + refunds)}</span> },
+                    { label: <span className="pl-3 text-muted">refunds &amp; gifts deducted</span>, value: <span className="text-muted">−{eurc(refunds)}</span> }] : []),
                   { label: 'Essential', value: eurc(f.essential) }, { label: 'Saved', value: eurc(f.saved), bold: true },
-                  { label: 'Savings rate', value: pct(f.savings_rate) }, { label: 'Invested', value: eurc(f.invested) }]} />
+                  { label: 'Savings rate', value: pct(f.savings_rate) }, { label: 'Invested (incl. loan principal)', value: eurc(f.invested) },
+                  { label: 'Total out', value: eurc(f.spending + refunds + f.invested), bold: true }]} />
               })() : null} />
               <Bar dataKey="income" name="Income" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               <Bar dataKey="spending" name="Spending" fill="var(--s2)" radius={[4, 4, 0, 0]} isAnimationActive={false} />

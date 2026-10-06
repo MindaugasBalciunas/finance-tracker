@@ -54,6 +54,7 @@ type Flow struct {
 	Invested       money.Cents            `json:"invested"`
 	Principal      money.Cents            `json:"principal"`       // debt principal (part of invested)
 	PayrollPension money.Cents            `json:"payroll_pension"` // pension paid by payroll, never touched a bank
+	Refunds        money.Cents            `json:"refunds"`         // refunds/reimbursements already deducted from Spending
 	IncomeBy       map[string]money.Cents `json:"income_by"`
 	SpendingBy     map[string]money.Cents `json:"spending_by"` // by top-level category
 }
@@ -112,6 +113,7 @@ func CashFlow(txs []ledger.Tx, cats map[string]ledger.Category, granularity stri
 		case isRefund(t):
 			f.Spending -= t.Amount
 			f.SpendingBy["refunds"] -= t.Amount
+			f.Refunds += t.Amount
 		case t.Kind == "income":
 			f.Income += t.Amount
 			f.IncomeBy[t.Category] += t.Amount

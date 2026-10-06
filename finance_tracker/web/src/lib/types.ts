@@ -31,6 +31,7 @@ export interface Flow {
   period: string; income: number; spending: number; essential: number; discretionary: number; saved: number
   savings_rate: number; invested: number; principal: number; payroll_pension: number
   income_by: Record<string, number>; spending_by: Record<string, number>
+  refunds?: number
 }
 
 export interface Snapshot {
