@@ -3,8 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"path"
-	"strings"
 
 	"ft/internal/auth"
 )
@@ -21,52 +19,36 @@ func (s *Server) unlocked(r *http.Request) bool {
 
 var errLocked = &HTTPError{401, "locked"}
 
-// gatePublic are the paths someone with a passkey needs before unlocking:
-// the app itself, the lock screen's status check and the passkey login.
-// PIN login is deliberately not here — it stays behind the web password, so a
-// PIN can't be guessed from the internet.
-func gatePublic(p string) bool {
-	if !strings.HasPrefix(p, "/api/") {
-		return true // the app shell and its assets: code, no data
-	}
-	switch p {
-	case "/api/health", "/api/auth/status", "/api/auth/passkey/login/begin", "/api/auth/passkey/login/finish", "/api/auth/logout":
-		return true
-	}
-	return false
-}
-
-// gateAllows answers nginx's auth_request: may this request skip the web
-// username and password? Only once a passkey is registered: then the app
-// shell and passkey login are open, and everything else needs the session
-// that a passkey (or PIN) login created. Without a passkey: never.
-func (s *Server) gateAllows(r *http.Request) bool {
+// The nginx gates (auth_request). nginx — not the app — decides which paths
+// may skip the web password, by its own normalised location matching; the app
+// only answers two questions and never looks at the URL:
+//
+//	/api/auth/gate       — is there a live session?           (every path)
+//	/api/auth/gate/open  — is a passkey registered, or a live  (app shell,
+//	                       session?                             passkey login)
+func (s *Server) hasSession(r *http.Request) bool {
 	if !s.Auth.Enabled() {
 		return false
 	}
-	if c, err := r.Cookie(sessionCookie); err == nil && s.Auth.ValidSession(c.Value) {
-		return true
+	c, err := r.Cookie(sessionCookie)
+	return err == nil && s.Auth.ValidSession(c.Value)
+}
+
+func gateAnswer(w http.ResponseWriter, ok bool) {
+	w.Header().Set("Cache-Control", "no-store")
+	if ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
-	uri := r.Header.Get("X-Original-URI")
-	if i := strings.IndexAny(uri, "?#"); i >= 0 {
-		uri = uri[:i]
-	}
-	if uri == "" || strings.Contains(uri, "..") {
-		return false
-	}
-	return gatePublic(path.Clean(uri)) && s.Auth.Status("").Passkeys > 0
+	w.WriteHeader(http.StatusUnauthorized)
 }
 
 func (s *Server) authRoutes() {
-	// nginx auth_request: 204 lets the request through without the web
-	// password, 401 falls back to it. Says nothing else.
 	s.mux.HandleFunc("GET /api/auth/gate", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		if s.gateAllows(r) {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.WriteHeader(http.StatusUnauthorized)
+		gateAnswer(w, s.hasSession(r))
+	})
+	s.mux.HandleFunc("GET /api/auth/gate/open", func(w http.ResponseWriter, r *http.Request) {
+		gateAnswer(w, s.hasSession(r) || (s.Auth.Enabled() && s.Auth.Status("").Passkeys > 0))
 	})
 	s.handle("GET /api/auth/status", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		tok := ""

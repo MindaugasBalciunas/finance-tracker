@@ -70,7 +70,10 @@ type Service struct {
 
 	mu           sync.Mutex
 	pendingReg   *webauthn.SessionData
-	pendingLogin *webauthn.SessionData
+	// Login challenges in flight, by challenge: anyone may start a passkey
+	// login (it needs no password), so one stranger's attempt must not
+	// replace the owner's. Few, and short-lived.
+	pendingLogin map[string]pendingLogin
 	failures     int
 	lockedUntil  time.Time
 }
@@ -357,24 +360,67 @@ func (s *Service) BeginLogin(host, origin string) (*protocol.CredentialAssertion
 	if len(u.creds) == 0 {
 		return nil, errors.New("no passkey enrolled")
 	}
-	opts, sess, err := w.BeginLogin(u)
+	// The fingerprint (or device PIN) is required, not just a tap: with a
+	// passkey standing in for the web password, presence alone isn't enough.
+	opts, sess, err := w.BeginLogin(u, webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	s.pendingLogin = sess
-	s.mu.Unlock()
+	s.keepLogin(sess)
 	return opts, nil
+}
+
+type pendingLogin struct {
+	sess *webauthn.SessionData
+	at   time.Time
+}
+
+const (
+	maxPendingLogins = 16
+	pendingLoginTTL  = 5 * time.Minute
+)
+
+// keepLogin stores a challenge, dropping expired ones and, when full, the oldest.
+func (s *Service) keepLogin(sess *webauthn.SessionData) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingLogin == nil {
+		s.pendingLogin = map[string]pendingLogin{}
+	}
+	now := time.Now()
+	oldest := ""
+	for k, p := range s.pendingLogin {
+		if now.Sub(p.at) > pendingLoginTTL {
+			delete(s.pendingLogin, k)
+		} else if oldest == "" || p.at.Before(s.pendingLogin[oldest].at) {
+			oldest = k
+		}
+	}
+	if len(s.pendingLogin) >= maxPendingLogins {
+		delete(s.pendingLogin, oldest)
+	}
+	s.pendingLogin[sess.Challenge] = pendingLogin{sess, now}
 }
 
 func (s *Service) FinishLogin(host, origin string, r *http.Request) (string, error) {
 	s.mu.Lock()
-	sess := s.pendingLogin
-	s.pendingLogin = nil
+	none := len(s.pendingLogin) == 0
 	s.mu.Unlock()
-	if sess == nil {
+	if none {
 		return "", ErrNoCeremony
 	}
+	parsed, err := protocol.ParseCredentialRequestResponse(r)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	p, ok := s.pendingLogin[parsed.Response.CollectedClientData.Challenge]
+	delete(s.pendingLogin, parsed.Response.CollectedClientData.Challenge)
+	s.mu.Unlock()
+	if !ok || time.Since(p.at) > pendingLoginTTL {
+		return "", ErrNoCeremony
+	}
+	sess := p.sess
 	w, err := rp(host, origin)
 	if err != nil {
 		return "", err
@@ -383,7 +429,7 @@ func (s *Service) FinishLogin(host, origin string, r *http.Request) (string, err
 	if err != nil {
 		return "", err
 	}
-	cred, err := w.FinishLogin(u, *sess, r)
+	cred, err := w.ValidateLogin(u, *sess, parsed)
 	if err != nil {
 		return "", err
 	}

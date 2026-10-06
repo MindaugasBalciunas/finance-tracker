@@ -734,14 +734,15 @@ func TestDemoModeIsolated(t *testing.T) {
 	}
 }
 
-// The nginx gate: the web password may be skipped only once a passkey exists,
-// and then only for the app shell and passkey login — or with a live session.
+// The nginx gates answer from cookies only — nginx owns the paths:
+// /auth/gate = a live session; /auth/gate/open = a passkey exists or a session.
 func TestAuthGate(t *testing.T) {
 	s, c := newServer(t)
-	gate := func(uri string, withSession bool) int {
+	gate := func(path string, withSession bool) int {
 		t.Helper()
-		req, _ := http.NewRequest("GET", c.base+"/auth/gate", nil)
-		req.Header.Set("X-Original-URI", uri)
+		req, _ := http.NewRequest("GET", c.base+path, nil)
+		// A raw URI header must make no difference any more.
+		req.Header.Set("X-Original-URI", "/")
 		hc := &http.Client{}
 		if withSession {
 			hc = c.http // carries the session cookie from logging in
@@ -753,26 +754,25 @@ func TestAuthGate(t *testing.T) {
 		res.Body.Close()
 		return res.StatusCode
 	}
-	if gate("/", false) != 401 {
-		t.Error("no lock: the web password must stay")
-	}
-	a := &auth.Service{DB: s.DB}
-	a.SetupPin("", "1234")
-	if gate("/", false) != 401 {
-		t.Error("PIN but no passkey: the web password must stay")
-	}
-	s.DB.Exec(`INSERT INTO webauthn_credentials(name,credential,created_at) VALUES('phone',x'00','x')`)
-	for uri, want := range map[string]int{
-		"/": 204, "/assets/index.js": 204, "/api/auth/status": 204, "/api/auth/passkey/login/begin": 204, "/api/auth/passkey/login/finish?x=1": 204,
-		"/api/auth/pin/login": 401, "/api/overview": 401, "/api/transactions": 401, "/api/auth/passkey/register/begin": 401,
-		"/api/auth/status/../../api/overview": 401, "": 401,
-	} {
-		if got := gate(uri, false); got != want {
-			t.Errorf("passkey, no session: %q → %d, want %d", uri, got, want)
+	check := func(label string, gateWant, openWant int) {
+		t.Helper()
+		if g, o := gate("/auth/gate", false), gate("/auth/gate/open", false); g != gateWant || o != openWant {
+			t.Errorf("%s: gate %d open %d, want %d %d", label, g, o, gateWant, openWant)
 		}
 	}
+	check("no lock", 401, 401)
+	a := &auth.Service{DB: s.DB}
+	a.SetupPin("", "1234")
+	check("PIN, no passkey", 401, 401)
+	s.DB.Exec(`INSERT INTO webauthn_credentials(name,credential,created_at) VALUES('phone',x'00','x')`)
+	check("passkey, no session", 401, 204)
 	c.ok("POST", "/auth/pin/login", map[string]string{"pin": "1234"}, nil)
-	if gate("/api/overview", true) != 204 || gate("/api/auth/pin/setup", true) != 204 {
-		t.Error("a live session should pass the gate")
+	if gate("/auth/gate", true) != 204 || gate("/auth/gate/open", true) != 204 {
+		t.Error("a live session should pass both gates")
+	}
+	req, _ := http.NewRequest("GET", c.base+"/auth/gate", nil)
+	req.AddCookie(&http.Cookie{Name: "ft_session", Value: "forged"})
+	if res, _ := http.DefaultClient.Do(req); res.StatusCode != 401 {
+		t.Error("forged session passed")
 	}
 }

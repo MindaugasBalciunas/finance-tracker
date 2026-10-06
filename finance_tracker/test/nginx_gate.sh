@@ -20,7 +20,8 @@ echo '<!doctype html><title>app</title>' > "$T/html/index.html"
 echo '{}' > "$T/html/manifest.webmanifest"
 printf 'admin:%s\n' "$(openssl passwd -apr1 secret)" > "$T/htpasswd"
 printf 'satisfy any;\nauth_basic "Finance Tracker";\nauth_basic_user_file %s;\nauth_request /_gate;\n' "$T/htpasswd" > "$T/auth.conf"
-sed -e "s#listen 80 default_server#listen 8088#" -e "s#/etc/nginx/auth.conf#$T/auth.conf#" -e "s#/usr/share/nginx/html#$T/html#" \
+printf 'auth_request /_gate_open;\n' > "$T/auth-open.conf"
+sed -e "s#listen 80 default_server#listen 8088#" -e "s#/etc/nginx/auth.conf#$T/auth.conf#" -e "s#/etc/nginx/auth-open.conf#$T/auth-open.conf#" -e "s#/usr/share/nginx/html#$T/html#" \
   -e "s#access_log /dev/stdout#access_log $T/logs/access.log#" -e "s#error_log /dev/stderr warn#error_log $T/logs/error.log warn#" \
   "$HERE/nginx.conf" > "$T/site.conf"
 cat > "$T/main.conf" <<CONF
@@ -63,7 +64,18 @@ got=$(code -X POST $B/api/auth/passkey/login/begin)
 [ "$got" != 401 ] && echo "ok   passkey login reachable ($got)" || { echo "FAIL passkey login needs the password"; fail=1; }
 expect 401 "data without a session" $B/api/overview
 expect 401 "PIN login still needs the password" -X POST -H 'Content-Type: application/json' -d '{"pin":"1234"}' $B/api/auth/pin/login
-expect 401 "path tricks don't help" "$B/api/auth/status/../../api/overview" --path-as-is
+# The 2.17.0 hole: raw paths that nginx decodes/merges/resolves to the PIN
+# login or to data must not skip the password.
+for p in '/%61pi/auth/pin/login' '//api/auth/pin/login' '/x/%2e%2e/api/auth/pin/login' '/x/../api/auth/pin/login' \
+         '/api/auth/status/../pin/login' '/api/auth/status/%2e%2e/pin/login' '/api/auth/passkey/login/begin/../../pin/login' \
+         '/assets/../api/auth/pin/login' '/assets/%2e%2e/api/overview' '/%61pi/overview' '/api/auth/status%2f..%2fpin%2flogin'; do
+  got=$(code --path-as-is -X POST -H 'Content-Type: application/json' -d '{"pin":"1234"}' "$B$p")
+  # 401 (password asked) or 400 (nginx rejects the path) are both refusals;
+  # anything else means the request reached the app without the password.
+  if [ "$got" = 401 ] || [ "$got" = 400 ]; then echo "ok   refused without password: $p ($got)"; else echo "FAIL $p got through: $got"; fail=1; fi
+done
+expect 401 "health (version) not public" $B/api/health
+expect 200 "encoded spelling of a public path still works" --path-as-is "$B/api/auth/%73tatus"
 curl -s -D - -o /dev/null -X POST $B/api/auth/pin/login | grep -qi '^www-authenticate: basic' && echo "ok   PIN login asks for the password" || { echo "FAIL PIN login gives no Basic challenge"; fail=1; }
 
 echo "— after logging in: the session alone is enough"

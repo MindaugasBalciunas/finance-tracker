@@ -119,3 +119,20 @@ func TestPasskeysRequireEnrollment(t *testing.T) {
 		t.Fatal(list)
 	}
 }
+
+// With a passkey standing in for the web password, a tap is not enough: the
+// login must ask the device for the fingerprint (or its own PIN).
+func TestPasskeyLoginRequiresVerification(t *testing.T) {
+	d := DB(t)
+	d.Exec(`INSERT INTO webauthn_credentials(name,credential,created_at) VALUES('phone',?, 'x')`, `{"id":"AQID","publicKey":"AQID","authenticator":{"AAGUID":"AAAAAAAAAAAAAAAAAAAAAA==","signCount":0}}`)
+	s := &auth.Service{DB: d}
+	for i := 0; i < 20; i++ { // strangers may start logins; none of this may fail
+		opts, err := s.BeginLogin("finance.example:8443", "https://finance.example:8443")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.Response.UserVerification != "required" {
+			t.Fatalf("user verification %q", opts.Response.UserVerification)
+		}
+	}
+}

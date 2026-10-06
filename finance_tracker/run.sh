@@ -26,13 +26,15 @@ if [ -n "$AUTH_PASSWORD" ]; then
     printf '%s:%s\n' "$AUTH_USER" "$(openssl passwd -apr1 "$AUTH_PASSWORD")" \
         > /etc/nginx/.htpasswd
     # Either check lets a request in: the web password, or the app's gate —
-    # which says yes only once a passkey is registered (app shell, passkey
-    # login, and anything with a live session). PIN login keeps the password.
+    # a live session (anything), or, for the app shell and passkey login
+    # only (auth-open.conf), a registered passkey. PIN login keeps the password.
     printf 'satisfy any;\nauth_basic "Finance Tracker";\nauth_basic_user_file /etc/nginx/.htpasswd;\nauth_request /_gate;\n' \
         > /etc/nginx/auth.conf
+    printf 'auth_request /_gate_open;\n' > /etc/nginx/auth-open.conf
     echo "[finance-tracker] Basic auth enabled for user: $AUTH_USER (skipped after a passkey login)"
 else
     printf '# auth disabled\n' > /etc/nginx/auth.conf
+    printf '# auth disabled\n' > /etc/nginx/auth-open.conf
     echo "[finance-tracker] Basic auth disabled (no auth_password set)"
 fi
 
