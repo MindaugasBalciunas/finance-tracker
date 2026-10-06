@@ -3,6 +3,7 @@ package insights
 import (
 	"database/sql"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -24,12 +25,15 @@ type RecurringItem struct {
 	NextDate string      `json:"next_date"`
 	Note     string      `json:"note"`
 	Hidden   bool        `json:"hidden"`
+	// EveryDays > 0: a flexible rhythm ("about every 35 days") instead of a
+	// calendar cadence; the next date follows the last matching payment.
+	EveryDays int `json:"every_days"`
 }
 
 var cadenceMonths = map[string]int{"monthly": 1, "quarterly": 3, "yearly": 12}
 
 func ListRecurringItems(q *sql.DB) ([]RecurringItem, error) {
-	rows, err := q.Query(`SELECT id,merchant,category,cadence,amount,next_date,note,hidden FROM recurring_items ORDER BY lower(merchant)`)
+	rows, err := q.Query(`SELECT id,merchant,category,cadence,amount,next_date,note,hidden,every_days FROM recurring_items ORDER BY lower(merchant)`)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +41,7 @@ func ListRecurringItems(q *sql.DB) ([]RecurringItem, error) {
 	out := []RecurringItem{}
 	for rows.Next() {
 		var it RecurringItem
-		if err := rows.Scan(&it.ID, &it.Merchant, &it.Category, &it.Cadence, &it.Amount, &it.NextDate, &it.Note, &it.Hidden); err != nil {
+		if err := rows.Scan(&it.ID, &it.Merchant, &it.Category, &it.Cadence, &it.Amount, &it.NextDate, &it.Note, &it.Hidden, &it.EveryDays); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -64,6 +68,9 @@ func SaveRecurringItem(d *sql.DB, it *RecurringItem) error {
 	if it.Amount < 0 {
 		return errors.New("amount must be positive")
 	}
+	if it.EveryDays != 0 && (it.EveryDays < 7 || it.EveryDays > 400) {
+		return errors.New("a flexible rhythm must be every 7–400 days")
+	}
 	if it.NextDate != "" {
 		if _, err := time.Parse("2006-01-02", it.NextDate); err != nil {
 			return errors.New("invalid next date")
@@ -71,15 +78,15 @@ func SaveRecurringItem(d *sql.DB, it *RecurringItem) error {
 	}
 	now := db.Now()
 	if it.ID == 0 {
-		err := d.QueryRow(`INSERT INTO recurring_items(merchant,category,cadence,amount,next_date,note,hidden,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?)
+		err := d.QueryRow(`INSERT INTO recurring_items(merchant,category,cadence,amount,next_date,note,hidden,every_days,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(lower(merchant)) DO UPDATE SET category=excluded.category, cadence=excluded.cadence, amount=excluded.amount,
-				next_date=excluded.next_date, note=excluded.note, hidden=excluded.hidden, updated_at=excluded.updated_at
-			RETURNING id`, it.Merchant, it.Category, it.Cadence, it.Amount, it.NextDate, it.Note, it.Hidden, now, now).Scan(&it.ID)
+				next_date=excluded.next_date, note=excluded.note, hidden=excluded.hidden, every_days=excluded.every_days, updated_at=excluded.updated_at
+			RETURNING id`, it.Merchant, it.Category, it.Cadence, it.Amount, it.NextDate, it.Note, it.Hidden, it.EveryDays, now, now).Scan(&it.ID)
 		return err
 	}
-	res, err := d.Exec(`UPDATE recurring_items SET merchant=?,category=?,cadence=?,amount=?,next_date=?,note=?,hidden=?,updated_at=? WHERE id=?`,
-		it.Merchant, it.Category, it.Cadence, it.Amount, it.NextDate, it.Note, it.Hidden, now, it.ID)
+	res, err := d.Exec(`UPDATE recurring_items SET merchant=?,category=?,cadence=?,amount=?,next_date=?,note=?,hidden=?,every_days=?,updated_at=? WHERE id=?`,
+		it.Merchant, it.Category, it.Cadence, it.Amount, it.NextDate, it.Note, it.Hidden, it.EveryDays, now, it.ID)
 	if err != nil {
 		return err
 	}
@@ -99,6 +106,10 @@ func DeleteRecurringItem(d *sql.DB, id int64) error {
 // override amount, cadence, category and next date; hand-added items appear
 // even without matching transactions.
 func MergeRecurring(detected []Recurring, items []RecurringItem, now time.Time) (list, hidden []Recurring) {
+	return mergeRecurring(detected, items, now, nil)
+}
+
+func mergeRecurring(detected []Recurring, items []RecurringItem, now time.Time, lastPaid map[int64]string) (list, hidden []Recurring) {
 	byKey := map[string]RecurringItem{}
 	for _, it := range items {
 		byKey[strings.ToLower(it.Merchant)] = it
@@ -117,6 +128,18 @@ func MergeRecurring(detected []Recurring, items []RecurringItem, now time.Time) 
 		}
 		if it.NextDate != "" {
 			r.Next = it.NextDate
+		}
+		if it.EveryDays > 0 { // flexible: about every N days after the last payment
+			r.EveryDays = it.EveryDays
+			if last := lastPaid[it.ID]; last > r.Last {
+				r.Last = last
+			}
+			if r.Last != "" && (it.NextDate == "" || it.NextDate <= r.Last) {
+				r.Next = addDays(r.Last, it.EveryDays)
+			}
+			r.Monthly = money.FromFloat(r.Amount.Float() * 30.44 / float64(it.EveryDays))
+			r.Next = rollDays(r.Next, it.EveryDays, today)
+			return r
 		}
 		r.Monthly = r.Amount / money.Cents(cadenceMonths[r.Cadence])
 		r.Next = rollForward(r.Next, r.Cadence, today)
@@ -180,6 +203,49 @@ func RecurringCosts(d *sql.DB, txs []ledger.Tx, now time.Time) (list, hidden []R
 	if err != nil {
 		return nil, nil, err
 	}
-	list, hidden = MergeRecurring(DetectRecurring(txs, now), items, now)
+	list, hidden = mergeRecurring(DetectRecurring(txs, now), items, now, lastPayments(txs, items))
 	return list, hidden, nil
+}
+
+// lastPayments finds each saved item's most recent payment: by merchant, or —
+// for a habit without one (haircuts at whichever salon) — by category at a
+// similar amount (±25%).
+func lastPayments(txs []ledger.Tx, items []RecurringItem) map[int64]string {
+	out := map[int64]string{}
+	for _, it := range items {
+		m := strings.ToLower(it.Merchant)
+		for i := range txs {
+			t := &txs[i]
+			if t.Kind != "expense" || t.Date <= out[it.ID] {
+				continue
+			}
+			byMerchant := t.Merchant != "" && strings.ToLower(t.Merchant) == m
+			byHabit := it.Category != "" && t.Category == it.Category && it.Amount > 0 &&
+				math.Abs(t.Amount.Float()-it.Amount.Float()) <= 0.25*it.Amount.Float()
+			if byMerchant || byHabit {
+				out[it.ID] = t.Date
+			}
+		}
+	}
+	return out
+}
+
+func addDays(date string, n int) string {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return date
+	}
+	return t.AddDate(0, 0, n).Format("2006-01-02")
+}
+
+// rollDays moves a past date on by n-day steps until it is today or later.
+func rollDays(next string, n int, today string) string {
+	t, err := time.Parse("2006-01-02", next)
+	if err != nil || n <= 0 {
+		return next
+	}
+	for i := 0; t.Format("2006-01-02") < today && i < 600; i++ {
+		t = t.AddDate(0, 0, n)
+	}
+	return t.Format("2006-01-02")
 }

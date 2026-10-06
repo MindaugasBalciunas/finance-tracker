@@ -319,3 +319,59 @@ func TestSalaryOnFirstDaysCountsInPreviousMonth(t *testing.T) {
 		t.Errorf("December's salary paid on 2 January belongs to the year before: %+v", years)
 	}
 }
+
+func TestRecurringSuggestionsAndFlexibleItems(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	hair := func(date, note string) ledger.Tx {
+		x := tx(date, "expense", "health.care", 25)
+		x.Note = note
+		return x
+	}
+	// A haircut at different salons, roughly monthly, no merchant.
+	txs := []ledger.Tx{
+		hair("2026-03-03", "Kirpykla"), hair("2026-03-31", "Haircut"), hair("2026-04-28", "Barbara beauty. haircut"),
+		hair("2026-06-06", "Barbara beauty. haircut"), hair("2026-07-05", "Barbara beauty. haircut"),
+		hair("2026-08-01", "Barbara beauty. haircut"), hair("2026-09-08", "Kirpimas (haircut)"),
+	}
+	// A stopped subscription and everyday groceries are not suggested.
+	for _, m := range []string{"2025-12-05", "2026-01-05", "2026-02-05", "2026-03-05"} {
+		x := tx(m, "expense", "subscriptions.media", 9.99)
+		x.Merchant = "OldStream"
+		txs = append(txs, x)
+	}
+	for i := 0; i < 20; i++ {
+		x := tx(now.AddDate(0, 0, -i*7).Format("2006-01-02"), "expense", "food.groceries", 40)
+		x.Merchant = "Lidl"
+		txs = append(txs, x)
+	}
+	sug := insights.SuggestRecurring(txs, now, map[string]bool{})
+	if len(sug) != 1 {
+		t.Fatalf("want only the haircut: %+v", sug)
+	}
+	h := sug[0]
+	if h.Name != "Barbara beauty" || h.Category != "health.care" || h.Amount != E(25) || !h.Flexible || h.EveryDays < 28 || h.EveryDays > 34 {
+		t.Fatalf("haircut suggestion: %+v", h)
+	}
+	if again := insights.SuggestRecurring(txs, now, map[string]bool{"barbara beauty": true}); len(again) != 0 {
+		t.Error("a dismissed/saved suggestion comes back")
+	}
+	// Saved as a flexible item: the next date follows the latest haircut.
+	it := insights.RecurringItem{Merchant: "Barbara beauty", Category: "health.care", Amount: E(25), EveryDays: 35}
+	if err := insights.SaveRecurringItem(d, &it); err != nil {
+		t.Fatal(err)
+	}
+	list, _, _ := insights.RecurringCosts(d, txs, now)
+	var got insights.Recurring
+	for _, r := range list {
+		if r.Merchant == "Barbara beauty" {
+			got = r
+		}
+	}
+	if got.EveryDays != 35 || got.Last != "2026-09-08" || got.Next != "2026-10-13" || got.Monthly != money.FromFloat(25*30.44/35) {
+		t.Fatalf("flexible item: %+v", got)
+	}
+	if err := insights.SaveRecurringItem(d, &insights.RecurringItem{Merchant: "X", EveryDays: 3}); err == nil {
+		t.Error("a 3-day rhythm accepted")
+	}
+}

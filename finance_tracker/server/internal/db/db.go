@@ -54,6 +54,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant ON recurring_items(lo
     vw       INTEGER NOT NULL DEFAULT 0 -- viewport width in px (phone vs desktop)
 );
 CREATE INDEX IF NOT EXISTS usage_events_at ON usage_events(at);`,
+	// 6: recurring costs on a flexible rhythm ("about every 5 weeks").
+	`ALTER TABLE recurring_items ADD COLUMN every_days INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

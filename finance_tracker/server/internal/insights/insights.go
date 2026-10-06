@@ -257,6 +257,7 @@ type Recurring struct {
 	ID         int64       `json:"id,omitempty"` // saved owner edit, if any
 	Source     string      `json:"source"`       // detected | edited | manual
 	Note       string      `json:"note,omitempty"`
+	EveryDays  int         `json:"every_days,omitempty"` // flexible rhythm (0 = calendar cadence)
 	Merchant   string      `json:"merchant"`
 	Category   string      `json:"category"`
 	Cadence    string      `json:"cadence"` // monthly | quarterly | yearly

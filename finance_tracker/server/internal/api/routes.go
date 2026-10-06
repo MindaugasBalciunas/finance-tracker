@@ -1102,7 +1102,16 @@ func (s *Server) insightRoutes() {
 		if hidden == nil {
 			hidden = []insights.Recurring{}
 		}
-		return map[string]any{"items": rec, "hidden": hidden, "monthly_total": total}, nil
+		// Suggestions skip anything already listed, saved or dismissed.
+		taken := map[string]bool{}
+		for _, x := range append(append([]insights.Recurring{}, rec...), hidden...) {
+			taken[strings.ToLower(x.Merchant)] = true
+		}
+		sugg := insights.SuggestRecurring(txs, time.Now(), taken)
+		if sugg == nil {
+			sugg = []insights.RecurringSuggestion{}
+		}
+		return map[string]any{"items": rec, "hidden": hidden, "monthly_total": total, "suggestions": sugg}, nil
 	})
 	saveRecurring := func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var it insights.RecurringItem

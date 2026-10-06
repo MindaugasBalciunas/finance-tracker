@@ -60,7 +60,24 @@ export function applyTheme() {
   } catch {}
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
   else delete document.documentElement.dataset.theme
+  syncThemeColor()
 }
+
+// The installed app's status and navigation bars take their colour from
+// theme-color: keep it equal to the page background in the theme actually
+// shown (a forced light/dark setting beats the system preference).
+const darkQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+function syncThemeColor() {
+  const forced = document.documentElement.dataset.theme
+  const dark = forced ? forced === 'dark' : !!darkQuery?.matches
+  const color = dark ? '#0d0d0d' : '#f9f9f7'
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove())
+  const meta = document.createElement('meta')
+  meta.name = 'theme-color'
+  meta.content = color
+  document.head.appendChild(meta)
+}
+darkQuery?.addEventListener('change', syncThemeColor)
 
 function Shell() {
   const loc = useLocation()
