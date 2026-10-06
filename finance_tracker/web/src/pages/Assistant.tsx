@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -56,13 +56,12 @@ export default function Assistant() {
   const refresh = useRefresh()
   const { data: history, isLoading } = useQuery({ queryKey: ['chat'], queryFn: () => api.get<Msg[]>('/ai/chat') })
   const [local, setLocal] = useState<Msg[]>([])
-  const [text, setText] = useState('')
   const [image, setImage] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const end = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const msgs = [...(history ?? []), ...local]
+  const msgs = useMemo(() => [...(history ?? []), ...local], [history, local])
   const [sp, setSp] = useSearchParams()
   // ?memory=1 (from AI settings) opens the memory sheet.
   const memoryOpen = sp.get('memory') === '1'
@@ -72,13 +71,12 @@ export default function Assistant() {
     if (msgs.length || busy) end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [msgs.length, busy])
 
-  const send = async (q?: string) => {
-    const content = (q ?? text).trim()
+  const send = async (q: string) => {
+    const content = q.trim()
     if ((!content && !image) || busy) return
     setError(null)
     const preview = image ? URL.createObjectURL(image) : undefined
     setLocal((l) => [...l, { role: 'user', content: content || '(image)', image: preview }])
-    setText('')
     setBusy(true)
     try {
       let r: any
@@ -138,13 +136,7 @@ export default function Assistant() {
             <Icon name="image" size={14} />{image.name}<button onClick={() => setImage(null)} aria-label="Remove image"><Icon name="x" size={12} /></button>
           </div>
         )}
-        <div className="flex items-end gap-2 rounded-2xl border border-line bg-raised p-2 shadow-sm">
-          <button className="btn-ghost h-10 w-10 shrink-0 px-0" onClick={() => fileRef.current?.click()} aria-label="Attach image"><Icon name="camera" /></button>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Ask about your money…"
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            className="block max-h-40 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 outline-none" />
-          <button className="btn-primary h-10 w-10 shrink-0 px-0" onClick={() => send()} disabled={busy || (!text.trim() && !image)} aria-label="Send"><Icon name="send" /></button>
-        </div>
+        <Composer busy={busy} hasImage={!!image} onAttach={() => fileRef.current?.click()} onSend={send} />
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { setImage(e.target.files?.[0] ?? null); e.target.value = '' }} />
       </div>
       {memoryOpen && <Sheet open wide onClose={() => setMemoryOpen(false)} title="What your CFO knows about you"><AIMemory /></Sheet>}
@@ -152,7 +144,39 @@ export default function Assistant() {
   )
 }
 
-function Bubble({ m }: { m: Msg }) {
+/** The input box keeps its own text, so typing never re-renders the
+ *  conversation (and its charts) above it. */
+function Composer({ busy, hasImage, onAttach, onSend }: { busy: boolean; hasImage: boolean; onAttach: () => void; onSend: (text: string) => void }) {
+  const [text, setText] = useState('')
+  const go = () => {
+    if ((!text.trim() && !hasImage) || busy) return
+    onSend(text)
+    setText('')
+  }
+  return (
+    <div className="flex items-end gap-2 rounded-2xl border border-line bg-raised p-2 shadow-sm">
+      <button className="btn-ghost h-10 w-10 shrink-0 px-0" onClick={onAttach} aria-label="Attach image"><Icon name="camera" /></button>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Ask about your money…"
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go() } }}
+        className="block max-h-40 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 outline-none" />
+      <button className="btn-primary h-10 w-10 shrink-0 px-0" onClick={go} disabled={busy || (!text.trim() && !hasImage)} aria-label="Send"><Icon name="send" /></button>
+    </div>
+  )
+}
+
+// Created once: renderers made inside a component are new functions on every
+// render, so React would rebuild each chart (and it would flicker).
+const MARKDOWN: Components = {
+  code({ className, children }) {
+    if (className?.includes('language-chart')) return <ChatChart spec={String(children)} />
+    return <code className={className}>{children}</code>
+  },
+  pre({ children }) { return <div className="overflow-x-auto">{children}</div> },
+  table({ children }) { return <div className="overflow-x-auto"><table>{children}</table></div> },
+}
+const PLUGINS = [remarkGfm]
+
+const Bubble = memo(function Bubble({ m }: { m: Msg }) {
   if (m.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -166,23 +190,16 @@ function Bubble({ m }: { m: Msg }) {
   return (
     <div className="card p-4">
       <div className="prose-sm text-sm leading-relaxed [&_table]:my-2 [&_table]:w-full [&_td]:border-t [&_td]:border-line [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-xs [&_th]:text-muted [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_code]:rounded [&_code]:bg-sunken [&_code]:px-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-          code({ className, children }) {
-            if (className?.includes('language-chart')) return <ChatChart spec={String(children)} />
-            return <code className={className}>{children}</code>
-          },
-          pre({ children }) { return <div className="overflow-x-auto">{children}</div> },
-          table({ children }) { return <div className="overflow-x-auto"><table>{children}</table></div> },
-        }}>{m.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={PLUGINS} components={MARKDOWN}>{m.content}</ReactMarkdown>
       </div>
       {(m.cost != null || m.tools?.length) && (
         <div className="mt-2 text-[11px] text-muted">{m.tools?.length ? `${[...new Set(m.tools)].join(' · ')} · ` : ''}{m.cost != null ? `$${m.cost.toFixed(3)}` : ''}</div>
       )}
     </div>
   )
-}
+})
 
-function ChatChart({ spec }: { spec: string }) {
+const ChatChart = memo(function ChatChart({ spec }: { spec: string }) {
   let c: any
   try {
     c = JSON.parse(spec)
@@ -219,4 +236,4 @@ function ChatChart({ spec }: { spec: string }) {
       </div>
     </div>
   )
-}
+})
