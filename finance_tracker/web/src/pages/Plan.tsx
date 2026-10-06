@@ -7,11 +7,12 @@ import { api } from '../lib/api'
 import { usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
-import type { Budget, PlanLine, PlanReport } from '../lib/types'
+import type { Budget, PlanLine, PlanReport, TxList } from '../lib/types'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { CategoryPicker, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
+import { TxRow, useTxEditor } from '../components/TxEditor'
 
 export default function Plan() {
   const loc = useLocation()
@@ -295,29 +296,50 @@ function Trips() {
   const refresh = useRefresh()
   const toast = useToast()
   const [names, setNames] = useState<Record<number, string>>({})
+  const [open, setOpen] = useState<number | null>(null)
+  // Rows left out of a suggestion before tagging (unticked).
+  const [skipped, setSkipped] = useState<Record<number, Set<number>>>({})
   if (isLoading) return <Loading />
   const tag = async (i: number, ids: number[]) => {
     const name = names[i]
     if (!name) return
-    await api.post('/trips/tag', { name, ids })
-    toast(`Tagged ${ids.length} transactions`, 'good')
+    const keep = ids.filter((id) => !skipped[i]?.has(id))
+    if (!keep.length) return
+    await api.post('/trips/tag', { name, ids: keep })
+    toast(`Tagged ${keep.length} transactions`, 'good')
+    setSkipped({ ...skipped, [i]: new Set() })
+    setOpen(null)
     refresh()
+  }
+  const toggleSkip = (i: number, id: number) => {
+    const s = new Set(skipped[i] ?? [])
+    s.has(id) ? s.delete(id) : s.add(id)
+    setSkipped({ ...skipped, [i]: s })
   }
   return (
     <div className="space-y-4">
       {data?.suggestions?.length > 0 && (
         <Card title="Looks like a trip" pad={false}>
           <div className="divide-y divide-line">
-            {data.suggestions.map((s: any, i: number) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{shortDate(s.from)} – {shortDate(s.to)} · {eur(s.total)}</div>
-                  <div className="truncate text-xs text-muted">{s.count} untagged travel rows · {s.top?.join(', ')}</div>
+            {data.suggestions.map((s: any, i: number) => {
+              const kept = s.tx_ids.length - (skipped[i]?.size ?? 0)
+              return (
+                <div key={i}>
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i}>
+                      <Icon name="chevronD" size={16} className={clsx('shrink-0 text-muted transition', open === i && 'rotate-180')} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{shortDate(s.from)} – {shortDate(s.to)} · {eur(s.total)}</span>
+                        <span className="block truncate text-xs text-muted">{open === i ? `${kept} of ${s.count} selected` : `${s.count} untagged travel rows · ${s.top?.join(', ')}`}</span>
+                      </span>
+                    </button>
+                    <input className="input h-8 w-36 text-xs" placeholder="trip name" value={names[i] ?? ''} onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
+                    <button className="btn-primary h-8 text-xs" onClick={() => tag(i, s.tx_ids)} disabled={!names[i] || kept === 0}>Tag{open === i ? ` ${kept}` : ''}</button>
+                  </div>
+                  {open === i && <SuggestionRows s={s} skipped={skipped[i] ?? new Set()} onToggle={(id) => toggleSkip(i, id)} />}
                 </div>
-                <input className="input h-8 w-36 text-xs" placeholder="trip name" value={names[i] ?? ''} onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
-                <button className="btn-primary h-8 text-xs" onClick={() => tag(i, s.tx_ids)} disabled={!names[i]}>Tag</button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </Card>
       )}
@@ -417,6 +439,29 @@ function PlanSettings() {
       </Card>
       <button className="btn-primary" onClick={save}>Save</button>
       <div className="text-xs text-muted">Savings rate = (income − spending) ÷ income; mortgage principal counts as saving, interest as spending.</div>
+    </div>
+  )
+}
+
+/** The transactions a trip suggestion would tag, each with a tick box. */
+function SuggestionRows({ s, skipped, onToggle }: { s: any; skipped: Set<number>; onToggle: (id: number) => void }) {
+  const ids = new Set<number>(s.tx_ids)
+  const { data, isLoading } = useQuery({
+    queryKey: ['trip-suggestion', s.from, s.to],
+    queryFn: () => api.get<TxList>('/transactions', { from: s.from, to: s.to, limit: 500, sort: '+date' }),
+  })
+  const editor = useTxEditor()
+  if (isLoading) return <div className="px-4 pb-3"><Loading /></div>
+  const rows = (data?.items ?? []).filter((t) => ids.has(t.id))
+  return (
+    <div className="border-t border-line bg-sunken/30">
+      <div className="divide-y divide-line">
+        {rows.map((t) => <TxRow key={t.id} t={t} showDate selected={!skipped.has(t.id)} onSelect={() => onToggle(t.id)} onClick={() => editor.open(t)} />)}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs text-muted">
+        <span>Untick anything that wasn't part of the trip; tap a row to edit it.</span>
+        <a className="text-accent" href={`#/ledger?from=${s.from}&to=${s.to}`}>Everything in these dates in the Ledger →</a>
+      </div>
     </div>
   )
 }
