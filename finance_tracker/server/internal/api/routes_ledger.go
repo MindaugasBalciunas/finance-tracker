@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
+	"ft/internal/plan"
 	"ft/internal/wealth"
 )
 
@@ -316,6 +318,53 @@ func (s *Server) ledgerRoutes() {
 	})
 
 	s.handle("GET /api/tags", func(w http.ResponseWriter, r *http.Request) (any, error) { return ledger.ListTags(s.DB) })
+	// Housekeeping views: what each tag, rule and category amounts to.
+	ledgerAndRules := func() ([]ledger.Tx, []ledger.Rule, error) {
+		txs, err := ledger.All(s.DB, ledger.Filter{})
+		if err != nil {
+			return nil, nil, err
+		}
+		rules, err := ledger.ListRules(s.DB)
+		return txs, rules, err
+	}
+	s.handle("GET /api/tags/stats", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, rules, err := ledgerAndRules()
+		if err != nil {
+			return nil, err
+		}
+		return insights.TagStats(txs, rules, time.Now()), nil
+	})
+	s.handle("GET /api/rules/stats", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, rules, err := ledgerAndRules()
+		if err != nil {
+			return nil, err
+		}
+		return insights.RuleStats(txs, rules, time.Now()), nil
+	})
+	s.handle("GET /api/accounts/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, err := ledger.All(s.DB, ledger.Filter{})
+		if err != nil {
+			return nil, err
+		}
+		return insights.AccountUsage(txs), nil
+	})
+	s.handle("GET /api/categories/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, rules, err := ledgerAndRules()
+		if err != nil {
+			return nil, err
+		}
+		budgets, err := plan.List(s.DB, false)
+		if err != nil {
+			return nil, err
+		}
+		covered := map[string]bool{}
+		for _, b := range budgets {
+			for _, c := range b.Categories {
+				covered[c] = true
+			}
+		}
+		return insights.CategoryUsage(txs, rules, covered, time.Now()), nil
+	})
 	s.handle("GET /api/tags/suggestions", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		tags, err := ledger.ListTags(s.DB)
 		if err != nil {

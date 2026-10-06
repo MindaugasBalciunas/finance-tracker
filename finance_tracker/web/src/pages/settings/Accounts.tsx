@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useAccounts, useRefresh } from '../../lib/hooks'
@@ -18,6 +19,10 @@ export function AccountsVisibility() {
   const refresh = useRefresh()
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
+  const { data: usage } = useQuery({ queryKey: ['account-usage'], queryFn: () => api.get<Record<string, { count: number; last: string }>>('/accounts/usage') })
+  // Idle: shown, empty, and nothing booked on it for half a year.
+  const halfYear = new Date(Date.now() - 182 * 86400000).toISOString().slice(0, 10)
+  const idle = (a: Account) => !a.archived && !a.balance && (usage?.[a.id]?.last ?? '') < halfYear
   if (isLoading || !accounts) return <Loading />
   const set = async (a: Account, shown: boolean) => {
     setBusy(a.id)
@@ -41,7 +46,9 @@ export function AccountsVisibility() {
                 <IconTile name={accountIcon(a)} color={brandColor(a) ?? `var(--s${g.slot || 1})`} size={32} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{a.name}</div>
-                  <div className="text-xs text-muted">{a.balance != null ? eurc(a.balance) : 'no balance'}{a.balance_date ? ` · ${shortDate(a.balance_date)}` : ''}</div>
+                  <div className="text-xs text-muted">{a.balance != null ? eurc(a.balance) : 'no balance'}{a.balance_date ? ` · ${shortDate(a.balance_date)}` : ''}
+                    {usage && <> · <a className="hover:text-accent" href={`#/ledger?period=all&account=${encodeURIComponent(a.id)}`}>{(usage[a.id]?.count ?? 0).toLocaleString('en')} tx</a>{usage[a.id]?.last && ` · last ${shortDate(usage[a.id].last)}`}</>}
+                    {usage && idle(a) && <span className="text-warn"> · idle — hide it?</span>}</div>
                 </div>
                 <Toggle checked={!a.archived} onChange={(v) => busy !== a.id && set(a, v)} label={<span className="w-12 text-xs text-muted">{a.archived ? 'Hidden' : 'Shown'}</span>} />
               </div>

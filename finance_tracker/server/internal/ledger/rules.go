@@ -76,6 +76,30 @@ func (r Rule) Matches(t *Tx) bool {
 	if !r.Enabled {
 		return false
 	}
+	return r.MatchesFolded(t, FoldTx(t))
+}
+
+// Folded is a transaction's merchant and note, folded once for matching many
+// rules against it.
+type Folded struct{ Merchant, Note string }
+
+func FoldTx(t *Tx) Folded { return Folded{merchant.Fold(t.Merchant), merchant.Fold(t.Note)} }
+
+// MatchesFolded is Matches with the transaction text pre-folded; it ignores
+// Enabled so statistics can cover switched-off rules too.
+func (r Rule) MatchesFolded(t *Tx, f Folded) bool { return NewMatcher(r).Match(t, f) }
+
+// Matcher is a rule with its pattern folded once, for replaying many rules
+// over the whole ledger.
+type Matcher struct {
+	Rule
+	pat string
+}
+
+func NewMatcher(r Rule) Matcher { return Matcher{r, merchant.Fold(r.Pattern)} }
+
+func (m Matcher) Match(t *Tx, f Folded) bool {
+	r := m.Rule
 	if r.WhenKind != "" && r.WhenKind != t.Kind {
 		return false
 	}
@@ -85,12 +109,12 @@ func (r Rule) Matches(t *Tx) bool {
 	if r.Pattern == "" {
 		return r.WhenCategory != "" || r.WhenKind != ""
 	}
-	p := merchant.Fold(r.Pattern)
+	p := m.pat
 	if strings.HasPrefix(p, "^") {
 		p = strings.TrimPrefix(p, "^")
-		return strings.HasPrefix(merchant.Fold(t.Merchant), p) || strings.HasPrefix(merchant.Fold(t.Note), p)
+		return strings.HasPrefix(f.Merchant, p) || strings.HasPrefix(f.Note, p)
 	}
-	return strings.Contains(merchant.Fold(t.Merchant+" \x00 "+t.Note), p)
+	return strings.Contains(f.Merchant, p) || strings.Contains(f.Note, p)
 }
 
 // Engine applies rules plus what the ledger's history says.

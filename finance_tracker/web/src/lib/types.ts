@@ -92,3 +92,13 @@ export interface InboxRow {
   note: string; tags: string[]; edited: boolean; guessed: boolean; verdict: string; verdict_note: string; matched_tx_id?: number
   state: string; imported_tx_id?: number; match?: Tx
 }
+
+export interface NameAmount { name: string; amount: number; count: number }
+export interface TagStat {
+  tag: string; trip: boolean; count: number; spent: number; income: number; net: number; first: string; last: string
+  months: number[]; year: number; per_month: number; categories: NameAmount[]; merchants: NameAmount[]; rules: number
+}
+export interface TagReport { tags: TagStat[]; tagged_share: number; year_spent: number; months: string[] }
+export interface RuleStat { id: number; matches: number; recent: number; last: string; decides: number; overridden: number; shadowed: boolean; duplicate: number }
+export interface RuleReport { rules: RuleStat[]; coverage: number; unused: number; shadowed: number; duplicates: number; overrode: number; top: number[] | null }
+export interface CategoryUse { category: string; count: number; year: number; last: string; rules: number; budgeted: boolean }

@@ -142,8 +142,8 @@ export function Field({ label, children, hint }: { label: ReactNode; children: R
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: ReactNode }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-sm text-ink" role="switch" aria-checked={checked}>
-      <span className={clsx('relative h-6 w-10 rounded-full transition', checked ? 'bg-accent' : 'bg-axis')}>
+    <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-left text-sm text-ink" role="switch" aria-checked={checked}>
+      <span className={clsx('relative h-6 w-10 shrink-0 rounded-full transition', checked ? 'bg-accent' : 'bg-axis')}>
         <span className={clsx('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition', checked ? 'left-[18px]' : 'left-0.5')} />
       </span>
       {label}

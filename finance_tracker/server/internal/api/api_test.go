@@ -529,7 +529,7 @@ func TestNewInsightAndTidyEndpoints(t *testing.T) {
 	s, c := newServer(t)
 	Tx(t, s.DB, ledger.Tx{Date: "2026-09-02", Amount: E(30), Category: "food.restaurants", Merchant: "Jammi", AccountID: "swed"})
 	Tx(t, s.DB, ledger.Tx{Date: today6(), Amount: E(12), Category: "food", Merchant: "Jammi", AccountID: "swed", Tags: []string{"kristina"}})
-	for _, p := range []string{"/insights/month", "/insights/month?month=2026-09", "/checks", "/networth/movement", "/tags/suggestions", "/ai/topups", "/insights/pace", "/balances/table?page=1&size=50", "/portfolio/history?range=1y"} {
+	for _, p := range []string{"/insights/month", "/insights/month?month=2026-09", "/checks", "/networth/movement", "/tags/suggestions", "/ai/topups", "/insights/pace", "/balances/table?page=1&size=50", "/portfolio/history?range=1y", "/tags/stats", "/rules/stats", "/categories/usage", "/accounts/usage"} {
 		if code, out := c.do("GET", p, nil); code != 200 {
 			t.Errorf("GET %s → %d %s", p, code, out)
 		}
