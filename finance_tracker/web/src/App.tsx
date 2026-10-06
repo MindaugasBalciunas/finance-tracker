@@ -231,22 +231,50 @@ function Shell() {
 
 function Gate() {
   const [locked, setLocked] = useState<boolean | null>(null)
+  // Opening the app (a new tab, a reopened phone app, a full refresh) asks for
+  // the fingerprint again: a session left from before this page load is ended.
+  // Moving between pages never asks.
   const check = () =>
-    api.get<{ enabled: boolean; unlocked: boolean }>('/auth/status').then((s) => setLocked(s.enabled && !s.unlocked)).catch(() => setLocked(false))
+    api.get<{ enabled: boolean; unlocked: boolean }>('/auth/status').then(async (s) => {
+      if (s.enabled && s.unlocked && !unlockedThisLoad) {
+        await api.post('/auth/logout').catch(() => {})
+        return setLocked(true)
+      }
+      setLocked(s.enabled && !s.unlocked)
+    }).catch(() => setLocked(false))
+  const lockNow = () => { unlockedThisLoad = false; api.post('/auth/logout').catch(() => {}); setLocked(true) }
   useEffect(() => {
     check()
     const on = () => setLocked(true)
     window.addEventListener('ft:locked', on)
     return () => window.removeEventListener('ft:locked', on)
   }, [])
+  // 15 minutes without a tap, key or scroll locks it (the server ends the
+  // session at the same time); coming back to a hidden app checks too.
+  useEffect(() => {
+    if (locked !== false || !unlockedThisLoad) return
+    let last = Date.now()
+    const touch = () => { last = Date.now() }
+    const idle = () => { if (Date.now() - last > IDLE_MS) lockNow() }
+    const vis = () => { if (document.visibilityState === 'visible') idle() }
+    const evs = ['pointerdown', 'keydown', 'scroll', 'wheel', 'touchstart']
+    evs.forEach((e) => window.addEventListener(e, touch, { passive: true }))
+    document.addEventListener('visibilitychange', vis)
+    const t = window.setInterval(idle, 30_000)
+    return () => { evs.forEach((e) => window.removeEventListener(e, touch)); document.removeEventListener('visibilitychange', vis); window.clearInterval(t) }
+  }, [locked])
   if (locked === null) return <Loading />
-  if (locked) return <Lock onUnlock={() => { setLocked(false); qc.invalidateQueries() }} />
+  if (locked) return <Lock onUnlock={() => { unlockedThisLoad = true; setLocked(false); qc.invalidateQueries() }} />
   return (
     <TxEditorProvider>
       <Shell />
     </TxEditorProvider>
   )
 }
+
+// Unlocked since this page was loaded (memory only: a reload starts locked).
+let unlockedThisLoad = false
+const IDLE_MS = 15 * 60_000
 
 export default function App() {
   return (

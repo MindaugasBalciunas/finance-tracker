@@ -3,6 +3,7 @@ package auth_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"ft/internal/auth"
 	. "ft/internal/testutil"
@@ -134,5 +135,35 @@ func TestPasskeyLoginRequiresVerification(t *testing.T) {
 		if opts.Response.UserVerification != "required" {
 			t.Fatalf("user verification %q", opts.Response.UserVerification)
 		}
+	}
+}
+
+// A session ends after 15 minutes without use; using it keeps it alive.
+func TestSessionsEndWhenIdle(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	s := &auth.Service{DB: d, Clock: func() time.Time { return now }}
+	s.SetupPin("", "1234")
+	tok, err := s.VerifyPin("1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ { // an hour of use, a request every 10 minutes
+		now = now.Add(10 * time.Minute)
+		if !s.ValidSession(tok) {
+			t.Fatalf("active session ended after %d min", (i+1)*10)
+		}
+	}
+	now = now.Add(auth.IdleTimeout)
+	if s.ValidSession(tok) {
+		t.Fatal("idle session still valid")
+	}
+	if st := s.Status(tok); st.Unlocked {
+		t.Fatal("status should be locked after idle")
+	}
+	var n int
+	d.QueryRow(`SELECT COUNT(*) FROM auth_sessions`).Scan(&n)
+	if n != 0 {
+		t.Fatal("expired session should be removed")
 	}
 }

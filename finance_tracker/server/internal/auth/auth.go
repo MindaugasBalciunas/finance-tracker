@@ -27,7 +27,10 @@ import (
 )
 
 const (
-	SessionTTL      = 30 * 24 * time.Hour
+	SessionTTL      = 30 * 24 * time.Hour // the cookie's lifetime; the server ends a session after IdleTimeout without use
+	// IdleTimeout: a session ends after this long without a request — the
+	// fingerprint (or PIN) is asked again. Each use moves it forward.
+	IdleTimeout = 15 * time.Minute
 	pinAttemptLimit = 5
 	pinLockoutBase  = 30 * time.Second
 	pinLockoutMax   = 15 * time.Minute
@@ -67,6 +70,8 @@ type Status struct {
 
 type Service struct {
 	DB *sql.DB
+	// Clock, for tests; nil = time.Now.
+	Clock func() time.Time
 
 	mu         sync.Mutex
 	pendingReg *webauthn.SessionData
@@ -119,15 +124,22 @@ func hash(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func (s *Service) now() time.Time {
+	if s.Clock != nil {
+		return s.Clock()
+	}
+	return time.Now()
+}
+
 func (s *Service) newSession() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 	token := base64.RawURLEncoding.EncodeToString(buf)
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	s.DB.Exec(`DELETE FROM auth_sessions WHERE expires_at < ?`, now.Format(time.RFC3339))
-	_, err := s.DB.Exec(`INSERT INTO auth_sessions(token_hash,expires_at) VALUES(?,?)`, hash(token), now.Add(SessionTTL).Format(time.RFC3339))
+	_, err := s.DB.Exec(`INSERT INTO auth_sessions(token_hash,expires_at) VALUES(?,?)`, hash(token), now.Add(IdleTimeout).Format(time.RFC3339))
 	return token, err
 }
 
@@ -136,11 +148,21 @@ func (s *Service) ValidSession(token string) bool {
 		return false
 	}
 	var exp string
-	if s.DB.QueryRow(`SELECT expires_at FROM auth_sessions WHERE token_hash=?`, hash(token)).Scan(&exp) != nil {
+	h := hash(token)
+	if s.DB.QueryRow(`SELECT expires_at FROM auth_sessions WHERE token_hash=?`, h).Scan(&exp) != nil {
 		return false
 	}
 	t, err := time.Parse(time.RFC3339, exp)
-	return err == nil && time.Now().Before(t)
+	now := s.now().UTC()
+	if err != nil || !now.Before(t) {
+		s.DB.Exec(`DELETE FROM auth_sessions WHERE token_hash=?`, h)
+		return false
+	}
+	// In use: push the idle expiry forward (written at most once a minute).
+	if t.Sub(now) < IdleTimeout-time.Minute {
+		s.DB.Exec(`UPDATE auth_sessions SET expires_at=? WHERE token_hash=?`, now.Add(IdleTimeout).Format(time.RFC3339), h)
+	}
+	return true
 }
 
 func (s *Service) DestroySession(token string) {
