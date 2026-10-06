@@ -56,6 +56,7 @@ export function Data() {
       </Card>
       <Card title="Snapshots on the server" action={<button className="btn-ghost h-8 text-xs" onClick={async () => { await api.post('/backups'); qc.invalidateQueries({ queryKey: ['backups'] }); toast('Snapshot taken', 'good') }}>Take one now</button>}>
         <div className="max-h-64 divide-y divide-line overflow-y-auto text-sm">
+          <div className="mb-1.5 text-xs text-warn">Snapshots are full copies of the database — including the bank connection, AI key and PIN hash. Keep downloads private. (The IBKR sign-in is left out.)</div>
           {(snaps?.snapshots ?? []).map((b: any) => (
             <a key={b.name} href={`api/backups/${b.name}`} className="flex justify-between py-1.5 hover:text-accent"><span className="font-mono text-xs">{b.name}</span><span className="text-xs text-muted">{(b.size / 1e6).toFixed(1)} MB</span></a>
           ))}

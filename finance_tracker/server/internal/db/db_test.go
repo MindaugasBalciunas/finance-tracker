@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"path/filepath"
 	"testing"
 	"time"
@@ -95,5 +96,39 @@ func TestPensionsBecomeLiquid(t *testing.T) {
 	d.QueryRow(`SELECT liquid FROM accounts WHERE id='h'`).Scan(&h)
 	if p != 1 || h != 0 {
 		t.Fatalf("pension liquid %d, property liquid %d", p, h)
+	}
+}
+
+// Snapshots leave the IBKR sign-in out (reconnecting is two clicks); the
+// live database keeps it, and everything else in the snapshot is untouched.
+func TestSnapshotsLeaveIBKRTokenOut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "finance-v2.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	d.Exec(`INSERT INTO settings(key,value) VALUES('ibkr','{"client_id":"cid","access_token":"AT","refresh_token":"RT","expires_at":"x","account":"ibkr"}'),('plan','{"x":1}')`)
+	if err := Backup(d, path, "manual"); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(BackupDir(path))
+	if len(entries) != 1 {
+		t.Fatalf("snapshots %v", entries)
+	}
+	snap, err := Open(filepath.Join(BackupDir(path), entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snap.Close()
+	var ib, plan, live string
+	snap.QueryRow(`SELECT value FROM settings WHERE key='ibkr'`).Scan(&ib)
+	snap.QueryRow(`SELECT value FROM settings WHERE key='plan'`).Scan(&plan)
+	d.QueryRow(`SELECT value FROM settings WHERE key='ibkr'`).Scan(&live)
+	if strings.Contains(ib, "AT") || strings.Contains(ib, "RT") || !strings.Contains(ib, `"client_id":"cid"`) || plan != `{"x":1}` {
+		t.Fatalf("snapshot ibkr %s plan %s", ib, plan)
+	}
+	if !strings.Contains(live, "RT") {
+		t.Fatal("the live database lost the sign-in")
 	}
 }

@@ -251,3 +251,37 @@ func TestIBKRReadOnlyConnectionAndSync(t *testing.T) {
 		t.Fatalf("disconnect: %v revoked %v", err, f.revoked)
 	}
 }
+
+// A token with more than read access is revoked and never kept.
+func TestIBKRRefusesBroaderScope(t *testing.T) {
+	d := DB(t)
+	var revoked []string
+	mux := http.NewServeMux()
+	var challenge string
+	mux.HandleFunc("/oauth2/register", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"client_id": "cid"})
+	})
+	mux.HandleFunc("/oauth2/api/v1/token", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "refresh_token": "rt", "expires_in": 3600, "scope": "mcp.read mcp.orders.submit"})
+	})
+	mux.HandleFunc("/oauth2/api/v1/token/revoke", func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		revoked = append(revoked, r.Form.Get("token"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	s := ibkr.New(d)
+	s.AuthBase, s.MCPURL = srv.URL, srv.URL+"/mcp"
+	u, err := s.Connect(context.Background(), "https://finance.example/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pu, _ := url.Parse(u)
+	challenge = pu.Query().Get("state")
+	if err := s.Callback(context.Background(), "code", challenge); err == nil || !strings.Contains(err.Error(), "more than read-only") {
+		t.Fatalf("broader scope accepted: %v", err)
+	}
+	if s.Status().Connected || len(revoked) != 2 {
+		t.Fatalf("kept or not revoked: %+v %v", s.Status(), revoked)
+	}
+}

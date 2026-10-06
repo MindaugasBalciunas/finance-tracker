@@ -156,8 +156,25 @@ func Backup(d *sql.DB, dbPath, prefix string) error {
 	if _, err := d.Exec("VACUUM INTO ?", target); err != nil {
 		return err
 	}
+	if err := scrub(target); err != nil {
+		os.Remove(target) // never leave a copy with the secret in it
+		return err
+	}
 	prune(dir, prefix, keep[prefix])
 	return nil
+}
+
+// scrub takes credentials that are easy to grant again out of a snapshot,
+// so dozens of copies on the device don't each carry them: the IBKR sign-in
+// (reconnect in two clicks after restoring a snapshot).
+func scrub(path string) error {
+	s, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	_, err = s.Exec(`UPDATE settings SET value=json_remove(value,'$.access_token','$.refresh_token','$.expires_at') WHERE key='ibkr' AND json_valid(value)`)
+	return err
 }
 
 func prune(dir, prefix string, n int) {

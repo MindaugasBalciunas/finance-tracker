@@ -227,6 +227,19 @@ type tokenResponse struct {
 	Scope        string `json:"scope"`
 }
 
+// readOnly reports whether a granted scope stays within read-only access.
+// An empty scope means the server didn't say: the request was mcp.read.
+func readOnly(scope string) bool {
+	for _, sc := range strings.Fields(scope) {
+		if sc != Scope {
+			return false
+		}
+	}
+	return true
+}
+
+var errTooMuch = errors.New("IBKR granted more than read-only access — the app refused it and revoked the sign-in")
+
 func (s *Service) keep(st *State, t tokenResponse) {
 	st.AccessToken = t.AccessToken
 	if t.RefreshToken != "" {
@@ -273,6 +286,15 @@ func (s *Service) Callback(ctx context.Context, code, state string) error {
 		s.save(st)
 		return errors.New("IBKR returned no access token")
 	}
+	if !readOnly(t.Scope) { // never keep a token that could trade
+		for _, tok := range []string{t.RefreshToken, t.AccessToken} {
+			if tok != "" {
+				s.postForm(ctx, s.AuthBase+"/oauth2/api/v1/token/revoke", url.Values{"token": {tok}, "client_id": {st.ClientID}}, nil)
+			}
+		}
+		s.save(st)
+		return errTooMuch
+	}
 	s.keep(&st, t)
 	st.ConnectedAt, st.LastError = s.Now().UTC().Format(time.RFC3339), ""
 	return s.save(st)
@@ -314,6 +336,12 @@ func (s *Service) accessToken(ctx context.Context) (string, error) {
 		st.LastError = "sign-in refresh failed — connect again"
 		s.save(st)
 		return "", fmt.Errorf("the IBKR sign-in could not be renewed (%v) — connect again", err)
+	}
+	if !readOnly(t.Scope) {
+		s.postForm(ctx, s.AuthBase+"/oauth2/api/v1/token/revoke", url.Values{"token": {t.AccessToken}, "client_id": {st.ClientID}}, nil)
+		st.AccessToken, st.RefreshToken, st.LastError = "", "", errTooMuch.Error()
+		s.save(st)
+		return "", errTooMuch
 	}
 	s.keep(&st, t)
 	if err := s.save(st); err != nil {
