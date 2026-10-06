@@ -7,6 +7,7 @@ package cfo
 import (
 	"database/sql"
 	"sort"
+	"strings"
 	"time"
 
 	"ft/internal/insights"
@@ -73,6 +74,22 @@ type PlanPulse struct {
 	Lines         []LineBrief `json:"lines"`          // busiest spending lines (most of budget used first)
 	Spent         money.Cents `json:"spent"`
 	Budgeted      money.Cents `json:"budgeted"`
+	// How safe-to-spend is reached: income base − fixed − saving − fund
+	// set-asides − free spending so far.
+	IncomeActual  money.Cents  `json:"income_actual"`
+	FixedPlanned  money.Cents  `json:"fixed_planned"`
+	FixedSpent    money.Cents  `json:"fixed_spent"`
+	SavingPlanned money.Cents  `json:"saving_planned"`
+	SavedActual   money.Cents  `json:"saved_actual"`
+	FundSetAside  money.Cents  `json:"fund_set_aside"`
+	Fixed         []FixedBrief `json:"fixed"` // each obligation: paid, or when it is due
+}
+
+type FixedBrief struct {
+	Name     string      `json:"name"`
+	Budgeted money.Cents `json:"budgeted"`
+	Spent    money.Cents `json:"spent"`
+	Due      string      `json:"due,omitempty"` // next expected payment this month, from recurring costs
 }
 
 type LineBrief struct {
@@ -191,10 +208,16 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	o.MonthProgress = float64(now.Day()) / float64(dim)
 
+	var fixedCats [][]string
 	if r, err := BudgetReport(d, thisM, now); err == nil {
-		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase}
+		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
+			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions}
 		o.Plan.fillDaily(r.FreeSpentByMonth, now)
 		for _, l := range r.Lines {
+			if l.Kind == "fixed" {
+				o.Plan.Fixed = append(o.Plan.Fixed, FixedBrief{Name: l.Name, Budgeted: l.Budgeted, Spent: l.Spent})
+				fixedCats = append(fixedCats, l.Categories)
+			}
 			if l.Kind != "spending" {
 				continue
 			}
@@ -226,6 +249,28 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		}
 	}
 	sort.Slice(o.Upcoming, func(i, j int) bool { return o.Upcoming[i].Next < o.Upcoming[j].Next })
+	// When each unpaid obligation is due: the first recurring cost this month
+	// that falls under the line's categories.
+	monthEnd := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	for i := range o.Plan.Fixed {
+		f := &o.Plan.Fixed[i]
+		if f.Spent >= f.Budgeted {
+			continue
+		}
+		for _, r := range recurring {
+			if r.Next < today || r.Next > monthEnd || (f.Due != "" && r.Next >= f.Due) {
+				continue
+			}
+			for _, c := range fixedCats[i] {
+				if r.Category == c || strings.HasPrefix(r.Category, c+".") {
+					f.Due = r.Next
+				}
+			}
+		}
+		if f.Due == "" {
+			f.Due = dueFromHistory(txs, fixedCats[i], now)
+		}
+	}
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")
@@ -272,4 +317,35 @@ func (p *PlanPulse) fillDaily(free map[string]money.Cents, now time.Time) {
 	}
 	p.ExpectedDay = money.FromFloat(pace)
 	p.ProjectedLeft = p.SafeToSpend - money.FromFloat(pace*float64(p.DaysLeft-1))
+}
+
+// dueFromHistory guesses this month's due date for an obligation with no
+// detected rhythm (mortgage interest: no merchant, a new amount every month)
+// from the day of its last payment in the past two months; "" if unknown or
+// that day has already passed.
+func dueFromHistory(txs []ledger.Tx, cats []string, now time.Time) string {
+	since := now.AddDate(0, -2, 0).Format("2006-01-02")
+	thisMonth := now.Format("2006-01")
+	last := ""
+	for i := range txs {
+		t := &txs[i]
+		if t.Date < since || t.Date[:7] == thisMonth || t.Date <= last {
+			continue
+		}
+		for _, c := range cats {
+			if t.Category == c || strings.HasPrefix(t.Category, c+".") {
+				last = t.Date
+			}
+		}
+	}
+	if last == "" {
+		return ""
+	}
+	day, _ := time.Parse("2006-01-02", last)
+	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	d := min(day.Day(), dim)
+	if d < now.Day() {
+		return ""
+	}
+	return time.Date(now.Year(), now.Month(), d, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 }

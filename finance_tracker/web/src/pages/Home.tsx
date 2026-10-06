@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import clsx from 'clsx'
 import type { Overview } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
@@ -263,37 +264,97 @@ export default function Home() {
 
 
 /** The everyday question: how much free money is left this month, and what
- *  that means per day. Same money as Plan's "safe to spend". */
+ *  that means per day. Same money as Plan's "safe to spend" — with what is
+ *  still to pay (alimony, loan) in view and the sum behind it one tap away. */
 function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: number; month: string }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('home-left-open') === '1' } catch { return false } })
+  const toggle = () => { setOpen(!open); try { localStorage.setItem('home-left-open', open ? '0' : '1') } catch { /* private mode */ } }
   const left = p.safe_to_spend
   const total = Math.max(p.free_spent + Math.max(left, 0), 1)
   const used = Math.min(1, Math.max(0, p.free_spent / total))
   const vsTypical = p.typical_day > 0 ? p.avg_day / p.typical_day - 1 : 0
   const outlook = left < 0 ? 'text-bad' : p.projected_left < 0 ? 'text-warn' : 'text-good'
+  const fixed = p.fixed ?? []
+  const due = fixed.filter((f) => f.spent < f.budgeted).sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9'))
+  const paid = fixed.filter((f) => f.spent >= f.budgeted)
+  const rows: { label: string; value: number; sub?: string; sign: '' | '−' | '=' }[] = [
+    { label: 'Income this month', value: p.income_base, sub: p.income_actual < p.income_base ? `${eur(p.income_actual)} received so far` : 'received', sign: '' },
+    { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid`, sign: '−' },
+    { label: 'Saving & investing', value: p.saving_planned, sub: `${eur(p.saved_actual)} done`, sign: '−' },
+    ...(p.fund_set_aside > 0 ? [{ label: 'Set aside in funds', value: p.fund_set_aside, sub: 'trips, car and other lumpy costs', sign: '−' as const }] : []),
+    { label: 'Spent so far', value: p.free_spent, sub: 'day-to-day, outside funds', sign: '−' },
+  ]
   return (
-    <Link to="/plan" className="card block px-4 py-3 hover:bg-sunken/30" title="Free money this month — same as Plan's safe to spend">
-      <div className="flex items-center gap-3">
-        <IconTile name="wallet" color="var(--s1)" size={32} />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-ink2">Left to spend in {month}</div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className={clsx('text-xl font-semibold tracking-tight tnum', left < 0 ? 'text-bad' : 'text-good')}>{eur(left)}</span>
-            <span className="text-xs text-muted">{left > 0 ? <>≈ <b className="tnum text-ink">{eur(p.per_day_left)}</b>/day · {p.days_left} days left</> : <span className="text-bad">over budget</span>}</span>
+    <section className="card">
+      <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30" title="Free money this month — same as Plan's safe to spend">
+        <div className="flex items-center gap-3">
+          <IconTile name="wallet" color="var(--s1)" size={32} />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-ink2">Left to spend in {month}</div>
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className={clsx('text-xl font-semibold tracking-tight tnum', left < 0 ? 'text-bad' : 'text-good')}>{eur(left)}</span>
+              <span className="text-xs text-muted">{left > 0 ? <>≈ <b className="tnum text-ink">{eur(p.per_day_left)}</b>/day · {p.days_left} days left</> : <span className="text-bad">over budget</span>}</span>
+            </div>
+          </div>
+          <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
+        </div>
+        <div className="relative mt-2.5 h-1.5 rounded-full bg-sunken">
+          <div className={clsx('h-full rounded-full', left < 0 ? 'bg-bad' : used > progress + 0.1 ? 'bg-warn' : 'bg-accent')} style={{ width: `${Math.max(2, used * 100)}%` }} />
+          <div className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink/60" style={{ left: `${Math.min(100, progress * 100)}%` }} title="today" />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 pb-2.5 text-xs text-muted">
+          <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
+          {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">
+            {p.projected_left >= 0 ? <>At this pace <b className={clsx('tnum', outlook)}>{eur(p.projected_left)}</b> left at month end</>
+              : <>At your usual pace you'd overspend by <b className={clsx('tnum', outlook)}>{eur(-p.projected_left)}</b></>}
+          </span>}
+        </div>
+      </Link>
+      {fixed.length > 0 && (
+        <div className="border-t border-line px-4 py-2.5">
+          <div className="mb-1.5 flex items-baseline justify-between text-xs">
+            <span className="font-medium text-ink2">{due.length ? 'Still to pay — already taken off' : 'Fixed obligations'}</span>
+            <span className="text-muted tnum">{paid.length} of {fixed.length} paid</span>
+          </div>
+          <div className="space-y-1">
+            {due.map((f) => (
+              <div key={f.name} className="flex items-center gap-2 text-sm">
+                <span className="h-2 w-2 shrink-0 rounded-full border border-warn" />
+                <span className="min-w-0 flex-1 truncate">{f.name}{f.due && <span className="text-xs text-muted"> · due {shortDate(f.due)}</span>}</span>
+                <span className="tnum">{eur(f.budgeted - f.spent)}</span>
+              </div>
+            ))}
+            {paid.map((f) => (
+              <div key={f.name} className="flex items-center gap-2 text-sm text-muted">
+                <Icon name="check" size={12} className="shrink-0 text-good" />
+                <span className="min-w-0 flex-1 truncate">{f.name} paid</span>
+                <span className="tnum">{eur(f.spent)}</span>
+              </div>
+            ))}
           </div>
         </div>
-        <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
-      </div>
-      <div className="relative mt-2.5 h-1.5 rounded-full bg-sunken">
-        <div className={clsx('h-full rounded-full', left < 0 ? 'bg-bad' : used > progress + 0.1 ? 'bg-warn' : 'bg-accent')} style={{ width: `${Math.max(2, used * 100)}%` }} />
-        <div className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink/60" style={{ left: `${Math.min(100, progress * 100)}%` }} title="today" />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
-        <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
-        {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">
-          {p.projected_left >= 0 ? <>At this pace <b className={clsx('tnum', outlook)}>{eur(p.projected_left)}</b> left at month end</>
-            : <>At your usual pace you'd overspend by <b className={clsx('tnum', outlook)}>{eur(-p.projected_left)}</b></>}
-        </span>}
-      </div>
-    </Link>
+      )}
+      <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30">
+        <span>How {eur(left)} is worked out</span>
+        <Icon name="chevronD" size={14} className={clsx('transition', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="space-y-1.5 px-4 pb-3 text-sm">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-baseline gap-2">
+              <span className="w-3 shrink-0 text-muted">{r.sign}</span>
+              <span className="min-w-0 flex-1">{r.label}{r.sub && <span className="block text-xs text-muted sm:inline sm:pl-1.5">{r.sub}</span>}</span>
+              <span className="tnum">{eur(r.value)}</span>
+            </div>
+          ))}
+          <div className="flex items-baseline gap-2 border-t border-line pt-1.5 font-semibold">
+            <span className="w-3 shrink-0 text-muted">=</span>
+            <span className="flex-1">Left to spend</span>
+            <span className={clsx('tnum', left < 0 ? 'text-bad' : 'text-good')}>{eur(left)}</span>
+          </div>
+          <div className="pt-1 text-xs text-muted">Obligations and savings count in full from the 1st, paid or not, so what is left is yours to spend.</div>
+        </div>
+      )}
+    </section>
   )
 }

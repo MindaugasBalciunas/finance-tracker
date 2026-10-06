@@ -51,6 +51,25 @@ func TestBuildOverview(t *testing.T) {
 	if len(o.Plan.Lines) != 2 || o.Plan.Lines[0].Name != "Food" || o.Plan.Lines[1].Name != "Gifts" {
 		t.Errorf("plan lines %+v", o.Plan.Lines)
 	}
+	// The breakdown adds up to left-to-spend, and the unpaid obligation is due
+	// on the day it was paid last month (unless that day has passed).
+	// An obligation paid on the 28th last month, not yet this month.
+	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(300)}
+	plan.Save(d, &alimony, "")
+	prev := time.Date(now.Year(), now.Month()-1, 28, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	Tx(t, d, ledger.Tx{Date: prev, Amount: E(300), Category: "kids.alimony", AccountID: "swed"})
+	o, _ = cfo.BuildOverview(d, now, 3)
+	p := o.Plan
+	if p.IncomeBase-p.FixedPlanned-p.SavingPlanned-p.FundSetAside-p.FreeSpent != p.SafeToSpend || p.FixedPlanned != E(300) {
+		t.Errorf("breakdown %+v", p)
+	}
+	wantDue := ""
+	if now.Day() <= 28 {
+		wantDue = time.Date(now.Year(), now.Month(), 28, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	}
+	if len(p.Fixed) != 1 || p.Fixed[0].Name != "Alimony" || p.Fixed[0].Spent != 0 || p.Fixed[0].Due != wantDue {
+		t.Errorf("fixed %+v, want due %q", p.Fixed, wantDue)
+	}
 	if len(o.Spark) < 24 || len(o.Recent) == 0 || o.Emergency.Months <= 0 {
 		t.Errorf("spark %d recent %d emergency %+v", len(o.Spark), len(o.Recent), o.Emergency)
 	}
