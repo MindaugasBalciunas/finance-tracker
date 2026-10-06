@@ -27,10 +27,10 @@ import (
 )
 
 const (
-	SessionTTL      = 30 * 24 * time.Hour // the cookie's lifetime; the server ends a session after IdleTimeout without use
+	SessionTTL = 30 * 24 * time.Hour // the cookie's lifetime; the server ends a session after IdleTimeout without use
 	// IdleTimeout: a session ends after this long without a request — the
 	// fingerprint (or PIN) is asked again. Each use moves it forward.
-	IdleTimeout = 15 * time.Minute
+	IdleTimeout     = 15 * time.Minute
 	pinAttemptLimit = 5
 	pinLockoutBase  = 30 * time.Second
 	pinLockoutMax   = 15 * time.Minute
