@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { monthLabel, parseNum, shortDate } from '../../lib/format'
-import { Card, Field, Loading, Spinner, Tabs, Toggle, useToast } from '../../components/ui'
+import { Card, Field, Loading, Spinner, Toggle, useToast } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
 
 // ── AI ──────────────────────────────────────────────────────────────
@@ -37,7 +37,11 @@ export function AISettings() {
       <Status s={s} />
       <Connection s={s} />
       <Spending s={s.spend} />
-      <Memory />
+      <a href="#/ai?memory=1" className="card flex items-center gap-3 p-4 hover:bg-sunken/50">
+        <IconTile name="edit" color="var(--s4)" size={36} />
+        <span className="min-w-0 flex-1"><span className="block text-sm font-medium">Memory</span><span className="block text-xs text-muted">Your brief and the decisions the assistant remembers now live next to the chat, in Ask CFO.</span></span>
+        <Icon name="chevronR" className="text-muted" />
+      </a>
       <p className="text-xs text-muted">The assistant reads your ledger through the app's own tools when you ask it something; nothing is sent until you use an AI feature. Keys stay on this server and never appear in backups without secrets.</p>
     </div>
   )
@@ -275,46 +279,5 @@ function Spending({ s }: { s: Spend }) {
         <div className="mt-2 text-xs text-muted">The provider bills you; record what you pay here and the balance is top-ups minus measured spend.</div>
       </div>
     </Card>
-  )
-}
-
-/** The assistant's two kinds of memory: what you wrote for it and what it noted itself. */
-function Memory() {
-  const [tab, setTab] = useState('brief')
-  return (
-    <Card pad={false} title="Memory">
-      <div className="px-4"><Tabs value={tab} onChange={setTab} tabs={[{ value: 'brief', label: 'Your brief' }, { value: 'notes', label: 'Remembered decisions' }]} /></div>
-      <div className="p-4 pt-3">
-        {tab === 'brief'
-          ? <TextDoc qk="ai-context" path="/ai/context" rows="h-80" hint="Who you are, your goals and rules, and how you want to be advised. Numbers belong in the data, not here — the assistant reads those itself."
-              placeholder={'e.g.\n- Two kids, alimony €1,000/month\n- Goal: mortgage gone by 2035, FI by 55\n- Be blunt; suggest one concrete action'} />
-          : <TextDoc qk="ai-notes" path="/ai/notes" rows="h-48" hint="Things you asked the assistant to remember. It adds to this list itself; edit or prune freely." placeholder="Nothing remembered yet." />}
-      </div>
-    </Card>
-  )
-}
-
-function TextDoc({ qk, path, rows, hint, placeholder }: { qk: string; path: string; rows: string; hint: string; placeholder: string }) {
-  const qc = useQueryClient()
-  const toast = useToast()
-  const { data, isLoading } = useQuery({ queryKey: [qk], queryFn: () => api.get<{ content: string }>(path) })
-  const [v, setV] = useState<string | null>(null)
-  if (isLoading) return <Loading />
-  const text = v ?? data?.content ?? ''
-  const save = async () => {
-    await api.put(path, { content: v })
-    toast('Saved', 'good'); setV(null)
-    qc.invalidateQueries({ queryKey: [qk] })
-  }
-  return (
-    <div>
-      <div className="mb-2 text-xs text-muted">{hint}</div>
-      <textarea className={clsx('input py-2 text-xs leading-relaxed', rows)} value={text} placeholder={placeholder} onChange={(e) => setV(e.target.value)} />
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <span className="mr-auto text-xs text-muted tnum">{text.length.toLocaleString('en')} characters{v != null && <span className="text-warn"> · unsaved</span>}</span>
-        {v != null && <button className="btn-ghost" onClick={() => setV(null)}>Discard</button>}
-        <button className="btn-primary" disabled={v == null} onClick={save}>Save</button>
-      </div>
-    </div>
   )
 }

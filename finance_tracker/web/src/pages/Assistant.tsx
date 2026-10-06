@@ -8,7 +8,8 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, P
 import { api } from '../lib/api'
 import { useRefresh } from '../lib/hooks'
 import { eurk } from '../lib/format'
-import { Empty, ErrorBox, PageHeader, Spinner } from '../components/ui'
+import { Empty, ErrorBox, PageHeader, Sheet, Spinner } from '../components/ui'
+import { AIMemory } from '../components/AIMemory'
 import { axisProps, gridProps, Legend, MoneyTooltip } from '../components/charts'
 import { Icon } from '../components/Icon'
 
@@ -63,6 +64,9 @@ export default function Assistant() {
   const fileRef = useRef<HTMLInputElement>(null)
   const msgs = [...(history ?? []), ...local]
   const [sp, setSp] = useSearchParams()
+  // ?memory=1 (from AI settings) opens the memory sheet.
+  const memoryOpen = sp.get('memory') === '1'
+  const setMemoryOpen = (v: boolean) => { const n = new URLSearchParams(sp); v ? n.set('memory', '1') : n.delete('memory'); setSp(n, { replace: true }) }
   useEffect(() => {
     // Only follow a conversation; an empty chat stays at the top.
     if (msgs.length || busy) end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -111,11 +115,14 @@ export default function Assistant() {
 
   return (
     <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
-      <PageHeader title="Ask your CFO" actions={<><ModelPicker />{msgs.length > 0 && <button className="btn-ghost h-8 text-xs" onClick={clear}>Clear</button>}</>} />
+      <PageHeader title="Ask your CFO" actions={<><ModelPicker /><button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => setMemoryOpen(true)}><Icon name="edit" size={14} />Memory</button>{msgs.length > 0 && <button className="btn-ghost h-8 text-xs" onClick={clear}>Clear</button>}</>} />
       <div className="flex-1 space-y-4">
         {isLoading ? null : msgs.length === 0 ? (
           <div>
             <Empty title="Ask anything about your money" icon="spark">Answers come from your live data — ledger, balances, plan, loans and investments.</Empty>
+            <button onClick={() => setMemoryOpen(true)} className="mb-3 flex w-full items-center gap-2 rounded-xl border border-line px-3 py-2 text-left text-xs text-ink2 hover:bg-sunken/50">
+              <Icon name="edit" size={14} className="text-accent" /><span className="flex-1">It also follows your brief and the decisions it remembers — <span className="text-accent">review its memory</span></span><Icon name="chevronR" size={14} className="text-muted" />
+            </button>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)} className="card p-3 text-left text-sm hover:bg-sunken/50">{s}</button>)}
             </div>
@@ -140,6 +147,7 @@ export default function Assistant() {
         </div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { setImage(e.target.files?.[0] ?? null); e.target.value = '' }} />
       </div>
+      {memoryOpen && <Sheet open wide onClose={() => setMemoryOpen(false)} title="What your CFO knows about you"><AIMemory /></Sheet>}
     </div>
   )
 }
