@@ -98,10 +98,21 @@ type Report struct {
 	// Free spending per month (discretionary minus what funds covered) —
 	// the same money SafeToSpend draws on. For daily pace and "typical".
 	FreeSpentByMonth map[string]money.Cents `json:"-"`
+	// The same free spending by day of month ("2026-10" → day → amount), for
+	// the month timeline and the typical-month curve.
+	FreeSpentByDay map[string]map[int]money.Cents `json:"-"`
 	Unbudgeted       []Unbudgeted           `json:"unbudgeted"`
 }
 
 func ym(date string) string { return date[:7] }
+
+func dayOf(date string) int {
+	d := 0
+	for _, c := range date[8:10] {
+		d = d*10 + int(c-'0')
+	}
+	return d
+}
 
 func addMonths(m string, n int) string {
 	t, _ := time.Parse("2006-01", m)
@@ -187,6 +198,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		spent[i] = map[string]money.Cents{}
 	}
 	discretionary := map[string]money.Cents{}
+	freeByDay := map[string]map[int]money.Cents{}
 	fundSpent := map[string]money.Cents{}
 	fixedSpent := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
@@ -245,6 +257,12 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		}
 		if fundTx {
 			fundSpent[m] += t.Amount
+		}
+		if disc && !fundTx {
+			if freeByDay[m] == nil {
+				freeByDay[m] = map[int]money.Cents{}
+			}
+			freeByDay[m][dayOf(t.Date)] += t.Amount
 		}
 		if disc && !covered {
 			c := ledger.Top(t.Category)
@@ -349,6 +367,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	}
 	r.DiscretionarySpent = discretionary[month]
 	r.FundSpent = fundSpent[month]
+	r.FreeSpentByDay = freeByDay
 	r.FreeSpentByMonth = map[string]money.Cents{}
 	for m, v := range discretionary {
 		r.FreeSpentByMonth[m] = v - fundSpent[m]

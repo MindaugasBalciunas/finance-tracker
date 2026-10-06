@@ -58,7 +58,9 @@ export interface Overview {
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
     free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null
     income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number
-    fixed?: { name: string; budgeted: number; spent: number; due?: string }[] | null }
+    fixed?: { name: string; budgeted: number; spent: number; due?: string; paid?: string }[] | null
+    days?: { day: number; spent: number; cum?: number; typical: number }[] | null
+    events?: { day: number; kind: 'fixed' | 'income'; label: string; amount: number; done: boolean }[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
   fi_progress: number; years_to_fi: number
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null

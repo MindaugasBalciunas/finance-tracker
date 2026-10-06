@@ -6,6 +6,7 @@ import (
 
 	"ft/internal/cfo"
 	"ft/internal/ledger"
+	"ft/internal/money"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -69,6 +70,28 @@ func TestBuildOverview(t *testing.T) {
 	}
 	if len(p.Fixed) != 1 || p.Fixed[0].Name != "Alimony" || p.Fixed[0].Spent != 0 || p.Fixed[0].Due != wantDue {
 		t.Errorf("fixed %+v, want due %q", p.Fixed, wantDue)
+	}
+	// The month timeline: every day of the month, actuals only up to today,
+	// adding up to "spent so far"; the due obligation is an event.
+	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	var daySum money.Cents
+	for _, d := range p.Days {
+		daySum += d.Spent
+		if (d.Cum != nil) != (d.Day <= now.Day()) {
+			t.Errorf("day %d cum %v", d.Day, d.Cum)
+		}
+	}
+	if len(p.Days) != dim || daySum != p.FreeSpent || p.Days[dim-1].Typical <= 0 {
+		t.Errorf("timeline %d days, sum %v vs free %v, typical %v", len(p.Days), daySum, p.FreeSpent, p.Days[dim-1].Typical)
+	}
+	found := wantDue == ""
+	for _, e := range p.Events {
+		if e.Kind == "fixed" && e.Label == "Alimony" && !e.Done && e.Day == 28 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("events %+v", p.Events)
 	}
 	if len(o.Spark) < 24 || len(o.Recent) == 0 || o.Emergency.Months <= 0 {
 		t.Errorf("spark %d recent %d emergency %+v", len(o.Spark), len(o.Recent), o.Emergency)

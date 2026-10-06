@@ -77,7 +77,7 @@ function Month() {
             <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
             {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
               <div className="divide-y divide-line border-t border-line">
-                {lines.map((l) => <LineRow key={l.id} l={l} onEdit={() => setEdit(l)} />)}
+                {lines.map((l) => <LineRow key={l.id} l={l} monthPace={current ? monthProgress() : undefined} onEdit={() => setEdit(l)} />)}
               </div>
             )}
           </Card>
@@ -227,12 +227,20 @@ function YearGrid({ r }: { r: PlanReport }) {
   )
 }
 
-function LineRow({ l, onEdit }: { l: PlanLine; onEdit: () => void }) {
+// How far through the current month we are (today counts as begun).
+function monthProgress() {
+  const d = new Date()
+  return d.getDate() / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+}
+
+function LineRow({ l, onEdit, monthPace }: { l: PlanLine; onEdit: () => void; monthPace?: number }) {
   const cats = useCats()
   const [open, setOpen] = useState(false)
   const over = l.remaining < 0
   const what = l.tag ? `#${l.tag}` : l.categories.map((c) => cats.name(c)).join(', ')
-  const pace = l.year ? l.year.elapsed : undefined
+  // The tick shows where spending would be today at an even pace: the year
+  // for yearly lines, the month for monthly spending (funds are lumpy by design).
+  const pace = l.year ? l.year.elapsed : l.kind === 'spending' && !l.fund && l.period === 'monthly' ? monthPace : undefined
   return (
     <div className="px-4 py-3">
       <button className="w-full text-left" onClick={() => setOpen(!open)}>

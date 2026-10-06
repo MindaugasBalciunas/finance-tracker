@@ -83,13 +83,33 @@ type PlanPulse struct {
 	SavedActual   money.Cents  `json:"saved_actual"`
 	FundSetAside  money.Cents  `json:"fund_set_aside"`
 	Fixed         []FixedBrief `json:"fixed"` // each obligation: paid, or when it is due
+	// The month as a timeline: free spending day by day (cumulative), the
+	// typical month's curve, and dated events (obligations, income).
+	Days   []DayPoint   `json:"days"`
+	Events []MonthEvent `json:"events"`
+}
+
+type DayPoint struct {
+	Day     int          `json:"day"`
+	Spent   money.Cents  `json:"spent"`         // free spending that day (0 after today)
+	Cum     *money.Cents `json:"cum,omitempty"` // cumulative, up to today only
+	Typical money.Cents  `json:"typical"`       // average cumulative by this day, last 6 months
+}
+
+type MonthEvent struct {
+	Day    int         `json:"day"`
+	Kind   string      `json:"kind"` // fixed | income
+	Label  string      `json:"label"`
+	Amount money.Cents `json:"amount"`
+	Done   bool        `json:"done"`
 }
 
 type FixedBrief struct {
 	Name     string      `json:"name"`
 	Budgeted money.Cents `json:"budgeted"`
 	Spent    money.Cents `json:"spent"`
-	Due      string      `json:"due,omitempty"` // next expected payment this month, from recurring costs
+	Due      string      `json:"due,omitempty"`  // next expected payment this month, from recurring costs
+	Paid     string      `json:"paid,omitempty"` // last payment this month
 }
 
 type LineBrief struct {
@@ -213,6 +233,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions}
 		o.Plan.fillDaily(r.FreeSpentByMonth, now)
+		o.Plan.fillTimeline(r.FreeSpentByDay, now)
 		for _, l := range r.Lines {
 			if l.Kind == "fixed" {
 				o.Plan.Fixed = append(o.Plan.Fixed, FixedBrief{Name: l.Name, Budgeted: l.Budgeted, Spent: l.Spent})
@@ -271,6 +292,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			f.Due = dueFromHistory(txs, fixedCats[i], now)
 		}
 	}
+	o.Plan.addEvents(txs, fixedCats, plan.LoadSettings(d).Salary(), now)
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")
@@ -348,4 +370,93 @@ func dueFromHistory(txs []ledger.Tx, cats []string, now time.Time) string {
 		return ""
 	}
 	return time.Date(now.Year(), now.Month(), d, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+}
+
+// fillTimeline lays this month's free spending out by day, next to the
+// typical month: for each day, the average of the last six complete months'
+// cumulative free spending by that day (shorter months count their total).
+func (p *PlanPulse) fillTimeline(byDay map[string]map[int]money.Cents, now time.Time) {
+	month := now.Format("2006-01")
+	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	var prev []string
+	for i := 1; i <= 6; i++ {
+		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+		if byDay[m] != nil {
+			prev = append(prev, m)
+		}
+	}
+	cumPrev := make([]money.Cents, len(prev))
+	var cum money.Cents
+	p.Days = make([]DayPoint, 0, dim)
+	for d := 1; d <= dim; d++ {
+		pt := DayPoint{Day: d}
+		if d <= now.Day() {
+			pt.Spent = byDay[month][d]
+			cum += pt.Spent
+			c := cum
+			pt.Cum = &c
+		}
+		var sum money.Cents
+		for i, m := range prev {
+			cumPrev[i] += byDay[m][d]
+			sum += cumPrev[i]
+		}
+		if len(prev) > 0 {
+			pt.Typical = sum / money.Cents(len(prev))
+		}
+		p.Days = append(p.Days, pt)
+	}
+}
+
+// addEvents dates what happens to the month's money: each fixed obligation
+// (paid, or when it is due) and each day this month's income arrived.
+func (p *PlanPulse) addEvents(txs []ledger.Tx, fixedCats [][]string, salary []plan.SalaryRule, now time.Time) {
+	month := now.Format("2006-01")
+	in := func(cat string, cats []string) bool {
+		for _, c := range cats {
+			if cat == c || strings.HasPrefix(cat, c+".") {
+				return true
+			}
+		}
+		return false
+	}
+	income := map[int]money.Cents{}
+	for i := range txs {
+		t := &txs[i]
+		if t.Date[:7] != month {
+			continue
+		}
+		// Income the plan counts in this month (a salary landing on the 1st
+		// belongs to the month before, as everywhere else).
+		if t.Kind == "income" && ledger.Top(t.Category) != "refunds" && plan.FlowDate(t, salary)[:7] == month {
+			income[dayFrom(t.Date)] += t.Amount
+		}
+		for j := range p.Fixed {
+			if j < len(fixedCats) && t.Kind != "income" && in(t.Category, fixedCats[j]) && t.Date > p.Fixed[j].Paid {
+				p.Fixed[j].Paid = t.Date
+			}
+		}
+	}
+	for _, f := range p.Fixed {
+		switch {
+		case f.Spent >= f.Budgeted && f.Paid != "":
+			p.Events = append(p.Events, MonthEvent{Day: dayFrom(f.Paid), Kind: "fixed", Label: f.Name, Amount: f.Spent, Done: true})
+		case f.Due != "":
+			p.Events = append(p.Events, MonthEvent{Day: dayFrom(f.Due), Kind: "fixed", Label: f.Name, Amount: f.Budgeted - f.Spent})
+		}
+	}
+	for d, v := range income {
+		p.Events = append(p.Events, MonthEvent{Day: d, Kind: "income", Label: "Income", Amount: v, Done: true})
+	}
+	sort.Slice(p.Events, func(i, j int) bool {
+		return p.Events[i].Day < p.Events[j].Day || p.Events[i].Day == p.Events[j].Day && p.Events[i].Label < p.Events[j].Label
+	})
+}
+
+func dayFrom(date string) int {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return 0
+	}
+	return t.Day()
 }
