@@ -5,6 +5,7 @@ import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { passkeyRegister } from '../../lib/passkey'
+import { useDemo } from '../../lib/hooks'
 
 // ── security ────────────────────────────────────────────────────────
 
@@ -15,7 +16,8 @@ export function Security() {
   const { data: keys } = useQuery({ queryKey: ['passkeys'], queryFn: () => api.get<any[]>('/auth/passkeys'), enabled: !!st })
   const [pin, setPin] = useState({ current_pin: '', pin: '' })
   const [token, setToken] = useState('')
-  const reload = () => { qc.invalidateQueries({ queryKey: ['auth-status'] }); qc.invalidateQueries({ queryKey: ['passkeys'] }) }
+  const demo = useDemo()
+  const reload = () => { for (const k of ['auth-status', 'passkeys', 'demo']) qc.invalidateQueries({ queryKey: [k] }) }
   const run = async (fn: () => Promise<any>, ok: string) => {
     try {
       await fn()
@@ -28,6 +30,12 @@ export function Security() {
   if (!st) return <Loading />
   return (
     <div className="max-w-xl space-y-4">
+      {demo.on && (
+        <div className="flex items-start gap-2 rounded-xl border border-line bg-sunken/40 px-3 py-2 text-sm text-ink2">
+          <Icon name="lock" size={16} className="mt-0.5 shrink-0 text-accent" />
+          <span>Locked while demo mode is on: the PIN, passkeys and tokens can't be changed until you leave the demo with your PIN.</span>
+        </div>
+      )}
       <Card title="App lock">
         <div className="mb-3 text-sm">{st.enabled ? <span className="text-good">PIN lock is on.</span> : <span className="text-warn">PIN lock is off — anyone past the web login can see everything.</span>}</div>
         <div className="grid grid-cols-2 gap-3">

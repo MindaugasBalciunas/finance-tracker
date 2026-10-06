@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
+import { useExitDemo } from '../../components/ExitDemo'
 import { useDemo, usePrefs } from '../../lib/hooks'
 import { Card, Loading, Segmented, Spinner, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
@@ -102,7 +103,8 @@ export function UsageView() {
 
 /** Show the app with fictional data — for demos and screenshots. */
 export function DemoCard() {
-  const { on, switchTo, reset } = useDemo()
+  const { on, protected: locked, switchTo, reset } = useDemo()
+  const exitDemo = useExitDemo()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const run = async (f: () => Promise<void>, msg: string) => {
@@ -112,8 +114,15 @@ export function DemoCard() {
   return (
     <Card icon="spark" color="var(--s5)" title="Demo mode">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Toggle checked={on} onChange={(v) => !busy && run(() => switchTo(v), v ? 'Demo data on — your real data is untouched' : 'Back to your data')} label="Show demo data" />
+        <Toggle checked={on} onChange={(v) => !busy && (v ? run(() => switchTo(true), 'Demo data on — your real data is untouched') : exitDemo.exit())} label="Show demo data" />
         {on && <button className="btn-outline h-8 text-xs" disabled={busy} onClick={() => confirm('Throw away changes made in the demo and generate fresh demo data?') && run(reset, 'Fresh demo data')}>{busy ? <Spinner /> : <Icon name="refresh" size={14} />}Reset demo data</button>}
+      </div>
+      {exitDemo.sheet}
+      <div className={clsx('mt-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs', locked ? 'border-line bg-sunken/40 text-ink2' : 'border-warn/40 bg-warn/10 text-ink')}>
+        <Icon name={locked ? 'lock' : 'alert'} size={14} className={clsx('mt-0.5 shrink-0', locked ? 'text-good' : 'text-warn')} />
+        {locked
+          ? <span>Protected by your PIN: leaving the demo asks for it, and passkeys, tokens and the PIN can't be changed while it's on — safe to hand the device to someone.</span>
+          : <span>No PIN is set, so anyone holding the device can switch back to your data. <a className="text-accent" href="#/settings/security">Set a PIN</a> before showing the app to someone.</span>}
       </div>
       <div className="mt-2 text-xs text-muted">Swaps every page to a separate database of a fictional household — two years of transactions, accounts, budgets, a mortgage and an ETF portfolio — to show the app without showing your money. Your login stays the same; backups, imports, bank sync and AI settings are switched off while it is on, and nothing you do in the demo touches your real data.</div>
     </Card>

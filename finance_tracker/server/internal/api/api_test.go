@@ -711,7 +711,23 @@ func TestDemoModeIsolated(t *testing.T) {
 	if list.Total != 0 {
 		t.Error("reset keeps edits")
 	}
-	c.ok("PUT", "/demo", map[string]bool{"on": false}, nil)
+	// Handing over an unlocked device in demo mode: no way back to the real
+	// data, and no way to plant a passkey, token or new PIN for later.
+	c.ok("GET", "/demo", nil, &st)
+	if !st["protected"] {
+		t.Error("demo with a PIN should report protected")
+	}
+	for _, body := range []map[string]any{{"on": false}, {"on": false, "pin": "0000"}} {
+		if code, _ := c.do("PUT", "/demo", body); code != 403 {
+			t.Errorf("left demo with %v: %d", body, code)
+		}
+	}
+	for _, p := range [][2]string{{"POST", "/auth/passkey/register/begin"}, {"POST", "/auth/token"}, {"DELETE", "/auth/token"}, {"POST", "/auth/pin/setup"}, {"POST", "/auth/pin/disable"}, {"DELETE", "/auth/passkeys/1"}} {
+		if code, _ := c.do(p[0], p[1], map[string]any{"current": "1234", "pin": "5678"}); code != 409 {
+			t.Errorf("%s %s in demo: %d, want 409", p[0], p[1], code)
+		}
+	}
+	c.ok("PUT", "/demo", map[string]any{"on": false, "pin": "1234"}, nil)
 	c.ok("GET", "/transactions?q=RealShop&from=2000-01-01", nil, &list)
 	if list.Total != 1 {
 		t.Error("real data after leaving demo")

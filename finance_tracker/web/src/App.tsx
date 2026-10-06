@@ -6,6 +6,7 @@ import { api, ApiError } from './lib/api'
 import { Icon } from './components/Icon'
 import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
+import { useExitDemo } from './components/ExitDemo'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
@@ -112,6 +113,7 @@ function Shell() {
   }, [loc.pathname])
   const { prefs } = usePrefs()
   const demo = useDemo()
+  const exitDemo = useExitDemo()
   useEffect(() => { setUsageEnabled(!prefs.usage_off); startUsage() }, [prefs.usage_off])
   // Bank consent redirect lands on ?code=&state= before the hash.
   useEffect(() => {
@@ -178,7 +180,7 @@ function Shell() {
         <div className="sticky top-12 z-20 flex items-center justify-center gap-3 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-xs text-ink sm:top-0">
           <Icon name="spark" size={14} className="text-warn" />
           <span><b>Demo mode</b> — fictional data. Your real data is untouched.</span>
-          <button className="rounded-md px-2 py-0.5 font-medium text-accent hover:bg-sunken" onClick={() => demo.switchTo(false)}>Exit demo</button>
+          <button className="rounded-md px-2 py-0.5 font-medium text-accent hover:bg-sunken" onClick={exitDemo.exit}>Exit demo</button>
         </div>
       )}
       <main className="mx-auto max-w-screen-2xl px-4 pb-28 pt-4 sm:px-6 sm:pt-8 sm:pb-12 lg:px-8">
@@ -218,6 +220,7 @@ function Shell() {
           ))}
         </div>
       </nav>
+      {exitDemo.sheet}
     </div>
   )
 }

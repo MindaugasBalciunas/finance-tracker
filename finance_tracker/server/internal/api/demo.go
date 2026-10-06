@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"ft/internal/auth"
 	"ft/internal/db"
 	"ft/internal/demo"
 )
@@ -35,7 +36,23 @@ func demoBlocked(r *http.Request) bool {
 	return false
 }
 
+// demoLockedAuth are auth changes refused while the demo is on: whoever holds
+// the device then must not be able to add a passkey or token, or change the
+// PIN, and so keep a way into the real data after the demo ends.
+func demoLockedAuth(r *http.Request) bool {
+	if r.Method == http.MethodGet {
+		return false
+	}
+	p := r.URL.Path
+	return strings.HasPrefix(p, "/api/auth/pin/setup") || strings.HasPrefix(p, "/api/auth/pin/disable") ||
+		strings.HasPrefix(p, "/api/auth/passkey/register") || strings.HasPrefix(p, "/api/auth/passkeys") || p == "/api/auth/token"
+}
+
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
+	if s.demoOn.Load() && demoLockedAuth(r) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "security settings are locked while demo mode is on"})
+		return
+	}
 	if s.demoOn.Load() && !demoAlwaysReal(r.URL.Path) {
 		if d := s.demoServer(); d != nil {
 			if demoBlocked(r) {
@@ -111,15 +128,27 @@ func (s *Server) loadDemoFlag() {
 }
 
 func (s *Server) demoRoutes() {
+	// protected: a PIN is set, so leaving the demo needs it.
 	s.handle("GET /api/demo", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		return map[string]bool{"on": s.demoOn.Load()}, nil
+		return map[string]bool{"on": s.demoOn.Load(), "protected": s.Auth != nil && s.Auth.Enabled()}, nil
 	})
 	s.handle("PUT /api/demo", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {
-			On bool `json:"on"`
+			On  bool   `json:"on"`
+			Pin string `json:"pin"`
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
+		}
+		// Back to the real data only with the owner's PIN: handing over an
+		// unlocked phone in demo mode must not hand over the finances.
+		if !in.On && s.demoOn.Load() && s.Auth != nil && s.Auth.Enabled() {
+			if err := s.Auth.ConfirmPin(in.Pin); err != nil {
+				if errors.Is(err, auth.ErrTooManyAttempts) {
+					return nil, &HTTPError{http.StatusTooManyRequests, "too many wrong PINs — try again later"}
+				}
+				return nil, &HTTPError{http.StatusForbidden, "wrong PIN"}
+			}
 		}
 		if in.On && s.demoServer() == nil {
 			return nil, errors.New("could not create the demo data")

@@ -45,21 +45,22 @@ export function usePeriod(key: string, fallback: string, allowed?: string[]): [s
 /** Demo mode: the whole app over fictional data (the real data is untouched). */
 export function useDemo() {
   const qc = useQueryClient()
-  const q = useQuery({ queryKey: ['demo'], queryFn: () => api.get<{ on: boolean }>('/demo'), staleTime: Infinity })
+  const q = useQuery({ queryKey: ['demo'], queryFn: () => api.get<{ on: boolean; protected?: boolean }>('/demo'), staleTime: Infinity })
   // Never show one database's cache in the other: every other query is reset
   // (data dropped, active ones refetched) — clear() would also detach the
   // live subscriptions, so the banner wouldn't notice the switch.
   const resetData = () => qc.resetQueries({ predicate: (x) => x.queryKey[0] !== 'demo' })
-  const switchTo = async (on: boolean) => {
-    await api.put('/demo', { on })
-    qc.setQueryData(['demo'], { on })
+  // Leaving a PIN-protected demo needs the PIN (checked by the server).
+  const switchTo = async (on: boolean, pin?: string) => {
+    await api.put('/demo', { on, pin })
+    qc.setQueryData(['demo'], { on, protected: q.data?.protected })
     await resetData()
   }
   const reset = async () => {
     await api.post('/demo/reset', {})
     await resetData()
   }
-  return { on: !!q.data?.on, switchTo, reset }
+  return { on: !!q.data?.on, protected: !!q.data?.protected, switchTo, reset }
 }
 
 export interface TxFilter {

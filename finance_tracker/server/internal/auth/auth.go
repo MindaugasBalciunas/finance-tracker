@@ -227,6 +227,19 @@ func (s *Service) VerifyPin(pin string) (string, error) {
 	return s.newSession()
 }
 
+// ConfirmPin checks the PIN for a sensitive action without starting a
+// session; wrong guesses count toward the same lockout as logging in.
+func (s *Service) ConfirmPin(pin string) error {
+	st, err := s.load()
+	if err != nil {
+		return err
+	}
+	if !st.Enabled {
+		return ErrLockDisabled
+	}
+	return s.checkPin(st, pin)
+}
+
 func (s *Service) DisableLock(pin string) error {
 	st, err := s.load()
 	if err != nil {
