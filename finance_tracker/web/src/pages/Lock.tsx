@@ -1,6 +1,6 @@
 import { LogoMark } from '../components/Logo'
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { Icon } from '../components/Icon'
 import { passkeyLogin } from '../lib/passkey'
 
@@ -9,9 +9,17 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [passkeys, setPasskeys] = useState(0)
+  // With a passkey the fingerprint comes first (no web password needed);
+  // the PIN pad is one tap away.
+  const [showPin, setShowPin] = useState(false)
 
   useEffect(() => {
-    api.get<{ passkeys: number }>('/auth/status').then((s) => setPasskeys(s.passkeys)).catch(() => {})
+    api.get<{ passkeys: number }>('/auth/status').then((s) => {
+      setPasskeys(s.passkeys)
+      // Offer the fingerprint straight away; browsers that want a tap first
+      // refuse quietly and the button is right there.
+      if (s.passkeys > 0) passkeyLogin().then(onUnlock).catch(() => {})
+    }).catch(() => {})
   }, [])
 
   const submit = async (p: string) => {
@@ -21,7 +29,9 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
       await api.post('/auth/pin/login', { pin: p })
       onUnlock()
     } catch (e) {
-      setErr((e as Error).message)
+      // A 401 that isn't the app's own answer came from the web password
+      // prompt, which PIN unlock still needs.
+      setErr(e instanceof ApiError && e.status === 401 && !e.data ? 'PIN unlock needs your web password' + (passkeys ? ' — or use your fingerprint' : '') : (e as Error).message)
       setPin('')
     } finally {
       setBusy(false)
@@ -49,6 +59,13 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
         <div className="text-lg font-semibold">Finance is locked</div>
         <div className="h-5 text-sm text-bad">{err}</div>
       </div>
+      {passkeys > 0 && !showPin ? (
+        <div className="flex w-full max-w-xs flex-col items-center gap-4">
+          <button onClick={bio} className="grid h-24 w-24 place-items-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/30 active:bg-accent/20" aria-label="Unlock with fingerprint"><Icon name="fingerprint" size={44} /></button>
+          <button className="btn-primary w-full" onClick={bio}>Unlock with fingerprint</button>
+          <button className="text-sm text-muted hover:text-ink" onClick={() => setShowPin(true)}>Use PIN instead</button>
+        </div>
+      ) : <>
       <div className="flex gap-3">
         {[0, 1, 2, 3].map((i) => (
           <span key={i} className={`h-3 w-3 rounded-full ${i < pin.length ? 'bg-ink' : 'bg-axis'}`} />
@@ -63,6 +80,8 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
         <button onClick={() => setPin(pin.slice(0, -1))} className="grid h-16 w-16 place-items-center rounded-full text-ink2" aria-label="Delete"><Icon name="chevronL" /></button>
       </div>
       {pin.length > 4 && <button className="btn-primary" onClick={() => submit(pin)}>Unlock</button>}
+      {passkeys > 0 && <button className="text-sm text-muted hover:text-ink" onClick={() => setShowPin(false)}>Use fingerprint instead</button>}
+      </>}
     </div>
   )
 }

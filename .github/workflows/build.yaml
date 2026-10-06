@@ -28,6 +28,13 @@ jobs:
           go vet ./...
           go test -race ./...
 
+      - name: Web password / passkey gate (real nginx)
+        run: |
+          sudo apt-get install -y -qq nginx sqlite3 >/dev/null
+          sudo systemctl stop nginx || true
+          (cd finance_tracker/server && go build -o /tmp/ft ./cmd/server)
+          finance_tracker/test/nginx_gate.sh /tmp/ft
+
       - name: Set up Node
         uses: actions/setup-node@v5
         with:

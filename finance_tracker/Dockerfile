@@ -29,7 +29,7 @@ COPY run.sh /run.sh
 RUN chmod +x /run.sh /app/finance-tracker /app/finance-tracker-mcp
 # Fail the build on a broken nginx config — checked with the password prompt
 # on, the way run.sh writes it (auth.conf is regenerated at start-up).
-RUN printf 'auth_basic "Finance Tracker";\nauth_basic_user_file /etc/nginx/.htpasswd;\n' > /etc/nginx/auth.conf \
+RUN printf 'satisfy any;\nauth_basic "Finance Tracker";\nauth_basic_user_file /etc/nginx/.htpasswd;\nauth_request /_gate;\n' > /etc/nginx/auth.conf \
  && touch /etc/nginx/.htpasswd && nginx -t \
  && printf '# auth disabled\n' > /etc/nginx/auth.conf && nginx -t
 EXPOSE 80
