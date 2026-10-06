@@ -11,6 +11,7 @@ import { eur, eurk, monthLabel, parseNum, pct, shortDate, signed, todayISO } fro
 import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Segmented, Stat, Toggle, useToast } from '../components/ui'
 import { axisProps, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
+import { QuickActions } from '../components/QuickActions'
 import { Icon, IconTile } from '../components/Icon'
 import { catIcon, useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
 
@@ -53,6 +54,8 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-4">
+      <QuickActions inboxOpen={o.inbox_open} />
+
       {/* Net worth */}
       <section className="card overflow-hidden">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
