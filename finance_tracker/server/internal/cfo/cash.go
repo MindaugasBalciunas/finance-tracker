@@ -227,6 +227,13 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 		cp.Daily = p.PerDayLeft
 	}
 
+	var spentToday money.Cents
+	for i := range txs {
+		if t := &txs[i]; t.Date == today && t.Kind == "expense" && t.AccountID == cp.DailyAccount && !within(t.Category, allCats) && t.Amount < oneOff {
+			spentToday += t.Amount
+		}
+	}
+
 	ids := map[string]bool{cp.SalaryAccount: everyday(cp.SalaryAccount), cp.DailyAccount: cp.Daily > 0}
 	for id := range items {
 		ids[id] = true
@@ -246,7 +253,11 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 		if v, ok := settings.Buffers[id]; ok && v > 0 {
 			ca.Buffer, ca.BufferWhy = money.FromFloat(v), "your setting"
 		} else {
-			ca.Buffer, ca.BufferWhy = autoBuffer(txs, id, allCats, now)
+			var allowance money.Cents
+			if id == cp.DailyAccount {
+				allowance = cp.Daily
+			}
+			ca.Buffer, ca.BufferWhy = autoBuffer(txs, id, allCats, allowance, now)
 			ca.BufferAuto = true
 		}
 		sort.SliceStable(ca.Items, func(i, j int) bool { return ca.Items[i].Date < ca.Items[j].Date })
@@ -273,8 +284,18 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 				}
 			}
 			if id == cp.DailyAccount && cp.Daily > 0 {
-				bal -= cp.Daily
-				spend += cp.Daily
+				d := cp.Daily
+				if ds == today {
+					// What was spent today already left the balance (the bank
+					// states it after card holds); only the rest of today's
+					// allowance is still to come.
+					d -= spentToday
+					if d < 0 {
+						d = 0
+					}
+				}
+				bal -= d
+				spend += d
 			}
 			if bal < low {
 				low, lowDate = bal, ds
@@ -377,7 +398,7 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 // last 6 months, leaving out obligations (planned and staged) and single
 // payments of €250 or more (one-offs belong to the plan and its funds) —
 // rounded up to €50; at least €50 for fees and card holds.
-func autoBuffer(txs []ledger.Tx, id string, planned []string, now time.Time) (money.Cents, string) {
+func autoBuffer(txs []ledger.Tx, id string, planned []string, allowance money.Cents, now time.Time) (money.Cents, string) {
 	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, -6, 0)
 	days := int(now.Sub(since).Hours()/24) + 1
 	daily := make([]money.Cents, days)
@@ -411,10 +432,17 @@ func autoBuffer(txs []ledger.Tx, id string, planned []string, now time.Time) (mo
 	}
 	sort.Slice(weeks, func(i, j int) bool { return weeks[i] < weeks[j] })
 	p75 := weeks[len(weeks)*3/4]
+	why := "a busy week of everyday spending from it (one-offs over €250 left out)"
+	if allowance > 0 {
+		// The forecast already spends the daily allowance every day; the
+		// buffer only has to absorb a week busier than that pace.
+		p75 -= 7 * allowance
+		why = "how far a busy week runs past your daily allowance (one-offs over €250 left out)"
+	}
 	if p75 <= floor {
 		return floor, "minimum for fees and card holds"
 	}
-	return (p75 + 5000 - 1) / 5000 * 5000, "a busy week of everyday spending from it (one-offs over €250 left out)"
+	return (p75 + 5000 - 1) / 5000 * 5000, why
 }
 
 // nextOccurrence steps a recurring item to its following date.

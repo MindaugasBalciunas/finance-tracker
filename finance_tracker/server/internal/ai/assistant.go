@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +81,11 @@ How the data is modelled:
 - Categories are two-level ids (food.groceries). Merchant is who was paid. Tags are who/why/where: people (kids, evelina, kristina), properties (house, apartment), trips (trip:…).
 - Savings rate = (income − spending) / income; refunds reduce spending. Mortgage interest is spending; principal is saving.
 - Net worth includes property and loans; "liquid" is cash, brokers, crypto and II/III pillar pensions (cashable); it excludes property, car and debt.
+
+Trust rules — the owner acts on what you say:
+- Never mention a transaction, refund, payment or balance that no tool returned in this conversation. If a search finds nothing, say so plainly; don't guess.
+- Point to the evidence: when you name specific transactions or a set of them, link to the ledger view that shows them, e.g. [3 payments at 360 Arena](#/ledger?merchant=360%%20Arena&period=custom&from=2026-09-01&to=2026-09-30) or [search](#/ledger?q=arena). Links use #/ledger with q, merchant, category, tag, from, to (with period=custom).
+- Label anything you calculated yourself (an average, a projection) as your calculation.
 
 Answer style: direct, concise, numbers first. Markdown: bullets, **bold** key figures, compact tables; no top-level headings. When a picture helps (or the user asks to chart/plot/show), add a fenced block tagged chart with ONE JSON object: {"type":"line|bar|area|pie","title":"…","x":"<label field>","unit":"€","series":[{"name":"…","key":"<numeric field>"}],"data":[…]} — real figures only, ≤24 points, ≤4 series, at most 2 charts.
 
@@ -168,10 +176,13 @@ type Image struct {
 var visionTypes = map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true, "image/gif": true}
 
 type ChatResult struct {
-	Reply   string   `json:"reply"`
-	Tools   []string `json:"tools"`
-	Changed bool     `json:"changed"` // a write tool ran — refresh views
-	Usage   Usage    `json:"usage"`
+	Reply string   `json:"reply"`
+	Tools []string `json:"tools"`
+	// Unchecked are euro amounts in the reply that appear in none of the
+	// data the assistant read this turn — its own sums, or a mistake.
+	Unchecked []string `json:"unchecked,omitempty"`
+	Changed   bool     `json:"changed"` // a write tool ran — refresh views
+	Usage     Usage    `json:"usage"`
 }
 
 // Chat answers one user turn, running tools as the model asks.
@@ -228,6 +239,7 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 	}
 
 	res := &ChatResult{Tools: []string{}}
+	var seen []string // every tool result this turn, for checking the reply's figures
 	tools := toolDefs()
 	system := a.system(now)
 	for round := 0; ; round++ {
@@ -254,6 +266,7 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 				return nil, errors.New("the assistant returned an empty answer — try again")
 			}
 			res.Reply = rep.Text
+			res.Unchecked = uncheckedAmounts(rep.Text, seen)
 			break
 		}
 		msgs = append(msgs, message{Role: "assistant", Content: echo(rep.Raw)})
@@ -264,6 +277,7 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 				res.Changed = true
 			}
 			out, terr := a.runTool(tc.Name, tc.Input)
+			seen = append(seen, out)
 			b := block{Type: "tool_result", ToolUseID: tc.ID, Content: out}
 			if terr != nil {
 				b.Content, b.IsError = "error: "+terr.Error(), true
@@ -398,4 +412,60 @@ Never invent a merchant or amount — say so in remark when unreadable.`, string
 		}
 	}
 	return out, nil
+}
+
+var (
+	replyEuro = regexp.MustCompile(`(?:€\s?(\d[\d,  ]*(?:\.\d+)?)(?:\s?[kK]\b)?|(\d[\d,  ]*(?:[.,]\d{1,2})?)\s?€)`)
+	dataNum   = regexp.MustCompile(`-?\d+(?:\.\d+)?`)
+)
+
+// uncheckedAmounts lists euro amounts of €50 or more in reply that match no
+// number in the tool results (within a euro, either sign). Thousands written
+// as "k" and percentages are left alone. Nothing to check against (no tools
+// ran) means nothing is flagged — the reply then made no data claims.
+func uncheckedAmounts(reply string, results []string) []string {
+	if len(results) == 0 {
+		return nil
+	}
+	var known []float64
+	for _, r := range results {
+		for _, m := range dataNum.FindAllString(r, -1) {
+			if v, err := strconv.ParseFloat(m, 64); err == nil {
+				known = append(known, math.Abs(v))
+			}
+		}
+	}
+	var out []string
+	dup := map[string]bool{}
+	for _, m := range replyEuro.FindAllStringSubmatch(reply, -1) {
+		if strings.HasSuffix(strings.TrimSpace(m[0]), "k") || strings.HasSuffix(strings.TrimSpace(m[0]), "K") {
+			continue
+		}
+		raw := m[1]
+		if raw == "" {
+			raw = m[2]
+		}
+		raw = strings.NewReplacer(",", "", " ", "", " ", "").Replace(strings.TrimSpace(raw))
+		if m[2] != "" && strings.Count(m[2], ",") == 1 && !strings.Contains(m[2], ".") && len(m[2])-strings.Index(m[2], ",") <= 3 {
+			raw = strings.Replace(strings.TrimSpace(m[2]), ",", ".", 1) // "12,50 €"
+			raw = strings.ReplaceAll(raw, " ", "")
+		}
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 50 {
+			continue
+		}
+		ok := false
+		for _, k := range known {
+			if math.Abs(k-v) <= 1 {
+				ok = true
+				break
+			}
+		}
+		label := strings.TrimSpace(m[0])
+		if !ok && !dup[label] {
+			dup[label] = true
+			out = append(out, label)
+		}
+	}
+	return out
 }

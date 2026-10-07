@@ -1019,6 +1019,17 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 		if err := ledger.Insert(tx, &t); err != nil {
 			return nil, err
 		}
+		// A booked transfer to or from one of your accounts the bank doesn't
+		// sync (a savings account entered by hand) moves that account's
+		// balance, so it doesn't keep showing money already moved out.
+		// Synced accounts are skipped: their bank states the truth.
+		if t.Kind == "transfer" && !t.Pending {
+			for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
+				if _, err := wealth.ApplyDelta(tx, acct, t.Date, delta); err != nil {
+					return nil, err
+				}
+			}
+		}
 		r.State, r.ImportedTxID = "imported", t.ID
 		if err := saveInbox(tx, &r); err != nil {
 			return nil, err

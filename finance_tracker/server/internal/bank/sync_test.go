@@ -363,3 +363,29 @@ func TestDeletedReservationStaysGoneAndBookingSurvives(t *testing.T) {
 		t.Fatalf("booking should wait in the inbox: %+v", open)
 	}
 }
+
+func TestBookedTransferMovesAnUnsyncedOwnAccount(t *testing.T) {
+	d, s, fb := setup(t)
+	Bal(t, d, "revolut", today(-5), 100)
+	fb.booked["u1"] = []openbanking.Transaction{card("t1", "BOOK", today(-1), "40.00", "REVOLUT TOP UP")}
+	s.SyncAll(context.Background(), openbanking.PSU{}, 0, 0)
+	rows := inbox(t, s, "open")
+	if len(rows) != 1 {
+		t.Fatalf("rows %+v", rows)
+	}
+	kind, to, cat := "transfer", "revolut", "transfer.internal"
+	if _, err := s.Update(rows[0].ID, bank.Edit{Kind: &kind, ToAccountID: &to, Category: &cat}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Commit([]int64{rows[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	book, _ := wealth.LoadBook(d)
+	if p, _ := book.At("revolut", today(0)); p.Value != E(140) {
+		t.Fatalf("Revolut should hold the €40 moved in: %+v", p)
+	}
+	// The synced side keeps whatever its bank states.
+	if p, _ := book.At("swed", today(-1)); p.Source == "manual" {
+		t.Fatalf("synced account moved by hand: %+v", p)
+	}
+}

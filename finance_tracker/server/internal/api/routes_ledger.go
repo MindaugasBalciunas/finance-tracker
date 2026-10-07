@@ -498,11 +498,13 @@ func firstNonEmptyStr(v ...string) string {
 	return ""
 }
 
-// moveBalances applies (sign=1) or reverses (sign=-1) a hand-entered
-// transaction's effect on account balances. Bank rows never move balances:
-// the bank states its own balance on every sync.
+// moveBalances applies (sign=1) or reverses (sign=-1) a transaction's
+// effect on account balances. Hand-entered rows move both sides; a bank row
+// only matters when it is a booked transfer touching an account the bank
+// doesn't sync (ApplyDelta never touches synced ones — the bank states their
+// balance on every sync). Imports and split parts never move balances.
 func (s *Server) moveBalances(t ledger.Tx, sign money.Cents) []string {
-	if t.Source == "bank" || t.Source == "import" || t.SplitOf != 0 {
+	if t.Source == "import" || t.SplitOf != 0 || (t.Source == "bank" && (t.Kind != "transfer" || t.Pending)) {
 		return nil
 	}
 	var moved []string

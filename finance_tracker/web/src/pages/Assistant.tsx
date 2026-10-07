@@ -13,7 +13,7 @@ import { AIMemory } from '../components/AIMemory'
 import { axisProps, gridProps, Legend, MoneyTooltip } from '../components/charts'
 import { Icon } from '../components/Icon'
 
-type Msg = { id?: number; role: 'user' | 'assistant'; content: string; cost?: number; tools?: string[]; image?: string }
+type Msg = { id?: number; role: 'user' | 'assistant'; content: string; cost?: number; tools?: string[]; image?: string; unchecked?: string[] }
 
 const SUGGESTIONS = [
   'How am I doing this month versus my plan?',
@@ -86,7 +86,7 @@ export default function Assistant() {
         fd.append('image', image)
         r = await api.post('/ai/chat', fd)
       } else r = await api.post('/ai/chat', { text: content })
-      setLocal((l) => [...l, { role: 'assistant', content: r.reply, cost: r.usage?.cost_usd, tools: r.tools }])
+      setLocal((l) => [...l, { role: 'assistant', content: r.reply, cost: r.usage?.cost_usd, tools: r.tools, unchecked: r.unchecked }])
       if (r.changed) refresh()
     } catch (e) {
       setError(e)
@@ -173,6 +173,11 @@ const MARKDOWN: Components = {
   },
   pre({ children }) { return <div className="overflow-x-auto">{children}</div> },
   table({ children }) { return <div className="overflow-x-auto"><table>{children}</table></div> },
+  // Evidence links (#/ledger?…) stay in the app; anything else opens apart.
+  a({ href, children }) {
+    if (href?.startsWith('#/')) return <a href={href} className="text-accent underline decoration-accent/40 underline-offset-2">{children}</a>
+    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline">{children}</a>
+  },
 }
 const PLUGINS = [remarkGfm]
 
@@ -192,6 +197,11 @@ const Bubble = memo(function Bubble({ m }: { m: Msg }) {
       <div className="prose-sm text-sm leading-relaxed [&_table]:my-2 [&_table]:w-full [&_td]:border-t [&_td]:border-line [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-xs [&_th]:text-muted [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_code]:rounded [&_code]:bg-sunken [&_code]:px-1">
         <ReactMarkdown remarkPlugins={PLUGINS} components={MARKDOWN}>{m.content}</ReactMarkdown>
       </div>
+      {!!m.unchecked?.length && (
+        <div className="mt-2 rounded-lg border border-warn/40 bg-warn/5 px-2.5 py-1.5 text-[11px] text-ink2">
+          Not found in the data it read: <b>{m.unchecked.join(', ')}</b> — its own calculation, or a mistake. Ask it to show the transactions.
+        </div>
+      )}
       {(m.cost != null || m.tools?.length) && (
         <div className="mt-2 text-[11px] text-muted">{m.tools?.length ? `${[...new Set(m.tools)].join(' · ')} · ` : ''}{m.cost != null ? `$${m.cost.toFixed(3)}` : ''}</div>
       )}
