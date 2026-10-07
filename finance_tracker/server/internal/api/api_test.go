@@ -834,3 +834,20 @@ func TestSyncRevaluesCrypto(t *testing.T) {
 		t.Fatalf("overwrote a manual figure: %+v", out.Balances)
 	}
 }
+
+func TestAutoSyncOnOpenIsThrottled(t *testing.T) {
+	_, c := newServer(t)
+	var first, second, manual map[string]any
+	c.ok("POST", "/sync", map[string]any{"auto": true}, &first)
+	if first["skipped"] == true {
+		t.Fatal("the first open should sync")
+	}
+	c.ok("POST", "/sync", map[string]any{"auto": true}, &second)
+	if second["skipped"] != true {
+		t.Fatalf("a second open right away must not sync again: %v", second)
+	}
+	c.ok("POST", "/sync", map[string]any{}, &manual)
+	if manual["skipped"] == true {
+		t.Fatal("the Sync button always syncs")
+	}
+}

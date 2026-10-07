@@ -38,6 +38,10 @@ type Server struct {
 	demoOn atomic.Bool
 	demoMu sync.Mutex
 	demo   *Server
+
+	// One sync at a time; lastSync throttles the automatic one on app open.
+	syncMu   sync.Mutex
+	lastSync atomic.Int64
 }
 
 func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath, version, false) }

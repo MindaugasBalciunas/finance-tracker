@@ -154,6 +154,9 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any, heade
 		}
 		body = bytes.NewReader(buf)
 	}
+	if !readOnlyCall(method, path) {
+		return fmt.Errorf("refused %s %s: this app only reads accounts", method, path)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, BaseURL+path, body)
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
@@ -352,4 +355,28 @@ func (c *Client) AllTransactions(ctx context.Context, q TxQuery) ([]Transaction,
 		q.ContinuationKey = p.ContinuationKey
 	}
 	return all, ErrTruncated
+}
+
+// readOnlyCall is the whole of what this app may ask Enable Banking: list
+// banks, start and finish an account-information consent, revoke it, and
+// read balances and transactions. Anything else — payments above all — is
+// refused before it leaves the app, whatever a future change asks for.
+func readOnlyCall(method, path string) bool {
+	p, _, _ := strings.Cut(path, "?")
+	switch method {
+	case http.MethodGet:
+		if p == "/aspsps" {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(p, "/accounts/"); ok {
+			uid, tail, _ := strings.Cut(rest, "/")
+			return uid != "" && (tail == "balances" || tail == "transactions")
+		}
+	case http.MethodPost:
+		return p == "/auth" || p == "/sessions"
+	case http.MethodDelete:
+		rest, ok := strings.CutPrefix(p, "/sessions/")
+		return ok && rest != "" && !strings.Contains(rest, "/")
+	}
+	return false
 }

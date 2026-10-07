@@ -60,7 +60,7 @@ export function useDemo() {
     await api.post('/demo/reset', {})
     await resetData()
   }
-  return { on: !!q.data?.on, protected: !!q.data?.protected, switchTo, reset }
+  return { on: !!q.data?.on, ready: q.isSuccess, protected: !!q.data?.protected, switchTo, reset }
 }
 
 export interface TxFilter {

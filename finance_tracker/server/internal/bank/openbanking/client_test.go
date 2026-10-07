@@ -434,3 +434,24 @@ func TestPickBalancePrefersAvailable(t *testing.T) {
 		t.Fatal("no balances should give nil")
 	}
 }
+
+func TestOnlyReadOnlyCalls(t *testing.T) {
+	ok := [][2]string{{"GET", "/aspsps?country=LT"}, {"POST", "/auth"}, {"POST", "/sessions"}, {"DELETE", "/sessions/abc"},
+		{"GET", "/accounts/u1/balances"}, {"GET", "/accounts/u1/transactions?date_from=2026-01-01"}}
+	for _, c := range ok {
+		if !readOnlyCall(c[0], c[1]) {
+			t.Errorf("%s %s should be allowed", c[0], c[1])
+		}
+	}
+	no := [][2]string{{"POST", "/payments"}, {"GET", "/payments/x"}, {"POST", "/accounts/u1/transactions"}, {"GET", "/accounts/u1/details/x"},
+		{"DELETE", "/sessions/a/b"}, {"PUT", "/sessions"}, {"GET", "/sessions/abc"}, {"POST", "/bulk-payments"}}
+	for _, c := range no {
+		if readOnlyCall(c[0], c[1]) {
+			t.Errorf("%s %s must be refused", c[0], c[1])
+		}
+	}
+	err := (&Client{}).do(context.Background(), "POST", "/payments", map[string]string{}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("payment call not refused: %v", err)
+	}
+}

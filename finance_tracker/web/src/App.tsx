@@ -8,7 +8,7 @@ import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
 import { useExitDemo } from './components/ExitDemo'
 import { NotificationsButton } from './components/Notifications'
-import { QuickActionsButton } from './components/QuickActions'
+import { QuickActionsButton, useAutoSync } from './components/QuickActions'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
@@ -83,6 +83,7 @@ function syncThemeColor() {
 darkQuery?.addEventListener('change', syncThemeColor)
 
 function Shell() {
+  useAutoSync()
   const loc = useLocation()
   const nav = useNavigate()
   // Desktop sidebar: full or icon rail (a per-device choice).

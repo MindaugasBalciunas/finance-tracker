@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
-import { useRefresh } from '../lib/hooks'
+import { useDemo, useRefresh } from '../lib/hooks'
 import { useTxEditor } from './TxEditor'
 import { Sheet, Spinner, useToast } from './ui'
 import { Icon } from './Icon'
@@ -17,6 +17,40 @@ function ago(iso: string) {
   const h = Math.round(mins / 60)
   if (h < 24) return `${h} h ago`
   return `${Math.round(h / 24)} d ago`
+}
+
+/** Opening the app (or coming back to it) syncs banks, IBKR and crypto by
+ *  itself; the server skips it when a sync ran in the last 30 minutes. Quiet
+ *  unless something moved or a source needs you. Read-only throughout. */
+export function useAutoSync() {
+  const demo = useDemo()
+  const qc = useQueryClient()
+  const refresh = useRefresh()
+  const toast = useToast()
+  useEffect(() => {
+    if (!demo.ready || demo.on) return
+    let alive = true
+    const run = () => {
+      if (document.visibilityState !== 'visible') return
+      api.post<any>('/sync', { auto: true }).then((r) => {
+        if (!alive || r.skipped) return
+        refresh(); qc.invalidateQueries({ queryKey: ['bank-connections'] })
+        const moved: any[] = r.balances ?? []
+        const problems: string[] = r.problems ?? []
+        const parts = [
+          r.bank?.new ? `${r.bank.new} new from the bank` : '',
+          moved.length ? `${moved.length} balance${moved.length === 1 ? '' : 's'} updated` : '',
+          r.ibkr?.new ? `IBKR: ${r.ibkr.new} trade${r.ibkr.new === 1 ? '' : 's'} to add` : '',
+        ].filter(Boolean)
+        if (problems.length) toast(`Auto sync: ${problems.join('; ')}`, 'bad')
+        else if (parts.length) toast(`Synced · ${parts.join(' · ')}`, 'good')
+      }).catch(() => { /* the Sync button shows errors */ })
+    }
+    run()
+    document.addEventListener('visibilitychange', run)
+    return () => { alive = false; document.removeEventListener('visibilitychange', run) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo.ready, demo.on])
 }
 
 type Tile = { key: string; icon: string; label: string; sub?: string; onClick: () => void; primary?: boolean; busy?: boolean }

@@ -72,10 +72,32 @@ func revalueCrypto(s *Server, today string) []string {
 	return notes
 }
 
+// autoSyncEvery is how often opening the app syncs by itself. Banks allow
+// only a few account reads a day, so a phone opened every few minutes must
+// not ask each time.
+const autoSyncEvery = 30 * time.Minute
+
 // The one-tap sync: banks, Interactive Brokers and crypto prices, then which
-// balances moved. Every source writes today's value only.
+// balances moved. Every source writes today's value only. {"auto":true} is
+// the app opening: skipped when a sync ran within autoSyncEvery or one is
+// running now.
 func (s *Server) syncRoutes() {
 	s.handle("POST /api/sync", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Auto bool `json:"auto"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in.Auto && time.Since(time.Unix(s.lastSync.Load(), 0)) < autoSyncEvery {
+			return map[string]any{"skipped": true}, nil
+		}
+		if !s.syncMu.TryLock() {
+			if in.Auto {
+				return map[string]any{"skipped": true}, nil
+			}
+			return nil, &HTTPError{http.StatusConflict, "a sync is already running"}
+		}
+		defer s.syncMu.Unlock()
+		s.lastSync.Store(time.Now().Unix())
 		today := time.Now().Format("2006-01-02")
 		latest := func() map[string]wealth.Point {
 			out := map[string]wealth.Point{}
