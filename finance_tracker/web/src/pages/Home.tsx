@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -235,6 +235,20 @@ export default function Home() {
 
 
 
+/** Wide screen (≥ 1024 px), following resizes. */
+function useWide() {
+  const q = '(min-width: 1024px)'
+  const [wide, setWide] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false))
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const m = window.matchMedia(q)
+    const on = () => setWide(m.matches)
+    m.addEventListener?.('change', on)
+    return () => m.removeEventListener?.('change', on)
+  }, [])
+  return wide
+}
+
 /** How much of a month's free spending a typical month has done by each day
  *  (0–1), from the typical-month curve — so pace follows your usual rhythm
  *  (rent-week, weekends, payday) instead of a straight line. Falls back to
@@ -250,6 +264,7 @@ function typicalShare(p: Overview['plan'], day: number) {
  *  rhythm through this month's free money, and where this pace ends up; dated
  *  events (obligations due or paid, income) sit on the axis. */
 function MonthTimeline({ p }: { p: Overview['plan'] }) {
+  const wide = useWide()
   const days = p.days ?? []
   if (days.length < 28) return null
   const dim = days.length
@@ -268,8 +283,8 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
   const evColor = (k: string) => (k === 'income' ? 'var(--s6)' : 'var(--s7)')
   const top = Math.max(free, projEnd) * 1.08
   return (
-    <div className="mt-3">
-      <div className="h-40 sm:h-44">
+    <div className="mt-3 lg:mt-0">
+      <div className="h-52 sm:h-60 lg:h-72">
         <ResponsiveContainer>
           <ComposedChart data={rows} margin={{ top: 14, right: 8, bottom: 0, left: 0 }}>
             <defs>
@@ -279,7 +294,10 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
               </linearGradient>
             </defs>
             <CartesianGrid {...gridProps} />
-            <XAxis dataKey="day" {...axisProps} ticks={[1, 8, 15, 22, dim]} type="number" domain={[1, dim]} />
+            {/* Every day of this month (28–31), labelled; phones label every other day. */}
+            <XAxis dataKey="day" {...axisProps} type="number" domain={[1, dim]} interval={0}
+              ticks={Array.from({ length: dim }, (_, i) => i + 1).filter((d) => wide || d % 2 === 1 || d === dim)}
+              tick={{ ...axisProps.tick, fontSize: wide ? 9 : 10 }} />
             <YAxis {...axisProps} tickFormatter={eurk} width={44} domain={[0, top]} />
             <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) => {
               if (!active || !payload?.length) return null
@@ -413,8 +431,10 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
     { label: 'Spent so far', value: p.free_spent, sub: 'day-to-day, outside funds', sign: '−' },
   ]
   return (
-    <section className="card">
-      <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30" title="Free money this month — same as Plan's safe to spend">
+    // Phones: one column. Wide screens: the month chart on the left at full
+    // height, so its lines separate; figures and obligations on the right.
+    <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense">
+      <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30 lg:col-start-2" title="Free money this month — same as Plan's safe to spend">
         <div className="flex items-center gap-3">
           <IconTile name="wallet" color="var(--s1)" size={32} />
           <div className="min-w-0 flex-1">
@@ -435,9 +455,9 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           </span>}
         </div>
       </Link>
-      <div className="px-4 pb-3"><MonthTimeline p={p} /></div>
+      <div className="min-w-0 px-4 pb-3 lg:col-start-1 lg:row-span-6 lg:row-start-1 lg:border-r lg:border-line lg:py-3"><MonthTimeline p={p} /></div>
       {fixed.length > 0 && (
-        <div className="border-t border-line px-4 py-2.5">
+        <div className="border-t border-line px-4 py-2.5 lg:col-start-2">
           <div className="mb-1.5 flex items-baseline justify-between text-xs">
             <span className="font-medium text-ink2">{due.length ? 'Still to pay — already taken off' : 'Fixed obligations'}</span>
             <span className="text-muted tnum">{paid.length} of {fixed.length} paid</span>
@@ -460,12 +480,12 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           </div>
         </div>
       )}
-      <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30">
+      <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30 lg:col-start-2">
         <span>How {eur(left)} is worked out</span>
         <Icon name="chevronD" size={14} className={clsx('transition', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="space-y-1.5 px-4 pb-3 text-sm">
+        <div className="space-y-1.5 px-4 pb-3 text-sm lg:col-start-2">
           {rows.map((r) => (
             <div key={r.label} className="flex items-baseline gap-2">
               <span className="w-3 shrink-0 text-muted">{r.sign}</span>
