@@ -353,25 +353,28 @@ type Balance struct {
 	// empty, in which case it is "now".
 	ReferenceDate      string `json:"reference_date"`
 	LastChangeDateTime string `json:"last_change_date_time"`
+	// CreditLimitIncluded marks an available balance that counts the
+	// overdraft limit as money; such a figure is never the account's own.
+	CreditLimitIncluded *bool `json:"credit_limit_included,omitempty"`
 }
 
 type balancesResponse struct {
 	Balances []Balance `json:"balances"`
 }
 
-// balancePreference ranks balance types by how well they match the ledger.
-// Booked balances first: reservations are never committed as transactions,
-// so an available balance (which already nets them off) would disagree with
-// the ledger by exactly the holds in flight. Available and expected are the
-// fallback for a bank that sends nothing booked.
-var balancePreference = []string{"ITBD", "CLBD", "XPCD", "ITAV", "CLAV", "OPBD"}
+// balancePreference ranks balance types by how well they match what the
+// owner sees in the bank's own app: the available balance, after card
+// reservations. Reservations are in the ledger as pending rows, so the
+// account should show the money that is left once they clear — straight from
+// the bank, not booked minus holds worked out here. Expected (booked plus
+// pending) is the same figure under another name; booked is the fallback for
+// a bank that states nothing available.
+var balancePreference = []string{"ITAV", "CLAV", "XPCD", "ITBD", "CLBD", "OPBD"}
 
-// PickBalance chooses the one balance that best describes what the ledger
-// holds, or nil when the bank sent none.
 func PickBalance(bs []Balance) *Balance {
 	for _, want := range balancePreference {
 		for i := range bs {
-			if strings.EqualFold(bs[i].BalanceType, want) {
+			if strings.EqualFold(bs[i].BalanceType, want) && (bs[i].CreditLimitIncluded == nil || !*bs[i].CreditLimitIncluded) {
 				return &bs[i]
 			}
 		}

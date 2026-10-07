@@ -404,14 +404,28 @@ func TestASPSPStillRejectsNonsense(t *testing.T) {
 	}
 }
 
-func TestPickBalancePrefersBooked(t *testing.T) {
+func TestPickBalancePrefersAvailable(t *testing.T) {
 	bs := []Balance{
 		{BalanceType: "ITAV", BalanceAmount: Amount{Amount: "90.00"}},
 		{BalanceType: "CLBD", BalanceAmount: Amount{Amount: "100.00"}},
 		{BalanceType: "ITBD", BalanceAmount: Amount{Amount: "95.00"}},
 	}
-	if got := PickBalance(bs); got == nil || got.BalanceType != "ITBD" {
-		t.Fatalf("want ITBD, got %+v", got)
+	if got := PickBalance(bs); got == nil || got.BalanceType != "ITAV" {
+		t.Fatalf("want ITAV, got %+v", got)
+	}
+	// Swedbank example: booked 1610.79, available after holds 1559.00.
+	yes := true
+	bs = []Balance{
+		{BalanceType: "ITBD", BalanceAmount: Amount{Amount: "1610.79"}},
+		{BalanceType: "ITAV", BalanceAmount: Amount{Amount: "2559.00"}, CreditLimitIncluded: &yes},
+		{BalanceType: "CLAV", BalanceAmount: Amount{Amount: "1559.00"}},
+	}
+	if got := PickBalance(bs); got == nil || got.BalanceAmount.Amount != "1559.00" {
+		t.Fatalf("want the available balance without the overdraft, got %+v", got)
+	}
+	// Only booked on offer: use it.
+	if got := PickBalance(bs[:1]); got == nil || got.BalanceType != "ITBD" {
+		t.Fatalf("want ITBD fallback, got %+v", got)
 	}
 	if got := PickBalance([]Balance{{BalanceType: "OTHR"}}); got == nil || got.BalanceType != "OTHR" {
 		t.Fatalf("unknown type should fall back to the first, got %+v", got)

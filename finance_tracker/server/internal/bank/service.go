@@ -427,6 +427,11 @@ func (s *Service) syncAccount(ctx context.Context, cl *openbanking.Client, c *Co
 	// a sync whose transactions arrived.
 	if bs, err := cl.Balances(ctx, a.UID, psu, headers); err == nil {
 		if b := openbanking.PickBalance(bs); b != nil {
+			types := make([]string, 0, len(bs))
+			for _, x := range bs {
+				types = append(types, x.BalanceType+"="+x.BalanceAmount.Amount)
+			}
+			log.Printf("bank sync: account %d balances %v, using %s", a.ID, types, b.BalanceType)
 			if v, err := strconv.ParseFloat(strings.TrimSpace(b.BalanceAmount.Amount), 64); err == nil {
 				if strings.EqualFold(b.CreditDebitIndicator, "DBIT") && v > 0 {
 					v = -v
