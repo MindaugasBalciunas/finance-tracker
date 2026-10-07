@@ -453,6 +453,15 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
           <Toggle checked={!!v.archived} onChange={(x) => setV({ ...v, archived: x })} label="Archived" />
         </div>
         <Field label="Notes"><textarea className="input h-20 py-2" value={v.notes ?? ''} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
+        {['checking', 'savings', 'cash', 'brokerage', 'other'].includes(v.kind ?? '') && (() => {
+          const d = safeParse(details)
+          return (
+            <Field label="IBAN" hint="For accounts your bank doesn't sync (e.g. a savings account): transfers to and from it are then recognised as yours and keep its balance up to date.">
+              <input className="input font-mono text-xs" value={d.iban ?? ''} placeholder="LT00 0000 0000 0000 0000" autoComplete="off" spellCheck={false}
+                onChange={(e) => setDetails(JSON.stringify({ ...d, iban: e.target.value.replace(/\s/g, '').toUpperCase() || undefined }, null, 2))} />
+            </Field>
+          )
+        })()}
         {v.kind === 'loan' && <LoanFields d={safeParse(details)} onChange={(d) => setDetails(JSON.stringify(d, null, 2))} />}
         {['property', 'vehicle'].includes(v.kind ?? '') && (() => {
           const d = safeParse(details)

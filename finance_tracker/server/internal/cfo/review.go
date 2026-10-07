@@ -427,6 +427,24 @@ func Checks(d *sql.DB, now time.Time) []Check {
 	if vague >= 5 {
 		add("info", "/ledger/tidy", "%d recent expenses only have a broad category — tidy them up for sharper insights.", vague)
 	}
+	// A big "refund" with no purchase it could undo is usually money coming
+	// back from savings or an investment: filed as a refund it is taken off
+	// spending, so a month can show spending below zero.
+	if rr, err := d.Query(`SELECT r.date, r.amount, COALESCE(NULLIF(r.merchant,''), r.note) FROM transactions r
+		WHERE r.kind='income' AND (r.category='refunds' OR r.category LIKE 'refunds.%') AND r.amount >= 25000 AND r.date >= ?
+		AND NOT EXISTS (SELECT 1 FROM transactions e WHERE e.kind='expense' AND e.amount >= r.amount * 9 / 10
+			AND e.date BETWEEN date(r.date, '-120 days') AND r.date
+			AND (lower(e.merchant) = lower(r.merchant) OR r.merchant = ''))
+		ORDER BY r.date DESC LIMIT 3`, now.AddDate(0, 0, -60).Format("2006-01-02")); err == nil {
+		for rr.Next() {
+			var date, who string
+			var amt money.Cents
+			rr.Scan(&date, &amt, &who)
+			add("warn", "/ledger?category=refunds&period=custom&from="+date+"&to="+date,
+				"%s from %s on %s is filed as a refund, which lowers spending. If it is money back from savings or an investment, make it a transfer.", eurS(amt), firstOr(who, "a payer"), date)
+		}
+		rr.Close()
+	}
 	var last string
 	d.QueryRow(`SELECT value FROM settings WHERE key='last_backup_download'`).Scan(&last)
 	last = strings.Trim(last, `"`)
@@ -444,4 +462,11 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+func firstOr(s, def string) string {
+	if strings.TrimSpace(s) == "" {
+		return def
+	}
+	return s
 }

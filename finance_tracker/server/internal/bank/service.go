@@ -395,6 +395,18 @@ func requiredHeaders(ctx context.Context, cl *openbanking.Client, c *Connection)
 
 func (s *Service) ownIBANs() map[string]string {
 	out := map[string]string{}
+	// Accounts the bank doesn't link (a savings account entered by hand) can
+	// carry their IBAN in the account details, so transfers to them are
+	// recognised as yours and filed against them.
+	if rows, err := s.DB.Query(`SELECT id, json_extract(details, '$.iban') FROM accounts WHERE json_valid(details) AND json_extract(details, '$.iban') IS NOT NULL`); err == nil {
+		for rows.Next() {
+			var id, iban string
+			if rows.Scan(&id, &iban) == nil && iban != "" {
+				out[strings.ToUpper(strings.ReplaceAll(iban, " ", ""))] = id
+			}
+		}
+		rows.Close()
+	}
 	accts, _ := listBankAccounts(s.DB, 0)
 	for _, a := range accts {
 		if a.IBAN != "" && a.AccountID != "" {

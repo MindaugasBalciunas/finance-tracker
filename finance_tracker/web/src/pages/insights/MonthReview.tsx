@@ -143,7 +143,7 @@ export function SpendCalendar({ days }: { days: { date: string; spent: number }[
         {days.map((d) => (
           <div key={d.date} title={`${d.date}: ${eurc(d.spent)}`} className="flex aspect-square flex-col items-center justify-center rounded-md text-[10px]" style={{ background: shade(d.spent), color: d.spent / max > 0.55 ? 'white' : undefined }}>
             <span>{Number(d.date.slice(8))}</span>
-            {d.spent > 0 && <span className="hidden tnum sm:block">{eurk(d.spent)}</span>}
+            {d.spent > 0 && <span className="tnum text-[8px] leading-none sm:text-[10px]">{d.spent >= 1000 ? eurk(d.spent) : `€${Math.round(d.spent)}`}</span>}
           </div>
         ))}
       </div>

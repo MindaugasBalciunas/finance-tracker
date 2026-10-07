@@ -335,6 +335,11 @@ func classify(p *Proposal, payee, details, accountID string, ctx Context) {
 			p.set("income", "salary", m, note)
 		case has(low, "dividend"):
 			p.set("income", "investment_income", m, note)
+		case p.Amount >= 25000:
+			// Too big to guess as a refund (a refund lowers spending): money
+			// back from savings or a sale is more likely. Review decides.
+			p.set("income", "other_income", m, note)
+			p.Guessed = true
 		default:
 			p.set("income", "refunds", m, note)
 			p.Guessed = true
