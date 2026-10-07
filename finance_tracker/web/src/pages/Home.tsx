@@ -235,8 +235,19 @@ export default function Home() {
 
 
 
-/** The month day by day: free spending so far against an even pace through
- *  the free money, the typical month, and where this pace ends up; dated
+/** How much of a month's free spending a typical month has done by each day
+ *  (0–1), from the typical-month curve — so pace follows your usual rhythm
+ *  (rent-week, weekends, payday) instead of a straight line. Falls back to
+ *  an even split when there is no history. */
+function typicalShare(p: Overview['plan'], day: number) {
+  const days = p.days ?? []
+  const end = days[days.length - 1]?.typical ?? 0
+  if (!days.length || end <= 0) return days.length ? day / days.length : 0
+  return Math.min(1, Math.max(0, (days[Math.min(day, days.length) - 1]?.typical ?? 0) / end))
+}
+
+/** The month day by day: free spending so far against your typical month's
+ *  rhythm through this month's free money, and where this pace ends up; dated
  *  events (obligations due or paid, income) sit on the axis. */
 function MonthTimeline({ p }: { p: Overview['plan'] }) {
   const days = p.days ?? []
@@ -248,14 +259,14 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
   const projEnd = cumToday + p.expected_day * (dim - today)
   const over = projEnd > free
   const rows = days.map((d) => ({
-    day: d.day, cum: d.cum, typical: d.typical, even: (free * d.day) / dim,
+    day: d.day, cum: d.cum, typical: d.typical, pace: free * typicalShare(p, d.day),
     proj: d.day >= today ? cumToday + p.expected_day * (d.day - today) : undefined,
   }))
   const events = p.events ?? []
   // The day this pace uses up the free money, if it does this month.
   const runOut = over && p.expected_day > 0 ? Math.max(today, Math.min(dim, today + Math.ceil((free - cumToday) / p.expected_day))) : null
   const evColor = (k: string) => (k === 'income' ? 'var(--s6)' : 'var(--s7)')
-  const top = Math.max(free, projEnd, ...days.map((d) => d.typical)) * 1.08
+  const top = Math.max(free, projEnd) * 1.08
   return (
     <div className="mt-3">
       <div className="h-40 sm:h-44">
@@ -277,15 +288,14 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
               return <TooltipBox title={`Day ${r.day}`} rows={[
                 ...(r.cum != null ? [{ color: 'var(--s1)', label: 'Spent so far', value: eur(r.cum), bold: true }, { label: 'that day', value: eur(days[r.day - 1].spent) }]
                   : r.proj != null ? [{ color: over ? 'rgb(var(--warn))' : 'var(--s1)', label: 'At this pace', value: eur(r.proj) }] : []),
-                { label: 'Even pace', value: eur(r.even) },
-                { color: 'var(--s-other)', label: 'Typical month', value: eur(r.typical) },
+                { color: 'var(--s-other)', label: 'Typical pace', value: eur(r.pace) },
+                { label: 'a typical month had spent', value: eur(r.typical) },
                 ...ev.map((e) => ({ color: evColor(e.kind), label: `${e.label}${e.done ? (e.kind === 'income' ? ' received' : ' paid') : ' due'}`, value: eur(e.amount) })),
               ]} />
             }} />
             <ReferenceLine y={free} stroke="var(--chart-axis)" strokeDasharray="4 3"
               label={{ value: `free money ${eurk(free)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--chart-text)' }} />
-            <Line dataKey="even" stroke="rgb(var(--ink2))" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="2 3" dot={false} isAnimationActive={false} />
-            <Line dataKey="typical" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Line dataKey="pace" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             <Area dataKey="cum" stroke="var(--s1)" strokeWidth={2} fill="url(#mt-cum)" dot={false} isAnimationActive={false} connectNulls={false} />
             <Line dataKey="proj" stroke={over ? 'rgb(var(--warn))' : 'var(--s1)'} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
             <ReferenceLine x={today} stroke="rgb(var(--ink))" strokeOpacity={0.5} label={{ value: 'today', position: 'top', fontSize: 10, fill: 'var(--chart-text)' }} />
@@ -302,8 +312,7 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded bg-[var(--s1)]" />you</span>
         <span className="inline-flex items-center gap-1"><span className="w-3 border-t-2 border-dashed" style={{ borderColor: over ? 'rgb(var(--warn))' : 'var(--s1)' }} />at this pace</span>
-        <span className="inline-flex items-center gap-1"><span className="w-3 border-t-2 border-dotted border-ink2/60" />even pace</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />typical month</span>
+        <span className="inline-flex items-center gap-1" title="This month's free money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />typical pace</span>
         {events.length > 0 && <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2" style={{ borderColor: 'var(--s7)' }} />due · <span className="h-2 w-2 rounded-full" style={{ background: 'var(--s7)' }} />paid</span>}
       </div>
       {events.length > 0 && (
@@ -322,7 +331,8 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
 
 /** The whole month's income as one bar: what is committed (fixed, saving,
  *  funds — solid once paid, striped while still to go), what was spent, and
- *  what is left. The tick marks where spending would be at an even pace. */
+ *  what is left. The tick marks where spending would be today at your
+ *  typical month's pace. */
 function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number; warn: boolean }) {
   const fixedPaid = Math.min(p.fixed_spent, p.fixed_planned)
   const savedDone = Math.min(p.saved_actual, p.saving_planned)
@@ -337,7 +347,8 @@ function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number
   const committed = p.fixed_planned + p.saving_planned + p.fund_set_aside
   const total = Math.max(p.income_base, committed + p.free_spent, 1)
   const pctOf = (v: number) => `${(v / total) * 100}%`
-  // Free money = what was spent + what is left; an even pace spends it evenly.
+  // Free money = what was spent + what is left; progress is the share a
+  // typical month has spent by today.
   const free = p.free_spent + Math.max(p.safe_to_spend, 0)
   const tick = Math.min(1, (committed + free * progress) / total)
   return (
@@ -348,7 +359,7 @@ function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number
             <div key={x.key} title={`${x.label} ${eur(x.v)}`} className="h-full" style={{ width: pctOf(x.v), ...(x.faded ? hatch(x.color) : { background: x.color }) }} />
           ))}
         </div>
-        <div className="absolute -top-1 h-[18px] w-0.5 rounded bg-ink/70" style={{ left: `${tick * 100}%` }} title="where spending would be today at an even pace" />
+        <div className="absolute -top-1 h-[18px] w-0.5 rounded bg-ink/70" style={{ left: `${tick * 100}%` }} title="where spending would be today at your typical month's pace" />
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
         <Swatch color="var(--s7)" label="Fixed" v={p.fixed_planned} />
@@ -387,6 +398,8 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   const left = p.safe_to_spend
   const total = Math.max(p.free_spent + Math.max(left, 0), 1)
   const used = Math.min(1, Math.max(0, p.free_spent / total))
+  const today = (p.days ?? []).filter((d) => d.cum != null).length
+  const pace = p.days?.length ? typicalShare(p, Math.max(today, 1)) : progress
   const vsTypical = p.typical_day > 0 ? p.avg_day / p.typical_day - 1 : 0
   const outlook = left < 0 ? 'text-bad' : p.projected_left < 0 ? 'text-warn' : 'text-good'
   const fixed = p.fixed ?? []
@@ -413,7 +426,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           </div>
           <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
         </div>
-        <MonthBar p={p} progress={progress} warn={used > progress + 0.1} />
+        <MonthBar p={p} progress={pace} warn={used > pace + 0.1} />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 pb-2.5 text-xs text-muted">
           <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
           {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">

@@ -143,7 +143,14 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
     for (const id of ids) allOff ? next.delete(id) : next.add(id)
     set({ hidden_accounts: [...next] })
   }
-  const eligible = useMemo(() => accounts.filter((a) => a.kind !== 'loan' && !a.archived && (a.balance ?? 0) > 0 && (!liquidOnly || LIQUID_GROUPS.includes(a.group))), [accounts, liquidOnly])
+  // Every account that held money at some point in the range — a closed or
+  // archived one still shows for the months it had a balance, so the past
+  // stays true; today's split only counts what is held now.
+  const eligible = useMemo(() => {
+    const held = new Set<string>()
+    for (const h of hist ?? []) for (const [id, v] of Object.entries(h.by_account ?? {})) if ((v as number) > 0) held.add(id)
+    return accounts.filter((a) => a.kind !== 'loan' && (!liquidOnly || LIQUID_GROUPS.includes(a.group)) && (((a.balance ?? 0) > 0 && !a.archived) || held.has(a.id)))
+  }, [accounts, liquidOnly, hist])
   const colors = useMemo(() => accountColors(eligible), [eligible])
 
   // Series: one per account, or one per bank. Order by stability (steadiest
@@ -164,7 +171,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   }, [hist, eligible, colors, view])
 
   // Amounts count only switched-on accounts, so the total is the same in both views.
-  const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, a.balance ?? 0])), [eligible])
+  const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, Math.max(0, a.balance ?? 0)])), [eligible])
   const valueOf = (x: { ids: string[] }) => x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + (bal[id] ?? 0), 0)
   const shown = series.filter((x) => !x.ids.every((id) => off.has(id)))
   const rows = useMemo(() => (hist ?? []).map((h) => {
@@ -175,7 +182,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   if (isLoading) return <ChartFrame><Loading /></ChartFrame>
   if (!eligible.length) return <ChartFrame><div className="grid h-full place-items-center text-sm text-muted">No account balances yet.</div></ChartFrame>
   const total = shown.reduce((t, x) => t + valueOf(x), 0)
-  const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color }))
+  const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color })).filter((x) => x.value > 0)
   const limit = view === 'banks' ? 99 : 8
   const visible = allShown ? series : series.slice(0, limit)
   return (
@@ -197,7 +204,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
           </ResponsiveContainer>
         )}
       </ChartFrame>
-      <div className="mt-4 mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id)).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''} · tap one to leave it out of the chart</div>
+      <div className="mt-4 mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id) && bal[id] > 0).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''} · tap one to leave it out of the chart</div>
       {/* The legend is the switchboard: amount and share of what is shown. */}
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((x, i) => {
@@ -212,7 +219,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
                 className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
                 <IconTile name={x.icon} color={on ? x.color : 'var(--s-other)'} size={24} />
                 <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>
-                  {x.name}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length} accounts` : `${x.ids.length} accounts`}</span>}
+                  {x.name}{x.ids.every((id) => !(bal[id] > 0)) && <span className="text-muted"> · closed</span>}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length} accounts` : `${x.ids.length} accounts`}</span>}
                 </span>
                 <span className="tnum font-medium text-ink">{eurk(v)}</span>
                 <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
