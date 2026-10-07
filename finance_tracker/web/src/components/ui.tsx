@@ -240,3 +240,22 @@ export function NumberInput({ value, onChange, integer = false, className = 'inp
       }} />
   )
 }
+
+/** A PIN field browsers never offer to save or autofill: a plain text input
+ *  (password managers key on type="password") whose digits are drawn over
+ *  as dots, with the managers' own opt-out attributes on top. */
+export function PinInput({ value, onChange, center = false, className = '', ...rest }: {
+  value: string; onChange: (v: string) => void; center?: boolean; className?: string
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
+  return (
+    <div className="relative">
+      <input {...rest} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={8} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+        data-1p-ignore="" data-lpignore="true" data-bwignore="" data-form-type="other"
+        className={clsx('input text-transparent caret-transparent selection:bg-transparent', className)} value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 8))} />
+      <div aria-hidden className={clsx('pointer-events-none absolute inset-0 flex items-center overflow-hidden px-3 text-ink', center ? 'justify-center' : '', className.includes('text-2xl') ? 'text-2xl tracking-[0.5em]' : 'tracking-[0.3em]')}>
+        {value ? '•'.repeat(value.length) : <span className="tracking-normal text-muted">{rest.placeholder}</span>}
+      </div>
+    </div>
+  )
+}

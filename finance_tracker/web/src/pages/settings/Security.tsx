@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
-import { Card, Field, Loading, useToast } from '../../components/ui'
+import { Card, Field, Loading, PinInput, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { passkeyRegister } from '../../lib/passkey'
 import { useDemo } from '../../lib/hooks'
@@ -39,8 +39,8 @@ export function Security() {
       <Card title="App lock">
         <div className="mb-3 text-sm">{st.enabled ? <span className="text-good">PIN lock is on.</span> : <span className="text-warn">PIN lock is off — anyone past the web login can see everything.</span>}</div>
         <div className="grid grid-cols-2 gap-3">
-          {st.enabled && <Field label="Current PIN"><input type="password" inputMode="numeric" className="input" value={pin.current_pin} onChange={(e) => setPin({ ...pin, current_pin: e.target.value })} /></Field>}
-          <Field label={st.enabled ? 'New PIN' : 'PIN (4–8 digits)'}><input type="password" inputMode="numeric" className="input" value={pin.pin} onChange={(e) => setPin({ ...pin, pin: e.target.value })} /></Field>
+          {st.enabled && <Field label="Current PIN"><PinInput value={pin.current_pin} onChange={(v) => setPin({ ...pin, current_pin: v })} aria-label="Current PIN" /></Field>}
+          <Field label={st.enabled ? 'New PIN' : 'PIN (4–8 digits)'}><PinInput value={pin.pin} onChange={(v) => setPin({ ...pin, pin: v })} aria-label="New PIN" /></Field>
         </div>
         <div className="mt-3 flex gap-2">
           <button className="btn-primary" onClick={() => run(() => api.post('/auth/pin/setup', pin), st.enabled ? 'PIN changed' : 'Lock enabled')}>{st.enabled ? 'Change PIN' : 'Enable lock'}</button>
