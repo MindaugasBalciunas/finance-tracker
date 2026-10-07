@@ -406,7 +406,7 @@ function AccountSheet({ a, onClose }: { a: Account; onClose: () => void }) {
       <div className="mt-1 max-h-72 divide-y divide-line overflow-y-auto">
         {[...(pts ?? [])].reverse().slice(0, 200).map((p) => (
           <div key={p.date} className="flex items-center justify-between py-1.5 text-sm">
-            <span className="text-ink2">{p.date} <span className="text-xs text-muted">{p.source}</span></span>
+            <span className="text-ink2">{p.date}{p.at && <span className="text-xs text-muted"> {new Date(p.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>} <span className="text-xs text-muted">{p.source}</span></span>
             <span className="flex items-center gap-2"><span className="tnum">{eurc(p.value)}</span>
               <button className="text-muted hover:text-bad" onClick={() => del(p.date)} aria-label="Delete value"><Icon name="trash" size={14} /></button></span>
           </div>

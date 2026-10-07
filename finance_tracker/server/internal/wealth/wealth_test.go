@@ -368,3 +368,41 @@ var errNone = errFn("no targets")
 type errFn string
 
 func (e errFn) Error() string { return string(e) }
+
+func TestTodaysReadingsAreLoggedWithTimes(t *testing.T) {
+	d := DB(t)
+	today := time.Now().Format("2006-01-02")
+	set := func(date string, v float64, src string) {
+		t.Helper()
+		if err := wealth.SetBalance(d, "swed", date, E(v), nil, nil, src); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(today, 1610.79, "bank")
+	set(today, 1610.79, "bank") // a repeat sync adds nothing
+	set(today, 1559.00, "bank")
+	set("2026-01-31", 1000, "manual") // a past day keeps no trail
+	rd, err := wealth.Readings(d, "2026-01-01", today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rd[today]) != 2 || rd[today][0].Value != E(1610.79) || rd[today][1].Value != E(1559) || rd[today][1].At == "" {
+		t.Fatalf("today's trail: %+v", rd[today])
+	}
+	if len(rd["2026-01-31"]) != 0 {
+		t.Fatalf("past day logged: %+v", rd["2026-01-31"])
+	}
+	book, _ := wealth.LoadBook(d)
+	if p, _ := book.At("swed", today); p.Value != E(1559) || p.At == "" {
+		t.Fatalf("daily value should be the latest reading with its time: %+v", p)
+	}
+	if p, _ := book.At("swed", "2026-01-31"); p.At != "" {
+		t.Fatalf("a backdated value has no time of day: %+v", p)
+	}
+	if err := wealth.DeleteBalance(d, "swed", today); err != nil {
+		t.Fatal(err)
+	}
+	if rd, _ := wealth.Readings(d, today, today); len(rd[today]) != 0 {
+		t.Fatal("deleting the day should drop its trail")
+	}
+}

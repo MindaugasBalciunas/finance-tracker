@@ -11,13 +11,16 @@ import { accountIcon, brandColor } from '../../lib/brand'
 
 // ── balance history ─────────────────────────────────────────────────
 
-const SOURCE_COLOR: Record<string, string> = { bank: 'rgb(var(--accent))', manual: 'var(--s6)', import: 'var(--s-other)', computed: 'var(--s4)' }
+const SOURCE_COLOR: Record<string, string> = { bank: 'rgb(var(--accent))', manual: 'var(--s6)', import: 'var(--s-other)', computed: 'var(--s4)', market: 'var(--s3)', broker: 'var(--s5)' }
+const hhmm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '')
 
 /** Every account on every snapshot date, 50 dates a page, newest first.
  *  Recorded values in full ink with their source; carried-forward values grey. */
 export function BalanceHistory() {
   const [page, setPage] = useState(1)
   const [picking, setPicking] = useState(false)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const flip = (d: string) => setOpen((o) => { const n = new Set(o); n.has(d) ? n.delete(d) : n.add(d); return n })
   const { data: accounts } = useAccounts()
   const { prefs, set } = usePrefs()
   const { data: t, isLoading, isFetching } = useQuery({ queryKey: ['balance-table', page], queryFn: () => api.get<any>('/balances/table', { page, size: 50 }), placeholderData: (p) => p })
@@ -43,7 +46,7 @@ export function BalanceHistory() {
           <button className="btn-outline h-8 px-2.5 text-xs" onClick={() => setPicking(true)}><Icon name="filter" size={14} />Columns</button>
         </div>}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-2.5 text-[11px] text-muted">
-          <span><b className="text-ink">Bold</b> = recorded that day · <span className="opacity-60">grey</span> = carried forward</span>
+          <span><b className="text-ink">Bold</b> = recorded that day (with the time when known) · <span className="opacity-60">grey</span> = carried forward · tap a day with several readings to see each</span>
           {Object.entries(SOURCE_COLOR).map(([k, c]) => <span key={k} className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{k === 'import' ? 'imported' : k}</span>)}
           {hidden.size > 0 && <button className="ml-auto text-accent" onClick={() => setPicking(true)}>{hidden.size} column{hidden.size === 1 ? '' : 's'} hidden</button>}
         </div>
@@ -66,14 +69,27 @@ export function BalanceHistory() {
               {t.rows.map((r: any, i: number) => {
                 const older = t.rows[i + 1]
                 const change = older ? r.net_worth - older.net_worth : null
+                const readings: any[] = r.readings ?? []
+                const latest = Object.values(r.cells as Record<string, any>).map((c) => c.at).filter(Boolean).sort().pop()
+                const expanded = open.has(r.date)
                 return (
-                  <tr key={r.date} className="hover:bg-sunken/40">
-                    <td className="sticky left-0 z-10 whitespace-nowrap border-t border-line bg-surface px-3 py-1.5 text-ink2">{r.date}</td>
+                  <Fragment key={r.date}>
+                  <tr className="hover:bg-sunken/40">
+                    <td className="sticky left-0 z-10 whitespace-nowrap border-t border-line bg-surface px-3 py-1.5 text-ink2">
+                      {readings.length > 1 ? (
+                        <button className="inline-flex items-center gap-1 text-left" onClick={() => flip(r.date)} aria-expanded={expanded}>
+                          <Icon name={expanded ? 'chevronD' : 'chevronR'} size={12} />
+                          <span>{r.date}<span className="block text-[10px] text-muted">{readings.length} readings · last {hhmm(latest)}</span></span>
+                        </button>
+                      ) : (
+                        <span>{r.date}{latest && <span className="block text-[10px] text-muted">at {hhmm(latest)}</span>}</span>
+                      )}
+                    </td>
                     {cols.map((a) => {
                       const c = r.cells[a.id]
                       return (
                         <td key={a.id} className={clsx('whitespace-nowrap border-t border-line px-2 py-1.5 text-right', c?.recorded ? 'font-medium text-ink' : 'text-muted/60')}
-                          title={c ? `${byId[a.id]?.name}: ${eurc(c.value)} — ${c.recorded ? c.source || 'recorded' : 'carried forward'}` : ''}>
+                          title={c ? `${byId[a.id]?.name}: ${eurc(c.value)} — ${c.recorded ? (c.source || 'recorded') + (c.at ? ` at ${hhmm(c.at)}` : '') : 'carried forward'}` : ''}>
                           {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source] ?? 'var(--s-other)' }} />}{eurc(c.value)}</span> : ''}
                         </td>
                       )
@@ -84,6 +100,28 @@ export function BalanceHistory() {
                       {change == null ? '' : Math.abs(change) < 0.005 ? '±0' : `${change > 0 ? '+' : '−'}${eurc(Math.abs(change))}`}
                     </td>
                   </tr>
+                  {expanded && (
+                    <tr>
+                      <td colSpan={cols.length + 4} className="border-t border-line bg-sunken/30 p-0">
+                        <div className="sticky left-0 w-[min(calc(100vw-2rem),26rem)] space-y-1 px-3 py-2">
+                          {readings.map((x, j) => {
+                            const prev = readings.slice(0, j).reverse().find((y) => y.account_id === x.account_id)
+                            const d = prev ? x.value - prev.value : null
+                            return (
+                              <div key={j} className="flex items-center gap-3 text-xs">
+                                <span className="w-10 shrink-0 whitespace-nowrap text-muted">{hhmm(x.at)}</span>
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: SOURCE_COLOR[x.source] ?? 'var(--s-other)' }} />
+                                <span className="min-w-0 flex-1 truncate">{byId[x.account_id]?.name ?? x.account_id}</span>
+                                <span className="font-medium">{eurc(x.value)}</span>
+                                <span className={clsx('w-20 shrink-0 text-right', d == null ? 'text-muted' : d > 0 ? 'text-good' : d < 0 ? 'text-bad' : 'text-muted')}>{d == null ? 'first' : `${d > 0 ? '+' : '−'}${eurc(Math.abs(d))}`}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>

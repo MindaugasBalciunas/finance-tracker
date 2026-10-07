@@ -20,7 +20,7 @@ import (
 const Format = "finance-tracker-backup"
 
 // Tables in dependency order (parents first).
-var tables = []string{"settings", "accounts", "categories", "balances", "transactions", "rules", "budgets", "budget_amounts", "trades", "recurring_items",
+var tables = []string{"settings", "accounts", "categories", "balances", "balance_log", "transactions", "rules", "budgets", "budget_amounts", "trades", "recurring_items",
 	"bank_connections", "bank_accounts", "bank_inbox", "webauthn_credentials", "ai_messages", "ai_spend", "ai_topups"}
 
 // Secret-only tables and settings keys.

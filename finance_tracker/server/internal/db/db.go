@@ -67,6 +67,20 @@ ALTER TABLE recurring_items ADD COLUMN day INTEGER NOT NULL DEFAULT 0;`,
 	// never imported twice. Existing trades keep '' (entered by hand).
 	`ALTER TABLE trades ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS trades_external_id ON trades(external_id) WHERE external_id <> '';`,
+	// 9: every reading of today's balance with its time — a bank sync at
+	// 08:10 and another at 17:40 both stay visible. balances keeps one value
+	// per day (what net worth uses); this is the intraday trail beside it.
+	`CREATE TABLE IF NOT EXISTS balance_log (
+    id         INTEGER PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    date       TEXT NOT NULL,              -- local day the value is for
+    at         TEXT NOT NULL,              -- when it was read (UTC RFC3339)
+    value      INTEGER NOT NULL,
+    quantity   REAL,
+    price      INTEGER,
+    source     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS balance_log_date ON balance_log(date, account_id);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

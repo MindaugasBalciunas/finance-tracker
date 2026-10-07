@@ -67,7 +67,15 @@ func (s *Server) wealthRoutes() {
 		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-		return book.Table(page, size), nil
+		t := book.Table(page, size)
+		if n := len(t.Rows); n > 0 {
+			if rd, err := wealth.Readings(s.DB, t.Rows[n-1].Date, t.Rows[0].Date); err == nil {
+				for i := range t.Rows {
+					t.Rows[i].Readings = rd[t.Rows[i].Date]
+				}
+			}
+		}
+		return t, nil
 	})
 	s.handle("GET /api/balances", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		book, err := wealth.LoadBook(s.DB)

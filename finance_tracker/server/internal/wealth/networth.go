@@ -21,6 +21,9 @@ type Point struct {
 	Quantity  *float64     `json:"quantity,omitempty"`
 	Price     *money.Cents `json:"price,omitempty"`
 	Source    string       `json:"source"`
+	// At is when the value was recorded (RFC3339), set only when that was
+	// on the day itself — an import made later has no meaningful time.
+	At string `json:"at,omitempty"`
 }
 
 // Book is every balance point, indexed for carry-forward lookups.
@@ -39,7 +42,7 @@ func LoadBook(d *sql.DB) (*Book, error) {
 	for _, a := range accts {
 		b.Accounts[a.ID] = a
 	}
-	rows, err := d.Query(`SELECT account_id,date,value,quantity,price,source FROM balances ORDER BY account_id, date`)
+	rows, err := d.Query(`SELECT account_id,date,value,quantity,price,source,updated_at FROM balances ORDER BY account_id, date`)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +51,14 @@ func LoadBook(d *sql.DB) (*Book, error) {
 		var p Point
 		var q sql.NullFloat64
 		var pr sql.NullInt64
-		if err := rows.Scan(&p.AccountID, &p.Date, &p.Value, &q, &pr, &p.Source); err != nil {
+		var upd string
+		if err := rows.Scan(&p.AccountID, &p.Date, &p.Value, &q, &pr, &p.Source, &upd); err != nil {
 			return nil, err
+		}
+		if p.Source != "import" && p.Source != "computed" {
+			if t, err := time.Parse(time.RFC3339, upd); err == nil && t.Local().Format("2006-01-02") == p.Date {
+				p.At = upd
+			}
 		}
 		if q.Valid {
 			v := q.Float64
@@ -200,14 +209,54 @@ func SetBalance(e interface {
 	_, err := e.Exec(`INSERT INTO balances(account_id,date,value,quantity,price,source,updated_at) VALUES(?,?,?,?,?,?,?)
 		ON CONFLICT(account_id,date) DO UPDATE SET value=excluded.value, quantity=excluded.quantity, price=excluded.price,
 		source=excluded.source, updated_at=excluded.updated_at`, account, date, int64(value), q, p, source, db.Now())
+	if err != nil || date != time.Now().Format("2006-01-02") {
+		return err
+	}
+	// Today's value: keep the reading with its time, unless it repeats the
+	// last one logged today (a sync every half hour adds nothing new).
+	_, err = e.Exec(`INSERT INTO balance_log(account_id,date,at,value,quantity,price,source)
+		SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (
+			SELECT 1 FROM (SELECT value, source FROM balance_log WHERE account_id=? AND date=? ORDER BY id DESC LIMIT 1) WHERE value=? AND source=?)`,
+		account, date, db.Now(), int64(value), q, p, source, account, date, int64(value), source)
 	return err
+}
+
+// Reading is one logged value of an account at a moment of the day.
+type Reading struct {
+	AccountID string      `json:"account_id"`
+	At        string      `json:"at"`
+	Value     money.Cents `json:"value"`
+	Source    string      `json:"source"`
+}
+
+// Readings returns the intraday trail for the days from..to (inclusive),
+// by day, oldest reading first.
+func Readings(d *sql.DB, from, to string) (map[string][]Reading, error) {
+	rows, err := d.Query(`SELECT date, account_id, at, value, source FROM balance_log WHERE date>=? AND date<=? ORDER BY date, at, id`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]Reading{}
+	for rows.Next() {
+		var day string
+		var r Reading
+		if err := rows.Scan(&day, &r.AccountID, &r.At, &r.Value, &r.Source); err != nil {
+			return nil, err
+		}
+		out[day] = append(out[day], r)
+	}
+	return out, rows.Err()
 }
 
 // DeleteBalance removes one point.
 func DeleteBalance(e interface {
 	Exec(string, ...any) (sql.Result, error)
 }, account, date string) error {
-	_, err := e.Exec(`DELETE FROM balances WHERE account_id=? AND date=?`, account, date)
+	if _, err := e.Exec(`DELETE FROM balances WHERE account_id=? AND date=?`, account, date); err != nil {
+		return err
+	}
+	_, err := e.Exec(`DELETE FROM balance_log WHERE account_id=? AND date=?`, account, date)
 	return err
 }
 
@@ -296,11 +345,13 @@ type TableCell struct {
 	Value    money.Cents `json:"value"`
 	Recorded bool        `json:"recorded,omitempty"`
 	Source   string      `json:"source,omitempty"`
+	At       string      `json:"at,omitempty"`
 }
 
 type TableRow struct {
 	Date     string               `json:"date"`
 	Cells    map[string]TableCell `json:"cells"`
+	Readings []Reading            `json:"readings,omitempty"` // every reading that day, with times`
 	NetWorth money.Cents          `json:"net_worth"`
 	Liquid   money.Cents          `json:"liquid"`
 }
@@ -364,7 +415,7 @@ func (b *Book) Table(page, size int) BalanceTable {
 		for _, id := range accounts {
 			c := TableCell{Value: snap.ByAccount[id]}
 			if p, ok := recorded[id][d]; ok {
-				c.Recorded, c.Source, c.Value = true, p.Source, p.Value
+				c.Recorded, c.Source, c.Value, c.At = true, p.Source, p.Value, p.At
 			}
 			if c.Value != 0 || c.Recorded {
 				row.Cells[id] = c
