@@ -3,6 +3,7 @@ package ledger_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"ft/internal/ledger"
 	"ft/internal/plan"
@@ -368,5 +369,34 @@ func TestAccountInstitutionTrimmed(t *testing.T) {
 	saved, err := ledger.SaveAccount(d, ledger.Account{ID: "x2", Name: "X", Institution: " SEB ", Kind: "checking"})
 	if err != nil || saved.Institution != "SEB" {
 		t.Fatalf("%+v %v", saved, err)
+	}
+}
+
+func TestSuggestNotesFromEarlierEntries(t *testing.T) {
+	d := DB(t)
+	day := time.Now().AddDate(0, -1, 0).Format("2006-01-02")
+	add := func(m, note string) {
+		Tx(t, d, ledger.Tx{Date: day, Kind: "expense", Amount: E(10), Category: "food.groceries", Merchant: m, Note: note, AccountID: "swed"})
+	}
+	add("Norfa", "small groceries")
+	add("Norfa", "small groceries")
+	add("Maxima", "weekly shop")
+	add("Maxima", "groceries for kids")
+	add("Lidl", "Lidl") // a narrative repeating the merchant is not a note
+	add("Norfa", "NORFA - BT")
+	add("Norfa", `NORFA\ZUJUNU G. 1\VILNIUS`)
+	got, err := ledger.SuggestNotes(d, "Norfa", "gro", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Note != "small groceries" || !got[0].Same || got[0].Count != 2 || got[1].Note != "groceries for kids" {
+		t.Fatalf("got %+v", got)
+	}
+	got, _ = ledger.SuggestNotes(d, "Maxima", "", 6)
+	if len(got) != 2 || !got[0].Same || !got[1].Same {
+		t.Fatalf("merchant's own notes first: %+v", got)
+	}
+	if got, _ := ledger.SuggestNotes(d, "", "small groceries", 6); len(got) != 0 {
+		t.Fatalf("what is already typed is not suggested back: %+v", got)
 	}
 }

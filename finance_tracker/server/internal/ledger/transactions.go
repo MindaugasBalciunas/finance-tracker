@@ -560,3 +560,50 @@ func orMax(s string) string {
 	}
 	return s
 }
+
+// NoteSuggestion is a note written before, for filling the note field.
+type NoteSuggestion struct {
+	Note  string `json:"note"`
+	Count int    `json:"count"`
+	Same  bool   `json:"same_merchant"` // used with this merchant before
+}
+
+// SuggestNotes finds notes from earlier transactions that contain q (any
+// case): ones used with this merchant first, then those starting with q,
+// then the most used and most recent. Bank narratives are left out — the
+// merchant repeated, all capitals ("NORFA - BT") or with routing codes;
+// only the last three years count. Before anything is typed only the
+// merchant's own notes are offered.
+func SuggestNotes(q querier, merchant, text string, limit int) ([]NoteSuggestion, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 6
+	}
+	text = strings.TrimSpace(text)
+	since := time.Now().AddDate(-3, 0, 0).Format("2006-01-02")
+	rows, err := q.Query(`SELECT note, COUNT(*) n, MAX(date) last,
+			SUM(CASE WHEN ? <> '' AND lower(merchant) = lower(?) THEN 1 ELSE 0 END) same
+		FROM transactions
+		WHERE trim(note) <> '' AND length(note) <= 80 AND lower(note) <> lower(merchant) AND date >= ?
+			AND note GLOB '*[a-z]*' AND instr(note, '\') = 0
+			AND (? = '' OR instr(lower(note), lower(?)) > 0) AND lower(note) <> lower(?)
+		GROUP BY note
+		HAVING ? <> '' OR same > 0
+		ORDER BY same > 0 DESC, (? <> '' AND instr(lower(note), lower(?)) = 1) DESC, n DESC, last DESC
+		LIMIT ?`, merchant, merchant, since, text, text, text, text, text, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []NoteSuggestion{}
+	for rows.Next() {
+		var s NoteSuggestion
+		var last string
+		var same int
+		if err := rows.Scan(&s.Note, &s.Count, &last, &same); err != nil {
+			return nil, err
+		}
+		s.Same = same > 0
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}

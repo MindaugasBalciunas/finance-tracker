@@ -6,7 +6,7 @@ import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
 import { dayLabel, eurc, parseNum, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
-import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
+import { AccountSelect, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
 import { Icon, IconTile } from './Icon'
 
@@ -180,7 +180,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             <Field label="To account"><AccountSelect value={t.to_account_id ?? ''} onChange={(v) => set({ to_account_id: v })} kinds={TRANSFER_TO_KINDS} placeholder="Outside" /></Field>
           )}
         </div>
-        <Field label="Note"><input className="input" value={t.note ?? ''} onChange={(e) => set({ note: e.target.value })} placeholder="What was it for?" /></Field>
+        <Field label="Note"><NoteInput value={t.note ?? ''} onChange={(v) => set({ note: v })} merchant={t.merchant ?? ''} /></Field>
         {t.kind === 'income' && Object.entries(owed ?? {}).some(([, v]) => v > 0.005) && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-ink2">Someone paying you back?</span>

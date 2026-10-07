@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../lib/api'
 import clsx from 'clsx'
 import { useAccounts, useTags } from '../lib/hooks'
 import { catColor, useCats } from '../lib/categories'
@@ -84,42 +86,98 @@ export function AccountSelect({ value, onChange, placeholder = 'No account', kin
 export function TagInput({ value, onChange, placeholder = 'Add tag' }: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
   const { data } = useTags()
   const [text, setText] = useState('')
+  const [hi, setHi] = useState(-1) // highlighted suggestion (arrow keys)
   const ref = useRef<HTMLInputElement>(null)
+  // Tags you used before: those starting with what you typed first, then
+  // ones containing it, most used first.
   const sugg = useMemo(() => {
     const t = text.trim().toLowerCase()
     return (data ?? [])
       .filter((x) => !value.includes(x.tag) && (!t || x.tag.includes(t)))
-      .sort((a, b) => b.count - a.count)
+      .sort((a, b) => Number(b.tag.startsWith(t)) - Number(a.tag.startsWith(t)) || b.count - a.count)
       .slice(0, t ? 8 : 6)
   }, [data, text, value])
-  const add = (t: string) => {
-    t = t.trim().toLowerCase().replace(/,/g, '')
-    if (t && !value.includes(t)) onChange([...value, t])
-    setText('')
+  const t = text.trim().toLowerCase()
+  // Typing the start of a known tag completes it: Enter or Tab takes it,
+  // a comma keeps exactly what you typed.
+  const completion = t && sugg[0]?.tag.startsWith(t) && sugg[0].tag !== t ? sugg[0].tag : ''
+  const pick = hi >= 0 && hi < sugg.length ? sugg[hi].tag : completion
+  const add = (v: string) => {
+    v = v.trim().toLowerCase().replace(/,/g, '')
+    if (v && !value.includes(v)) onChange([...value, v])
+    setText(''); setHi(-1)
     ref.current?.focus()
   }
   return (
     <div>
       <div className="input flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5" onClick={() => ref.current?.focus()}>
-        {value.map((t) => (
-          <span key={t} className="chip bg-sunken">
-            {t}
-            <button type="button" onClick={() => onChange(value.filter((x) => x !== t))} aria-label={`Remove ${t}`}><Icon name="x" size={12} /></button>
+        {value.map((x) => (
+          <span key={x} className="chip bg-sunken">
+            {x}
+            <button type="button" onClick={() => onChange(value.filter((y) => y !== x))} aria-label={`Remove ${x}`}><Icon name="x" size={12} /></button>
           </span>
         ))}
-        <input ref={ref} value={text} onChange={(e) => setText(e.target.value)} placeholder={value.length ? '' : placeholder}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ',') && text.trim()) {
-              e.preventDefault()
-              add(text)
-            } else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1))
-          }}
-          className="min-w-[6rem] flex-1 bg-transparent text-sm outline-none" />
+        <span className="relative min-w-[6rem] flex-1">
+          {completion && hi < 0 && <span aria-hidden className="pointer-events-none absolute inset-0 truncate text-sm"><span className="invisible">{text}</span><span className="text-muted">{completion.slice(text.length)}</span></span>}
+          <input ref={ref} value={text} onChange={(e) => { setText(e.target.value); setHi(-1) }} placeholder={value.length ? '' : placeholder}
+            autoComplete="off" autoCapitalize="off" spellCheck={false}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' && sugg.length) { e.preventDefault(); setHi((hi + 1) % sugg.length) }
+              else if (e.key === 'ArrowUp' && sugg.length) { e.preventDefault(); setHi(hi <= 0 ? sugg.length - 1 : hi - 1) }
+              else if ((e.key === 'Enter' || (e.key === 'Tab' && pick)) && (pick || text.trim())) { e.preventDefault(); add(pick || text) }
+              else if (e.key === ',' && text.trim()) { e.preventDefault(); add(text) }
+              else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1))
+            }}
+            className="relative w-full bg-transparent text-sm outline-none" />
+        </span>
       </div>
       {sugg.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {sugg.map((s) => (
-            <button type="button" key={s.tag} onClick={() => add(s.tag)} className="chip hover:bg-sunken">+ {s.tag}</button>
+          {sugg.map((x, i) => (
+            <button type="button" key={x.tag} onClick={() => add(x.tag)} className={clsx('chip hover:bg-sunken', (i === hi || (hi < 0 && x.tag === completion)) && 'ring-1 ring-accent')}>+ {x.tag}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The note field, filled from notes you wrote before: ones used with this
+ *  merchant come first (shown even before typing), then any containing what
+ *  you type. Tap one, or use the arrow keys and Enter. */
+export function NoteInput({ value, onChange, merchant = '', placeholder = 'What was it for?' }: { value: string; onChange: (v: string) => void; merchant?: string; placeholder?: string }) {
+  const [focus, setFocus] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const [q, setQ] = useState(value)
+  useEffect(() => { const id = setTimeout(() => setQ(value), 150); return () => clearTimeout(id) }, [value])
+  const { data } = useQuery({
+    queryKey: ['note-suggest', merchant.trim().toLowerCase(), q.trim().toLowerCase()],
+    queryFn: () => api.get<{ note: string; count: number; same_merchant: boolean }[]>('/notes/suggest', { merchant: merchant.trim(), q: q.trim() }),
+    enabled: focus && (!!q.trim() || !!merchant.trim()), staleTime: 60_000, placeholderData: (p) => p,
+  })
+  const list = focus ? (data ?? []).filter((s) => s.note !== value) : []
+  const take = (v: string) => { onChange(v); setHi(-1) }
+  return (
+    <div className="relative">
+      <input className="input" value={value} placeholder={placeholder} autoComplete="off"
+        onChange={(e) => { onChange(e.target.value); setHi(-1) }}
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        onKeyDown={(e) => {
+          if (!list.length) return
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHi((hi + 1) % list.length) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(hi <= 0 ? list.length - 1 : hi - 1) }
+          else if (e.key === 'Enter' && hi >= 0) { e.preventDefault(); take(list[hi].note) }
+          else if (e.key === 'Escape') setFocus(false)
+        }} />
+      {list.length > 0 && (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-line bg-surface shadow-lg" role="listbox">
+          {list.map((s, i) => (
+            <button type="button" key={s.note} role="option" aria-selected={i === hi}
+              onMouseDown={(e) => { e.preventDefault(); take(s.note) }}
+              className={clsx('flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-sunken', i === hi && 'bg-sunken')}>
+              <span className="truncate">{s.note}</span>
+              <span className="shrink-0 text-[11px] text-muted">{s.same_merchant && merchant ? merchant : ''}{s.count > 1 ? ` ×${s.count}` : ''}</span>
+            </button>
           ))}
         </div>
       )}

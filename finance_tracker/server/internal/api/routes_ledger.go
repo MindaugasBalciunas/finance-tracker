@@ -388,6 +388,11 @@ func (s *Server) ledgerRoutes() {
 		return ledger.ListMerchants(s.DB, r.URL.Query().Get("from"), r.URL.Query().Get("to"))
 	})
 
+	s.handle("GET /api/notes/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		q := r.URL.Query()
+		return ledger.SuggestNotes(s.DB, q.Get("merchant"), q.Get("q"), 6)
+	})
+
 	s.handle("GET /api/rules", func(w http.ResponseWriter, r *http.Request) (any, error) { return ledger.ListRules(s.DB) })
 	saveRule := func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in ledger.Rule
