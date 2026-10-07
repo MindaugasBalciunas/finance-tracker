@@ -69,7 +69,9 @@ export function BalanceHistory() {
               {t.rows.map((r: any, i: number) => {
                 const older = t.rows[i + 1]
                 const change = older ? r.net_worth - older.net_worth : null
-                const readings: any[] = r.readings ?? []
+                // Readings of the columns on screen (hidden accounts would only
+                // add empty rows).
+                const readings: any[] = (r.readings ?? []).filter((x: any) => cols.some((a) => a.id === x.account_id))
                 const latest = Object.values(r.cells as Record<string, any>).map((c) => c.at).filter(Boolean).sort().pop()
                 const expanded = open.has(r.date)
                 return (
@@ -100,27 +102,41 @@ export function BalanceHistory() {
                       {change == null ? '' : Math.abs(change) < 0.005 ? '±0' : `${change > 0 ? '+' : '−'}${eurc(Math.abs(change))}`}
                     </td>
                   </tr>
-                  {expanded && (
-                    <tr>
-                      <td colSpan={cols.length + 4} className="border-t border-line bg-sunken/30 p-0">
-                        <div className="sticky left-0 w-[min(calc(100vw-2rem),26rem)] space-y-1 px-3 py-2">
-                          {readings.map((x, j) => {
-                            const prev = readings.slice(0, j).reverse().find((y) => y.account_id === x.account_id)
-                            const d = prev ? x.value - prev.value : null
-                            return (
-                              <div key={j} className="flex items-center gap-3 text-xs">
-                                <span className="w-10 shrink-0 whitespace-nowrap text-muted">{hhmm(x.at)}</span>
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: SOURCE_COLOR[x.source] ?? 'var(--s-other)' }} />
-                                <span className="min-w-0 flex-1 truncate">{byId[x.account_id]?.name ?? x.account_id}</span>
-                                <span className="font-medium">{eurc(x.value)}</span>
-                                <span className={clsx('w-20 shrink-0 text-right', d == null ? 'text-muted' : d > 0 ? 'text-good' : d < 0 ? 'text-bad' : 'text-muted')}>{d == null ? 'first' : `${d > 0 ? '+' : '−'}${eurc(Math.abs(d))}`}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                  {expanded && (() => {
+                    // One row per moment (same minute), newest first, each value
+                    // under its own account column with the change since that
+                    // account's previous reading.
+                    const prevOf = new Map<number, number>()
+                    const last: Record<string, number> = {}
+                    readings.forEach((x, j) => { if (x.account_id in last) prevOf.set(j, last[x.account_id]); last[x.account_id] = x.value })
+                    const groups: { at: string; items: { x: any; d: number | null }[] }[] = []
+                    readings.forEach((x, j) => {
+                      const key = hhmm(x.at)
+                      const g = groups.find((g) => hhmm(g.at) === key)
+                      const item = { x, d: prevOf.has(j) ? x.value - prevOf.get(j)! : null }
+                      if (g && !g.items.some((i) => i.x.account_id === x.account_id)) g.items.push(item)
+                      else groups.push({ at: x.at, items: [item] })
+                    })
+                    return groups.reverse().map((g, gi) => (
+                      <tr key={gi} className="bg-sunken/30 text-[11px]">
+                        <td className="sticky left-0 z-10 whitespace-nowrap bg-sunken px-3 py-1 pl-7 text-muted">{hhmm(g.at)}</td>
+                        {cols.map((a) => {
+                          const it = g.items.find((i) => i.x.account_id === a.id)
+                          return (
+                            <td key={a.id} className="whitespace-nowrap px-2 py-1 text-right" title={it ? `${a.name} at ${hhmm(g.at)} · ${it.x.source}` : ''}>
+                              {it && (
+                                <span className="inline-flex flex-col items-end leading-tight">
+                                  <span className="inline-flex items-center gap-1 text-ink"><span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[it.x.source] ?? 'var(--s-other)' }} />{eurc(it.x.value)}</span>
+                                  {it.d != null && Math.abs(it.d) >= 0.005 && <span className={it.d > 0 ? 'text-good' : 'text-bad'}>{it.d > 0 ? '+' : '−'}{eurc(Math.abs(it.d))}</span>}
+                                </span>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td colSpan={3} />
+                      </tr>
+                    ))
+                  })()}
                   </Fragment>
                 )
               })}
