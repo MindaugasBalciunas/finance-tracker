@@ -57,7 +57,7 @@ export interface Overview {
   spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
-    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null
+    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null
     income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number
     fixed?: { name: string; budgeted: number; spent: number; due?: string; paid?: string }[] | null
     days?: { day: number; spent: number; cum?: number; typical: number }[] | null

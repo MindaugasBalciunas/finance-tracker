@@ -101,8 +101,15 @@ type Report struct {
 	// The same free spending by day of month ("2026-10" → day → amount), for
 	// the month timeline and the typical-month curve.
 	FreeSpentByDay map[string]map[int]money.Cents `json:"-"`
+	// The same without one-offs (single payments of OneOff or more), for what
+	// a typical month looks like: a big family dinner shouldn't set the pace.
+	EverydayByDay map[string]map[int]money.Cents `json:"-"`
 	Unbudgeted     []Unbudgeted                   `json:"unbudgeted"`
 }
+
+// OneOff is the size from which a single payment counts as a one-off rather
+// than everyday spending (the cash planner uses the same line).
+const OneOff = money.Cents(250 * 100)
 
 func ym(date string) string { return date[:7] }
 
@@ -199,6 +206,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	}
 	discretionary := map[string]money.Cents{}
 	freeByDay := map[string]map[int]money.Cents{}
+	everydayByDay := map[string]map[int]money.Cents{}
 	fundSpent := map[string]money.Cents{}
 	fixedSpent := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
@@ -263,6 +271,12 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 				freeByDay[m] = map[int]money.Cents{}
 			}
 			freeByDay[m][dayOf(t.Date)] += t.Amount
+			if t.Amount < OneOff {
+				if everydayByDay[m] == nil {
+					everydayByDay[m] = map[int]money.Cents{}
+				}
+				everydayByDay[m][dayOf(t.Date)] += t.Amount
+			}
 		}
 		if disc && !covered {
 			c := ledger.Top(t.Category)
@@ -368,6 +382,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	r.DiscretionarySpent = discretionary[month]
 	r.FundSpent = fundSpent[month]
 	r.FreeSpentByDay = freeByDay
+	r.EverydayByDay = everydayByDay
 	r.FreeSpentByMonth = map[string]money.Cents{}
 	for m, v := range discretionary {
 		r.FreeSpentByMonth[m] = v - fundSpent[m]

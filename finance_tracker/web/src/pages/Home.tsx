@@ -281,7 +281,7 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
   // The day this pace uses up the free money, if it does this month.
   const runOut = over && p.expected_day > 0 ? Math.max(today, Math.min(dim, today + Math.ceil((free - cumToday) / p.expected_day))) : null
   const evColor = (k: string) => (k === 'income' ? 'var(--s6)' : 'var(--s7)')
-  const top = Math.max(free, projEnd) * 1.08
+  const top = Math.max(free, projEnd, days[dim - 1]?.typical ?? 0) * 1.08
   return (
     <div className="mt-3 lg:mt-0">
       <div className="h-52 sm:h-60 lg:h-72">
@@ -306,13 +306,16 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
               return <TooltipBox title={`Day ${r.day}`} rows={[
                 ...(r.cum != null ? [{ color: 'var(--s1)', label: 'Spent so far', value: eur(r.cum), bold: true }, { label: 'that day', value: eur(days[r.day - 1].spent) }]
                   : r.proj != null ? [{ color: over ? 'rgb(var(--warn))' : 'var(--s1)', label: 'At this pace', value: eur(r.proj) }] : []),
-                { color: 'var(--s-other)', label: 'Typical pace', value: eur(r.pace) },
-                { label: 'a typical month had spent', value: eur(r.typical) },
+                { color: 'var(--s4)', label: 'Typical month', value: eur(r.typical) },
+                { color: 'var(--s-other)', label: 'Typical pace in your budget', value: eur(r.pace) },
                 ...ev.map((e) => ({ color: evColor(e.kind), label: `${e.label}${e.done ? (e.kind === 'income' ? ' received' : ' paid') : ' due'}`, value: eur(e.amount) })),
               ]} />
             }} />
             <ReferenceLine y={free} stroke="var(--chart-axis)" strokeDasharray="4 3"
               label={{ value: `free money ${eurk(free)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--chart-text)' }} />
+            {/* Your typical month as it is, and the same rhythm squeezed into
+                this month's free money: the gap between them is the plan's ask. */}
+            <Line dataKey="typical" stroke="var(--s4)" strokeWidth={1.5} strokeDasharray="1 3" strokeLinecap="round" dot={false} isAnimationActive={false} />
             <Line dataKey="pace" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             <Area dataKey="cum" stroke="var(--s1)" strokeWidth={2} fill="url(#mt-cum)" dot={false} isAnimationActive={false} connectNulls={false} />
             <Line dataKey="proj" stroke={over ? 'rgb(var(--warn))' : 'var(--s1)'} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
@@ -330,7 +333,8 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded bg-[var(--s1)]" />you</span>
         <span className="inline-flex items-center gap-1"><span className="w-3 border-t-2 border-dashed" style={{ borderColor: over ? 'rgb(var(--warn))' : 'var(--s1)' }} />at this pace</span>
-        <span className="inline-flex items-center gap-1" title="This month's free money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />typical pace</span>
+        <span className="inline-flex items-center gap-1" title="Everyday spending in a typical month (last 6 months, one-offs of €250+ left out)"><span className="w-3 border-t-2 border-dotted" style={{ borderColor: 'var(--s4)' }} />typical month</span>
+        <span className="inline-flex items-center gap-1" title="This month's free money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />typical pace in budget</span>
         {events.length > 0 && <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2" style={{ borderColor: 'var(--s7)' }} />due · <span className="h-2 w-2 rounded-full" style={{ background: 'var(--s7)' }} />paid</span>}
       </div>
       {events.length > 0 && (
@@ -449,8 +453,9 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
         <MonthBar p={p} progress={pace} warn={used > pace + 0.1} />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 pb-2.5 text-xs text-muted">
           <span>Avg day <b className="tnum text-ink">{eur(p.avg_day)}</b>{p.typical_day > 0 && <> vs <span className="tnum">{eur(p.typical_day)}</span> typical <span className={clsx('tnum', vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : '')}>({vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)})</span></>}</span>
+          {(p.typical_one_offs ?? 0) > 0 && <span title="Typical leaves out single payments of €250 or more, so one big dinner doesn't set the pace">one-offs of €250+ left out of typical — they averaged <b className="tnum text-ink">{eur(p.typical_one_offs!)}</b>/month</span>}
           {left > 0 && <span title="This month's pace, blended with your typical day while the month is young">
-            {p.projected_left >= 0 ? <>At this pace <b className={clsx('tnum', outlook)}>{eur(p.projected_left)}</b> left at month end</>
+            {p.projected_left >= 0 ? <>At this pace <b className={clsx('tnum', outlook)}>{eur(p.projected_left)}</b> left at month end{(p.typical_one_offs ?? 0) > 0 && <> — before any one-off</>}</>
               : <>At your usual pace you'd overspend by <b className={clsx('tnum', outlook)}>{eur(-p.projected_left)}</b>{p.expected_day > 0 && p.safe_to_spend > 0 && <> — runs out around <b className="tnum text-ink">{shortDate(addDays(todayISO(), Math.ceil(p.safe_to_spend / p.expected_day)))}</b></>}</>}
           </span>}
         </div>

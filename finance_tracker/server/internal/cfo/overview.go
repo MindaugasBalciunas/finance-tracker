@@ -65,17 +65,18 @@ type PlanPulse struct {
 	SafeToSpend money.Cents `json:"safe_to_spend"` // free money left this month
 	IncomeBase  money.Cents `json:"income_base"`
 	// Daily view of the same money.
-	FreeSpent     money.Cents `json:"free_spent"`     // free spending so far this month
-	DaysLeft      int         `json:"days_left"`      // including today
-	PerDayLeft    money.Cents `json:"per_day_left"`   // safe to spend ÷ days left
-	AvgDay        money.Cents `json:"avg_day"`        // this month's free spending per elapsed day
-	TypicalDay    money.Cents `json:"typical_day"`    // same, averaged over the previous 6 complete months
-	ExpectedDay   money.Cents `json:"expected_day"`   // pace used for the projection (this month blended with typical)
-	ProjectedLeft money.Cents `json:"projected_left"` // what is left at month end at the expected pace
-	Over          []LineBrief `json:"over"`           // spending lines over budget
-	Lines         []LineBrief `json:"lines"`          // busiest spending lines (most of budget used first)
-	Spent         money.Cents `json:"spent"`
-	Budgeted      money.Cents `json:"budgeted"`
+	FreeSpent      money.Cents `json:"free_spent"`       // free spending so far this month
+	DaysLeft       int         `json:"days_left"`        // including today
+	PerDayLeft     money.Cents `json:"per_day_left"`     // safe to spend ÷ days left
+	AvgDay         money.Cents `json:"avg_day"`          // this month's free spending per elapsed day
+	TypicalOneOffs money.Cents `json:"typical_one_offs"` // one-offs (€250+) per month over the same months, left out of typical
+	TypicalDay     money.Cents `json:"typical_day"`      // everyday spending per day (one-offs of €250+ left out), previous 6 complete months
+	ExpectedDay    money.Cents `json:"expected_day"`     // pace used for the projection (this month blended with typical)
+	ProjectedLeft  money.Cents `json:"projected_left"`   // what is left at month end at the expected pace
+	Over           []LineBrief `json:"over"`             // spending lines over budget
+	Lines          []LineBrief `json:"lines"`            // busiest spending lines (most of budget used first)
+	Spent          money.Cents `json:"spent"`
+	Budgeted       money.Cents `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
 	IncomeActual  money.Cents  `json:"income_actual"`
@@ -95,7 +96,7 @@ type DayPoint struct {
 	Day     int          `json:"day"`
 	Spent   money.Cents  `json:"spent"`         // free spending that day (0 after today)
 	Cum     *money.Cents `json:"cum,omitempty"` // cumulative, up to today only
-	Typical money.Cents  `json:"typical"`       // average cumulative by this day, last 6 months
+	Typical money.Cents  `json:"typical"`       // average cumulative everyday spending (no one-offs) by this day, last 6 months
 }
 
 type MonthEvent struct {
@@ -234,8 +235,8 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	if r, err := BudgetReport(d, thisM, now); err == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions}
-		o.Plan.fillDaily(r.FreeSpentByMonth, now)
-		o.Plan.fillTimeline(r.FreeSpentByDay, now)
+		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
+		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)
 		for _, l := range r.Lines {
 			if l.Kind == "fixed" {
 				o.Plan.Fixed = append(o.Plan.Fixed, FixedBrief{Name: l.Name, Budgeted: l.Budgeted, Spent: l.Spent})
@@ -327,7 +328,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 }
 
 // fillDaily turns the month's free money into a daily allowance and pace.
-func (p *PlanPulse) fillDaily(free map[string]money.Cents, now time.Time) {
+func (p *PlanPulse) fillDaily(free map[string]money.Cents, everyday map[string]map[int]money.Cents, now time.Time) {
 	month := now.Format("2006-01")
 	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	day := now.Day()
@@ -339,19 +340,28 @@ func (p *PlanPulse) fillDaily(free map[string]money.Cents, now time.Time) {
 	if day > 0 {
 		p.AvgDay = p.FreeSpent / money.Cents(day)
 	}
-	var total money.Cents
-	var days int
+	var total, all money.Cents
+	var days, months int
 	for i := 1; i <= 6; i++ {
 		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC)
-		v, ok := free[m.Format("2006-01")]
+		// A typical month is everyday spending: one-offs (a single payment
+		// of €250 or more) are left out so one big dinner doesn't set the pace.
+		byDay, ok := everyday[m.Format("2006-01")]
 		if !ok {
-			continue
+			if _, any := free[m.Format("2006-01")]; !any {
+				continue
+			}
 		}
-		total += v
+		for _, v := range byDay {
+			total += v
+		}
+		all += free[m.Format("2006-01")]
+		months++
 		days += time.Date(m.Year(), m.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	}
 	if days > 0 {
 		p.TypicalDay = total / money.Cents(days)
+		p.TypicalOneOffs = (all - total) / money.Cents(months)
 	}
 	// The rest of the month at an expected daily pace: early on this month's
 	// few days say little, so lean on the typical day and shift to the actual
@@ -399,7 +409,7 @@ func dueFromHistory(txs []ledger.Tx, cats []string, now time.Time) string {
 // fillTimeline lays this month's free spending out by day, next to the
 // typical month: for each day, the average of the last six complete months'
 // cumulative free spending by that day (shorter months count their total).
-func (p *PlanPulse) fillTimeline(byDay map[string]map[int]money.Cents, now time.Time) {
+func (p *PlanPulse) fillTimeline(byDay, everyday map[string]map[int]money.Cents, now time.Time) {
 	month := now.Format("2006-01")
 	dim := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	var prev []string
@@ -422,7 +432,7 @@ func (p *PlanPulse) fillTimeline(byDay map[string]map[int]money.Cents, now time.
 		}
 		var sum money.Cents
 		for i, m := range prev {
-			cumPrev[i] += byDay[m][d]
+			cumPrev[i] += everyday[m][d]
 			sum += cumPrev[i]
 		}
 		if len(prev) > 0 {
