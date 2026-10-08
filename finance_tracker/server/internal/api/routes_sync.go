@@ -26,8 +26,9 @@ type BalanceChange struct {
 var cryptoTicker = regexp.MustCompile(`(?i)\b(btc|bitcoin)\b`)
 
 // revalueCrypto prices each crypto account's latest quantity at today's
-// quote and records today's value (source "market"). Only today's point; a
-// figure entered by hand today is kept.
+// quote and records today's value (source "market"). Once a day: an account
+// already priced today — or given a figure by hand today — is left alone, so
+// syncing every half hour doesn't keep rewriting it.
 func revalueCrypto(s *Server, today string) []string {
 	accts, err := ledger.ListAccounts(s.DB)
 	if err != nil {
@@ -43,7 +44,7 @@ func revalueCrypto(s *Server, today string) []string {
 			continue
 		}
 		pt, ok := book.At(a.ID, today)
-		if !ok || pt.Quantity == nil || *pt.Quantity <= 0 || (pt.Date == today && pt.Source == "manual") {
+		if !ok || pt.Quantity == nil || *pt.Quantity <= 0 || (pt.Date == today && (pt.Source == "manual" || pt.Source == "market")) {
 			continue
 		}
 		ticker := ""

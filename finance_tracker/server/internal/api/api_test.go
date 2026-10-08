@@ -822,6 +822,12 @@ func TestSyncRevaluesCrypto(t *testing.T) {
 	if len(out.Balances) != 1 || out.Balances[0].Account != "btc_m" || out.Balances[0].From != 900 || out.Balances[0].To != 1000 || out.Balances[0].Source != "market" {
 		t.Fatalf("changes %+v problems %v", out.Balances, out.Problems)
 	}
+	// Once a day: a later sync with a new price leaves today's value alone.
+	market.SetQuoteForTest(market.Quote{Ticker: "BTC-EUR", Price: 120000, Currency: "EUR"})
+	c.ok("POST", "/sync", nil, &out)
+	if len(out.Balances) != 0 {
+		t.Fatalf("repriced twice in a day: %+v", out.Balances)
+	}
 	var old int64
 	s.DB.QueryRow(`SELECT value FROM balances WHERE account_id='btc_m' AND date=?`, yesterday).Scan(&old)
 	if old != int64(E(900)) {
