@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -85,12 +86,27 @@ func (s *Server) aiRoutes() {
 	s.handle("DELETE /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return map[string]bool{"ok": true}, s.AI.ClearHistory()
 	})
+	// Asking runs in the background: the answer is saved to the history and,
+	// if the app was closed meanwhile, announced on the phone.
 	s.handle("POST /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		text, img, err := readMessage(r)
 		if err != nil {
 			return nil, err
 		}
-		return s.AI.Chat(r.Context(), text, img)
+		if err := ai.LoadSettings(s.DB).Ready(); err != nil {
+			return nil, err
+		}
+		j, err := s.startChat(text, appOrigin(r), func(ctx context.Context) (*ai.ChatResult, error) { return s.AI.Chat(ctx, text, img) })
+		if err != nil {
+			return nil, err
+		}
+		return s.waitChat(r, j)
+	})
+	s.handle("GET /api/ai/chat/status", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.chatStatus(), nil })
+	// The app went to the background mid-answer: announce it when done.
+	s.handle("POST /api/ai/chat/away", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		s.markChatLeft()
+		return map[string]bool{"ok": true}, nil
 	})
 	s.handle("POST /api/ai/scan", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		_, img, err := readMessage(r)
@@ -191,4 +207,19 @@ func readMessage(r *http.Request) (string, *ai.Image, error) {
 		return "", nil, err
 	}
 	return in.Text, nil, nil
+}
+
+// appOrigin is where the browser reached the app (for links back into it).
+func appOrigin(r *http.Request) string {
+	if o := r.Header.Get("Origin"); strings.HasPrefix(o, "http") {
+		return o
+	}
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		proto = "http"
+	}
+	if r.Host == "" {
+		return ""
+	}
+	return proto + "://" + r.Host
 }

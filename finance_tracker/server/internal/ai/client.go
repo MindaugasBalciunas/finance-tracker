@@ -97,6 +97,9 @@ func SaveSettings(e interface {
 	return err
 }
 
+// Ready reports why AI can't be used right now, or nil.
+func (s Settings) Ready() error { return s.require() }
+
 func (s Settings) require() error {
 	if !s.Enabled {
 		return errors.New("AI features are turned off — enable them in Settings → AI")

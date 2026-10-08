@@ -28,7 +28,7 @@ func demoAlwaysReal(p string) bool {
 // demoBlocked are routes that touch real files, credentials or money flows.
 func demoBlocked(r *http.Request) bool {
 	p := r.URL.Path
-	for _, pre := range []string{"/api/backups", "/api/import/", "/api/bank/", "/api/ibkr", "/api/ai/settings", "/api/ai/test", "/api/export/backup.json"} {
+	for _, pre := range []string{"/api/backups", "/api/import/", "/api/bank/", "/api/ibkr", "/api/ai/settings", "/api/ai/test", "/api/notify", "/api/export/backup.json"} {
 		if strings.HasPrefix(p, pre) {
 			return true
 		}

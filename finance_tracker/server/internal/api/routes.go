@@ -19,5 +19,6 @@ func (s *Server) routes() {
 	s.ibkrRoutes()
 	s.syncRoutes()
 	s.aiRoutes()
+	s.notifyRoutes()
 	s.dataRoutes()
 }

@@ -201,7 +201,7 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 	var msgs []message
 	cutoff := now.Add(-historyWindow).UTC().Format(time.RFC3339)
 	for _, m := range hist {
-		if m.CreatedAt < cutoff || strings.TrimSpace(m.Content) == "" {
+		if m.CreatedAt < cutoff || strings.TrimSpace(m.Content) == "" || strings.HasPrefix(m.Content, FailedPrefix) {
 			continue
 		}
 		c := m.Content
@@ -238,6 +238,25 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 		msgs = append(msgs, turn)
 	}
 
+	// The question is in the history straight away, and the answer — or what
+	// went wrong — joins it at the end, so nothing asked is ever lost even if
+	// the phone dropped the connection meanwhile.
+	a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('user',?,?)`, userText, db.Now())
+	res, err := a.answer(ctx, s, now, msgs)
+	if err != nil {
+		a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('assistant',?,?)`, FailedPrefix+err.Error(), db.Now())
+		return nil, err
+	}
+	a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('assistant',?,?)`, res.Reply, db.Now())
+	return res, nil
+}
+
+// FailedPrefix marks an assistant history entry that records a failed turn;
+// such entries are shown but never replayed to the model.
+const FailedPrefix = "⚠️ Couldn't answer: "
+
+// answer runs the model/tool loop for one turn.
+func (a *Assistant) answer(ctx context.Context, s Settings, now time.Time, msgs []message) (*ChatResult, error) {
 	res := &ChatResult{Tools: []string{}}
 	var seen []string // every tool result this turn, for checking the reply's figures
 	tools := toolDefs()
@@ -286,8 +305,6 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 		}
 		msgs = append(msgs, message{Role: "user", Content: results})
 	}
-	nowS := db.Now()
-	a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('user',?,?),('assistant',?,?)`, userText, nowS, res.Reply, nowS)
 	return res, nil
 }
 

@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { useRefresh } from '../lib/hooks'
 import { eurk } from '../lib/format'
 import { Empty, ErrorBox, PageHeader, Sheet, Spinner } from '../components/ui'
@@ -61,7 +61,54 @@ export default function Assistant() {
   const [error, setError] = useState<unknown>(null)
   const end = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const msgs = useMemo(() => [...(history ?? []), ...local], [history, local])
+  // The server saves the question as soon as it is asked, so a refreshed
+  // history may already hold what is shown locally: keep each message once,
+  // with the local copy's extras (cost, tools, checks).
+  const msgs = useMemo(() => {
+    const rest = [...local]
+    const merged = (history ?? []).map((h) => {
+      const i = rest.findIndex((l) => l.role === h.role && l.content === h.content)
+      if (i < 0) return h
+      const l = rest.splice(i, 1)[0]
+      return { ...l, ...h, image: l.image }
+    })
+    return [...merged, ...rest]
+  }, [history, local])
+  // A question still being answered on the server (the app was closed or
+  // reloaded meanwhile): show it and pick up the answer when it lands.
+  const [pending, setPending] = useState<string | null>(null)
+  const watch = async () => {
+    try {
+      const st = await api.get<{ running: boolean; question?: string }>('/ai/chat/status')
+      if (st.running) { setPending(st.question ?? ''); return true }
+      setPending(null)
+      qc.invalidateQueries({ queryKey: ['chat'] })
+    } catch { /* offline: try again on the next tick */ }
+    return false
+  }
+  useEffect(() => {
+    if (pending === null) return
+    const t = window.setInterval(watch, 3000)
+    return () => window.clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending])
+  useEffect(() => {
+    watch()
+    // Going to the background mid-answer: the server will send a phone
+    // notification when it's done. Coming back: check where it stands.
+    const vis = () => {
+      if (document.visibilityState === 'hidden') {
+        if (busyRef.current || pendingRef.current !== null) navigator.sendBeacon?.('api/ai/chat/away')
+      } else watch()
+    }
+    document.addEventListener('visibilitychange', vis)
+    return () => document.removeEventListener('visibilitychange', vis)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const busyRef = useRef(false)
+  const pendingRef = useRef<string | null>(null)
+  busyRef.current = busy
+  pendingRef.current = pending
   const [sp, setSp] = useSearchParams()
   // ?memory=1 (from AI settings) opens the memory sheet.
   const memoryOpen = sp.get('memory') === '1'
@@ -73,7 +120,7 @@ export default function Assistant() {
 
   const send = async (q: string) => {
     const content = q.trim()
-    if ((!content && !image) || busy) return
+    if ((!content && !image) || busy || pending !== null) return
     setError(null)
     const preview = image ? URL.createObjectURL(image) : undefined
     setLocal((l) => [...l, { role: 'user', content: content || '(image)', image: preview }])
@@ -89,7 +136,14 @@ export default function Assistant() {
       setLocal((l) => [...l, { role: 'assistant', content: r.reply, cost: r.usage?.cost_usd, tools: r.tools, unchecked: r.unchecked }])
       if (r.changed) refresh()
     } catch (e) {
-      setError(e)
+      // The connection dropped (app in the background, network change) or a
+      // question is already running: the server carries on — follow it.
+      if (!(e instanceof ApiError) || [0, 409, 502, 503, 504].includes(e.status)) {
+        if (!(await watch())) qc.invalidateQueries({ queryKey: ['chat'] })
+      } else {
+        setError(e)
+        qc.invalidateQueries({ queryKey: ['chat'] })
+      }
     } finally {
       setImage(null)
       setBusy(false)
@@ -126,7 +180,12 @@ export default function Assistant() {
             </div>
           </div>
         ) : msgs.map((m, i) => <Bubble key={m.id ?? `l${i}`} m={m} />)}
-        {busy && <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="h-4 w-4" />Looking at your data…</div>}
+        {busy && <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="h-4 w-4" />Looking at your data… <span className="text-xs">you can leave the app — it carries on and notifies you</span></div>}
+        {!busy && pending !== null && (
+          <div className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm text-muted">
+            <Spinner className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1">Still answering{pending ? <>: <span className="text-ink2">“{pending.length > 80 ? pending.slice(0, 79) + '…' : pending}”</span></> : ''} — it will appear here.</span>
+          </div>
+        )}
         <ErrorBox error={error} />
         <div ref={end} />
       </div>
@@ -136,7 +195,7 @@ export default function Assistant() {
             <Icon name="image" size={14} />{image.name}<button onClick={() => setImage(null)} aria-label="Remove image"><Icon name="x" size={12} /></button>
           </div>
         )}
-        <Composer busy={busy} hasImage={!!image} onAttach={() => fileRef.current?.click()} onSend={send} />
+        <Composer busy={busy || pending !== null} hasImage={!!image} onAttach={() => fileRef.current?.click()} onSend={send} />
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { setImage(e.target.files?.[0] ?? null); e.target.value = '' }} />
       </div>
       {memoryOpen && <Sheet open wide onClose={() => setMemoryOpen(false)} title="What your CFO knows about you"><AIMemory /></Sheet>}

@@ -42,6 +42,8 @@ type Server struct {
 	// One sync at a time; lastSync throttles the automatic one on app open.
 	syncMu   sync.Mutex
 	lastSync atomic.Int64
+
+	chats chatJobs // the question being answered in the background
 }
 
 func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath, version, false) }

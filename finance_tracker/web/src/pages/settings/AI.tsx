@@ -37,6 +37,7 @@ export function AISettings() {
       <Status s={s} />
       <Connection s={s} />
       <Spending s={s.spend} />
+      <PhoneNotifications />
       <a href="#/ai?memory=1" className="card flex items-center gap-3 p-4 hover:bg-sunken/50">
         <IconTile name="edit" color="var(--s4)" size={36} />
         <span className="min-w-0 flex-1"><span className="block text-sm font-medium">Memory</span><span className="block text-xs text-muted">Your brief and the decisions the assistant remembers now live next to the chat, in Ask CFO.</span></span>
@@ -278,6 +279,73 @@ function Spending({ s }: { s: Spend }) {
         {(topups ?? []).length > 3 && <button className="mt-1 text-xs text-accent" onClick={() => setShowAll(!showAll)}>{showAll ? 'Fewer' : `All ${topups!.length}`}</button>}
         <div className="mt-2 text-xs text-muted">The provider bills you; record what you pay here and the balance is top-ups minus measured spend.</div>
       </div>
+    </Card>
+  )
+}
+
+/** Phone notifications through a Home Assistant webhook: the app posts a
+ *  short "answer ready" message, an automation in Home Assistant forwards it
+ *  to the phone. The add-on gets no Home Assistant access of its own. */
+function PhoneNotifications() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { data } = useQuery({ queryKey: ['notify'], queryFn: () => api.get<{ enabled: boolean; webhook_url: string }>('/notify') })
+  const [url, setUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showHow, setShowHow] = useState(false)
+  const [rid] = useState(() => 'finance_tracker_' + Math.random().toString(36).slice(2, 12))
+  if (!data) return null
+  const value = url ?? data.webhook_url
+  const id = (value.split('/api/webhook/')[1] || 'finance_tracker_<random>').split(/[?#]/)[0]
+  const save = async (patch: { enabled?: boolean; webhook_url?: string }) => {
+    setBusy(true)
+    try {
+      await api.put('/notify', { enabled: data.enabled, webhook_url: value, ...patch })
+      setUrl(null)
+      qc.invalidateQueries({ queryKey: ['notify'] })
+      toast('Saved', 'good')
+    } catch (e) { toast((e as Error).message, 'bad') } finally { setBusy(false) }
+  }
+  const test = async () => {
+    setBusy(true)
+    try { await api.post('/notify/test', { webhook_url: value }); toast('Sent — check your phone', 'good') } catch (e) { toast((e as Error).message, 'bad') } finally { setBusy(false) }
+  }
+  const yaml = `alias: Finance Tracker notifications
+triggers:
+  - trigger: webhook
+    webhook_id: ${id}
+    allowed_methods: [POST]
+    local_only: true
+actions:
+  - action: notify.mobile_app_YOUR_PHONE
+    data:
+      title: "{{ trigger.json.title }}"
+      message: "{{ trigger.json.message }}"
+      data:
+        url: "{{ trigger.json.url }}"
+        clickAction: "{{ trigger.json.url }}"
+        tag: "{{ trigger.json.tag }}"`
+  return (
+    <Card title="Phone notifications">
+      <Toggle checked={data.enabled} onChange={(v) => save({ enabled: v })} label="Notify me when an answer is ready and I've left the app" />
+      <div className="mt-3 flex gap-2">
+        <input className="input font-mono text-xs" placeholder="http://homeassistant:8123/api/webhook/finance_tracker_…" value={value} autoComplete="off" spellCheck={false} onChange={(e) => setUrl(e.target.value)} />
+        <button className="btn-outline shrink-0" disabled={busy || !value} onClick={test}>{busy ? <Spinner className="h-4 w-4" /> : 'Test'}</button>
+        {url !== null && <button className="btn-primary shrink-0" disabled={busy} onClick={() => save({})}>Save</button>}
+      </div>
+      <div className="mt-2 text-xs text-muted">Through a Home Assistant webhook — the add-on gets no access to Home Assistant itself, and notifications never include amounts.{' '}
+        <button className="text-accent" onClick={() => setShowHow(!showHow)}>{showHow ? 'Hide setup' : 'How to set it up'}</button></div>
+      {showHow && (
+        <div className="mt-2 space-y-2 text-xs text-ink2">
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>Pick a long random webhook id, e.g. <code className="rounded bg-sunken px-1">{rid}</code>, and paste <code className="rounded bg-sunken px-1">http://homeassistant:8123/api/webhook/&lt;id&gt;</code> above.</li>
+            <li>In Home Assistant: Settings → Automations → Create → ⋮ Edit in YAML, paste this, replace <code className="rounded bg-sunken px-1">mobile_app_YOUR_PHONE</code> with your phone's notify service, save.</li>
+            <li>Press <b>Test</b>, then switch notifications on.</li>
+          </ol>
+          <pre className="overflow-x-auto rounded-lg bg-sunken p-2 font-mono text-[11px] leading-snug">{yaml}</pre>
+          <button className="btn-outline h-8 text-xs" onClick={() => { navigator.clipboard?.writeText(yaml); toast('Copied', 'good') }}><Icon name="copy" size={14} />Copy YAML</button>
+        </div>
+      )}
     </Card>
   )
 }
