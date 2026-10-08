@@ -104,7 +104,7 @@ type Report struct {
 	// The same without one-offs (single payments of OneOff or more), for what
 	// a typical month looks like: a big family dinner shouldn't set the pace.
 	EverydayByDay map[string]map[int]money.Cents `json:"-"`
-	Unbudgeted     []Unbudgeted                   `json:"unbudgeted"`
+	Unbudgeted    []Unbudgeted                   `json:"unbudgeted"`
 }
 
 // OneOff is the size from which a single payment counts as a one-off rather
