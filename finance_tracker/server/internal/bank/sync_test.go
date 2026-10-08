@@ -19,6 +19,7 @@ import (
 	"ft/internal/bank/openbanking"
 	"ft/internal/db"
 	"ft/internal/ledger"
+	"ft/internal/money"
 	. "ft/internal/testutil"
 	"ft/internal/wealth"
 )
@@ -387,5 +388,60 @@ func TestBookedTransferMovesAnUnsyncedOwnAccount(t *testing.T) {
 	// The synced side keeps whatever its bank states.
 	if p, _ := book.At("swed", today(-1)); p.Source == "manual" {
 		t.Fatalf("synced account moved by hand: %+v", p)
+	}
+}
+
+// The bank rewrites the payee when it books a card payment. The reservation
+// in the ledger must still be settled in place — never dropped and re-added —
+// and a split made while it was pending must still add up to the charge.
+func TestBookingSettlesReservationDespiteNewPayeeText(t *testing.T) {
+	d, s, fb := setup(t)
+	fb.pending["u1"] = []openbanking.Transaction{
+		card("h-yt", "PDNG", today(-2), "10.99", "WLGOOGLE Dublin"),
+		card("h-park", "PDNG", today(-2), "2.80", "UNIPARK VL"),
+		card("h-norfa", "PDNG", today(-1), "38.00", "NORFA BT"),
+	}
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.ReservedAdded != 3 {
+		t.Fatalf("%+v", res)
+	}
+	all, _ := ledger.All(d, ledger.Filter{})
+	ids := map[money.Cents]int64{}
+	for _, x := range all {
+		ids[x.Amount] = x.ID
+	}
+	yt, _ := ledger.Get(d, ids[E(10.99)])
+	yt.Category, yt.Merchant = "subscriptions.media", "YouTube Premium"
+	ledger.Update(d, &yt)
+	if _, err := ledger.Split(d, ids[E(38)], []ledger.SplitPart{{Amount: E(13.99), Category: "kids.general", Note: "water bottle"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Booked two days later under different payee text.
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{
+		card("b-yt", "BOOK", today(0), "10.99", "YOUTUBEPREM D02"),
+		card("b-park", "BOOK", today(0), "2.80", "UNIPARK LT"),
+		card("b-norfa", "BOOK", today(0), "38.00", "NORFA BT"),
+	}
+	res, err := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Settled != 3 || res.Released != 0 || len(inbox(t, s, "open")) != 0 {
+		t.Fatalf("all three settle in place: %+v open=%d", res, len(inbox(t, s, "open")))
+	}
+	got, _ := ledger.Get(d, yt.ID)
+	if got.Pending || got.Category != "subscriptions.media" || got.Merchant != "YouTube Premium" {
+		t.Fatalf("same row, edits kept: %+v", got)
+	}
+	parent, _ := ledger.Get(d, ids[E(38)])
+	var total money.Cents
+	after, _ := ledger.All(d, ledger.Filter{})
+	for _, x := range after {
+		if x.ID == parent.ID || x.SplitOf == parent.ID {
+			total += x.Amount
+		}
+	}
+	if parent.Pending || parent.Amount != E(24.01) || total != E(38) {
+		t.Fatalf("split parts must still add up to the charge: parent %v total %v", parent.Amount, total)
 	}
 }

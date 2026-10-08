@@ -308,12 +308,21 @@ func Update(e execer, t *Tx) error {
 // Reports false when there is no pending transaction to settle (deleted by
 // the owner meanwhile) — the booking must then be staged like any other.
 func SettleReservation(e execer, id int64, amount money.Cents, date, externalID string) (bool, error) {
-	res, err := e.Exec(`UPDATE transactions SET amount=?, date=?, external_id=?, pending=0, updated_at=? WHERE id=? AND pending=1`,
+	// Split parts carved from the reservation keep their amounts; the main
+	// row takes the rest of the booked total, so the parts still add up to
+	// what the bank charged.
+	res, err := e.Exec(`UPDATE transactions SET
+			amount = ? - COALESCE((SELECT SUM(amount) FROM transactions c WHERE c.split_of = transactions.id), 0),
+			date=?, external_id=?, pending=0, updated_at=? WHERE id=? AND pending=1`,
 		int64(amount), date, externalID, db.Now(), id)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
+	if n == 1 {
+		// Parts follow the booking date.
+		e.Exec(`UPDATE transactions SET date=?, updated_at=? WHERE split_of=?`, date, db.Now(), id)
+	}
 	return n == 1, nil
 }
 

@@ -575,6 +575,23 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 						claimed, bestGap = h, g
 					}
 				}
+				// The bank often rewrites the payee text when it books a card
+				// payment ("WL*GOOGLE Dublin IE" → "WL*GOOGLE YouTubePrem…"):
+				// failing a name match, the one reservation with exactly this
+				// amount in the window is the same payment.
+				if claimed == nil {
+					var only *InboxRow
+					n := 0
+					for _, h := range holds {
+						if !taken[h.ID] && h.Amount == r.Amount && reservationInWindow(h, &r) {
+							only = h
+							n++
+						}
+					}
+					if n == 1 {
+						claimed = only
+					}
+				}
 				if claimed != nil {
 					taken[claimed.ID] = true
 					if claimed.Edited {
@@ -671,20 +688,57 @@ func normPayee(s string) string {
 }
 
 func reservationMatches(hold, booked *InboxRow) bool {
-	if hold.Kind != booked.Kind || !strings.EqualFold(hold.RawCurrency, booked.RawCurrency) {
-		return false
-	}
-	na, nb := normPayee(hold.RawPayee), normPayee(booked.RawPayee)
-	if na == "" || nb == "" || !(na == nb || strings.HasPrefix(na, nb) || strings.HasPrefix(nb, na)) {
-		return false
-	}
-	hd, _ := time.Parse("2006-01-02", hold.Date)
-	bd, _ := time.Parse("2006-01-02", booked.Date)
-	if gap := bd.Sub(hd); gap < -24*time.Hour || gap > reservationWindow {
+	if !reservationInWindow(hold, booked) || !samePayee(hold.RawPayee, booked.RawPayee) {
 		return false
 	}
 	held, got := hold.Amount.Float(), booked.Amount.Float()
 	return held > 0 && got > 0 && math.Abs(held-got) <= math.Max(held*reservationTolerance, 0.5)
+}
+
+// reservationInWindow: same kind and currency, booked from the day before
+// the reservation up to reservationWindow after it.
+func reservationInWindow(hold, booked *InboxRow) bool {
+	if hold.Kind != booked.Kind || !strings.EqualFold(hold.RawCurrency, booked.RawCurrency) {
+		return false
+	}
+	hd, _ := time.Parse("2006-01-02", hold.Date)
+	bd, _ := time.Parse("2006-01-02", booked.Date)
+	gap := bd.Sub(hd)
+	return gap >= -24*time.Hour && gap <= reservationWindow
+}
+
+// payeeNoise are words card terminals add that say nothing about who was
+// paid: places, countries, legal forms.
+var payeeNoise = map[string]bool{"VILNIUS": true, "KAUNAS": true, "KLAIPEDA": true, "DUBLIN": true, "LONDON": true, "LUXEMBOURG": true,
+	"UAB": true, "LIMITED": true, "IRELAND": true, "LITHUANIA": true, "LIETUVA": true, "WWW": true, "COM": true, "INTERNET": true}
+
+// samePayee: the same text (one may be cut short), or a shared distinctive
+// word of four letters or more — "UNIPARK Vilnius VL LT" and
+// "UNIPARK LT-08105 Vilnius" share UNIPARK.
+func samePayee(a, b string) bool {
+	na, nb := normPayee(a), normPayee(b)
+	if na == "" || nb == "" {
+		return false
+	}
+	if na == nb || strings.HasPrefix(na, nb) || strings.HasPrefix(nb, na) {
+		return true
+	}
+	words := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for _, w := range strings.FieldsFunc(strings.ToUpper(s), func(r rune) bool { return !((r >= 'A' && r <= 'Z') || r > 127) }) {
+			if len([]rune(w)) >= 4 && !payeeNoise[w] {
+				out[w] = true
+			}
+		}
+		return out
+	}
+	wb := words(b)
+	for w := range words(a) {
+		if wb[w] {
+			return true
+		}
+	}
+	return false
 }
 
 // applyBankBalances sets each synced ledger account to the sum of the bank
