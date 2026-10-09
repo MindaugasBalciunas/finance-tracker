@@ -49,7 +49,9 @@ export function Overview() {
   const byGroup = useMemo(() => {
     const m: Record<string, Account[]> = {}
     for (const a of accounts ?? []) {
-      if (a.archived) continue
+      // Hidden accounts leave the list — unless they still hold something
+      // (hidden before hiding closed them at €0), so the groups add up.
+      if (a.archived && !a.balance) continue
       ;(m[a.group] ||= []).push(a)
     }
     return m
@@ -291,7 +293,7 @@ function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.name}</div>
         <div className={clsx('truncate text-xs', stale ? 'text-warn' : 'text-muted')}>
-          {[a.institution !== a.name && a.institution, a.quantity ? `${a.quantity} units` : '', a.balance_date ? (stale ? `${age} days old` : shortDate(a.balance_date)) : 'no balance', a.source === 'bank' ? 'from bank' : a.source === 'computed' ? 'estimated' : ''].filter(Boolean).join(' · ')}
+          {[a.institution !== a.name && a.institution, a.quantity ? `${a.quantity} units` : '', a.balance_date ? (stale ? `${age} days old` : shortDate(a.balance_date)) : 'no balance', a.source === 'bank' ? 'from bank' : a.source === 'computed' ? 'estimated' : a.source === 'closed' ? 'closed' : '', a.archived && a.balance ? 'hidden but still counted — close it in Settings' : ''].filter(Boolean).join(' · ')}
         </div>
       </div>
       <div className="tnum text-sm font-semibold">{a.balance != null ? eurc(a.balance) : '—'}</div>

@@ -155,7 +155,6 @@ function Shell() {
         </div>
         <div className="flex items-center gap-1">
           <NotificationsButton variant="header" />
-          <NavLink to="/ai" className="btn-ghost h-9 w-9 px-0" aria-label="Ask CFO"><Icon name="spark" /></NavLink>
           <NavLink to="/settings" className="btn-ghost h-9 w-9 px-0" aria-label="Settings"><Icon name="settings" /></NavLink>
         </div>
       </header>

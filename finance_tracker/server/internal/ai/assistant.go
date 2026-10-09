@@ -86,6 +86,8 @@ Trust rules — the owner acts on what you say:
 - Never mention a transaction, refund, payment or balance that no tool returned in this conversation. If a search finds nothing, say so plainly; don't guess.
 - Point to the evidence: when you name specific transactions or a set of them, link to the ledger view that shows them, e.g. [3 payments at 360 Arena](#/ledger?merchant=360%%20Arena&period=custom&from=2026-09-01&to=2026-09-30) or [search](#/ledger?q=arena). Links use #/ledger with q, merchant, category, tag, from, to (with period=custom).
 - Label anything you calculated yourself (an average, a projection) as your calculation.
+- Use the app's own figures instead of rebuilding them, so the same question gets the same numbers every time: a month's income, spending and savings come from cash_flow or get_overview (they put each salary leg in the month it belongs to) — never add up search rows for a total. Cash until payday, per account, is get_overview's cash plan: its items, low, end, needed and moves. Quote those.
+- The cash plan only knows recurring items the app has (get_recurring). If the owner's brief or notes mention a standing order or payment the plan lacks, say which one, give its effect as your calculation on top of the plan's figure, and offer to add it with add_recurring so the plan includes it from then on.
 
 Answer style: direct, concise, numbers first. Markdown: bullets, **bold** key figures, compact tables; no top-level headings. When a picture helps (or the user asks to chart/plot/show), add a fenced block tagged chart with ONE JSON object: {"type":"line|bar|area|pie","title":"…","x":"<label field>","unit":"€","series":[{"name":"…","key":"<numeric field>"}],"data":[…]} — real figures only, ≤24 points, ≤4 series, at most 2 charts.
 
@@ -93,7 +95,7 @@ You also have web_search for live facts (rates, prices, tax rules, news) and get
 
 Images: the user may attach a receipt or a bank-app screenshot. Read it and propose the transaction (date, amount, category id, merchant, account, tags). Create it with create_transaction only after the user confirms.
 
-Changing data: create_transaction, update_transaction, add_rule, delete_rule, rename_tag and update_inbox_row write to the database. Use them ONLY after the user explicitly approves that specific change in this conversation. Propose first, then act, then report exactly what changed. You can never accept bank inbox rows into the ledger — the owner does that.`
+Changing data: create_transaction, update_transaction, add_rule, delete_rule, rename_tag, add_recurring and update_inbox_row write to the database. Use them ONLY after the user explicitly approves that specific change in this conversation. Propose first, then act, then report exactly what changed. You can never accept bank inbox rows into the ledger — the owner does that.`
 
 func (a *Assistant) system(now time.Time) []block {
 	var parts []block
@@ -146,10 +148,12 @@ type ChatMessage struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
+	// Unchecked: euro amounts the answer gave that no data it read contained.
+	Unchecked []string `json:"unchecked,omitempty"`
 }
 
 func (a *Assistant) History(limit int) ([]ChatMessage, error) {
-	rows, err := a.DB.Query(`SELECT id,role,content,created_at FROM (SELECT * FROM ai_messages ORDER BY id DESC LIMIT ?) ORDER BY id`, limit)
+	rows, err := a.DB.Query(`SELECT id,role,content,created_at,unchecked FROM (SELECT * FROM ai_messages ORDER BY id DESC LIMIT ?) ORDER BY id`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +161,11 @@ func (a *Assistant) History(limit int) ([]ChatMessage, error) {
 	out := []ChatMessage{}
 	for rows.Next() {
 		var m ChatMessage
-		rows.Scan(&m.ID, &m.Role, &m.Content, &m.CreatedAt)
+		var unchecked string
+		rows.Scan(&m.ID, &m.Role, &m.Content, &m.CreatedAt, &unchecked)
+		if unchecked != "" {
+			json.Unmarshal([]byte(unchecked), &m.Unchecked)
+		}
 		out = append(out, m)
 	}
 	return out, nil
@@ -247,7 +255,12 @@ func (a *Assistant) Chat(ctx context.Context, text string, img *Image) (*ChatRes
 		a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('assistant',?,?)`, FailedPrefix+err.Error(), db.Now())
 		return nil, err
 	}
-	a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at) VALUES('assistant',?,?)`, res.Reply, db.Now())
+	unchecked := ""
+	if len(res.Unchecked) > 0 {
+		b, _ := json.Marshal(res.Unchecked)
+		unchecked = string(b)
+	}
+	a.DB.Exec(`INSERT INTO ai_messages(role,content,created_at,unchecked) VALUES('assistant',?,?,?)`, res.Reply, db.Now(), unchecked)
 	return res, nil
 }
 

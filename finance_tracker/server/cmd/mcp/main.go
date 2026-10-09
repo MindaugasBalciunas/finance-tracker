@@ -265,7 +265,7 @@ func main() {
 			return text(call("GET", "/plan", vals("month", a.Month), nil))
 		})
 	for _, t := range []struct{ name, desc, path string }{
-		{"get_recurring", "Detected subscriptions and recurring bills with monthly cost and next expected charge.", "/insights/recurring"},
+		{"get_recurring", "Recurring money movements: bills and subscriptions, standing orders between accounts and expected income — amount, accounts, usual day, next date.", "/insights/recurring"},
 		{"get_fi", "Financial-independence projection and emergency fund.", "/insights/fi"},
 		{"get_loans", "Loans: balance, rate, next payment split, payoff, equity/LTV, rate reset.", "/loans"},
 		{"get_trips", "Trips with totals and per-day cost, plus untagged travel that looks like a trip.", "/trips"},

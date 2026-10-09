@@ -406,3 +406,39 @@ func TestTodaysReadingsAreLoggedWithTimes(t *testing.T) {
 		t.Fatal("deleting the day should drop its trail")
 	}
 }
+
+// Hiding an account closes it at €0 from today (history kept); showing it
+// again removes only that closing value.
+func TestCloseAndReopenAccount(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.Local)
+	Bal(t, d, "ibkr", "2026-10-05", 1130.51)
+	if err := wealth.CloseAccount(d, "ibkr", now); err != nil {
+		t.Fatal(err)
+	}
+	book, _ := wealth.LoadBook(d)
+	if book.SnapshotAt("2026-10-09", true).ByAccount["ibkr"] != 0 || book.SnapshotAt("2026-10-08", true).ByAccount["ibkr"] != E(1130.51) {
+		t.Fatal("closed from today, history kept")
+	}
+	if err := wealth.ReopenAccount(d, "ibkr"); err != nil {
+		t.Fatal(err)
+	}
+	book, _ = wealth.LoadBook(d)
+	if p, _ := book.At("ibkr", "2026-10-09"); p.Value != E(1130.51) {
+		t.Fatalf("reopened: %+v", p)
+	}
+	// A value entered after closing is the owner's: reopening keeps it.
+	wealth.CloseAccount(d, "ibkr", now)
+	Bal(t, d, "ibkr", "2026-10-10", 50)
+	wealth.ReopenAccount(d, "ibkr")
+	book, _ = wealth.LoadBook(d)
+	if p, _ := book.At("ibkr", "2026-10-10"); p.Value != E(50) {
+		t.Fatal("kept later value")
+	}
+	// Nothing held: nothing written.
+	Bal(t, d, "swed", "2026-10-01", 0)
+	wealth.CloseAccount(d, "swed", now)
+	if b, _ := wealth.LoadBook(d); len(b.Series("swed")) != 1 {
+		t.Fatal("empty account needs no closing value")
+	}
+}

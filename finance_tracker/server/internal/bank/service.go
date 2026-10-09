@@ -757,6 +757,9 @@ func (s *Service) applyBankBalances(synced map[string]bool) []BalanceSet {
 	sort.Strings(ids)
 	var out []BalanceSet
 	for _, id := range ids {
+		if book != nil && book.Accounts[id].Archived {
+			continue // hidden = closed at €0; a still-linked bank account doesn't reopen it
+		}
 		var sum money.Cents
 		skip := ""
 		for _, a := range accts {

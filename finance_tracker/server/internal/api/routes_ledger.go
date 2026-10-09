@@ -302,7 +302,18 @@ func (s *Server) ledgerRoutes() {
 				return nil, bad("an account with this name already exists")
 			}
 		}
+		prev, _ := ledger.GetAccount(s.DB, a.ID)
 		saved, err := ledger.SaveAccount(s.DB, a)
+		// Hiding an account closes it: from today it holds €0, so net worth
+		// matches the lists it leaves; its history stays. Showing it again
+		// takes that closing value back out.
+		if err == nil && a.Archived != prev.Archived && prev.ID != "" {
+			if a.Archived {
+				err = wealth.CloseAccount(s.DB, a.ID, time.Now())
+			} else {
+				err = wealth.ReopenAccount(s.DB, a.ID)
+			}
+		}
 		if err == nil && a.Kind == "loan" {
 			// Start date / original principal re-draw the reconstructed history.
 			if _, rerr := wealth.RebuildLoanHistory(s.DB, a.ID); rerr != nil {
@@ -313,6 +324,18 @@ func (s *Server) ledgerRoutes() {
 	}
 	s.handle("POST /api/accounts", saveAccount)
 	s.handle("PUT /api/accounts/{id}", saveAccount)
+	// A hidden account that still holds a value (hidden before hiding closed
+	// accounts) is closed at €0 from today on request.
+	s.handle("POST /api/accounts/{id}/close", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		a, err := ledger.GetAccount(s.DB, r.PathValue("id"))
+		if err != nil {
+			return nil, notFound("account not found")
+		}
+		if !a.Archived {
+			return nil, bad("hide the account first")
+		}
+		return map[string]bool{"ok": true}, wealth.CloseAccount(s.DB, a.ID, time.Now())
+	})
 	s.handle("DELETE /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return map[string]bool{"ok": true}, ledger.DeleteAccount(s.DB, r.PathValue("id"))
 	})

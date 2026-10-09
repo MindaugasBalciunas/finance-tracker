@@ -34,7 +34,7 @@ func arr(d string) map[string]any {
 
 // writeTools change data; the system prompt requires explicit confirmation.
 var writeTools = map[string]bool{"remember": true, "create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
-	"rename_tag": true, "update_inbox_row": true}
+	"rename_tag": true, "update_inbox_row": true, "add_recurring": true}
 
 func toolDefs() []tool {
 	date := "YYYY-MM-DD"
@@ -54,7 +54,7 @@ func toolDefs() []tool {
 		{Name: "get_account_history", Description: "Balance points of one account.", InputSchema: obj(map[string]any{"account_id": str("account id"), "from": str(date)}, "account_id")},
 		{Name: "get_budget_status", Description: "The monthly plan: every budget line (fixed / spending / saving, funds and yearly lines), spent vs budgeted, suggestions, unbudgeted spending, safe-to-spend.",
 			InputSchema: obj(map[string]any{"month": str("YYYY-MM, default current")})},
-		{Name: "get_recurring", Description: "Detected subscriptions and recurring bills with monthly cost and next expected charge.", InputSchema: obj(map[string]any{})},
+		{Name: "get_recurring", Description: "Recurring money movements the cash plan uses: bills and subscriptions, standing orders between accounts (transfers) and expected income — amount, monthly cost, accounts, usual day, next date, whether this month's one is done. source: detected, edited or manual (added by the owner).", InputSchema: obj(map[string]any{})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
 		{Name: "get_loans", Description: "Loans (mortgage): balance, rate, next payment split, payoff date, equity and LTV, principal/interest paid in the last 12 months.", InputSchema: obj(map[string]any{})},
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
@@ -75,6 +75,10 @@ func toolDefs() []tool {
 				"set_category": str("category id"), "set_merchant": str("merchant"), "add_tags": arr("tags"), "apply_to_history": map[string]any{"type": "boolean"}})},
 		{Name: "remember", Description: "Save a durable note about the owner's decisions or preferences (e.g. 'decided to keep VWCE as core, no new satellites until 2027'). Use when the owner states a decision or asks you to remember something.",
 			InputSchema: obj(map[string]any{"note": str("one short sentence")}, "note")},
+		{Name: "add_recurring", Description: "Add (or update, by name) a recurring item so the cash plan counts it: a standing order between accounts (kind transfer, from_account → to_account), a bill (from_account) or expected income (to_account). Monthly on the given day unless cadence says otherwise. ONLY after approval.",
+			InputSchema: obj(map[string]any{"name": str("e.g. 'IBKR top-up' — an existing item with this name is updated"), "kind": str("transfer | bill | income"), "amount": num("EUR, positive"),
+				"day": num("usual day of month, 1–31"), "from_account": str("account id"), "to_account": str("account id"), "category": str("category id, optional"),
+				"cadence": str("monthly | quarterly | yearly, default monthly"), "note": str("optional")}, "name", "kind", "amount", "day")},
 		{Name: "delete_rule", Description: "Delete a rule by id. ONLY after approval.", InputSchema: obj(map[string]any{"id": num("rule id")}, "id")},
 		{Name: "rename_tag", Description: "Rename a tag everywhere (empty 'to' removes it). ONLY after approval.", InputSchema: obj(map[string]any{"from": str("tag"), "to": str("new tag")}, "from")},
 		{Name: "update_inbox_row", Description: "Improve a bank inbox proposal (category, merchant, note, tags). Cannot accept it into the ledger — the user does that.",
@@ -227,7 +231,7 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		list, _, err := insights.RecurringCosts(a.DB, txs, now)
+		list, _, err := insights.RecurringAll(a.DB, txs, now)
 		if err != nil {
 			return "", err
 		}
@@ -404,6 +408,19 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		return `{"remembered":true}`, nil
+	case "add_recurring":
+		it := insights.RecurringItem{Merchant: args.s("name"), Kind: args.s("kind"), Amount: money.FromFloat(args.f("amount")), Day: int(args.f("day")),
+			FromAccount: args.s("from_account"), ToAccount: args.s("to_account"), Category: args.s("category"), Cadence: args.s("cadence"), Note: args.s("note")}
+		if it.Amount <= 0 || it.Day < 1 {
+			return "", errors.New("amount and a day of month (1–31) are required")
+		}
+		if (it.Kind == "transfer" && (it.FromAccount == "" || it.ToAccount == "")) || (it.Kind == "bill" && it.FromAccount == "") || (it.Kind == "income" && it.ToAccount == "") {
+			return "", errors.New("a transfer needs from_account and to_account, a bill from_account, income to_account")
+		}
+		if err := insights.SaveRecurringItem(a.DB, &it); err != nil {
+			return "", err
+		}
+		return jsonOut(map[string]any{"saved": it})
 	case "delete_rule":
 		return `{"deleted":true}`, ledger.DeleteRule(a.DB, int64(args.f("id")))
 	case "rename_tag":

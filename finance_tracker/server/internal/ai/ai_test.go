@@ -278,3 +278,39 @@ func TestAssistAndTidy(t *testing.T) {
 		t.Error("empty description accepted")
 	}
 }
+
+// An answer's unverified amounts are kept with it, so the warning still shows
+// when the answer finished in the background and is read from the history.
+func TestUncheckedKeptInHistory(t *testing.T) {
+	toolCall := `{"content":[{"type":"tool_use","id":"tu1","name":"search_transactions","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`
+	reply := `{"content":[{"type":"text","text":"You spent **€23** — about **€9,999** a year."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
+	a, _ := setup(t, "anthropic", toolCall, reply)
+	Tx(t, a.DB, ledger.Tx{Date: "2026-09-01", Amount: E(23), Category: "food.groceries", Merchant: "Lidl", AccountID: "swed"})
+	res, err := a.Chat(context.Background(), "Food?", nil)
+	if err != nil || len(res.Unchecked) != 1 || res.Unchecked[0] != "€9,999" {
+		t.Fatalf("%v %+v", err, res)
+	}
+	h, _ := a.History(10)
+	if len(h) != 2 || len(h[1].Unchecked) != 1 || h[1].Unchecked[0] != "€9,999" || h[0].Unchecked != nil {
+		t.Fatalf("history: %+v", h)
+	}
+}
+
+// add_recurring puts a standing order into what the cash plan reads.
+func TestAddRecurringTool(t *testing.T) {
+	call := `{"content":[{"type":"tool_use","id":"tu1","name":"add_recurring","input":{"name":"IBKR top-up","kind":"transfer","amount":1000,"day":1,"from_account":"swed","to_account":"ibkr"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`
+	list := `{"content":[{"type":"tool_use","id":"tu2","name":"get_recurring","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`
+	done := `{"content":[{"type":"text","text":"Added."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
+	a, f := setup(t, "anthropic", call, list, done)
+	res, err := a.Chat(context.Background(), "Yes, add it", nil)
+	if err != nil || !res.Changed {
+		t.Fatalf("%v %+v", err, res)
+	}
+	for i, want := range []string{`"saved"`, `"IBKR top-up"`} {
+		msgs := f.reqs[i+1]["messages"].([]any)
+		out := msgs[len(msgs)-1].(map[string]any)["content"].([]any)[0].(map[string]any)
+		if out["is_error"] == true || !strings.Contains(out["content"].(string), want) {
+			t.Fatalf("round %d: %v", i, out)
+		}
+	}
+}

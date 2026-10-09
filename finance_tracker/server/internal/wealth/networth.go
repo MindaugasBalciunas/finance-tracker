@@ -260,6 +260,29 @@ func DeleteBalance(e interface {
 	return err
 }
 
+// ClosedSource marks the €0 written when an account is hidden.
+const ClosedSource = "closed"
+
+// CloseAccount records €0 for today when the account still holds (or owes)
+// something, so a hidden account stops counting from today on.
+func CloseAccount(d *sql.DB, account string, now time.Time) error {
+	var v int64
+	if d.QueryRow(`SELECT value FROM balances WHERE account_id=? AND date<=? ORDER BY date DESC LIMIT 1`, account, now.Format("2006-01-02")).Scan(&v) != nil || v == 0 {
+		return nil
+	}
+	return SetBalance(d, account, now.Format("2006-01-02"), 0, nil, nil, ClosedSource)
+}
+
+// ReopenAccount removes the closing €0 written by CloseAccount, if it is
+// still the account's latest value.
+func ReopenAccount(d *sql.DB, account string) error {
+	var date, src string
+	if d.QueryRow(`SELECT date, source FROM balances WHERE account_id=? ORDER BY date DESC LIMIT 1`, account).Scan(&date, &src) != nil || src != ClosedSource {
+		return nil
+	}
+	return DeleteBalance(d, account, date)
+}
+
 // ApplyDelta moves an account's balance for a manual transaction, as v1 did:
 // a transaction dated on or after the latest recorded value shifts it (a
 // new point on the transaction's date); one dated earlier is already

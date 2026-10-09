@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useDemo, useRefresh } from '../lib/hooks'
 import { useTxEditor } from './TxEditor'
-import { Sheet, Spinner, useToast } from './ui'
+import { Spinner, useToast } from './ui'
 import { Icon } from './Icon'
 
 function ago(iso: string) {
@@ -140,45 +140,72 @@ export function QuickActions({ inboxOpen }: { inboxOpen: number }) {
   )
 }
 
-/** Phones: the raised "+" in the middle of the tab bar — within thumb reach on
- *  every page — opens the same actions as a sheet. */
+/** Phones: the raised AI star in the tab bar — within thumb reach on every
+ *  page — opens the same actions plus Ask CFO as labelled rows over a quarter
+ *  circle from the bottom-right corner. */
 export function QuickActionsButton({ inboxOpen }: { inboxOpen: number }) {
-  const [open, setOpen] = useState(false)
+  const [at, setAt] = useState<DOMRect | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+  const { pathname } = useLocation()
+  useEffect(() => setAt(null), [pathname]) // a tab tapped meanwhile
   return (
     <>
-      <button onClick={() => setOpen(true)} aria-label="Add, scan or sync" className="flex h-14 items-center justify-center">
-        <span className="-mt-5 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-lg ring-4 ring-page"><Icon name="plus" size={24} /></span>
+      <button onClick={() => setAt(ref.current?.getBoundingClientRect() ?? null)} aria-label="Ask CFO, add, scan or sync" aria-expanded={!!at} className="flex h-14 items-center justify-center">
+        <span ref={ref} className="-mt-5 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-lg ring-4 ring-page"><Icon name="spark" size={24} /></span>
       </button>
-      {/* Portal: the tab bar's backdrop blur would trap the fixed-position sheet. */}
-      {open && createPortal(<QuickActionsSheet inboxOpen={inboxOpen} onClose={() => setOpen(false)} />, document.body)}
+      {/* Portal: the tab bar's backdrop blur would trap the fixed-position menu. */}
+      {at && createPortal(<QuickActionsFan at={at} inboxOpen={inboxOpen} onClose={() => setAt(null)} />, document.body)}
     </>
   )
 }
 
-function QuickActionsSheet({ inboxOpen, onClose }: { inboxOpen: number; onClose: () => void }) {
+// Rows from the thumb up: Ask CFO nearest, then the daily ledger actions.
+const ORDER = ['ask', 'add', 'scan', 'sync', 'transfer', 'balances']
+
+function QuickActionsFan({ at, inboxOpen, onClose }: { at: DOMRect; inboxOpen: number; onClose: () => void }) {
   const { tiles, nav } = useQuickActions(onClose)
+  const [out, setOut] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOut(true))
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { cancelAnimationFrame(id); document.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [onClose])
+  const ask: Tile = { key: 'ask', icon: 'spark', label: 'Ask CFO', sub: 'about your money', onClick: () => { onClose(); nav('/ai') }, primary: true }
+  const byKey = new Map([...tiles.map((t) => ({ ...t, primary: false })), ask].map((t) => [t.key, t]))
+  const rows = ORDER.map((k) => byKey.get(k)).filter((t): t is Tile => !!t)
+  if (inboxOpen > 0) rows.push({ key: 'inbox', icon: 'inbox', label: `${inboxOpen} to review`, sub: 'synced from the bank', onClick: () => { onClose(); nav('/ledger/inbox') } })
+  const w = window.innerWidth
+  const bottom = window.innerHeight - at.top + 14 // just above the star
   return (
-    <Sheet open onClose={onClose} title="Add or update">
-      <div className="grid grid-cols-1 gap-1">
-        {tiles.map((t) => (
-          <button key={t.key} onClick={t.onClick} disabled={t.busy} className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-sunken/60">
-            <span className={clsx('grid h-11 w-11 shrink-0 place-items-center rounded-full', t.primary ? 'bg-accent text-white' : 'bg-sunken text-ink')}>
-              {t.busy ? <Spinner className="h-4 w-4" /> : <Icon name={t.icon} size={20} />}
+    <div className="fixed inset-0 z-40 sm:hidden" role="dialog" aria-modal aria-label="Quick actions">
+      <div className={clsx('absolute inset-0 bg-black/45 transition-opacity duration-200', out ? 'opacity-100' : 'opacity-0')} onClick={onClose} />
+      {/* A quarter circle from the bottom-right corner, where the thumb rests. */}
+      <div className={clsx('pointer-events-none absolute bottom-0 right-0 border-l border-t border-line bg-surface shadow-2xl transition-transform duration-300 ease-out', out ? 'scale-100' : 'scale-0')}
+        style={{ width: Math.min(w * 1.2, 500), height: Math.min(w * 1.2, 500), borderTopLeftRadius: '100%', transformOrigin: 'bottom right' }} />
+      <div className="absolute right-3 flex w-[15.5rem] flex-col-reverse gap-2" style={{ bottom }}>
+        {rows.map((t, i) => (
+          <button key={t.key} onClick={t.onClick} disabled={t.busy}
+            className={clsx('flex min-h-[3.25rem] w-full items-center justify-end gap-3 rounded-full py-1.5 pl-5 pr-1.5 text-right shadow-sm ring-1 transition-[transform,opacity] duration-200 ease-out active:scale-[0.97]',
+              t.primary ? 'bg-accent text-white ring-accent' : 'bg-raised text-ink ring-line')}
+            style={{ transform: out ? 'none' : 'translateY(12px) scale(0.92)', opacity: out ? 1 : 0, transitionDelay: `${i * 30}ms` }}>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-semibold leading-tight">{t.label}</span>
+              {t.sub && <span className={clsx('block truncate text-xs leading-tight', t.primary ? 'text-white/80' : 'text-muted')}>{t.sub}</span>}
             </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">{t.label}</span>
-              {t.sub && <span className="block text-xs text-muted">{t.sub}</span>}
+            <span className={clsx('grid h-10 w-10 shrink-0 place-items-center rounded-full', t.primary ? 'bg-white/20' : 'bg-sunken')}>
+              {t.busy ? <Spinner className="h-4 w-4" /> : <Icon name={t.icon} size={20} />}
             </span>
           </button>
         ))}
       </div>
-      {inboxOpen > 0 && (
-        <button onClick={() => { onClose(); nav('/ledger/inbox') }} className="mt-2 flex w-full items-center gap-2 rounded-xl bg-sunken/50 px-3 py-2.5 text-left text-sm text-ink2">
-          <Icon name="inbox" size={16} className="text-accent" />
-          <span className="flex-1"><b className="text-ink">{inboxOpen}</b> synced {inboxOpen === 1 ? 'transaction waits' : 'transactions wait'} for review</span>
-          <Icon name="chevronR" size={16} className="text-muted" />
-        </button>
-      )}
-    </Sheet>
+      {/* The star turns into close, in the same spot. */}
+      <button onClick={onClose} aria-label="Close" className="absolute grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-lg ring-4 ring-page"
+        style={{ left: at.left, top: at.top }}>
+        <Icon name="x" size={22} className={clsx('transition-transform duration-200', out ? 'rotate-0' : '-rotate-90')} />
+      </button>
+    </div>
   )
 }

@@ -29,7 +29,15 @@ export function AccountsVisibility() {
     try {
       await api.put(`/accounts/${a.id}`, { ...a, archived: !shown })
       refresh()
-      toast(shown ? `${a.name} is back` : `${a.name} hidden`, 'good')
+      toast(shown ? `${a.name} is back` : a.balance ? `${a.name} hidden and closed at €0 from today` : `${a.name} hidden`, 'good')
+    } catch (e: any) { toast(e?.message ?? 'Failed', 'bad') } finally { setBusy(null) }
+  }
+  const close = async (a: Account) => {
+    setBusy(a.id)
+    try {
+      await api.post(`/accounts/${a.id}/close`)
+      refresh()
+      toast(`${a.name} closed at €0 from today`, 'good')
     } catch (e: any) { toast(e?.message ?? 'Failed', 'bad') } finally { setBusy(null) }
   }
   const groups = GROUPS.map((g) => ({ ...g, items: accounts.filter((a) => a.group === g.id) })).filter((g) => g.items.length)
@@ -37,7 +45,7 @@ export function AccountsVisibility() {
   if (other.length) groups.push({ id: 'other', name: 'Other', slot: 0, items: other })
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">Hidden accounts stop appearing when you update balances or log a transaction, and drop out of the Wealth lists. Their past balances and transactions stay in every total and chart.</p>
+      <p className="text-sm text-muted">Hidden accounts stop appearing when you update balances or log a transaction, and drop out of the Wealth lists. Hiding one that still holds money closes it at €0 from today, so net worth matches what you see; its past balances and transactions stay in every chart. Showing it again restores the last value.</p>
       {groups.map((g) => (
         <Card key={g.id} pad={false} title={g.name}>
           <div className="divide-y divide-line border-t border-line">
@@ -50,6 +58,9 @@ export function AccountsVisibility() {
                     {usage && <> · <a className="hover:text-accent" href={`#/ledger?period=all&account=${encodeURIComponent(a.id)}`}>{(usage[a.id]?.count ?? 0).toLocaleString('en')} tx</a>{usage[a.id]?.last && ` · last ${shortDate(usage[a.id].last)}`}</>}
                     {usage && idle(a) && <span className="text-warn"> · idle — hide it?</span>}</div>
                 </div>
+                {a.archived && !!a.balance && (
+                  <button className="btn-ghost h-8 shrink-0 px-2 text-xs text-accent" disabled={busy === a.id} onClick={() => close(a)}>Close at €0</button>
+                )}
                 <Toggle checked={!a.archived} onChange={(v) => busy !== a.id && set(a, v)} label={<span className="w-12 text-xs text-muted">{a.archived ? 'Hidden' : 'Shown'}</span>} />
               </div>
             ))}

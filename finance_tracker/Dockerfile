@@ -1,5 +1,5 @@
 # Stage 1 — Go server (cross-compiled on the build host)
-FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine AS server
+FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS server
 ARG TARGETARCH
 WORKDIR /src
 COPY server/go.mod server/go.sum ./

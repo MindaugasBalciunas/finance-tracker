@@ -81,6 +81,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS trades_external_id ON trades(external_id) WHER
     source     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS balance_log_date ON balance_log(date, account_id);`,
+	// 10: an answer keeps the euro amounts it gave that matched none of the
+	// data it read, so the warning survives answers finished in the background.
+	`ALTER TABLE ai_messages ADD COLUMN unchecked TEXT NOT NULL DEFAULT '';`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema
