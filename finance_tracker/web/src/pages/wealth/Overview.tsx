@@ -12,7 +12,7 @@ import type { Account } from '../../lib/types'
 import { Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
 import { Icon, IconTile } from '../../components/Icon'
-import { accountColors, accountIcon, bankOf, bankRank, brandColor, volatility } from '../../lib/brand'
+import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
 
 export function Overview() {
@@ -40,6 +40,8 @@ export function Overview() {
     for (const g of groups) row[g.id] = h.by_group[g.id] ?? 0
     return row
   }), [hist, groups, liquidOnly])
+  // Steadiest group at the bottom of the stack, so jumpy cash doesn't lift the rest.
+  const stackGroups = useMemo(() => [...groups].map((g) => ({ g, j: jitter((hist ?? []).map((h) => h.by_group[g.id] ?? 0)) })).sort((a, b) => a.j - b.j).map((x) => x.g), [groups, hist])
   const last = hist?.[hist.length - 1]
   const first = hist?.[0]
   const head = last ? (liquidOnly ? last.liquid : last.net_worth) : 0
@@ -85,7 +87,7 @@ export function Overview() {
                 <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
                   <TooltipBox title={shortDate(label)} rows={[...groups.filter((g) => payload[0].payload[g.id]).map((g) => ({ color: `var(--s${g.slot})`, label: g.name, value: eur(payload[0].payload[g.id]) })),
                     { label: liquidOnly ? 'Liquid' : 'Net worth', value: eur(payload[0].payload.net), bold: true }]} />) : null} />
-                {groups.map((g) => (
+                {stackGroups.map((g) => (
                   <Area key={g.id} type="monotone" dataKey={g.id} name={g.name} stackId="1" stroke="var(--chart-surface)" strokeWidth={1.5}
                     fill={`var(--s${g.slot})`} fillOpacity={0.85} isAnimationActive={false} />
                 ))}
@@ -161,21 +163,25 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
     const vals = (ids: string[]) => (hist ?? []).map((h) => ids.reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0))
     const banks = new Map<string, Account[]>()
     for (const a of eligible) banks.set(bankOf(a), [...(banks.get(bankOf(a)) ?? []), a])
-    const bankList = [...banks.entries()].map(([name, accts]) => ({ name, accts, vol: volatility(vals(accts.map((x) => x.id))) })).sort((x, y) => bankRank(x.accts[0]) - bankRank(y.accts[0]) || x.vol - y.vol)
+    const bankList = [...banks.entries()].map(([name, accts]) => ({ name, accts, vol: volatility(vals(accts.map((x) => x.id))), jit: jitter(vals(accts.map((x) => x.id))) }))
+      .sort((x, y) => bankRank(x.accts[0]) - bankRank(y.accts[0]) || x.vol - y.vol)
     if (view === 'banks') {
-      return bankList.map((b) => {
+      // Steadiest bank at the bottom of the stack (and first in the legend).
+      return [...bankList].sort((x, y) => x.jit - y.jit).map((b) => {
         const lead = [...b.accts].sort((x, y) => (y.balance ?? 0) - (x.balance ?? 0))[0]
-        return { key: 'bank:' + b.name, name: b.name, ids: b.accts.map((x) => x.id), color: brandColor(lead) ?? colors[lead.id], value: b.accts.reduce((t, x) => t + (x.balance ?? 0), 0), bank: b.name, icon: accountIcon(lead) }
+        return { key: 'bank:' + b.name, name: b.name, ids: b.accts.map((x) => x.id), color: brandColor(lead) ?? colors[lead.id], value: b.accts.reduce((t, x) => t + (x.balance ?? 0), 0), bank: b.name, icon: accountIcon(lead), jit: b.jit }
       })
     }
     return bankList.flatMap((b) => b.accts.map((x) => ({ a: x, vol: volatility(vals([x.id])) })).sort((x, y) => x.vol - y.vol)
-      .map(({ a }) => ({ key: a.id, name: a.name, ids: [a.id], color: colors[a.id], value: a.balance ?? 0, bank: b.name, icon: accountIcon(a) })))
+      .map(({ a }) => ({ key: a.id, name: a.name, ids: [a.id], color: colors[a.id], value: a.balance ?? 0, bank: b.name, icon: accountIcon(a), jit: jitter(vals([a.id])) })))
   }, [hist, eligible, colors, view])
 
   // Amounts count only switched-on accounts, so the total is the same in both views.
   const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, Math.max(0, a.balance ?? 0)])), [eligible])
   const valueOf = (x: { ids: string[] }) => x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + (bal[id] ?? 0), 0)
   const shown = series.filter((x) => !x.ids.every((id) => off.has(id)))
+  // The stack is drawn steadiest-first (bottom), whatever order the legend uses.
+  const stack = [...shown].sort((x, y) => x.jit - y.jit)
   const rows = useMemo(() => (hist ?? []).map((h) => {
     const row: any = { date: h.date }
     for (const x of shown) row[x.key] = x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0)
@@ -197,9 +203,9 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
               <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
               <YAxis {...axisProps} tickFormatter={eurk} width={48} />
               <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                <TooltipBox title={shortDate(label)} rows={[...shown.filter((x) => payload[0].payload[x.key] > 0).map((x) => ({ color: x.color, label: x.name, value: eur(payload[0].payload[x.key]) })).reverse(),
+                <TooltipBox title={shortDate(label)} rows={[...stack.filter((x) => payload[0].payload[x.key] > 0).map((x) => ({ color: x.color, label: x.name, value: eur(payload[0].payload[x.key]) })).reverse(),
                   { label: 'Total', value: eur(shown.reduce((t, x) => t + (payload[0].payload[x.key] ?? 0), 0)), bold: true }]} />) : null} />
-              {shown.map((x) => (
+              {stack.map((x) => (
                 <Area key={x.key} type="monotone" dataKey={x.key} name={x.name} stackId="a" stroke="var(--chart-surface)" strokeWidth={1.5} fill={x.color} fillOpacity={0.9} isAnimationActive={false} />
               ))}
             </AreaChart>

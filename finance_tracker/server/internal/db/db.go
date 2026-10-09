@@ -84,6 +84,10 @@ CREATE INDEX IF NOT EXISTS balance_log_date ON balance_log(date, account_id);`,
 	// 10: an answer keeps the euro amounts it gave that matched none of the
 	// data it read, so the warning survives answers finished in the background.
 	`ALTER TABLE ai_messages ADD COLUMN unchecked TEXT NOT NULL DEFAULT '';`,
+	// 11: two recurring items can share a merchant (Telia phone and Telia
+	// internet) — the note tells them apart.
+	`DROP INDEX IF EXISTS recurring_items_merchant;
+CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant_note ON recurring_items(lower(merchant), lower(note));`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

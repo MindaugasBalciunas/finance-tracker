@@ -375,3 +375,40 @@ func TestRecurringSuggestionsAndFlexibleItems(t *testing.T) {
 		t.Error("a 3-day rhythm accepted")
 	}
 }
+
+// Two bills from one merchant (Telia phone and Telia internet) are two items,
+// told apart by their note — and each payment is matched to the right one.
+func TestRecurringSameMerchantTwoItems(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
+	phone := insights.RecurringItem{Merchant: "Telia", Category: "utilities.telecom", Amount: E(13.98), Note: "phone", Day: 10}
+	net := insights.RecurringItem{Merchant: "Telia", Category: "utilities.telecom", Amount: E(14.95), Note: "internet", Day: 10}
+	for _, it := range []*insights.RecurringItem{&phone, &net} {
+		if err := insights.SaveRecurringItem(d, it); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if phone.ID == net.ID {
+		t.Fatal("second Telia overwrote the first")
+	}
+	again := insights.RecurringItem{Merchant: "TELIA", Amount: E(15.5), Note: "Internet", Day: 10}
+	if err := insights.SaveRecurringItem(d, &again); err != nil || again.ID != net.ID {
+		t.Fatalf("same merchant and note updates: %v %d vs %d", err, again.ID, net.ID)
+	}
+	// Only the phone bill is paid this month.
+	p := tx("2026-10-10", "expense", "utilities.telecom", 13.98)
+	p.Merchant, p.Note = "Telia", "Telia phone"
+	list, _, err := insights.RecurringCosts(d, []ledger.Tx{p}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range list {
+		if r.Merchant == "Telia" {
+			got[r.Note] = r.Done
+		}
+	}
+	if len(got) != 2 || !got["phone"] || got["Internet"] {
+		t.Fatalf("each payment to its own item: %v", got)
+	}
+}

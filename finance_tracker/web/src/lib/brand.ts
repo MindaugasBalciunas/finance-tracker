@@ -73,6 +73,18 @@ export function volatility(values: number[]): number {
   return sd / mean
 }
 
+/** How jumpy a balance is in euros: the average move between points —
+ *  salary in and out, money parked or pulled, an account opened or closed.
+ *  Stacked charts put the lowest at the bottom, so the layers above ride on
+ *  steady ground instead of spiking with it. */
+export function jitter(values: number[]): number {
+  const v = values.filter((x) => Number.isFinite(x))
+  if (v.length < 2) return 0
+  let moved = 0
+  for (let i = 1; i < v.length; i++) moved += Math.abs(v[i] - v[i - 1])
+  return moved / (v.length - 1)
+}
+
 /** The owner's banks in order of use: Swedbank first, then SEB, Revolut, the rest. */
 const BANK_ORDER = [/swed/i, /\bseb\b/i, /revolut/i]
 export function bankRank(a: Pick<Account, 'institution' | 'name'>): number {

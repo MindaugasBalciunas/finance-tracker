@@ -33,6 +33,8 @@ export function RecurringView() {
   const restore = async (r: Recurring) => { await api.put(`/recurring/${r.id}`, { ...toItem(r), hidden: false }); refresh() }
   const dismiss = async (s: any) => { await api.post('/recurring', { merchant: s.name, category: s.category, cadence: 'monthly', amount: s.amount, hidden: true }); refresh() }
   const suggestions = data.suggestions ?? []
+  // Telia phone and Telia internet: the note goes in the title so the two rows differ.
+  const sharesMerchant = (r: Recurring) => data.items.filter((x) => x.merchant.toLowerCase() === r.merchant.toLowerCase()).length > 1
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
@@ -68,12 +70,12 @@ export function RecurringView() {
             <div className="-mt-1 px-4 pb-2 text-xs text-muted">{KIND_HINT[kind]}</div>
             <div className="divide-y divide-line border-t border-line">
               {rows.map((r) => (
-                <button key={r.merchant} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
+                <button key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
                   {kind === 'bill' ? <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
                     : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      <span className="truncate">{r.merchant}</span>
+                      <span className="truncate">{r.merchant}{sharesMerchant(r) && r.note ? <span className="font-normal text-ink2"> · {r.note}</span> : null}</span>
                       {r.every_days ? <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2" title={`about every ${r.every_days} days`}>~{r.every_days}d</span>
                         : r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
                       {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">{kind === 'transfer' && !r.last ? 'planned' : 'added'}</span>}
@@ -85,7 +87,7 @@ export function RecurringView() {
                       {kind === 'transfer' ? `${acctName(r.from_account) || '?'} → ${acctName(r.to_account) || '?'}`
                         : kind === 'income' ? `into ${acctName(r.to_account) || '—'}`
                         : [r.category ? cats.path(r.category) : 'No category', r.from_account && `from ${acctName(r.from_account)}`].filter(Boolean).join(' · ')}
-                      {r.next && <> · {r.done ? 'next' : r.overdue ? 'was due' : 'next'} {r.source === 'detected' && !r.day ? 'around ' : ''}{shortDate(r.next)}</>}{r.note ? ` · ${r.note}` : ''}
+                      {r.next && <> · {r.done ? 'next' : r.overdue ? 'was due' : 'next'} {r.source === 'detected' && !r.day ? 'around ' : ''}{shortDate(r.next)}</>}{r.note && !sharesMerchant(r) ? ` · ${r.note}` : ''}
                     </div>
                   </div>
                   <div className="text-right">
@@ -108,7 +110,7 @@ export function RecurringView() {
             <Card pad={false} className="mt-2">
               <div className="divide-y divide-line">
                 {data.hidden.map((r) => (
-                  <div key={r.merchant} className="flex items-center gap-3 px-4 py-2 text-sm">
+                  <div key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} className="flex items-center gap-3 px-4 py-2 text-sm">
                     <span className="min-w-0 flex-1 truncate text-ink2">{r.merchant}</span>
                     <span className="tnum text-muted">{eur(r.amount)}</span>
                     <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => restore(r)}>Restore</button>
@@ -202,7 +204,7 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
             ? <Field label="Next charge"><input type="date" className="input" value={v.next_date} onChange={(e) => setV({ ...v, next_date: e.target.value })} /></Field>
             : <Field label="Day of month"><input className="input w-24 tnum" inputMode="numeric" value={v.day} placeholder="e.g. 11" onChange={(e) => setV({ ...v, day: e.target.value })} /></Field>}
         </div>
-        <Field label="Note"><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional" /></Field>
+        <Field label="Note" hint="Two bills from one merchant? Give each a note (e.g. phone, internet) — payments are matched by the words in their note."><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional, e.g. phone" /></Field>
         {r?.source === 'edited' && <button className="btn-ghost h-8 px-2 text-xs" onClick={() => remove.mutate()}><Icon name="refresh" size={14} />Reset to detected values</button>}
         {r && r.source !== 'manual' && <a className="block text-xs text-accent" href={`#/ledger?period=365&merchant=${encodeURIComponent(r.merchant)}`}>See its transactions →</a>}
         <ErrorBox error={err} />
