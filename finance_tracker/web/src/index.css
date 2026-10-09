@@ -111,3 +111,5 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 /* Full width next to the sidebar, centred on the page column (set from App). */
 @utility full-bleed { width: var(--bleed-w, 100%); max-width: none; margin-left: calc(50% - var(--bleed-w, 100%) / 2); }
 @utility no-scrollbar { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }
+
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
