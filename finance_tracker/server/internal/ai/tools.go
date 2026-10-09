@@ -73,7 +73,7 @@ func toolDefs() []tool {
 		{Name: "add_rule", Description: "Add a categorisation rule (applies to future rows; set apply_to_history to also fix existing ones). ONLY after approval.",
 			InputSchema: obj(map[string]any{"pattern": str("text in merchant/note, '^' anchors to the start"), "when_category": str("only rows in this category"),
 				"set_category": str("category id"), "set_merchant": str("merchant"), "add_tags": arr("tags"), "apply_to_history": map[string]any{"type": "boolean"}})},
-		{Name: "remember", Description: "Save a durable note about the owner's decisions or preferences (e.g. 'decided to keep VWCE as core, no new satellites until 2027'). Use when the owner states a decision or asks you to remember something.",
+		{Name: "remember", Description: "Save a lasting fact for future chats: a decision, plan, life or income change, correction or preference the database can't show (e.g. 'decided to keep VWCE as core, no new satellites until 2027'). Use on your own whenever the owner tells you one — no approval needed.",
 			InputSchema: obj(map[string]any{"note": str("one short sentence")}, "note")},
 		{Name: "add_recurring", Description: "Add (or update, by name) a recurring item so the cash plan counts it: a standing order between accounts (kind transfer, from_account → to_account), a bill (from_account) or expected income (to_account). Monthly on the given day unless cadence says otherwise. ONLY after approval.",
 			InputSchema: obj(map[string]any{"name": str("e.g. 'IBKR top-up' — an existing item with this name is updated"), "kind": str("transfer | bill | income"), "amount": num("EUR, positive"),
