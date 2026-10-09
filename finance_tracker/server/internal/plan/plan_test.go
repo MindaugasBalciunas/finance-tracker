@@ -260,3 +260,64 @@ func TestSalaryRulesAcrossAJobChange(t *testing.T) {
 		t.Error("default rule when none saved")
 	}
 }
+
+// Patch changes only what it is given; an amount change starts this month
+// (or from_month) so past months keep what they were planned with.
+func TestPatchBudget(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
+	amt := func(v float64) *float64 { return &v }
+	str := func(v string) *string { return &v }
+	cats := []string{"food"}
+	b, err := plan.Patch(d, plan.BudgetPatch{Name: str("Food"), Kind: str("spending"), Categories: &cats, Amount: amt(500)}, now)
+	if err != nil || b.ID == 0 || b.Amount != money.FromFloat(500) {
+		t.Fatal(err, b)
+	}
+	// A rename keeps the amount and its history.
+	b, err = plan.Patch(d, plan.BudgetPatch{ID: b.ID, Name: str("Groceries")}, now)
+	if err != nil || b.Name != "Groceries" || b.Amount != money.FromFloat(500) || len(b.Steps) != 1 {
+		t.Fatal(err, b)
+	}
+	b, _ = plan.Patch(d, plan.BudgetPatch{ID: b.ID, Amount: amt(400)}, now)
+	if b.AmountFor("2026-09") != money.FromFloat(500) || b.AmountFor("2026-10") != money.FromFloat(400) {
+		t.Fatalf("this month on: %+v", b.Steps)
+	}
+	b, _ = plan.Patch(d, plan.BudgetPatch{ID: b.ID, Amount: amt(450), FromMonth: "2026-12"}, now)
+	if b.AmountFor("2026-11") != money.FromFloat(400) || b.AmountFor("2026-12") != money.FromFloat(450) {
+		t.Fatalf("from month: %+v", b.Steps)
+	}
+	b, _ = plan.Patch(d, plan.BudgetPatch{ID: b.ID, Amount: amt(420), AllMonths: true}, now)
+	if len(b.Steps) != 1 || b.AmountFor("2026-01") != money.FromFloat(420) {
+		t.Fatalf("all months: %+v", b.Steps)
+	}
+	yes := true
+	b, _ = plan.Patch(d, plan.BudgetPatch{ID: b.ID, Archived: &yes}, now)
+	if !b.Archived || b.Amount != money.FromFloat(420) {
+		t.Fatal("archived, amount kept", b)
+	}
+	bad := []string{"nope"}
+	for _, p := range []plan.BudgetPatch{{ID: 999, Name: str("x")}, {Name: str("x"), Kind: str("spending"), Categories: &cats}, {ID: b.ID, Categories: &bad}, {ID: b.ID, FromMonth: "10/2026", Amount: amt(1)}} {
+		if _, err := plan.Patch(d, p, now); err == nil {
+			t.Errorf("accepted %+v", p)
+		}
+	}
+}
+
+func TestPatchSettings(t *testing.T) {
+	d := DB(t)
+	if _, err := plan.PatchSettings(d, []byte(`{"gross_salary":10000,"buffers":{"swed":300,"seb":100}}`)); err != nil {
+		t.Fatal(err)
+	}
+	st, err := plan.PatchSettings(d, []byte(`{"salary_rules":[{"from":"","paid_by_day":3},{"from":"2026-11-01","paid_by_day":10}],"buffers":{"seb":0}}`))
+	if err != nil || st.GrossSalary != 10000 || len(st.SalaryRules) != 2 || st.Buffers["swed"] != 300 || len(st.Buffers) != 1 {
+		t.Fatalf("%v %+v", err, st)
+	}
+	for _, bad := range []string{`{"income_mode":"x"}`, `{"buffers":{"nope":1}}`, `{"salary_account":"nope"}`, `{"emergency_months":"x"}`} {
+		if _, err := plan.PatchSettings(d, []byte(bad)); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+	if plan.LoadSettings(d).GrossSalary != 10000 {
+		t.Error("a rejected patch changed nothing")
+	}
+}

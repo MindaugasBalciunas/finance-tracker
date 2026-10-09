@@ -204,13 +204,18 @@ var tokenReadPrefixes = []string{"/api/health", "/api/overview", "/api/transacti
 	"/api/merchants", "/api/rules", "/api/networth", "/api/balances", "/api/loans", "/api/portfolio", "/api/trades", "/api/market",
 	"/api/plan", "/api/budgets", "/api/trips", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks"}
 
-// Writes a read-write token may make: improve the data, never move money
-// into the ledger from the bank, delete in bulk or touch settings.
+// Writes a read-write token may make: improve the data and manage the plan,
+// never move money into the ledger from the bank, delete in bulk or touch
+// app settings (keys, security, banks).
 // PUT /api/transactions/{id} is the only sub-path write — the split/bulk
 // POST routes under /api/transactions/ stay closed.
 var tokenWriteRoutes = []struct{ method, prefix string }{
 	{"POST", "/api/transactions$"}, {"PUT", "/api/transactions/"}, {"POST", "/api/rules"}, {"PUT", "/api/rules/"}, {"DELETE", "/api/rules/"},
 	{"POST", "/api/tags/rename"}, {"PUT", "/api/bank/inbox/"},
+	// The plan: budget lines, its settings, trips, recurring items and the
+	// assistant's memory — what managing the budget takes.
+	{"PATCH", "/api/budgets$"}, {"DELETE", "/api/budgets/"}, {"PATCH", "/api/plan/settings$"}, {"POST", "/api/trips/tag$"},
+	{"POST", "/api/recurring$"}, {"PUT", "/api/recurring/"}, {"DELETE", "/api/recurring/"}, {"POST", "/api/ai/remember$"},
 }
 
 // pathUnder matches a route prefix on segment boundaries; a trailing "$"

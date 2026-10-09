@@ -82,6 +82,18 @@ func (s *Server) aiRoutes() {
 		}
 		return map[string]bool{"ok": true}, s.AI.SaveNotes(in.Content)
 	})
+	// Adds one dated line to the remembered decisions (the MCP server's
+	// remember tool); PUT replaces the whole list.
+	s.handle("POST /api/ai/remember", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct{ Note string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(in.Note) == "" || len(in.Note) > 500 {
+			return nil, bad("a note is one short sentence")
+		}
+		return map[string]bool{"ok": true}, s.AI.Remember(in.Note)
+	})
 	s.handle("GET /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.AI.History(200) })
 	s.handle("DELETE /api/ai/chat", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return map[string]bool{"ok": true}, s.AI.ClearHistory()

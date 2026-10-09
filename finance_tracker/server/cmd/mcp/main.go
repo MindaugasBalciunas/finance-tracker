@@ -6,8 +6,10 @@
 //
 //   - read-only token (ftk_…): every read tool.
 //   - read-write token (ftkw_…): also create/update transactions, rules and
-//     tags, and improve bank-inbox proposals. Accepting bank rows into the
-//     ledger, settings, exports and backups stay out of reach.
+//     tags, improve bank-inbox proposals, and manage the plan (budget lines,
+//     plan settings, trips, recurring items) and the assistant's memory.
+//     Accepting bank rows into the ledger, app settings, exports and backups
+//     stay out of reach.
 //
 // Configuration:
 //
@@ -179,6 +181,65 @@ type ruleArgs struct {
 type renameArgs struct {
 	From string `json:"from" jsonschema:"tag to rename"`
 	To   string `json:"to,omitempty" jsonschema:"new name; empty removes the tag everywhere"`
+}
+
+type budgetArgs struct {
+	ID         int64     `json:"id,omitempty" jsonschema:"budget line id from get_budget_status; omit to create"`
+	Name       *string   `json:"name,omitempty"`
+	Kind       *string   `json:"kind,omitempty" jsonschema:"fixed | spending | saving"`
+	Categories *[]string `json:"categories,omitempty" jsonschema:"category ids the line covers"`
+	Tag        *string   `json:"tag,omitempty" jsonschema:"tag the line covers, e.g. kids or trip:rome"`
+	Amount     *float64  `json:"amount,omitempty" jsonschema:"EUR per period"`
+	Period     *string   `json:"period,omitempty" jsonschema:"monthly | yearly"`
+	Fund       *bool     `json:"fund,omitempty" jsonschema:"spending lines: carry unspent money over (sinking fund)"`
+	FromMonth  string    `json:"from_month,omitempty" jsonschema:"YYYY-MM the new amount starts (default: this month)"`
+	AllMonths  bool      `json:"all_months,omitempty" jsonschema:"rewrite the amount for every month"`
+	StartMonth *string   `json:"start_month,omitempty" jsonschema:"YYYY-MM the line starts"`
+	Archived   *bool     `json:"archived,omitempty" jsonschema:"retire the line, keeping its history"`
+}
+
+type salaryRule struct {
+	From      string `json:"from" jsonschema:"YYYY-MM-DD the rule applies from; empty = always"`
+	PaidByDay int    `json:"paid_by_day" jsonschema:"salary booked on or before this day counts for the month before; 0 = none"`
+}
+
+type planSettingsArgs struct {
+	IncomeMode        *string            `json:"income_mode,omitempty" jsonschema:"median | manual | gross"`
+	ManualIncome      *float64           `json:"manual_income,omitempty" jsonschema:"EUR net per month"`
+	GrossSalary       *float64           `json:"gross_salary,omitempty" jsonschema:"EUR gross per month"`
+	MonthlyDeductions *float64           `json:"monthly_deductions,omitempty"`
+	SalaryRules       []salaryRule       `json:"salary_rules,omitempty" jsonschema:"replaces the whole list — send every rule"`
+	SalaryAccount     *string            `json:"salary_account,omitempty" jsonschema:"account id salary is paid into"`
+	Buffers           map[string]float64 `json:"buffers,omitempty" jsonschema:"account id → EUR floor; merges per account, 0 removes one"`
+	EmergencyMonths   *float64           `json:"emergency_months,omitempty"`
+	TargetAge         *int               `json:"target_age,omitempty"`
+	BirthYear         *int               `json:"birth_year,omitempty"`
+	FIMonthlySpend    *float64           `json:"fi_monthly_spend,omitempty"`
+	WithdrawalRate    *float64           `json:"withdrawal_rate,omitempty"`
+	ExpectedReturn    *float64           `json:"expected_return,omitempty"`
+}
+
+type tripArgs struct {
+	Name string  `json:"name" jsonschema:"trip name, e.g. rome-2026"`
+	IDs  []int64 `json:"ids" jsonschema:"transaction ids"`
+}
+
+type recurringArgs struct {
+	ID          int64   `json:"id,omitempty" jsonschema:"item id to update or delete; omit to add (an existing name is updated)"`
+	Name        string  `json:"name,omitempty" jsonschema:"e.g. IBKR top-up"`
+	Kind        string  `json:"kind,omitempty" jsonschema:"transfer | bill | income"`
+	Amount      float64 `json:"amount,omitempty" jsonschema:"EUR, positive"`
+	Day         int     `json:"day,omitempty" jsonschema:"usual day of month 1–31"`
+	FromAccount string  `json:"from_account,omitempty"`
+	ToAccount   string  `json:"to_account,omitempty"`
+	Category    string  `json:"category,omitempty"`
+	Cadence     string  `json:"cadence,omitempty" jsonschema:"monthly | quarterly | yearly"`
+	Note        string  `json:"note,omitempty"`
+	Hidden      bool    `json:"hidden,omitempty" jsonschema:"true = not really recurring, stop counting it"`
+}
+
+type noteArgs struct {
+	Note string `json:"note" jsonschema:"one short sentence"`
 }
 
 type inboxArgs struct {
@@ -366,6 +427,45 @@ func main() {
 				body["tags"] = a.Tags
 			}
 			return text(call("PUT", fmt.Sprintf("/bank/inbox/%d", a.ID), nil, body))
+		})
+
+	// ── the plan (read-write token) ──────────────────────────────────
+	mcp.AddTool(s, &mcp.Tool{Name: "get_plan_settings", Description: "The plan's settings: income basis, salary timing rules, salary account, account buffers, emergency months, FI targets, plus net salary from gross."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/plan/settings", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "save_budget", Description: "WRITES — read-write token. Creates a budget line (no id) or changes one (only the fields given). An amount change starts this month — past months keep theirs — unless from_month or all_months. Propose changes first and apply the approved ones."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a budgetArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("PATCH", "/budgets", nil, a))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "delete_budget", Description: "WRITES — read-write token. Deletes a budget line and its history; prefer save_budget with archived=true. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a budgetArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("DELETE", fmt.Sprintf("/budgets/%d", a.ID), nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "update_plan_settings", Description: "WRITES — read-write token. Changes plan settings; only the fields given change. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a planSettingsArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("PATCH", "/plan/settings", nil, a))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "tag_trip", Description: "WRITES — read-write token. Puts transactions under one trip tag (trip:<name>), replacing other trip tags on them. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a tripArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("POST", "/trips/tag", nil, a))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "save_recurring", Description: "WRITES — read-write token. Adds or updates a recurring item the cash plan counts: a standing order (kind transfer, from → to account), a bill (from account) or expected income (to account); hidden=true stops counting a detected one. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a recurringArgs) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"merchant": a.Name, "kind": a.Kind, "amount": a.Amount, "day": a.Day, "from_account": a.FromAccount,
+				"to_account": a.ToAccount, "category": a.Category, "cadence": a.Cadence, "note": a.Note, "hidden": a.Hidden}
+			if a.ID > 0 {
+				return text(call("PUT", fmt.Sprintf("/recurring/%d", a.ID), nil, body))
+			}
+			return text(call("POST", "/recurring", nil, body))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "delete_recurring", Description: "WRITES — read-write token. Removes the owner's recurring item (by id); a detected one comes back unless hidden instead. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a recurringArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("DELETE", fmt.Sprintf("/recurring/%d", a.ID), nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "WRITES — read-write token. Saves a lasting fact (decision, plan, life or income change, preference) to the memory every assistant reads. Use on your own when the owner tells you one."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a noteArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("POST", "/ai/remember", nil, a))
 		})
 
 	if err := s.Run(context.Background(), &mcp.StdioTransport{}); err != nil {

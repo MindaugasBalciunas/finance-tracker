@@ -141,7 +141,16 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
 		{"ro cannot read prefs", tokRO, "GET", "/prefs", nil, 403},
 		{"rw cannot change prefs", tokRW, "PUT", "/prefs", map[string]any{"liquid_only": true}, 403},
-		{"rw cannot add recurring", tokRW, "POST", "/recurring", map[string]any{"merchant": "x"}, 403},
+		// Managing the plan is open to read-write tokens (2.28.3); only the
+		// partial-update routes, never the full replace.
+		{"rw adds recurring", tokRW, "POST", "/recurring", map[string]any{"merchant": "x", "amount": 5}, 200},
+		{"rw creates a budget line", tokRW, "PATCH", "/budgets", map[string]any{"name": "Food", "kind": "spending", "categories": []string{"food"}, "amount": 300}, 200},
+		{"rw patches plan settings", tokRW, "PATCH", "/plan/settings", map[string]any{"emergency_months": 4}, 200},
+		{"rw remembers", tokRW, "POST", "/ai/remember", map[string]any{"note": "Keeps VWCE as core"}, 200},
+		{"rw cannot replace plan settings", tokRW, "PUT", "/plan/settings", map[string]any{}, 403},
+		{"rw cannot replace a budget line", tokRW, "POST", "/budgets", map[string]any{"name": "x"}, 403},
+		{"rw cannot replace the memory", tokRW, "PUT", "/ai/notes", map[string]any{"content": ""}, 403},
+		{"ro cannot patch budgets", tokRO, "PATCH", "/budgets", map[string]any{"name": "x"}, 403},
 		{"rw cannot hide accounts", tokRW, "PUT", "/accounts/swed", map[string]any{"name": "Swedbank", "kind": "checking", "archived": true}, 403},
 		{"rw cannot set balances", tokRW, "POST", "/balances", map[string]any{"date": "2026-09-01", "values": []any{}}, 403},
 		{"ro cannot download the AI export", tokRO, "GET", "/export/ai.zip", nil, 403},

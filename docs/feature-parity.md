@@ -26,7 +26,7 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | AI memory of decisions | `remember` tool → "Remembered decisions" (editable), injected into every chat and MCP context | `ai/TestWriteToolsAndMemory` |
 | AI rule review / labeling / view summaries / forecast / generated insights | Ask CFO with the data tools; "Ask CFO" / "Brief me" buttons on Home, Plan, Wealth and Insights open the chat with the question prefilled | `ai/TestReadToolsAnswer` |
 | AI settings (Claude API or gateway, model list, test, on/off), context document, spend + top-ups | **Settings → AI** (key never echoed) | `ai/TestGatewayAuthAndErrors`, `api/TestSecretsNeverEchoed` |
-| MCP server (read tools, read-write tools) | `finance-tracker-mcp` v2 (same token model; works behind nginx basic auth via `FT_BASIC_AUTH`) | `api/TestAuthBoundaries` (token scopes) |
+| MCP server (read tools, read-write tools incl. the plan) | `finance-tracker-mcp` v2 (same token model; works behind nginx basic auth via `FT_BASIC_AUTH`) | `api/TestAuthBoundaries` (token scopes) |
 | PIN lock, brute-force throttle, passkeys, API tokens (ro/rw) | Same; sessions now persist across restarts (stored hashed) | `auth/*` |
 | Cross-origin write guard, body limits | Same | `api/TestCrossSiteWritesBlocked` |
 | Full backup / restore (finances.json), CSV export, AI zip, nightly + pre-migration snapshots | Backup (table dump; secrets only on request; restore keeps this instance's secrets), CSV, AI dataset zip, nightly/pre-migration/pre-restore/manual snapshots, v1 backup import | `backup/*`, `api/TestBackupRestoreThroughAPI`, `api/TestImportV1AndExports`, `db/TestBackupRetention` |

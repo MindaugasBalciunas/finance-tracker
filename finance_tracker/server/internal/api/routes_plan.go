@@ -1,9 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"ft/internal/cfo"
@@ -73,23 +73,35 @@ func (s *Server) planRoutes() {
 		if err := decode(r, &st); err != nil {
 			return nil, err
 		}
-		if err := plan.ValidSalaryRules(st.SalaryRules); err != nil {
+		if err := plan.ValidateSettings(s.DB, st); err != nil {
 			return nil, bad(err.Error())
 		}
-		if st.SalaryAccount != "" {
-			if _, err := ledger.GetAccount(s.DB, st.SalaryAccount); err != nil {
-				return nil, bad("unknown salary account")
-			}
-		}
-		for id, v := range st.Buffers {
-			if _, err := ledger.GetAccount(s.DB, id); err != nil {
-				return nil, bad("unknown account in buffers: " + id)
-			}
-			if v < 0 || v > 1e6 {
-				return nil, bad("a buffer is between €0 and €1,000,000")
-			}
-		}
 		return st, plan.SaveSettings(s.DB, st)
+	})
+	// Partial update for the assistants: absent fields keep their value.
+	s.handle("PATCH /api/plan/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var raw json.RawMessage
+		if err := decode(r, &raw); err != nil {
+			return nil, err
+		}
+		st, err := plan.PatchSettings(s.DB, raw)
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return st, nil
+	})
+	// Field-by-field budget change (id 0 creates a line); an amount change
+	// starts this month unless from_month or all_months says otherwise.
+	s.handle("PATCH /api/budgets", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var p plan.BudgetPatch
+		if err := decode(r, &p); err != nil {
+			return nil, err
+		}
+		b, err := plan.Patch(s.DB, p, time.Now())
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return b, nil
 	})
 	s.handle("GET /api/budgets", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return plan.List(s.DB, r.URL.Query().Get("archived") == "1")
@@ -140,31 +152,10 @@ func (s *Server) planRoutes() {
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		name := strings.Trim(ledger.SlugID(in.Name), "_")
-		name = strings.ReplaceAll(name, "_", "-")
-		if name == "" {
-			return nil, bad("name the trip")
-		}
-		tag := "trip:" + name
-		tx, err := s.DB.Begin()
+		tag, _, err := plan.TagTrip(s.DB, in.Name, in.IDs)
 		if err != nil {
-			return nil, err
+			return nil, bad(err.Error())
 		}
-		defer tx.Rollback()
-		for _, id := range in.IDs {
-			t, err := ledger.Get(tx, id)
-			if err != nil {
-				continue
-			}
-			var keep []string
-			for _, x := range t.Tags {
-				if !ledger.TripTag(x) {
-					keep = append(keep, x)
-				}
-			}
-			t.Tags = append(keep, tag)
-			ledger.Update(tx, &t)
-		}
-		return map[string]string{"tag": tag}, tx.Commit()
+		return map[string]string{"tag": tag}, nil
 	})
 }

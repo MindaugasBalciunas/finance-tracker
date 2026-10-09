@@ -314,3 +314,21 @@ func TestAddRecurringTool(t *testing.T) {
 		}
 	}
 }
+
+// The assistant changes a budget line and the plan settings through its tools.
+func TestBudgetTools(t *testing.T) {
+	call := `{"content":[{"type":"tool_use","id":"t1","name":"save_budget","input":{"name":"Food","kind":"spending","categories":["food"],"amount":400}},
+	  {"type":"tool_use","id":"t2","name":"update_plan_settings","input":{"gross_salary":10000}}],"stop_reason":"tool_use","usage":{}}`
+	done := `{"content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn","usage":{}}`
+	a, f := setup(t, "anthropic", call, done)
+	res, err := a.Chat(context.Background(), "Yes, apply both", nil)
+	if err != nil || !res.Changed {
+		t.Fatalf("%v %+v", err, res)
+	}
+	msgs := f.reqs[1]["messages"].([]any)
+	for _, b := range msgs[len(msgs)-1].(map[string]any)["content"].([]any) {
+		if r := b.(map[string]any); r["is_error"] == true || !strings.Contains(r["content"].(string), "saved") {
+			t.Fatalf("tool result: %v", r)
+		}
+	}
+}
