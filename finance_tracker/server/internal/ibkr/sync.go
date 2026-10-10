@@ -35,7 +35,14 @@ type Report struct {
 	Orders       []Order `json:"orders"`
 	Instructions []Order `json:"instructions"`
 	OrdersError  string  `json:"orders_error,omitempty"`
+	// Which trade window answered (YEAR_TO_DATE unless IBKR failed on it),
+	// and why none did.
+	TradesWindow string `json:"trades_window,omitempty"`
+	TradesError  string `json:"trades_error,omitempty"`
 }
+
+// tradeWindows are tried in turn until IBKR answers one.
+var tradeWindows = []string{"YEAR_TO_DATE", "DAYS_90", "DAYS_30", "MONTH_TO_DATE"}
 
 // Order is a live order or a saved instruction, read as IBKR describes it.
 type Order struct {
@@ -305,8 +312,25 @@ func (s *Service) sync(ctx context.Context, balanceOnly bool) (*Report, error) {
 	}
 	sort.Slice(r.Positions, func(i, j int) bool { return r.Positions[i].Value > r.Positions[j].Value })
 
-	if raw, err = c.call(ctx, "get_account_trades", map[string]any{"period": "YEAR_TO_DATE"}); err != nil {
-		return nil, err
+	// Trades: the year so far, or — when IBKR fails on that window, as it
+	// can for days — the widest shorter one that answers. New trades are
+	// recent, so a shorter window still finds them. If none answers, the
+	// value and positions still stand; the report says trades are missing.
+	raw = nil
+	for _, period := range tradeWindows {
+		if raw, err = c.call(ctx, "get_account_trades", map[string]any{"period": period}); err == nil {
+			r.TradesWindow = period
+			break
+		}
+		r.TradesError = err.Error()
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	if raw == nil {
+		raw = []byte(`{"trades":[]}`)
+	} else {
+		r.TradesError = ""
 	}
 	var tr struct {
 		Trades []ibkrTrade `json:"trades"`

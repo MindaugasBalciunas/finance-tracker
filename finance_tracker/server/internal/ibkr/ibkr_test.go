@@ -29,6 +29,10 @@ type fakeIBKR struct {
 	revoked   []string
 	tools     []string
 	refreshes int
+	// failTrades: trade windows IBKR answers with an error (as it did for
+	// YEAR_TO_DATE in October 2026).
+	failTrades map[string]bool
+	periods    []string
 }
 
 func (f *fakeIBKR) handler(t *testing.T) http.Handler {
@@ -110,8 +114,16 @@ func (f *fakeIBKR) handler(t *testing.T) http.Handler {
 			text = `{"positions":[{"contract_description":"VWCE @IBIS2","position":93,"market_price":173.2,"market_value":16107.6,"currency":"EUR","average_price":162.32,"unrealized_pnl":1011.8,"asset_class":"STK"},
 				{"contract_description":"VALL @BVME.ETF","position":238,"market_price":4.46,"market_value":1062,"currency":"EUR","average_price":4.31,"asset_class":"STK"}]}`
 		case "get_account_trades":
-			if msg.Params.Arguments["period"] != "YEAR_TO_DATE" {
-				t.Errorf("trades period %v", msg.Params.Arguments)
+			period, _ := msg.Params.Arguments["period"].(string)
+			f.mu.Lock()
+			f.periods = append(f.periods, period)
+			fail := f.failTrades[period]
+			f.mu.Unlock()
+			if fail {
+				w.Header().Set("Content-Type", "text/event-stream")
+				res, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "error": map[string]any{"code": -32400, "message": "An error occurred. Please try again later."}})
+				io.WriteString(w, "event: message\ndata: "+string(res)+"\n\n")
+				return
 			}
 			text = `{"trades":[
 				{"trade_id":"fx1","symbol":"EUR.USD","sec_type":"CASH","currency":"USD","side":"BUY","size":26.11,"price":1.1598,"trade_time":"2026-09-01T09:03:29Z"},
@@ -292,5 +304,42 @@ func TestIBKRRefusesBroaderScope(t *testing.T) {
 	}
 	if s.Status().Connected || len(revoked) != 2 {
 		t.Fatalf("kept or not revoked: %+v %v", s.Status(), revoked)
+	}
+}
+
+// IBKR failing on the year's trades falls back to a shorter window; failing
+// on every window still records the value and compares positions.
+func TestIBKRTradesFallback(t *testing.T) {
+	d := DB(t)
+	f := &fakeIBKR{failTrades: map[string]bool{"YEAR_TO_DATE": true}}
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	s := ibkr.New(d)
+	s.AuthBase, s.MCPURL, s.Now = srv.URL, srv.URL+"/mcp", func() time.Time { return now }
+	ctx := context.Background()
+	authURL, _ := s.Connect(ctx, "https://finance.example:8443/")
+	u, _ := url.Parse(authURL)
+	f.challenge = u.Query().Get("code_challenge")
+	if err := s.Callback(ctx, "good", u.Query().Get("state")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Sync(ctx, false)
+	if err != nil || r.TradesWindow != "DAYS_90" || r.TradesError != "" || len(r.Trades) == 0 {
+		t.Fatalf("fallback: %v %+v", err, r)
+	}
+	f.mu.Lock()
+	f.failTrades = map[string]bool{"YEAR_TO_DATE": true, "DAYS_90": true, "DAYS_30": true, "MONTH_TO_DATE": true}
+	f.periods = nil
+	f.mu.Unlock()
+	r, err = s.Sync(ctx, false)
+	if err != nil || !r.BalanceWritten || len(r.Positions) == 0 || r.TradesError == "" || len(r.Trades) != 0 {
+		t.Fatalf("no trades window: %v %+v", err, r)
+	}
+	if len(f.periods) != 4 {
+		t.Errorf("tried %v", f.periods)
+	}
+	if st := s.Status(); st.LastError != "" {
+		t.Errorf("a sync that recorded the value is not an error: %+v", st)
 	}
 }

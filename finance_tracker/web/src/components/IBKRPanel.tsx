@@ -13,6 +13,7 @@ export type IBKRReport = {
   trades: { external_id: string; date: string; action: string; ticker: string; name: string; currency: string; shares: number; price: number; commission: number; recorded: boolean }[]
   new: number; mismatches: number
   orders?: IBKROrder[] | null; instructions?: IBKROrder[] | null; orders_error?: string
+  trades_window?: string; trades_error?: string
 }
 export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; tif?: string; created?: string; expires?: string }
 
@@ -103,6 +104,8 @@ export function IBKRPanel() {
               })}
             </div>
             {r.mismatches > 0 && <div className="mt-1.5 text-xs text-warn">Different share counts usually mean a trade is missing below, or one was entered on another account.</div>}
+            {r.trades_error ? <div className="mt-1.5 text-xs text-muted">IBKR didn't return trades just now — value and positions are up to date; trades are checked again next sync.</div>
+              : r.trades_window && r.trades_window !== 'YEAR_TO_DATE' && <div className="mt-1.5 text-xs text-muted">IBKR couldn't list this year's trades, so the last {({ DAYS_90: '90 days', DAYS_30: '30 days', MONTH_TO_DATE: 'month' } as Record<string, string>)[r.trades_window] ?? r.trades_window} were checked.</div>}
           </div>
 
           {((r.orders ?? []).length > 0 || (r.instructions ?? []).length > 0 || r.orders_error) && (
