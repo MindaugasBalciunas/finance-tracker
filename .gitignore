@@ -39,3 +39,5 @@ finance_tracker/server/*.db*
 finance_tracker/server/backups/
 finance_tracker/web/node_modules/
 finance_tracker/web/dist/
+finance_tracker/server/bin/
+finance_tracker/backend/*.log
