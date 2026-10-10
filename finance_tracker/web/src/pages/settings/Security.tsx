@@ -4,7 +4,7 @@ import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, PinInput, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
-import { passkeyRegister } from '../../lib/passkey'
+import { deviceName, passkeyRegister } from '../../lib/passkey'
 import { useDemo } from '../../lib/hooks'
 
 // ── security ────────────────────────────────────────────────────────
@@ -56,8 +56,9 @@ export function Security() {
               <button className="text-muted hover:text-bad" onClick={() => run(() => api.del(`/auth/passkeys/${k.id}`), 'Removed')}><Icon name="trash" size={16} /></button>
             </div>
           ))}
-          <button className="btn-outline" disabled={!st.enabled} onClick={() => run(() => passkeyRegister(navigator.platform || 'Device'), 'Passkey added')}><Icon name="fingerprint" size={16} />Add this device</button>
+          <button className="btn-outline" disabled={!st.enabled} onClick={() => run(() => passkeyRegister(deviceName()), 'Passkey added')}><Icon name="fingerprint" size={16} />Add this device</button>
           {!st.enabled && <div className="text-xs text-muted">Enable the PIN lock first.</div>}
+          <div className="text-xs text-muted">Each device unlocks with its own passkey — a phone's passkey isn't on your Mac. Open the app on the MacBook and tap Add this device there to use Touch ID.</div>
         </div>
       </Card>
       <Card title="API tokens (MCP server)">

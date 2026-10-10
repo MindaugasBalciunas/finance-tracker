@@ -1,5 +1,5 @@
-import { ReactNode } from 'react'
-import { Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { ReactNode, useState } from 'react'
+import { Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import { eurc, eurk } from '../lib/format'
 
 // Shared chart chrome: recessive axes and hairline grid in the palette's
@@ -102,24 +102,48 @@ export function foldSlices(slices: Slice[], max = 8): Slice[] {
 
 /** Donut with the total in the middle, a tooltip, and an HTML legend with shares. */
 export function Donut({ slices, center, sub, height = 200, legend = true, stacked = false }: { slices: Slice[]; center?: ReactNode; sub?: ReactNode; height?: number; legend?: boolean; stacked?: boolean }) {
+  // The numbers live on the donut itself: each sizeable slice carries its
+  // share, and a tapped (or hovered) slice takes over the centre — no
+  // floating tooltip to end up behind the ring. A tap is hover then click,
+  // so a click selects (never toggles); tapping the hole goes back.
+  const [active, setActive] = useState<number | null>(null)
   const total = slices.reduce((a, s) => a + s.value, 0)
   if (!total) return null
+  const on = active != null ? slices[active] : null
+  const label = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+    if (percent < 0.07) return null
+    const r = (innerRadius + outerRadius) / 2
+    const a = (-midAngle * Math.PI) / 180
+    return (
+      <text x={cx + r * Math.cos(a)} y={cy + r * Math.sin(a)} textAnchor="middle" dominantBaseline="central" className="pointer-events-none"
+        style={{ fontSize: 10, fontWeight: 600, fill: '#fff', paintOrder: 'stroke', stroke: 'rgba(0,0,0,.35)', strokeWidth: 2 }}>
+        {Math.round(percent * 100)}%
+      </text>
+    )
+  }
   return (
     <div className={`flex w-full flex-col items-center gap-3 ${stacked ? '' : 'sm:flex-row sm:items-center'}`}>
-      <div className="relative mx-auto w-full max-w-[220px] shrink-0" style={{ height, minWidth: Math.min(height, 220) }}>
+      <div className="relative mx-auto w-full max-w-[220px] shrink-0" style={{ height, minWidth: Math.min(height, 220) }} onMouseLeave={() => setActive(null)}
+        onClick={(e) => { if (!(e.target as Element).closest('.recharts-sector')) setActive(null) }}>
         <ResponsiveContainer>
           <PieChart>
             <Pie data={slices} dataKey="value" nameKey="label" innerRadius="62%" outerRadius="92%" paddingAngle={slices.length > 1 ? 1.5 : 0}
-              stroke="var(--chart-surface)" strokeWidth={2} isAnimationActive={false} startAngle={90} endAngle={-270}>
-              {slices.map((s) => <Cell key={s.key} fill={s.color} />)}
+              stroke="var(--chart-surface)" strokeWidth={2} isAnimationActive={false} startAngle={90} endAngle={-270}
+              label={label} labelLine={false}>
+              {slices.map((s, i) => <Cell key={s.key} fill={s.color} fillOpacity={active == null || active === i ? 1 : 0.45} className="cursor-pointer outline-none"
+                onMouseEnter={() => setActive(i)} onClick={() => setActive(i)} />)}
             </Pie>
-            <Tooltip content={({ active, payload }) => active && payload?.length ? (
-              <TooltipBox title={payload[0].name} rows={[{ color: (payload[0].payload as Slice).color, label: `${Math.round(((payload[0].value as number) / total) * 1000) / 10}%`, value: eurc(payload[0].value as number), bold: true }]} />) : null} />
           </PieChart>
         </ResponsiveContainer>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <div className="text-base font-semibold tnum">{center ?? eurk(total)}</div>
-          {sub && <div className="text-[11px] text-muted">{sub}</div>}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-[22%] text-center">
+          {on ? (<>
+            <div className="max-w-full truncate text-[11px] text-ink2">{on.label}</div>
+            <div className="text-base font-semibold tnum">{eurc(on.value)}</div>
+            <div className="text-[11px] tnum text-muted">{Math.round((on.value / total) * 1000) / 10}%</div>
+          </>) : (<>
+            <div className="text-base font-semibold tnum">{center ?? eurk(total)}</div>
+            {sub && <div className="text-[11px] text-muted">{sub}</div>}
+          </>)}
         </div>
       </div>
       {legend && (

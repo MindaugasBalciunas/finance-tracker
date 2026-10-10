@@ -314,6 +314,12 @@ func (s *Service) loadOwner() (*owner, []credRow, error) {
 		rows.Scan(&r.id, &r.blob)
 		var c webauthn.Credential
 		if json.Unmarshal(r.blob, &c) == nil {
+			// Enrolled without transport hints (v1, or before 2.28.6): offer
+			// both this device's own authenticator (Touch ID, Windows Hello)
+			// and a phone, so the browser doesn't push the phone/QR route.
+			if len(c.Transport) == 0 {
+				c.Transport = []protocol.AuthenticatorTransport{protocol.Internal, protocol.Hybrid}
+			}
 			u.creds = append(u.creds, c)
 		}
 		out = append(out, r)
@@ -450,6 +456,16 @@ func (s *Service) FinishLogin(host, origin string, r *http.Request) (string, err
 	u, rows, err := s.loadOwner()
 	if err != nil {
 		return "", err
+	}
+	// A passkey that moved into a synced store since enrollment (a Mac's
+	// passkeys going to iCloud Keychain, or one carried over from v1) now
+	// reports itself backup-eligible. The library refuses that change; the
+	// signature is still checked against the stored key, so take the
+	// device's word and keep it.
+	for i := range u.creds {
+		if string(u.creds[i].ID) == string(parsed.RawID) {
+			u.creds[i].Flags.BackupEligible = parsed.Response.AuthenticatorData.Flags.HasBackupEligible()
+		}
 	}
 	cred, err := w.ValidateLogin(u, *sess, parsed)
 	if err != nil {

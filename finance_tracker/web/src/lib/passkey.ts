@@ -31,6 +31,18 @@ export async function passkeyRegister(name: string) {
   const r = cred.response as AuthenticatorAttestationResponse
   await api.post('/auth/passkey/register/finish', {
     id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type,
-    response: { attestationObject: bufToB64u(r.attestationObject), clientDataJSON: bufToB64u(r.clientDataJSON) },
+    // Transports tell a later sign-in whether this passkey lives on this
+    // device (Touch ID) or a phone, so the browser offers the right one.
+    response: { attestationObject: bufToB64u(r.attestationObject), clientDataJSON: bufToB64u(r.clientDataJSON), transports: r.getTransports?.() ?? [] },
+    authenticatorAttachment: (cred as any).authenticatorAttachment ?? undefined,
   }, { name })
+}
+
+/** A readable name for this device's passkey, e.g. "Mac · Firefox". */
+export function deviceName() {
+  const ua = navigator.userAgent
+  const os = /Android/.test(ua) ? (ua.match(/;\s*([^;)]+?)\s+Build\//)?.[1] ?? 'Android') : /iPhone|iPad/.test(ua) ? (/iPad/.test(ua) ? 'iPad' : 'iPhone')
+    : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : /Linux/.test(ua) ? 'Linux' : 'Device'
+  const browser = /Firefox\//.test(ua) ? 'Firefox' : /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser\//.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : ''
+  return browser ? `${os} · ${browser}` : os
 }
