@@ -61,6 +61,7 @@ export function Overview() {
 
   return (
     <div className="space-y-4">
+      <MoneyStrip byGroup={byGroup} liquidOnly={liquidOnly} />
       <section className="card p-4">
         {/* What: the headline and the liquid filter. How: one toolbar for the cut and the period. */}
         <div className="flex items-start justify-between gap-3">
@@ -100,7 +101,6 @@ export function Overview() {
           { color: 'rgb(var(--ink))', label: liquidOnly ? 'Liquid (line)' : 'Net worth (line)', value: eurk(head) }]} /></div>
         </> : <div className="mt-4"><WhereMoneyIs from={rangeFrom(range)} range={range} liquidOnly={liquidOnly} accounts={accounts ?? []} view={view} /></div>}
       </section>
-      <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={rangeLabel(range)} />
 
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Accounts</h2>
@@ -110,14 +110,20 @@ export function Overview() {
         </div>
       </div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {GROUPS.filter((g) => byGroup[g.id]?.length).map((g) => (
-          <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
-            action={<span className="tnum text-sm font-semibold">{eurc(byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0))}</span>}>
-            <div className="divide-y divide-line border-t border-line">
-              {byGroup[g.id].map((a) => <AccountRow key={a.id} a={a} onClick={() => setAcct(a)} />)}
-            </div>
-          </Card>
-        ))}
+        {GROUPS.filter((g) => byGroup[g.id]?.length).map((g) => {
+          const sum = byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0)
+          // Same base as the bar above: liquid money when "Liquid only" is on.
+          const base = stripTotal(byGroup, liquidOnly)
+          const inBase = g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id))
+          return (
+            <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
+              action={<span className="flex items-baseline gap-2"><span className="tnum text-sm font-semibold">{eurc(sum)}</span>{inBase && base > 0 && sum > 0 && <span className="tnum text-xs text-muted">{pct(byGroup[g.id].reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0) / base)}</span>}</span>}>
+              <div className="divide-y divide-line border-t border-line">
+                {byGroup[g.id].map((a) => <AccountRow key={a.id} a={a} share={g.id === 'debt' ? (sum ? Math.abs(a.balance ?? 0) / Math.abs(sum) : 0) : sum > 0 ? Math.max(0, a.balance ?? 0) / sum : 0} color={g.id === 'debt' ? 'rgb(var(--bad))' : brandColor(a) ?? `var(--s${g.slot})`} onClick={() => setAcct(a)} />)}
+              </div>
+            </Card>
+          )
+        })}
         {(accounts ?? []).some((a) => a.archived) && (
           <a href="#/settings/accounts" className="text-xs text-muted hover:text-accent lg:col-span-2">{(accounts ?? []).filter((a) => a.archived).length} hidden accounts — manage in Settings</a>
         )}
@@ -125,6 +131,7 @@ export function Overview() {
           <Card pad={false} title="Other"><div className="divide-y divide-line border-t border-line">{byGroup.other.map((a) => <AccountRow key={a.id} a={a} onClick={() => setAcct(a)} />)}</div></Card>
         )}
       </div>
+      <Movement from={rangeFrom(range) || (hist?.[0]?.date ?? '')} label={rangeLabel(range)} />
       {updateOpen && <UpdateBalances accounts={accounts ?? []} onClose={() => setUpdateOpen(false)} />}
       {acct && <AccountSheet a={acct} onClose={() => setAcct(null)} />}
       {newAcct && <AccountEditor onClose={() => setNewAcct(false)} />}
@@ -139,7 +146,6 @@ export function Overview() {
 function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: string; range: string; liquidOnly: boolean; accounts: Account[]; view: string }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, rangeStep(range), true)
   const { prefs, set } = usePrefs()
-  const [allShown, setAllShown] = useState(false)
   const off = new Set(prefs.hidden_accounts ?? [])
   const toggle = (ids: string[]) => {
     const next = new Set(off)
@@ -180,6 +186,19 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, Math.max(0, a.balance ?? 0)])), [eligible])
   const valueOf = (x: { ids: string[] }) => x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + (bal[id] ?? 0), 0)
   const shown = series.filter((x) => !x.ids.every((id) => off.has(id)))
+  // The table: one block per bank (accounts view) or one block of banks.
+  const blocks = useMemo(() => {
+    if (view !== 'accounts') { // banks: up to three even blocks, one per column
+      const n = Math.ceil(series.length / 3) || 1
+      return Array.from({ length: Math.ceil(series.length / n) }, (_, i) => ({ bank: String(i), items: series.slice(i * n, i * n + n) }))
+    }
+    const out: { bank: string; items: typeof series }[] = []
+    for (const x of series) {
+      if (out.length && out[out.length - 1].bank === x.bank) out[out.length - 1].items.push(x)
+      else out.push({ bank: x.bank, items: [x] })
+    }
+    return out
+  }, [series, view])
   // The stack is drawn steadiest-first (bottom), whatever order the legend uses.
   const stack = [...shown].sort((x, y) => x.jit - y.jit)
   const rows = useMemo(() => (hist ?? []).map((h) => {
@@ -191,8 +210,6 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   if (!eligible.length) return <ChartFrame><div className="grid h-full place-items-center text-sm text-muted">No account balances yet.</div></ChartFrame>
   const total = shown.reduce((t, x) => t + valueOf(x), 0)
   const slices: Slice[] = shown.map((x) => ({ key: x.key, label: x.name, value: valueOf(x), color: x.color })).filter((x) => x.value > 0)
-  const limit = view === 'banks' ? 99 : 8
-  const visible = allShown ? series : series.slice(0, limit)
   return (
     <>
       <ChartFrame donut={shown.length > 0 && <Donut slices={slices} center={eurk(total)} sub="today" height={200} legend={false} />}>
@@ -213,33 +230,32 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
         )}
       </ChartFrame>
       <div className="mt-4 mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id) && bal[id] > 0).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''} · tap one to leave it out of the chart</div>
-      {/* The legend is the switchboard: amount and share of what is shown. */}
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.map((x, i) => {
+      {/* The legend is the switchboard: a compact table of every account (or
+          bank) — amount and share of what is shown; tap a row to leave it out. */}
+      <div className="columns-1 gap-3 sm:columns-2 lg:columns-3">
+        {blocks.map((blk) => (
+          <div key={blk.bank + blk.items[0].key} className="mb-3 break-inside-avoid divide-y divide-line overflow-hidden rounded-lg border border-line">
+            {view === 'accounts' && <div className="bg-sunken/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{blk.bank}</div>}
+            {blk.items.map((x) => {
           const on = !x.ids.every((id) => off.has(id))
           const onCount = x.ids.filter((id) => !off.has(id)).length
           const v = on ? valueOf(x) : x.value
-          const newBank = view === 'accounts' && (i === 0 || visible[i - 1].bank !== x.bank)
           return (
             <Fragment key={x.key}>
-              {newBank && <div className="col-span-full mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted first:mt-0">{x.bank}</div>}
               <button type="button" onClick={() => toggle(x.ids)} aria-pressed={on}
-                className={clsx('flex min-w-0 items-center gap-2 rounded-lg border border-line px-2 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
-                <IconTile name={x.icon} color={on ? x.color : 'var(--s-other)'} size={24} />
-                <span className={clsx('min-w-0 flex-1 truncate', on ? 'text-ink' : 'text-muted line-through')}>
-                  {x.name}{x.ids.every((id) => !(bal[id] > 0)) && <span className="text-muted"> · closed</span>}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length} accounts` : `${x.ids.length} accounts`}</span>}
+                className={clsx('grid w-full grid-cols-[auto_1fr_auto_2.25rem] items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-sunken/50', !on && 'opacity-50')}>
+                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: on ? x.color : 'var(--s-other)' }} />
+                <span className={clsx('min-w-0 truncate', on ? 'text-ink' : 'text-muted line-through')}>
+                  {x.name}{x.ids.every((id) => !(bal[id] > 0)) && <span className="text-muted"> · closed</span>}{x.ids.length > 1 && <span className="text-muted"> · {onCount < x.ids.length ? `${onCount} of ${x.ids.length}` : `${x.ids.length} accounts`}</span>}
                 </span>
                 <span className="tnum font-medium text-ink">{eurk(v)}</span>
-                <span className="w-9 text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
+                <span className="text-right tnum text-muted">{on && total > 0 ? `${Math.round((v / total) * 100)}%` : '—'}</span>
               </button>
             </Fragment>
           )
         })}
-        {series.length > limit && (
-          <button type="button" className="btn-ghost h-8 justify-start px-2.5 text-xs" onClick={() => setAllShown(!allShown)}>
-            <Icon name="chevronD" size={14} className={clsx('transition', allShown && 'rotate-180')} />{allShown ? 'Fewer' : `+${series.length - limit} more`}
-          </button>
-        )}
+          </div>
+        ))}
       </div>
     </>
   )
@@ -263,6 +279,44 @@ function GroupDonut({ byGroup, liquidOnly }: { byGroup: Record<string, number>; 
   const total = slices.reduce((a, x) => a + x.value, 0)
   if (!total) return null
   return <Donut slices={slices} center={eurk(total)} sub={liquidOnly ? 'liquid today' : 'assets today'} height={200} legend={false} />
+}
+
+const stripTotal = (byGroup: Record<string, Account[]>, liquidOnly: boolean) =>
+  GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
+    .reduce((t, g) => t + (byGroup[g.id] ?? []).reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0), 0)
+
+/** Where the money is, at a glance: one bar split by group, its share and
+ *  amount under each; with everything shown, debt is drawn on the same scale. */
+function MoneyStrip({ byGroup, liquidOnly }: { byGroup: Record<string, Account[]>; liquidOnly: boolean }) {
+  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
+    .map((g) => ({ g, v: (byGroup[g.id] ?? []).reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0) })).filter((x) => x.v > 0)
+    .sort((a, b) => b.v - a.v)
+  const total = parts.reduce((t, x) => t + x.v, 0)
+  const debt = liquidOnly ? 0 : Math.abs((byGroup.debt ?? []).reduce((a, x) => a + Math.min(0, x.balance ?? 0), 0))
+  if (!total) return null
+  return (
+    <section className="card px-4 py-3">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-semibold text-ink">Where your money is</span>
+        <span className="tnum text-ink2">{eurk(total)} {liquidOnly ? 'liquid' : 'in assets'}{debt > 0 && <span className="text-bad"> · debt {eurk(debt)}</span>}</span>
+      </div>
+      <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full">
+        {parts.map(({ g, v }) => (
+          <div key={g.id} className="min-w-[3px] border-r-2 border-surface last:border-r-0" style={{ width: `${(v / total) * 100}%`, background: `var(--s${g.slot})` }} title={`${g.name} ${eurk(v)} · ${pct(v / total)}`} />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {parts.map(({ g, v }) => (
+          <span key={g.id} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className="h-2 w-2 rounded-[2px]" style={{ background: `var(--s${g.slot})` }} />
+            <span className="text-ink2">{g.name}</span>
+            <span className="tnum font-medium text-ink">{eurk(v)}</span>
+            <span className="tnum text-muted">{Math.round((v / total) * 100)}%</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 /** Which accounts drove the change over the selected range. */
@@ -290,7 +344,7 @@ function staleDays(d?: string) {
   return Math.floor((Date.now() - new Date(d + 'T00:00:00').getTime()) / 86400000)
 }
 
-function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
+function AccountRow({ a, onClick, share, color }: { a: Account; onClick: () => void; share?: number; color?: string }) {
   const age = staleDays(a.balance_date)
   const stale = age > 45 && !['property', 'vehicle', 'loan'].includes(a.kind) && !!a.balance
   return (
@@ -302,7 +356,14 @@ function AccountRow({ a, onClick }: { a: Account; onClick: () => void }) {
           {[a.institution !== a.name && a.institution, a.quantity ? `${a.quantity} units` : '', a.balance_date ? (stale ? `${age} days old` : shortDate(a.balance_date)) : 'no balance', a.source === 'bank' ? 'from bank' : a.source === 'computed' ? 'estimated' : a.source === 'closed' ? 'closed' : '', a.archived && a.balance ? 'hidden but still counted — close it in Settings' : ''].filter(Boolean).join(' · ')}
         </div>
       </div>
-      <div className="tnum text-sm font-semibold">{a.balance != null ? eurc(a.balance) : '—'}</div>
+      <div className="flex min-w-[6rem] shrink-0 flex-col items-end gap-1">
+        <div className="whitespace-nowrap tnum text-sm font-semibold">{a.balance != null ? eurc(a.balance) : '—'}</div>
+        {share != null && share > 0 && (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken" title={`${pct(share)} of the group`}>
+            <div className="h-full rounded-full" style={{ width: `${Math.max(3, Math.min(100, share * 100))}%`, background: color }} />
+          </div>
+        )}
+      </div>
     </button>
   )
 }
