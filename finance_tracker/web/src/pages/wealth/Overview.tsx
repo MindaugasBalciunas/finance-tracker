@@ -10,7 +10,7 @@ import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../../lib/f
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../../lib/periods'
 import type { Account } from '../../lib/types'
 import { Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
-import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
+import { axisProps, Donut, GroupBar, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
 import { Icon, IconTile } from '../../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
@@ -117,7 +117,7 @@ export function Overview() {
           const inBase = g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id))
           return (
             <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
-              action={<span className="flex items-baseline gap-2"><span className="tnum text-sm font-semibold">{eurc(sum)}</span>{inBase && base > 0 && sum > 0 && <span className="tnum text-xs text-muted">{pct(byGroup[g.id].reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0) / base)}</span>}</span>}>
+              action={<span className="flex items-baseline gap-2"><span className="tnum text-sm font-semibold">{eurc(sum)}</span>{inBase && base > 0 && sum > 0 && <span className="tnum text-xs text-muted">{pct(sum / base)}</span>}</span>}>
               <div className="divide-y divide-line border-t border-line">
                 {byGroup[g.id].map((a) => <AccountRow key={a.id} a={a} share={g.id === 'debt' ? (sum ? Math.abs(a.balance ?? 0) / Math.abs(sum) : 0) : sum > 0 ? Math.max(0, a.balance ?? 0) / sum : 0} color={g.id === 'debt' ? 'rgb(var(--bad))' : brandColor(a) ?? `var(--s${g.slot})`} onClick={() => setAcct(a)} />)}
               </div>
@@ -281,40 +281,23 @@ function GroupDonut({ byGroup, liquidOnly }: { byGroup: Record<string, number>; 
   return <Donut slices={slices} center={eurk(total)} sub={liquidOnly ? 'liquid today' : 'assets today'} height={200} legend={false} />
 }
 
+// Group totals as Home and net worth count them (a negative account lowers its group).
 const stripTotal = (byGroup: Record<string, Account[]>, liquidOnly: boolean) =>
   GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
-    .reduce((t, g) => t + (byGroup[g.id] ?? []).reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0), 0)
+    .reduce((t, g) => t + Math.max(0, (byGroup[g.id] ?? []).reduce((a, x) => a + (x.balance ?? 0), 0)), 0)
 
-/** Where the money is, at a glance: one bar split by group, its share and
- *  amount under each; with everything shown, debt is drawn on the same scale. */
+/** Where the money is, at a glance — the same bar as on Home. The total
+ *  is the chart's headline right below, so it isn't repeated here. */
 function MoneyStrip({ byGroup, liquidOnly }: { byGroup: Record<string, Account[]>; liquidOnly: boolean }) {
   const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
-    .map((g) => ({ g, v: (byGroup[g.id] ?? []).reduce((a, x) => a + Math.max(0, x.balance ?? 0), 0) })).filter((x) => x.v > 0)
+    .map((g) => ({ g, v: Math.max(0, (byGroup[g.id] ?? []).reduce((a, x) => a + (x.balance ?? 0), 0)) })).filter((x) => x.v > 0)
     .sort((a, b) => b.v - a.v)
   const total = parts.reduce((t, x) => t + x.v, 0)
   const debt = liquidOnly ? 0 : Math.abs((byGroup.debt ?? []).reduce((a, x) => a + Math.min(0, x.balance ?? 0), 0))
   if (!total) return null
   return (
-    <section className="card px-4 py-3">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-semibold text-ink">Where your money is</span>
-        <span className="tnum text-ink2">{eurk(total)} {liquidOnly ? 'liquid' : 'in assets'}{debt > 0 && <span className="text-bad"> · debt {eurk(debt)}</span>}</span>
-      </div>
-      <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full">
-        {parts.map(({ g, v }) => (
-          <div key={g.id} className="min-w-[3px] border-r-2 border-surface last:border-r-0" style={{ width: `${(v / total) * 100}%`, background: `var(--s${g.slot})` }} title={`${g.name} ${eurk(v)} · ${pct(v / total)}`} />
-        ))}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-        {parts.map(({ g, v }) => (
-          <span key={g.id} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <span className="h-2 w-2 rounded-[2px]" style={{ background: `var(--s${g.slot})` }} />
-            <span className="text-ink2">{g.name}</span>
-            <span className="tnum font-medium text-ink">{eurk(v)}</span>
-            <span className="tnum text-muted">{Math.round((v / total) * 100)}%</span>
-          </span>
-        ))}
-      </div>
+    <section className="card px-4 py-3 sm:px-6">
+      <GroupBar parts={parts.map(({ g, v }) => ({ id: g.id, name: g.name, slot: g.slot, v }))} debt={debt} />
     </section>
   )
 }

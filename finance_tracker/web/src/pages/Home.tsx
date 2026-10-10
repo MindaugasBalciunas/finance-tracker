@@ -9,7 +9,7 @@ import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hoo
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, parseNum, pct, shortDate, signed, todayISO } from '../lib/format'
 import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Segmented, Stat, Toggle, useToast } from '../components/ui'
-import { axisProps, gridProps, TooltipBox } from '../components/charts'
+import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { Icon, IconTile } from '../components/Icon'
@@ -108,27 +108,7 @@ export default function Home() {
         </div>
         {assetTotal > 0 && (
           <Link to="/wealth" className="block border-t border-line px-4 py-3 hover:bg-sunken/50 sm:px-6">
-            {/* Each group is one column: its bar segment on top, its name and full
-                amount right underneath, so labels line up with their segment. A column
-                grows with its share but never narrower than its amount. */}
-            <div className="flex w-full gap-1">
-              {assets.map((g, i) => (
-                <div key={g.id} className="min-w-0" style={{ flex: `${g.v / assetTotal} 1 0%`, minWidth: 'max-content' }}>
-                  <div className={clsx('h-2', i === 0 && 'rounded-l-full', i === assets.length - 1 && 'rounded-r-full')} style={{ background: `var(--s${g.slot})` }} />
-                  <div className="mt-1.5 flex flex-col pr-1 sm:flex-row sm:items-baseline sm:gap-1.5">
-                    <span className="whitespace-nowrap text-[11px] text-ink2 sm:text-xs">{g.name}</span>
-                    <span className="whitespace-nowrap text-xs font-semibold tnum sm:text-sm">{eur(g.v)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {!liquid && o.debt > 0 && (
-              <div className="mt-2 flex items-baseline gap-1.5 text-xs sm:text-sm">
-                <span className="h-2 w-2 shrink-0 self-center rounded-[3px] border border-axis" />
-                <span className="text-ink2">Debt</span>
-                <span className="font-semibold tnum text-bad">−{eur(o.debt)}</span>
-              </div>
-            )}
+            <GroupBar parts={assets} debt={liquid ? 0 : o.debt} />
             <div className="mt-2 flex items-center justify-between text-xs text-muted">
               <span>{liquid ? `Liquid total ${eur(assetTotal)} · house and car excluded` : `Assets ${eur(assetTotal)} − debt ${eur(o.debt)} = ${eur(o.net_worth)}`}</span>
               <span className="inline-flex items-center gap-0.5 text-accent">Wealth <Icon name="chevronR" size={14} /></span>
