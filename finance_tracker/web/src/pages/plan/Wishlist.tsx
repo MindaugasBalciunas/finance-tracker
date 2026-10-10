@@ -51,7 +51,10 @@ export function Wishlist() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">Wish list</h2>
-          {active.length > 0 && <div className="text-xs text-muted tnum">{eur(p.total_saved)} saved · {eur(p.total_needed)} to go · funded top first</div>}
+          {active.length > 0 && (() => {
+            const unpriced = active.filter((g) => !(g.target > 0)).length
+            return <div className="text-xs text-muted tnum">{unpriced === active.length ? `${active.length} goals · ${unpriced} need a price` : `${eur(p.total_saved)} saved · ${eur(p.total_needed)} to go${unpriced ? ` · ${unpriced} without a price` : ''} · top first`}</div>
+          })()}
         </div>
         <div className="flex gap-2">
           <AskCFO q="Look at my wish list and the last months' left over: is the order sensible, are the prices realistic, and when will each be funded?" label="Review" />
@@ -146,7 +149,8 @@ function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; 
 }
 
 function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; rank: number; first: boolean; last: boolean; onUp: () => void; onDown: () => void; onOpen: () => void }) {
-  const full = g.remaining <= 0
+  const priced = g.target > 0
+  const full = priced && g.remaining <= 0
   return (
     <section className="card flex items-stretch gap-2 p-3 pl-2">
       <div className="flex flex-col items-center justify-between">
@@ -157,8 +161,11 @@ function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; ran
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate font-medium">{g.tag && <Icon name="plane" size={14} className="mr-1.5 inline text-muted" />}{g.name}{g.url && <Icon name="link" size={13} className="ml-1 inline text-muted" />}</span>
-          <span className="tnum text-sm font-semibold">{eur(g.target)}</span>
+          <span className={clsx('tnum text-sm font-semibold', !priced && 'font-normal text-muted')}>{priced ? eur(g.target) : 'no price'}</span>
         </div>
+        {!priced ? (
+          <div className="mt-1.5 text-xs text-accent">Tap to set a price{g.saved > 0 && <span className="text-muted tnum"> · {eur(g.saved)} saved</span>}</div>
+        ) : (<>
         <Meter value={g.saved} max={g.target} goal className="mt-2 h-2" />
         <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
           <span className="tnum text-ink2">{eur(g.saved)} saved{!full && <span className="text-muted"> · {eur(g.remaining)} to go</span>}</span>
@@ -166,10 +173,11 @@ function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; ran
             {full ? 'ready to buy' : g.eta ? `funded ≈ ${monthLabel(g.eta)}` : 'needs a month with money left'}
           </span>
         </div>
+        </>)}
         {g.tag && (g.spent ?? 0) !== 0 && (
           <div className="mt-0.5 text-[11px] text-muted">spent so far <b className="tnum text-ink2">{eur(g.spent ?? 0)}</b> · {g.saved >= (g.spent ?? 0) ? `${eur(g.saved - (g.spent ?? 0))} of the savings left` : `${eur((g.spent ?? 0) - g.saved)} more than saved`}</div>
         )}
-        {!full && g.target_date && (
+        {priced && !full && g.target_date && (
           <div className="mt-0.5 text-[11px] text-muted">by {shortDate(g.target_date)}: <b className="tnum text-ink2">{eur(g.per_month ?? 0)}</b>/month</div>
         )}
       </button>
@@ -229,7 +237,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
   const save = useMutation({ mutationFn: (body: Partial<Goal>) => (g.id ? api.put(`/goals/${g.id}`, body) : api.post('/goals', body)), onError: fail })
   const put = useMutation({ mutationFn: (amount: number) => api.post(`/goals/${g.id}/moves`, { amount, note: why }), onSuccess: () => done('Saved'), onError: fail })
   const del = useMutation({ mutationFn: () => api.del(`/goals/${g.id}`), onSuccess: () => done('Removed'), onError: fail })
-  const body = { name: v.name, target: v.target, target_date: v.target_date ?? '', note: v.note ?? '', url: v.url ?? '', tag: !v.tag ? '' : v.tag.trim() === 'trip:' ? `trip:${v.name ?? ''}` : v.tag, status: v.status ?? 'active' }
+  const body = { name: v.name, target: v.target ?? 0, target_date: v.target_date ?? '', note: v.note ?? '', url: v.url ?? '', tag: !v.tag ? '' : v.tag.trim() === 'trip:' ? `trip:${v.name ?? ''}` : v.tag, status: v.status ?? 'active' }
   return (
     <Sheet open onClose={onClose} title={g.id ? g.name : g.tag ? 'Plan a trip' : 'New goal'} footer={<>
       {g.id && <button className="btn-danger mr-auto" onClick={() => confirm(`Delete ${g.name} and its history?`) && del.mutate()}>Delete</button>}
@@ -239,7 +247,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
       <div className="space-y-3">
         <Field label="What"><input className="input" value={v.name ?? ''} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="e.g. Bambu Lab X2D" autoFocus={!g.id} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Price"><NumberInput value={v.target} onChange={(x) => setV({ ...v, target: x })} placeholder="€" /></Field>
+          <Field label="Price" hint="leave empty if you don't know yet"><NumberInput value={v.target || undefined} onChange={(x) => setV({ ...v, target: x })} placeholder="€" /></Field>
           <Field label="Wanted by" hint="optional"><input type="date" className="input" value={v.target_date ?? ''} onChange={(e) => setV({ ...v, target_date: e.target.value })} /></Field>
         </div>
         <div className="rounded-xl border border-line p-3">

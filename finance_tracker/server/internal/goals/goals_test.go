@@ -100,7 +100,7 @@ func TestWishListWaterfall(t *testing.T) {
 	if p.TotalSaved != E(500) || p.Goals[len(p.Goals)-1].ID != safe.ID {
 		t.Fatalf("after buying the safe: saved %v, last %+v", p.TotalSaved, p.Goals[len(p.Goals)-1])
 	}
-	for _, bad := range []goals.Goal{{Name: "", Target: E(1)}, {Name: "x", Target: 0}, {Name: "x", Target: E(1), TargetDate: "06/2027"}, {Name: "x", Target: E(1), URL: "javascript:alert(1)"}} {
+	for _, bad := range []goals.Goal{{Name: "", Target: E(1)}, {Name: "x", Target: -E(1)}, {Name: "x", Target: E(1), TargetDate: "06/2027"}, {Name: "x", Target: E(1), URL: "javascript:alert(1)"}} {
 		if err := goals.Save(d, &bad); err == nil {
 			t.Errorf("accepted %+v", bad)
 		}
@@ -129,5 +129,27 @@ func TestTripGoal(t *testing.T) {
 	bad := goals.Goal{Name: "x", Target: E(1), Tag: "trip:"}
 	if err := goals.Save(d, &bad); err == nil {
 		t.Error("empty trip name accepted")
+	}
+}
+
+// A goal can go on the list before its price is known: listed in order,
+// never funded or forecast until it has one.
+func TestGoalWithoutPrice(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.Local)
+	Tx(t, d, ledger.Tx{Date: "2026-09-15", Amount: E(1000), Category: "salary", AccountID: "swed"})
+	sauna := goals.Goal{Name: "Sauna"}
+	safe := goals.Goal{Name: "Gun safe", Target: E(450)}
+	goals.Save(d, &sauna)
+	goals.Save(d, &safe)
+	p, err := goals.Build(d, "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Proposal) != 1 || p.Proposal[0].GoalID != safe.ID || p.Goals[0].ETA != "" || p.TotalNeeded != E(450) {
+		t.Fatalf("unpriced goal skipped: %+v %+v", p.Proposal, p.Goals[0])
+	}
+	if _, err := goals.Fund(d, "2026-09", []goals.Allocation{{GoalID: sauna.ID, Amount: E(10)}}, now); err == nil {
+		t.Error("funded a goal without a price")
 	}
 }

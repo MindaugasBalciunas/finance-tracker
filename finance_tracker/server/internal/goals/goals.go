@@ -21,7 +21,7 @@ import (
 type Goal struct {
 	ID         int64       `json:"id"`
 	Name       string      `json:"name"`
-	Target     money.Cents `json:"target"`
+	Target     money.Cents `json:"target"` // 0 = price not set yet: listed, not funded
 	Priority   int         `json:"priority"`
 	TargetDate string      `json:"target_date"`
 	Note       string      `json:"note"`
@@ -112,8 +112,8 @@ func Save(d *sql.DB, g *Goal) error {
 	if g.Name == "" || len(g.Name) > 120 || len(g.Note) > 1000 || len(g.URL) > 500 {
 		return errors.New("name the goal (and keep the note and link short)")
 	}
-	if g.Target <= 0 {
-		return errors.New("what does it cost? the target must be above €0")
+	if g.Target < 0 {
+		return errors.New("the price can't be negative")
 	}
 	if g.TargetDate != "" {
 		if _, err := time.Parse("2006-01-02", g.TargetDate); err != nil {
@@ -361,6 +361,7 @@ func Build(d *sql.DB, ym string, now time.Time) (*Plan, error) {
 		p.TotalNeeded += g.Remaining
 		ahead += g.Remaining
 		switch {
+		case g.Target == 0: // no price yet: nothing to fund or forecast
 		case g.Remaining == 0:
 			g.ETA = cur
 		case p.AvgLeftOver > 0:
