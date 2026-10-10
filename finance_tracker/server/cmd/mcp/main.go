@@ -238,6 +238,26 @@ type recurringArgs struct {
 	Hidden      bool    `json:"hidden,omitempty" jsonschema:"true = not really recurring, stop counting it"`
 }
 
+type goalArgs struct {
+	ID          int64   `json:"id,omitempty" jsonschema:"goal id; omit to add"`
+	Name        string  `json:"name,omitempty"`
+	Target      float64 `json:"target,omitempty" jsonschema:"price in EUR"`
+	TargetDate  string  `json:"target_date,omitempty" jsonschema:"YYYY-MM-DD, optional"`
+	Note        string  `json:"note,omitempty"`
+	URL         string  `json:"url,omitempty"`
+	Status      string  `json:"status,omitempty" jsonschema:"active | bought | dropped"`
+	Tag         string  `json:"tag,omitempty" jsonschema:"trip:<name> makes it a planned trip"`
+	PriorityIDs []int64 `json:"priority_ids,omitempty" jsonschema:"goal ids first to last, to reorder"`
+}
+
+type fundArgs struct {
+	Month       string `json:"month" jsonschema:"YYYY-MM, a finished month"`
+	Allocations []struct {
+		GoalID int64   `json:"goal_id"`
+		Amount float64 `json:"amount" jsonschema:"EUR"`
+	} `json:"allocations,omitempty" jsonschema:"omit to use the suggested split by priority"`
+}
+
 type noteArgs struct {
 	Note string `json:"note" jsonschema:"one short sentence"`
 }
@@ -462,6 +482,45 @@ func main() {
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_recurring", Description: "WRITES — read-write token. Removes the owner's recurring item (by id); a detected one comes back unless hidden instead. Confirm first."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a recurringArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("DELETE", fmt.Sprintf("/recurring/%d", a.ID), nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_goals", Description: "The wish list: goals in priority order (price, saved, remaining, ETA, per-month need for a target date) and the funding month — income, paid yourself first, spending, left over, available — with the suggested split."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/goals", vals("month", a.Month), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "save_goal", Description: "WRITES — read-write token. Adds a wish-list goal (no id) or changes one (send all its fields); priority_ids reorders the list. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a goalArgs) (*mcp.CallToolResult, any, error) {
+			if len(a.PriorityIDs) > 0 {
+				if _, err := call("POST", "/goals/order", nil, map[string]any{"ids": a.PriorityIDs}); err != nil {
+					return nil, nil, err
+				}
+				if a.ID == 0 && a.Name == "" {
+					return text(call("GET", "/goals", nil, nil))
+				}
+			}
+			body := map[string]any{"name": a.Name, "target": a.Target, "target_date": a.TargetDate, "note": a.Note, "url": a.URL, "status": a.Status, "tag": a.Tag}
+			if a.ID > 0 {
+				return text(call("PUT", fmt.Sprintf("/goals/%d", a.ID), nil, body))
+			}
+			return text(call("POST", "/goals", nil, body))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "fund_goals", Description: "WRITES — read-write token. Puts a finished month's left over into goals (the suggested split unless allocations are given). Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a fundArgs) (*mcp.CallToolResult, any, error) {
+			allocs := []map[string]any{}
+			if len(a.Allocations) == 0 {
+				raw, err := call("GET", "/goals", vals("month", a.Month), nil)
+				if err != nil {
+					return nil, nil, err
+				}
+				var p struct {
+					Proposal []map[string]any `json:"proposal"`
+				}
+				json.Unmarshal(raw, &p)
+				allocs = p.Proposal
+			}
+			for _, x := range a.Allocations {
+				allocs = append(allocs, map[string]any{"goal_id": x.GoalID, "amount": x.Amount})
+			}
+			return text(call("POST", "/goals/fund", nil, map[string]any{"month": a.Month, "allocations": allocs}))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "WRITES — read-write token. Saves a lasting fact (decision, plan, life or income change, preference) to the memory every assistant reads. Use on your own when the owner tells you one."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a noteArgs) (*mcp.CallToolResult, any, error) {

@@ -13,18 +13,20 @@ import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../compone
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
+import { Wishlist } from './plan/Wishlist'
 
 export default function Plan() {
   const loc = useLocation()
   const nav = useNavigate()
-  const tab = loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/settings') ? 'settings' : 'month'
+  const tab = loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
       <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'month' ? '/plan' : `/plan/${v}`)}
-        tabs={[{ value: 'month', label: 'Budget' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
+        tabs={[{ value: 'month', label: 'Budget' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>
         <Route path="/" element={<Month />} />
+        <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/trips" element={<Trips />} />
         <Route path="/settings" element={<PlanSettings />} />
       </Routes>
@@ -343,6 +345,7 @@ function BudgetEditor({ b: init, month, onClose }: { b: Partial<Budget>; month: 
 // ── trips ───────────────────────────────────────────────────────────
 
 function Trips() {
+  const nav = useNavigate()
   const { data, isLoading } = useQuery({ queryKey: ['trips'], queryFn: () => api.get<any>('/trips') })
   const cats = useCats()
   const refresh = useRefresh()
@@ -370,6 +373,25 @@ function Trips() {
   }
   return (
     <div className="space-y-4">
+      {/* Trips ahead are saved for on the wish list, funded with everything else. */}
+      <Card title="Planned trips" pad={false} action={<button className="btn-ghost h-8 px-2.5 text-xs text-accent" onClick={() => nav('/plan/wishlist?trip=1')}><Icon name="plus" size={14} />Plan a trip</button>}>
+        {!data?.planned?.length ? (
+          <div className="border-t border-line px-4 py-3 text-sm text-muted">No trip planned. Plan one and save for it on the wish list — what's tagged to it later counts against what you saved.</div>
+        ) : (
+          <div className="divide-y divide-line border-t border-line">
+            {data.planned.map((g: any) => (
+              <button key={g.id} onClick={() => nav('/plan/wishlist')} className="block w-full px-4 py-3 text-left hover:bg-sunken/50">
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="truncate font-medium"><Icon name="plane" size={14} className="mr-1.5 inline text-muted" />{g.name}{g.target_date && <span className="font-normal text-muted"> · {shortDate(g.target_date)}</span>}</span>
+                  <span className="tnum">{eur(g.saved)} <span className="text-muted">of {eur(g.target)}</span></span>
+                </div>
+                <Meter value={g.saved} max={g.target} goal className="mt-2" />
+                {g.spent > 0 && <div className="mt-1 text-xs text-muted tnum">{eur(g.spent)} already spent under {g.tag}</div>}
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
       {data?.suggestions?.length > 0 && (
         <Card title="Looks like a trip" pad={false}>
           <div className="divide-y divide-line">

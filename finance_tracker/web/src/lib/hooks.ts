@@ -74,7 +74,7 @@ export const useTransactions = (f: TxFilter) =>
 export function useRefresh() {
   const qc = useQueryClient()
   return () => {
-    for (const k of ['transactions', 'overview', 'plan', 'inbox', 'tags', 'merchants', 'cashflow', 'breakdown', 'trends', 'recurring', 'fi', 'review', 'pace', 'tidy', 'month-review', 'checks', 'movement', 'scenarios', 'trips', 'accounts', 'nw-history', 'loans', 'networth', 'owed', 'tx', 'balances', 'portfolio', 'trades', 'tag-stats', 'tag-suggestions', 'rule-stats', 'category-usage', 'account-usage', 'ibkr'])
+    for (const k of ['transactions', 'overview', 'plan', 'inbox', 'tags', 'merchants', 'cashflow', 'breakdown', 'trends', 'recurring', 'fi', 'review', 'pace', 'tidy', 'month-review', 'checks', 'movement', 'scenarios', 'trips', 'accounts', 'nw-history', 'loans', 'networth', 'owed', 'tx', 'balances', 'portfolio', 'trades', 'tag-stats', 'tag-suggestions', 'rule-stats', 'category-usage', 'account-usage', 'ibkr', 'goals', 'goal-moves'])
       qc.invalidateQueries({ queryKey: [k] })
   }
 }

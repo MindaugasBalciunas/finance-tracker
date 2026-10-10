@@ -88,6 +88,33 @@ CREATE INDEX IF NOT EXISTS balance_log_date ON balance_log(date, account_id);`,
 	// internet) — the note tells them apart.
 	`DROP INDEX IF EXISTS recurring_items_merchant;
 CREATE UNIQUE INDEX IF NOT EXISTS recurring_items_merchant_note ON recurring_items(lower(merchant), lower(note));`,
+	// 12: the wish list — things saved up for (a 3D printer, a sauna, a
+	// trip) in priority order, funded from what is left at month end after
+	// investing and obligations. goal_moves is the money put in or taken out.
+	`CREATE TABLE IF NOT EXISTS goals (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    target      INTEGER NOT NULL CHECK (target >= 0),   -- cents
+    priority    INTEGER NOT NULL DEFAULT 0,             -- 1 = funded first
+    target_date TEXT NOT NULL DEFAULT '',               -- optional YYYY-MM-DD
+    note        TEXT NOT NULL DEFAULT '',
+    url         TEXT NOT NULL DEFAULT '',
+    tag         TEXT NOT NULL DEFAULT '',               -- trip:<name> makes it a planned trip; its tagged spending counts against it
+    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','bought','dropped')),
+    done_on     TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_moves (
+    id         INTEGER PRIMARY KEY,
+    goal_id    INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    month      TEXT NOT NULL,                  -- YYYY-MM the money is for (funding) or was moved
+    amount     INTEGER NOT NULL,               -- cents; negative takes money out
+    kind       TEXT NOT NULL DEFAULT 'manual' CHECK (kind IN ('funding','manual')),
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS goal_moves_goal ON goal_moves(goal_id);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

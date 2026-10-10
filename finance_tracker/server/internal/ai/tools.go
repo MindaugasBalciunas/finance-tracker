@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ft/internal/bank"
+	"ft/internal/goals"
 	"ft/internal/ibkr"
 	"ft/internal/insights"
 	"ft/internal/ledger"
@@ -34,7 +35,7 @@ func arr(d string) map[string]any {
 
 // writeTools change data; the system prompt requires explicit confirmation.
 var writeTools = map[string]bool{"remember": true, "create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
-	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true}
+	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true, "save_goal": true, "fund_goals": true}
 
 func toolDefs() []tool {
 	date := "YYYY-MM-DD"
@@ -94,6 +95,14 @@ func toolDefs() []tool {
 				"emergency_months": num("months of spending"), "target_age": num("FI age"), "birth_year": num("year"), "fi_monthly_spend": num("EUR"), "withdrawal_rate": num("%"), "expected_return": num("% real")})},
 		{Name: "tag_trip", Description: "Put transactions under one trip (tag trip:<name>), replacing other trip tags on them — use get_trips suggestions for the ids. ONLY after approval.",
 			InputSchema: obj(map[string]any{"name": str("trip name, e.g. rome-2026"), "ids": map[string]any{"type": "array", "items": map[string]any{"type": "number"}}}, "name", "ids")},
+		{Name: "get_goals", Description: "The wish list: goals (things saved up for) in priority order with price, saved, remaining, ETA at the average left over and per-month need for a target date; plus the funding month — income, paid-yourself-first (invested), spending, left over, already funded, available — and the suggested split by priority, and the last six months' left over.",
+			InputSchema: obj(map[string]any{"month": str("YYYY-MM to fund; default the last finished month")})},
+		{Name: "save_goal", Description: "Add a wish-list goal (no id; it goes last in priority) or change one: name, price (target), target_date, note, link, status (active | bought | dropped). A planned trip is a goal with tag trip:<name> — its tagged spending counts as spent against it. priority_ids reorders the whole list. ONLY after approval.",
+			InputSchema: obj(map[string]any{"id": num("goal id; omit to add"), "name": str("e.g. Bambu Lab X2D"), "target": num("price in EUR"), "target_date": str("YYYY-MM-DD, optional"),
+				"note": str("optional"), "url": str("https link, optional"), "status": str("active | bought | dropped"), "tag": str("trip:<name> for a planned trip"),
+				"priority_ids": map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "description": "goal ids first to last, to reorder"}})},
+		{Name: "fund_goals", Description: "Put a finished month's left over into goals. Without allocations, uses the suggested split (priority order). ONLY after approval.",
+			InputSchema: obj(map[string]any{"month": str("YYYY-MM, a finished month"), "allocations": map[string]any{"type": "array", "items": obj(map[string]any{"goal_id": num("goal id"), "amount": num("EUR")})}}, "month")},
 		{Name: "delete_rule", Description: "Delete a rule by id. ONLY after approval.", InputSchema: obj(map[string]any{"id": num("rule id")}, "id")},
 		{Name: "rename_tag", Description: "Rename a tag everywhere (empty 'to' removes it). ONLY after approval.", InputSchema: obj(map[string]any{"from": str("tag"), "to": str("new tag")}, "from")},
 		{Name: "update_inbox_row", Description: "Improve a bank inbox proposal (category, merchant, note, tags). Cannot accept it into the ledger — the user does that.",
@@ -464,6 +473,70 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		}
 		tag, n, err := plan.TagTrip(a.DB, in.Name, in.IDs)
 		return jsonOut2(map[string]any{"tag": tag, "transactions_tagged": n}, err)
+	case "get_goals":
+		return jsonOut2(goals.Build(a.DB, args.s("month"), now))
+	case "save_goal":
+		if ids, ok := args["priority_ids"].([]any); ok && len(ids) > 0 {
+			var order []int64
+			for _, x := range ids {
+				if f, ok := x.(float64); ok {
+					order = append(order, int64(f))
+				}
+			}
+			if err := goals.Reorder(a.DB, order); err != nil {
+				return "", err
+			}
+			if args.f("id") == 0 && args.s("name") == "" {
+				return jsonOut2(goals.List(a.DB))
+			}
+		}
+		g := goals.Goal{}
+		if id := int64(args.f("id")); id != 0 {
+			cur, err := goals.Get(a.DB, id)
+			if err != nil {
+				return "", err
+			}
+			g = cur
+		}
+		for k, set := range map[string]*string{"name": &g.Name, "target_date": &g.TargetDate, "note": &g.Note, "url": &g.URL, "status": &g.Status, "tag": &g.Tag} {
+			if _, ok := args[k]; ok {
+				*set = args.s(k)
+			}
+		}
+		if _, ok := args["target"]; ok {
+			g.Target = money.FromFloat(args.f("target"))
+		}
+		if err := goals.Save(a.DB, &g); err != nil {
+			return "", err
+		}
+		return jsonOut2(goals.Get(a.DB, g.ID))
+	case "fund_goals":
+		var in struct {
+			Month       string `json:"month"`
+			Allocations []struct {
+				GoalID int64   `json:"goal_id"`
+				Amount float64 `json:"amount"`
+			} `json:"allocations"`
+		}
+		if err := json.Unmarshal(raw, &in); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+		var allocs []goals.Allocation
+		if len(in.Allocations) == 0 {
+			p, err := goals.Build(a.DB, in.Month, now)
+			if err != nil {
+				return "", err
+			}
+			allocs = p.Proposal
+		}
+		for _, x := range in.Allocations {
+			allocs = append(allocs, goals.Allocation{GoalID: x.GoalID, Amount: money.FromFloat(x.Amount)})
+		}
+		p, err := goals.Fund(a.DB, in.Month, allocs, now)
+		if err != nil {
+			return "", err
+		}
+		return jsonOut(map[string]any{"funded": allocs, "goals": p.Goals, "month": p.Funding})
 	case "delete_rule":
 		return `{"deleted":true}`, ledger.DeleteRule(a.DB, int64(args.f("id")))
 	case "rename_tag":
