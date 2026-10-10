@@ -485,14 +485,19 @@ func TestImportV1AndExports(t *testing.T) {
 			rc.Close()
 		}
 	}
-	for _, want := range []string{"README.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "reference.json", "context.md", "memory.md", "loans.csv", "today.json", "PROMPT.md",
-		"budget_this_month.json", "recurring.json", "wishlist.json", "trips.json"} {
+	if len(zr.File) > 10 {
+		t.Errorf("%d files — chat assistants take at most 10 per prompt", len(zr.File))
+	}
+	for _, want := range []string{"PROMPT.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "loans.csv", "reference.json", "today.json", "goals_and_trips.json"} {
 		if !names[want] {
 			t.Errorf("ai.zip missing %s", want)
 		}
 	}
-	if !strings.Contains(body["wishlist.json"], `"Rome"`) || !strings.Contains(body["trips.json"], `"trip:rome"`) {
-		t.Errorf("goals and planned trips missing from the AI export:\n%s\n%s", body["wishlist.json"], body["trips.json"])
+	if g := body["goals_and_trips.json"]; !strings.Contains(g, `"Rome"`) || !strings.Contains(g, `"planned_trips": [`) {
+		t.Errorf("goals and planned trips missing from the AI export:\n%s", g)
+	}
+	if !strings.Contains(body["today.json"], `"budget_this_month"`) || !strings.Contains(body["PROMPT.md"], "goals_and_trips.json") {
+		t.Errorf("today.json or PROMPT.md incomplete")
 	}
 	req, _ := http.NewRequest("GET", c.base+"/export/ai.zip", nil)
 	if res, err := c.http.Do(req); err != nil || !strings.Contains(res.Header.Get("Content-Disposition"), "finance-for-ai-") {

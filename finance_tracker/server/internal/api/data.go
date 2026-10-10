@@ -249,15 +249,8 @@ func (s *Server) aiZip() ([]byte, error) {
 		cw.Flush()
 		return nil
 	})
-	add("today.json", func(w io.Writer) error {
-		o, err := cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
-		if err != nil {
-			return err
-		}
-		e := json.NewEncoder(w)
-		e.SetIndent("", " ")
-		return e.Encode(o)
-	})
+	// Nine files: chat assistants such as Gemini take at most ten per
+	// prompt and don't open zips, so the archive is uploaded unpacked.
 	jsonFile := func(name string, v any) {
 		add(name, func(w io.Writer) error {
 			e := json.NewEncoder(w)
@@ -266,54 +259,43 @@ func (s *Server) aiZip() ([]byte, error) {
 		})
 	}
 	now := time.Now()
-	if rep, err := cfo.BudgetReport(s.DB, now.Format("2006-01"), now); err == nil {
-		jsonFile("budget_this_month.json", rep)
+	today := map[string]any{}
+	if o, err := cfo.BuildOverview(s.DB, now, s.Bank.OpenCount()); err == nil {
+		today["overview"] = o
+	} else {
+		return nil, err
 	}
+	if rep, err := cfo.BudgetReport(s.DB, now.Format("2006-01"), now); err == nil {
+		today["budget_this_month"] = rep
+	}
+	if rec, _, err := insights.RecurringAll(s.DB, txs, now); err == nil {
+		today["recurring"] = rec
+	}
+	jsonFile("today.json", today)
+	gt := map[string]any{}
 	if wish, err := goals.Build(s.DB, "", now); err == nil {
 		moves := map[int64][]goals.Move{}
 		for _, g := range wish.Goals {
 			moves[g.ID], _ = goals.Moves(s.DB, g.ID)
 		}
-		jsonFile("wishlist.json", map[string]any{"plan": wish, "moves": moves})
+		gt["wishlist"], gt["goal_moves"] = wish, moves
 	}
 	budgets, _ := plan.List(s.DB, false)
 	trips, sugg := plan.Trips(txs, budgets)
-	jsonFile("trips.json", map[string]any{"trips": trips, "untagged_suggestions": sugg, "planned": plannedTrips(s)})
-	if rec, _, err := insights.RecurringAll(s.DB, txs, now); err == nil {
-		jsonFile("recurring.json", rec)
-	}
-	add("context.md", func(w io.Writer) error { _, err := io.WriteString(w, s.AI.Context()); return err })
-	add("memory.md", func(w io.Writer) error { _, err := io.WriteString(w, s.AI.Notes()); return err })
-	add("PROMPT.md", func(w io.Writer) error { _, err := io.WriteString(w, analysisPrompt); return err })
-	add("README.md", func(w io.Writer) error {
-		_, err := io.WriteString(w, `# Personal finance dataset
-
-Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
-
-- transactions.csv — every transaction since `+book.FirstDate()+`. kind: income | expense | transfer. amount is positive; signed_eur is
-  +income / −expense / 0 transfer. category is a two-level id (food.groceries). Transfers with category transfer.invest / pension /
-  debt (mortgage principal) / asset build wealth; transfer.internal just moves cash between own accounts. tags = people (kids,
-  evelina, kristina), properties (house, apartment), trips (trip:…).
-- cashflow_monthly.csv — income, spending (expenses − refunds), essential vs discretionary, saved, savings rate, invested.
-- networth_monthly.csv — month-end net worth by group, including house, car and the mortgage (negative). Mortgage balances before
-  2026 are reconstructed from payments (source=computed in balances.csv).
-- balances.csv — every recorded account value.
-- reference.json — accounts, category tree, budgets, investment trades, plan settings.
-- loans.csv — each loan: balance, rate (base + margin), reset date, payment, payoff, interest left, LTV.
-- today.json — the app's current overview: net worth, liquid (cash, brokers, crypto, II/III pillar pensions), this month vs
-  typical, plan pulse, emergency fund.
-- budget_this_month.json — this month's plan: each budget line spent vs budgeted, funds, yearly lines, trips budget.
-- recurring.json — bills, subscriptions and standing orders the app knows (amount, cadence, next due, last paid).
-- wishlist.json — goals to save for, in priority order (plan.goals: target, saved, remaining, ETA, trip tag), last finished
-  month's waterfall (plan.funding: income − spending − invested = left over for goals), the suggested split, and each goal's
-  money in/out (moves). Strategy: pay yourself first (investing, pensions, principal), then obligations and spending; what is
-  left at month end funds goals top-down. A goal with target 0 has no price yet.
-- trips.json — past trips (trip:* tags) with totals and per-day cost, untagged travel that looks like a trip, and planned trips
-  (wish-list goals with a trip tag; spent = tagged spending already booked).
-- context.md — the owner's own brief: who they are and how they want to be advised.
-- memory.md — dated decisions and preferences the owner asked their in-app assistant to remember (newest last).
-- PROMPT.md — start here: what to analyse and how to answer.
-`)
+	gt["trips"], gt["untagged_trip_suggestions"], gt["planned_trips"] = trips, sugg, plannedTrips(s)
+	jsonFile("goals_and_trips.json", gt)
+	add("PROMPT.md", func(w io.Writer) error {
+		var b strings.Builder
+		b.WriteString(analysisPrompt)
+		b.WriteString("\n# The files\n\nExported " + now.Format("2006-01-02") + ". All amounts EUR.\n\n")
+		b.WriteString(strings.ReplaceAll(exportGuide, "{first}", book.FirstDate()))
+		if c := strings.TrimSpace(s.AI.Context()); c != "" {
+			b.WriteString("\n# My brief — who I am and how to advise me\n\n" + c + "\n")
+		}
+		if n := strings.TrimSpace(s.AI.Notes()); n != "" {
+			b.WriteString("\n# Decisions I've made since (dated, newest last)\n\n" + n + "\n")
+		}
+		_, err := io.WriteString(w, b.String())
 		return err
 	})
 	if err := z.Close(); err != nil {
@@ -322,12 +304,34 @@ Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
 	return buf.Bytes(), nil
 }
 
+// exportGuide describes each file of the AI export.
+const exportGuide = `- transactions.csv — every transaction since {first}. kind: income | expense | transfer. amount is positive; signed_eur is
+  +income / −expense / 0 transfer. category is a two-level id (food.groceries). Transfers with category transfer.invest / pension /
+  debt (mortgage principal) / asset build wealth; transfer.internal just moves cash between own accounts. tags = people (kids,
+  evelina, kristina), properties (house, apartment), trips (trip:…).
+- cashflow_monthly.csv — income, spending (expenses − refunds), essential vs discretionary, saved, savings rate, invested.
+- networth_monthly.csv — month-end net worth by group, including house, car and the mortgage (negative). Mortgage balances before
+  2026 are reconstructed from payments (source=computed in balances.csv).
+- balances.csv — every recorded account value.
+- loans.csv — each loan: balance, rate (base + margin), reset date, payment, payoff, interest left, LTV.
+- reference.json — accounts, category tree, budgets, investment trades, plan settings.
+- today.json — overview: net worth, liquid (cash, brokers, crypto, II/III pillar pensions), this month vs typical, cash plan,
+  emergency fund; budget_this_month: each budget line spent vs budgeted, funds, yearly lines; recurring: bills, subscriptions
+  and standing orders the app knows (amount, cadence, next due, last paid).
+- goals_and_trips.json — wishlist: goals to save for in priority order (target, saved, remaining, ETA; target 0 = no price yet),
+  last finished month's funding (income − spending − invested = left over for goals), the suggested split and history;
+  goal_moves: money put in or taken out per goal. My strategy: pay myself first (investing, pensions, principal), then
+  obligations and spending; what is left at month end funds goals top-down. trips: past trips (trip:* tags) with totals and
+  per-day cost; untagged_trip_suggestions: travel spending that looks like a trip; planned_trips: wish-list goals with a trip
+  tag (spent = tagged spending already booked).
+`
+
 // analysisPrompt tells an outside AI assistant how to use the dataset.
 // Shared via Settings → "Export for AI".
 const analysisPrompt = `# Start here
 
-You are my personal CFO. The files in this archive are my complete finances (EUR, Lithuania). Read README.md for the file
-formats, context.md for who I am and memory.md for decisions I've made since, then answer from the data — quote numbers, months and merchants, don't guess.
+You are my personal CFO. The files attached are my complete finances (EUR, Lithuania). Below this list are the file
+formats, my brief and the decisions I've made since. Answer from the data — quote numbers, months and merchants, don't guess.
 
 1. **Where I stand** — net worth and liquid assets now, change over 12 months and why (today.json, networth_monthly.csv).
 2. **Cash flow** — savings rate for the last 12 months vs the year before; months that broke the pattern and the cause
@@ -335,7 +339,7 @@ formats, context.md for who I am and memory.md for decisions I've made since, th
 3. **Spending** — the 5 categories and 10 merchants that grew most; recurring charges I could cut.
 4. **Debt** — mortgage: rate, reset date, prepay vs invest at my rate, and what happens if EURIBOR moves ±1% (loans.csv).
 5. **Safety** — emergency fund in months of essential spending; anything stale or risky.
-6. **Goals and trips** — is the wish list (wishlist.json, trips.json) realistic at my left-over rate? Which goal or planned
+6. **Goals and trips** — is the wish list (goals_and_trips.json) realistic at my left-over rate? Which goal or planned
    trip to fund first, and what would bring the dates closer.
 7. **Next 3 actions** — concrete, with euro amounts and dates.
 

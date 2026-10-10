@@ -52,7 +52,7 @@ export function Data() {
           <a className="btn-outline" href="api/export/transactions.csv">Transactions CSV</a>
           <a className="btn-outline" href="api/export/ai.zip">Export for AI (zip)</a>
         </div>
-        <div className="mt-2 text-xs text-muted">The AI export bundles every transaction, monthly cash flow and net worth, balances, loans, this month's budget, recurring bills, the wish list, trips, your brief and the assistant's memory with a README and a start-here PROMPT.md — for any AI assistant.</div>
+        <div className="mt-2 text-xs text-muted">The AI export bundles every transaction, monthly cash flow and net worth, balances, loans, this month's budget, recurring bills, the wish list and trips as 9 files — upload them unzipped with PROMPT.md first (Gemini takes up to 10).</div>
       </Card>
       <Card title="Snapshots on the server" action={<button className="btn-ghost h-8 text-xs" onClick={async () => { await api.post('/backups'); qc.invalidateQueries({ queryKey: ['backups'] }); toast('Snapshot taken', 'good') }}>Take one now</button>}>
         <div className="max-h-64 divide-y divide-line overflow-y-auto text-sm">
