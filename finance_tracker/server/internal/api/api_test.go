@@ -466,6 +466,7 @@ func TestImportV1AndExports(t *testing.T) {
 	if code != 200 || !strings.Contains(string(csv), "food.groceries") || !strings.Contains(string(csv), "Maxima") {
 		t.Fatal(string(csv))
 	}
+	c.ok("POST", "/goals", map[string]any{"name": "Rome", "target": 150000, "tag": "trip:rome"}, nil)
 	code, z := c.do("GET", "/export/ai.zip", nil)
 	if code != 200 {
 		t.Fatal(code)
@@ -475,13 +476,23 @@ func TestImportV1AndExports(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := map[string]bool{}
+	body := map[string]string{}
 	for _, f := range zr.File {
 		names[f.Name] = true
+		if rc, err := f.Open(); err == nil {
+			b, _ := io.ReadAll(rc)
+			body[f.Name] = string(b)
+			rc.Close()
+		}
 	}
-	for _, want := range []string{"README.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "reference.json", "context.md", "loans.csv", "today.json", "PROMPT.md"} {
+	for _, want := range []string{"README.md", "transactions.csv", "cashflow_monthly.csv", "networth_monthly.csv", "balances.csv", "reference.json", "context.md", "memory.md", "loans.csv", "today.json", "PROMPT.md",
+		"budget_this_month.json", "recurring.json", "wishlist.json", "trips.json"} {
 		if !names[want] {
 			t.Errorf("ai.zip missing %s", want)
 		}
+	}
+	if !strings.Contains(body["wishlist.json"], `"Rome"`) || !strings.Contains(body["trips.json"], `"trip:rome"`) {
+		t.Errorf("goals and planned trips missing from the AI export:\n%s\n%s", body["wishlist.json"], body["trips.json"])
 	}
 	req, _ := http.NewRequest("GET", c.base+"/export/ai.zip", nil)
 	if res, err := c.http.Do(req); err != nil || !strings.Contains(res.Header.Get("Content-Disposition"), "finance-for-ai-") {

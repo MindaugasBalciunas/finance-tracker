@@ -143,16 +143,7 @@ func (s *Server) planRoutes() {
 		if sugg == nil {
 			sugg = []plan.TripSuggestion{}
 		}
-		// Planned trips live on the wish list (goals with a trip tag).
-		planned := []goals.Goal{}
-		if all, err := goals.List(s.DB); err == nil {
-			for _, g := range all {
-				if g.Tag != "" && g.Status == "active" {
-					planned = append(planned, g)
-				}
-			}
-		}
-		return map[string]any{"trips": trips, "suggestions": sugg, "planned": planned}, nil
+		return map[string]any{"trips": trips, "suggestions": sugg, "planned": plannedTrips(s)}, nil
 	})
 	s.handle("POST /api/trips/tag", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {
@@ -168,4 +159,17 @@ func (s *Server) planRoutes() {
 		}
 		return map[string]string{"tag": tag}, nil
 	})
+}
+
+// plannedTrips live on the wish list: active goals with a trip tag.
+func plannedTrips(s *Server) []goals.Goal {
+	planned := []goals.Goal{}
+	if all, err := goals.List(s.DB); err == nil {
+		for _, g := range all {
+			if g.Tag != "" && g.Status == "active" {
+				planned = append(planned, g)
+			}
+		}
+	}
+	return planned
 }

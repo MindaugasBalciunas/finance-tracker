@@ -57,7 +57,7 @@ function ShareForAI() {
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
       <div className="min-w-0 flex-1 basis-48">
         <div className="text-sm font-medium">Export for AI</div>
-        <div className="text-xs text-muted">Every transaction, balance, loan and plan as one zip with a start-here PROMPT.md — for any AI assistant.</div>
+        <div className="text-xs text-muted">Every transaction, balance, loan, budget, wish-list goal and trip as one zip with a start-here PROMPT.md — for any AI assistant.</div>
       </div>
       <div className="flex w-full sm:w-auto">
         <button className="btn-primary flex-1 sm:flex-none" onClick={share} disabled={busy}>{busy ? <Spinner /> : <Icon name="share" size={16} />}Export zip</button>

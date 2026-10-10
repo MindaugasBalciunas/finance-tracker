@@ -61,7 +61,7 @@ func toolDefs() []tool {
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
 		{Name: "get_quote", Description: "Live quote, 52-week range and analyst targets for a ticker.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
 		{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
-		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split, plus untagged travel spending that looks like a trip.", InputSchema: obj(map[string]any{})},
+		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split, plus untagged travel spending that looks like a trip, and planned trips being saved for on the wish list.", InputSchema: obj(map[string]any{})},
 		{Name: "get_reference", Description: "Reference data: categories, accounts, tags, rules or merchants.", InputSchema: obj(map[string]any{"what": str("categories | accounts | tags | rules | merchants")}, "what")},
 		{Name: "ibkr_live", Description: "Live, read-only data from the owner's Interactive Brokers account (when connected in Settings → Banks): 'summary' (net liquidation, cash, buying power), 'positions' (quantity, price, value, P&L, cost basis), balances' (cash by currency), 'orders' (live orders and their status), 'instructions' (saved order instructions — not live until the owner submits them in IBKR), or 'trades' for a period (TODAY, DAYS_7, DAYS_30, DAYS_90, MONTH_TO_DATE, YEAR_TO_DATE, LAST_QUARTER…). Prefer it over get_portfolio for what IBKR holds right now; it cannot trade.",
 			InputSchema: obj(map[string]any{"what": str("summary | positions | balances | orders | instructions | trades"), "period": str("for trades; default DAYS_30")}, "what")},
@@ -312,7 +312,15 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		}
 		budgets, _ := plan.List(a.DB, false)
 		trips, sugg := plan.Trips(txs, budgets)
-		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg})
+		var planned []goals.Goal // trips being saved for on the wish list
+		if all, err := goals.List(a.DB); err == nil {
+			for _, g := range all {
+				if g.Tag != "" && g.Status == "active" {
+					planned = append(planned, g)
+				}
+			}
+		}
+		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg, "planned": planned})
 	case "get_reference":
 		switch args.s("what") {
 		case "categories":

@@ -17,6 +17,7 @@ import (
 	"ft/internal/backup"
 	"ft/internal/cfo"
 	"ft/internal/db"
+	"ft/internal/goals"
 	"ft/internal/importv1"
 	"ft/internal/insights"
 	"ft/internal/ledger"
@@ -257,7 +258,32 @@ func (s *Server) aiZip() ([]byte, error) {
 		e.SetIndent("", " ")
 		return e.Encode(o)
 	})
+	jsonFile := func(name string, v any) {
+		add(name, func(w io.Writer) error {
+			e := json.NewEncoder(w)
+			e.SetIndent("", " ")
+			return e.Encode(v)
+		})
+	}
+	now := time.Now()
+	if rep, err := cfo.BudgetReport(s.DB, now.Format("2006-01"), now); err == nil {
+		jsonFile("budget_this_month.json", rep)
+	}
+	if wish, err := goals.Build(s.DB, "", now); err == nil {
+		moves := map[int64][]goals.Move{}
+		for _, g := range wish.Goals {
+			moves[g.ID], _ = goals.Moves(s.DB, g.ID)
+		}
+		jsonFile("wishlist.json", map[string]any{"plan": wish, "moves": moves})
+	}
+	budgets, _ := plan.List(s.DB, false)
+	trips, sugg := plan.Trips(txs, budgets)
+	jsonFile("trips.json", map[string]any{"trips": trips, "untagged_suggestions": sugg, "planned": plannedTrips(s)})
+	if rec, _, err := insights.RecurringAll(s.DB, txs, now); err == nil {
+		jsonFile("recurring.json", rec)
+	}
 	add("context.md", func(w io.Writer) error { _, err := io.WriteString(w, s.AI.Context()); return err })
+	add("memory.md", func(w io.Writer) error { _, err := io.WriteString(w, s.AI.Notes()); return err })
 	add("PROMPT.md", func(w io.Writer) error { _, err := io.WriteString(w, analysisPrompt); return err })
 	add("README.md", func(w io.Writer) error {
 		_, err := io.WriteString(w, `# Personal finance dataset
@@ -276,7 +302,16 @@ Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
 - loans.csv — each loan: balance, rate (base + margin), reset date, payment, payoff, interest left, LTV.
 - today.json — the app's current overview: net worth, liquid (cash, brokers, crypto, II/III pillar pensions), this month vs
   typical, plan pulse, emergency fund.
+- budget_this_month.json — this month's plan: each budget line spent vs budgeted, funds, yearly lines, trips budget.
+- recurring.json — bills, subscriptions and standing orders the app knows (amount, cadence, next due, last paid).
+- wishlist.json — goals to save for, in priority order (plan.goals: target, saved, remaining, ETA, trip tag), last finished
+  month's waterfall (plan.funding: income − spending − invested = left over for goals), the suggested split, and each goal's
+  money in/out (moves). Strategy: pay yourself first (investing, pensions, principal), then obligations and spending; what is
+  left at month end funds goals top-down. A goal with target 0 has no price yet.
+- trips.json — past trips (trip:* tags) with totals and per-day cost, untagged travel that looks like a trip, and planned trips
+  (wish-list goals with a trip tag; spent = tagged spending already booked).
 - context.md — the owner's own brief: who they are and how they want to be advised.
+- memory.md — dated decisions and preferences the owner asked their in-app assistant to remember (newest last).
 - PROMPT.md — start here: what to analyse and how to answer.
 `)
 		return err
@@ -292,7 +327,7 @@ Exported `+time.Now().Format("2006-01-02")+`. All amounts EUR.
 const analysisPrompt = `# Start here
 
 You are my personal CFO. The files in this archive are my complete finances (EUR, Lithuania). Read README.md for the file
-formats and context.md for who I am, then answer from the data — quote numbers, months and merchants, don't guess.
+formats, context.md for who I am and memory.md for decisions I've made since, then answer from the data — quote numbers, months and merchants, don't guess.
 
 1. **Where I stand** — net worth and liquid assets now, change over 12 months and why (today.json, networth_monthly.csv).
 2. **Cash flow** — savings rate for the last 12 months vs the year before; months that broke the pattern and the cause
@@ -300,7 +335,9 @@ formats and context.md for who I am, then answer from the data — quote numbers
 3. **Spending** — the 5 categories and 10 merchants that grew most; recurring charges I could cut.
 4. **Debt** — mortgage: rate, reset date, prepay vs invest at my rate, and what happens if EURIBOR moves ±1% (loans.csv).
 5. **Safety** — emergency fund in months of essential spending; anything stale or risky.
-6. **Next 3 actions** — concrete, with euro amounts and dates.
+6. **Goals and trips** — is the wish list (wishlist.json, trips.json) realistic at my left-over rate? Which goal or planned
+   trip to fund first, and what would bring the dates closer.
+7. **Next 3 actions** — concrete, with euro amounts and dates.
 
 Rules: mortgage principal (transfer.debt) is saving, not spending; transfer.internal is neutral; refunds reduce spending.
 Keep it short — tables over prose.
