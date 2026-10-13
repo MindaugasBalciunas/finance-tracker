@@ -61,3 +61,12 @@ The first start of 2.x converts `/data/finance.db` into `/data/finance-v2.db`, c
 ```
 
 Mint tokens in Settings → Security. A read-only token (`ftk_`) reads data; a read-write token (`ftkw_`) may also add/edit transactions, rules and tags and improve bank-inbox proposals — never accept bank rows, change settings or read backups.
+
+On connect the server sends Claude the same data model, strategy and trust rules Ask CFO follows in the app (`internal/advice`), and offers four ready-made analyses as prompts — `/` commands in Claude Code, one click in Claude Desktop:
+
+| Prompt | Does |
+|---|---|
+| `month_close` | A finished month: cash flow vs the 6-month average, budget, what drove it, the wish-list funding split |
+| `budget_review` | Lines over or under for months, unbudgeted spending, proposed changes (applied only after approval) |
+| `wishlist_review` | Goals and planned trips vs the left-over rate, and which budget lines would bring them closer |
+| `reconcile_recent` | `get_reconciliation`: recorded bank balances vs the ledger, late bookings and lasting gaps explained |

@@ -288,7 +288,15 @@ func main() {
 	if apiURL == "" || apiToken == "" {
 		log.Fatal("set FT_API_URL (…/api) and FT_API_TOKEN (Settings → Security → API tokens)")
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "finance-tracker", Version: "2.27.3"}, nil)
+	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// newServer is every tool, the shared instructions and the ready-made
+// analyses (prompts); main only adds the stdio transport.
+func newServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "finance-tracker", Version: "2.30.0"}, &mcp.ServerOptions{Instructions: instructions})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "get_user_context", Description: "The owner's own brief (who they are, framework, standing rules, how to advise them) plus decisions they asked to remember. Call FIRST and follow it."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
@@ -349,7 +357,7 @@ func main() {
 		{"get_recurring", "Recurring money movements: bills and subscriptions, standing orders between accounts and expected income — amount, accounts, usual day, next date.", "/insights/recurring"},
 		{"get_fi", "Financial-independence projection and emergency fund.", "/insights/fi"},
 		{"get_loans", "Loans: balance, rate, next payment split, payoff, equity/LTV, rate reset.", "/loans"},
-		{"get_trips", "Trips with totals and per-day cost, plus untagged travel that looks like a trip.", "/trips"},
+		{"get_trips", "Trips with totals and per-day cost, untagged travel that looks like a trip, and planned trips being saved for on the wish list.", "/trips"},
 		{"get_bank_inbox", "Bank rows waiting for the owner's review (not in the ledger yet), with proposals and likely duplicates.", "/bank/inbox"},
 		{"get_bank_connections", "Bank connections, consent expiry and mapped accounts.", "/bank/connections"},
 		{"get_owed", "Money people owe the owner (split parts marked owed, minus repayments).", "/owed"},
@@ -526,10 +534,12 @@ func main() {
 		func(ctx context.Context, r *mcp.CallToolRequest, a noteArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("POST", "/ai/remember", nil, a))
 		})
-
-	if err := s.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatal(err)
-	}
+	mcp.AddTool(s, &mcp.Tool{Name: "get_reconciliation", Description: "Checks each cash, savings and loan account: recorded balances (bank-synced or entered) vs the transactions dated between them, since a date (default 30 days ago). Per account: reconciles (true = matches, or only a payment the bank booked a few days off its date — late_booking), the unexplained total and gaps — timing ones (undone within days) vs lasting ones (a missing, duplicated or mis-assigned transaction)."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a reconArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/insights/reconcile", vals("from", a.From), nil))
+		})
+	addPrompts(s)
+	return s
 }
 
 func orNull(b []byte) string {

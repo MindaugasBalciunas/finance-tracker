@@ -62,6 +62,8 @@ func toolDefs() []tool {
 		{Name: "get_quote", Description: "Live quote, 52-week range and analyst targets for a ticker.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
 		{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
 		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split, plus untagged travel spending that looks like a trip, and planned trips being saved for on the wish list.", InputSchema: obj(map[string]any{})},
+		{Name: "get_reconciliation", Description: "Checks each cash, savings and loan account: its recorded balances (bank-synced or entered) vs the transactions dated between them, since a date (default 30 days ago). Per account: reconciles (true = matches, or only a late_booking — a payment the bank booked a few days off its date), the unexplained total, and gaps — timing ones (undone within days: booking date ≠ transaction date) vs lasting ones (a missing, duplicated or mis-assigned transaction). Use it to answer whether the ledger matches the banks.",
+			InputSchema: obj(map[string]any{"from": str("YYYY-MM-DD, default 30 days ago")})},
 		{Name: "get_reference", Description: "Reference data: categories, accounts, tags, rules or merchants.", InputSchema: obj(map[string]any{"what": str("categories | accounts | tags | rules | merchants")}, "what")},
 		{Name: "ibkr_live", Description: "Live, read-only data from the owner's Interactive Brokers account (when connected in Settings → Banks): 'summary' (net liquidation, cash, buying power), 'positions' (quantity, price, value, P&L, cost basis), balances' (cash by currency), 'orders' (live orders and their status), 'instructions' (saved order instructions — not live until the owner submits them in IBKR), or 'trades' for a period (TODAY, DAYS_7, DAYS_30, DAYS_90, MONTH_TO_DATE, YEAR_TO_DATE, LAST_QUARTER…). Prefer it over get_portfolio for what IBKR holds right now; it cannot trade.",
 			InputSchema: obj(map[string]any{"what": str("summary | positions | balances | orders | instructions | trades"), "period": str("for trades; default DAYS_30")}, "what")},
@@ -305,6 +307,20 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 			return "", errors.New("invalid ticker")
 		}
 		return jsonOut(map[string]any{"fear_greed": market.FearGreed(), "headlines": market.Headlines(tk, 8), "social": market.SocialBuzz(tk, 8)})
+	case "get_reconciliation":
+		from := args.s("from")
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			from = time.Now().AddDate(0, 0, -30).Format("2006-01-02")
+		}
+		book, err := wealth.LoadBook(a.DB)
+		if err != nil {
+			return "", err
+		}
+		txs, err := ledger.All(a.DB, ledger.Filter{From: time.Now().AddDate(-1, 0, 0).Format("2006-01-02")})
+		if err != nil {
+			return "", err
+		}
+		return jsonOut(insights.Reconcile(book, txs, from))
 	case "get_trips":
 		txs, err := ledger.All(a.DB, ledger.Filter{})
 		if err != nil {

@@ -100,6 +100,23 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/insights/month", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildMonthReview(s.DB, r.URL.Query().Get("month"), time.Now())
 	})
+	// Recorded balances vs the transactions between them, per cash-like
+	// account, since from (default 30 days ago).
+	s.handle("GET /api/insights/reconcile", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		from := r.URL.Query().Get("from")
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			from = time.Now().AddDate(0, 0, -30).Format("2006-01-02")
+		}
+		book, err := wealth.LoadBook(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-1, 0, 0).Format("2006-01-02")})
+		if err != nil {
+			return nil, err
+		}
+		return insights.Reconcile(book, txs, from), nil
+	})
 	s.handle("GET /api/checks", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.Checks(s.DB, time.Now()), nil
 	})
