@@ -53,6 +53,7 @@ var ReadTools = map[string]bool{
 var (
 	ErrNotConnected = errors.New("Interactive Brokers is not connected — connect it in Settings → Banks")
 	ErrToolRefused  = errors.New("only read-only IBKR tools are allowed")
+	ErrSignInLapsed = errors.New("IBKR ends its sign-in every 7 days — connect again to keep the account in sync")
 )
 
 // State is everything kept about the connection (settings key "ibkr").
@@ -67,6 +68,9 @@ type State struct {
 	ConnectedAt  string `json:"connected_at,omitempty"`
 	LastSync     string `json:"last_sync,omitempty"`
 	LastError    string `json:"last_error,omitempty"`
+	// Lapsed: IBKR refused to renew the sign-in (it ends them after
+	// SignInDays); the tokens are dropped and the owner signs in again.
+	Lapsed bool `json:"lapsed,omitempty"`
 	// A sign-in in progress: the state echoed back and the PKCE verifier.
 	PendingState    string `json:"pending_state,omitempty"`
 	PendingVerifier string `json:"pending_verifier,omitempty"`
@@ -105,8 +109,14 @@ func (s *Service) save(st State) error {
 }
 
 // Status is what the UI may see — never the tokens.
+// SignInDays is how long IBKR keeps a third-party sign-in: renewing the
+// access token daily doesn't extend it, so the owner connects again weekly.
+const SignInDays = 7
+
 type Status struct {
 	Connected   bool   `json:"connected"`
+	Lapsed      bool   `json:"lapsed,omitempty"`
+	SignInEnds  string `json:"sign_in_ends,omitempty"` // RFC 3339, while connected
 	Account     string `json:"account"`
 	Scope       string `json:"scope,omitempty"`
 	ConnectedAt string `json:"connected_at,omitempty"`
@@ -116,8 +126,12 @@ type Status struct {
 
 func (s *Service) Status() Status {
 	st := s.load()
-	return Status{Connected: st.RefreshToken != "" || st.AccessToken != "", Account: st.Account, Scope: st.Scope,
+	out := Status{Connected: st.RefreshToken != "" || st.AccessToken != "", Lapsed: st.Lapsed, Account: st.Account, Scope: st.Scope,
 		ConnectedAt: st.ConnectedAt, LastSync: st.LastSync, LastError: st.LastError}
+	if t, err := time.Parse(time.RFC3339, st.ConnectedAt); err == nil && out.Connected {
+		out.SignInEnds = t.Add(SignInDays * 24 * time.Hour).UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 func (s *Service) Connected() bool { return s.Status().Connected }
@@ -298,7 +312,7 @@ func (s *Service) Callback(ctx context.Context, code, state string) error {
 		return errTooMuch
 	}
 	s.keep(&st, t)
-	st.ConnectedAt, st.LastError = s.Now().UTC().Format(time.RFC3339), ""
+	st.ConnectedAt, st.LastError, st.Lapsed = s.Now().UTC().Format(time.RFC3339), "", false
 	return s.save(st)
 }
 
@@ -335,6 +349,14 @@ func (s *Service) accessToken(ctx context.Context) (string, error) {
 	if err := s.postForm(ctx, s.AuthBase+"/oauth2/api/v1/token", url.Values{
 		"grant_type": {"refresh_token"}, "refresh_token": {st.RefreshToken}, "client_id": {st.ClientID}, "resource": {s.MCPURL},
 	}, &t); err != nil {
+		if strings.Contains(err.Error(), "invalid_grant") {
+			// The sign-in itself ended: nothing to retry until the owner
+			// connects again. Account, last sync and the report stay.
+			st.AccessToken, st.RefreshToken, st.Lapsed = "", "", true
+			st.LastError = ErrSignInLapsed.Error()
+			s.save(st)
+			return "", ErrSignInLapsed
+		}
 		st.LastError = "sign-in refresh failed — connect again"
 		s.save(st)
 		return "", fmt.Errorf("the IBKR sign-in could not be renewed (%v) — connect again", err)

@@ -6,7 +6,7 @@ import { eur, shortDate } from '../lib/format'
 import { Card, Spinner, useToast } from './ui'
 import { Icon } from './Icon'
 
-export type IBKRStatus = { connected: boolean; account: string; scope?: string; connected_at?: string; last_sync?: string; last_error?: string }
+export type IBKRStatus = { connected: boolean; lapsed?: boolean; sign_in_ends?: string; account: string; scope?: string; connected_at?: string; last_sync?: string; last_error?: string }
 export type IBKRReport = {
   at: string; account: string; currency: string; net_liquidation: number; cash: number; app_balance?: number; balance_written: boolean
   positions: { ticker: string; description: string; currency: string; shares: number; app_shares: number; price: number; value: number; avg_price: number; unrealized: number }[]
@@ -49,6 +49,14 @@ export function IBKRPanel() {
   // null = every trade not yet in the app (the usual choice); a set once you untick one.
   const [chosen, setChosen] = useState<Set<string> | null>(null)
   const [showRecorded, setShowRecorded] = useState(false)
+  if (data?.status.lapsed) return (
+    <Card title="Interactive Brokers">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="min-w-0 flex-1 text-ink2">IBKR ends its sign-in every 7 days, so syncing has paused{data.status.last_sync && <> — last synced {ago(data.status.last_sync)}</>}.</span>
+        <a className="btn-primary h-8 px-3 text-xs" href="#/settings/banks">Connect again</a>
+      </div>
+    </Card>
+  )
   if (!data?.status.connected) return null
   const r = data.report
   const reload = () => { for (const k of ['ibkr', 'portfolio', 'trades', 'accounts', 'overview', 'nw-history', 'balances']) qc.invalidateQueries({ queryKey: [k] }) }
@@ -177,6 +185,16 @@ export function IBKRConnection() {
       {st?.connected ? (
         <div className="space-y-3 text-sm">
           <div className="flex items-start gap-2"><Icon name="check" size={16} className="mt-0.5 shrink-0 text-good" /><span>Connected, read-only{st.connected_at && <span className="text-muted"> · since {shortDate(st.connected_at.slice(0, 10))}</span>}<span className="text-muted"> · last sync {ago(st.last_sync)}</span></span></div>
+          {st.sign_in_ends && (() => {
+            const ends = new Date(st.sign_in_ends)
+            const soon = ends.getTime() - Date.now() < 2 * 864e5
+            return (
+              <div className={`flex flex-wrap items-center gap-2 text-xs ${soon ? 'text-warn' : 'text-muted'}`}>
+                <span className="min-w-0 flex-1">IBKR ends the sign-in after 7 days — this one runs until {ends.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</span>
+                {soon && <button className="btn-outline h-8 px-2.5 text-xs" onClick={connect} disabled={busy}>{busy ? <Spinner className="h-4 w-4" /> : null}Connect again</button>}
+              </div>
+            )
+          })()}
           {st.last_error && <div className="rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad">{st.last_error}</div>}
           <label className="flex items-center gap-2 text-xs text-ink2">Value goes to
             <select className="input select-pad h-8 w-auto text-xs" value={st.account} onChange={(e) => setAccount(e.target.value)}>
@@ -187,6 +205,7 @@ export function IBKRConnection() {
         </div>
       ) : (
         <div className="space-y-3 text-sm">
+          {st?.lapsed && <div className="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">IBKR ended the sign-in — it asks again every 7 days{st.last_sync && <> (last synced {ago(st.last_sync)})</>}. Connect again below; your trades, balances and settings stay.</div>}
           <div className="text-ink2">Keep the IBKR account value up to date, check positions against your trades, and add IBKR trades in one tap. Ask CFO can also read the account live.</div>
           <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted">
             <li>Read-only: the app asks IBKR only for <code>mcp.read</code> and calls read tools only — it cannot trade or change anything.</li>
@@ -194,7 +213,7 @@ export function IBKRConnection() {
             <li>Revoke any time here, or in IBKR Client Portal → Settings → Manage Third-Party Consents.</li>
             <li>Open the app at its own web address (not inside Home Assistant) to connect — IBKR returns you there.</li>
           </ul>
-          <button className="btn-primary" onClick={connect} disabled={busy}>{busy ? <Spinner className="h-4 w-4" /> : null}Connect Interactive Brokers (read-only)</button>
+          <button className="btn-primary" onClick={connect} disabled={busy}>{busy ? <Spinner className="h-4 w-4" /> : null}{st?.lapsed ? "Connect again" : "Connect Interactive Brokers (read-only)"}</button>
         </div>
       )}
     </Card>

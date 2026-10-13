@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ft/internal/ibkr"
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
@@ -415,6 +416,14 @@ func Checks(d *sql.DB, now time.Time) []Check {
 			}
 		}
 		rows.Close()
+	}
+	switch st := ibkr.New(d).Status(); {
+	case st.Lapsed:
+		add("warn", "/settings/banks", "IBKR sign-in has ended (IBKR asks every 7 days) — connect again.")
+	case st.SignInEnds != "":
+		if t, err := time.Parse(time.RFC3339, st.SignInEnds); err == nil && t.Sub(now) <= 36*time.Hour {
+			add("warn", "/settings/banks", "IBKR sign-in ends %s — connect again so syncing doesn't stop.", t.In(now.Location()).Format("Mon 2 Jan 15:04"))
+		}
 	}
 	var waiting int
 	d.QueryRow(`SELECT COUNT(*) FROM bank_inbox WHERE state='open' AND pending=0`).Scan(&waiting)

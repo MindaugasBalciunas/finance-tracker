@@ -33,6 +33,8 @@ type fakeIBKR struct {
 	// YEAR_TO_DATE in October 2026).
 	failTrades map[string]bool
 	periods    []string
+	// grantGone: IBKR has ended the sign-in (after 7 days) and refuses refreshes.
+	grantGone bool
 }
 
 func (f *fakeIBKR) handler(t *testing.T) http.Handler {
@@ -59,6 +61,10 @@ func (f *fakeIBKR) handler(t *testing.T) http.Handler {
 			f.access = "at-1"
 			json.NewEncoder(w).Encode(map[string]any{"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600, "scope": "mcp.read"})
 		case "refresh_token":
+			if f.grantGone {
+				http.Error(w, `{"error":"invalid_grant","error_description":"Authorization grant has expired, re-authentication required"}`, 400)
+				return
+			}
 			if r.Form.Get("refresh_token") != "rt-1" {
 				http.Error(w, `{"error":"invalid_grant"}`, 400)
 				return
@@ -341,5 +347,52 @@ func TestIBKRTradesFallback(t *testing.T) {
 	}
 	if st := s.Status(); st.LastError != "" {
 		t.Errorf("a sync that recorded the value is not an error: %+v", st)
+	}
+}
+
+// IBKR ends a third-party sign-in after 7 days however often it is renewed:
+// the app says so plainly, stops calling, keeps its data, and a new sign-in
+// clears it.
+func TestIBKRSignInLapses(t *testing.T) {
+	d := DB(t)
+	f := &fakeIBKR{}
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	now := time.Date(2026, 10, 6, 13, 45, 0, 0, time.UTC)
+	s := ibkr.New(d)
+	s.AuthBase, s.MCPURL, s.Now = srv.URL, srv.URL+"/mcp", func() time.Time { return now }
+	ctx := context.Background()
+	signIn := func() {
+		authURL, _ := s.Connect(ctx, "https://finance.example:8443/")
+		u, _ := url.Parse(authURL)
+		f.challenge = u.Query().Get("code_challenge")
+		if err := s.Callback(ctx, "good", u.Query().Get("state")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	signIn()
+	if st := s.Status(); st.SignInEnds != "2026-10-13T13:45:00Z" || st.Lapsed {
+		t.Fatalf("sign-in end: %+v", st)
+	}
+	if _, err := s.Sync(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(7*24*time.Hour + time.Hour)
+	f.mu.Lock()
+	f.grantGone = true
+	f.mu.Unlock()
+	if _, err := s.Sync(ctx, false); err != ibkr.ErrSignInLapsed {
+		t.Fatalf("lapsed sign-in: %v", err)
+	}
+	st := s.Status()
+	if st.Connected || !st.Lapsed || st.SignInEnds != "" || st.LastSync == "" || st.Account != "ibkr" || strings.Contains(st.LastError, "{") {
+		t.Fatalf("after the lapse: %+v", st)
+	}
+	if r, _ := s.LastReport(); r == nil {
+		t.Error("the last report was dropped")
+	}
+	signIn()
+	if st := s.Status(); !st.Connected || st.Lapsed || st.LastError != "" || st.SignInEnds != "2026-10-20T14:45:00Z" {
+		t.Fatalf("connected again: %+v", st)
 	}
 }
