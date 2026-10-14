@@ -80,11 +80,14 @@ type Unbudgeted struct {
 }
 
 type Report struct {
-	Month              string      `json:"month"`
-	Months             []string    `json:"months"`
-	IncomeBase         money.Cents `json:"income_base"`
-	IncomeBaseSource   string      `json:"income_base_source"`
-	IncomeActual       money.Cents `json:"income_actual"`
+	Month            string      `json:"month"`
+	Months           []string    `json:"months"`
+	IncomeBase       money.Cents `json:"income_base"`
+	IncomeBaseSource string      `json:"income_base_source"`
+	IncomeActual     money.Cents `json:"income_actual"`
+	// Refunds: money back this month; it reduces discretionary spending
+	// (and so adds to safe to spend), never the income.
+	Refunds            money.Cents `json:"refunds"`
 	Lines              []Line      `json:"lines"`
 	FixedPlanned       money.Cents `json:"fixed_planned"`
 	SavingPlanned      money.Cents `json:"saving_planned"`
@@ -215,6 +218,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	fixedSpent := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
 	income := map[string]money.Cents{}
+	refunds := map[string]money.Cents{}
 	unbudgeted := map[string]map[string]money.Cents{}
 	firstYM := ""
 	salary := settings.Salary()
@@ -229,6 +233,17 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		}
 		if firstYM == "" || m < firstYM {
 			firstYM = m
+		}
+		if t.Kind == "income" && ledger.Top(t.Category) == "refunds" {
+			// Money back reduces spending, as in cash flow — not income.
+			m = ym(t.Date)
+			refunds[m] += t.Amount
+			discretionary[m] -= t.Amount
+			if freeByDay[m] == nil {
+				freeByDay[m] = map[int]money.Cents{}
+			}
+			freeByDay[m][dayOf(t.Date)] -= t.Amount
+			continue
 		}
 		if t.Kind == "income" {
 			income[m] += t.Amount
@@ -397,6 +412,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	r.FixedSpent = fixedSpent[month]
 	r.SavedActual = saved[month]
 	r.IncomeActual = income[month]
+	r.Refunds = refunds[month]
 
 	cats := make([]string, 0, len(unbudgeted))
 	for c := range unbudgeted {

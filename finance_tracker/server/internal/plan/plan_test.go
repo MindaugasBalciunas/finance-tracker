@@ -154,6 +154,30 @@ func TestComputeFundOverdrawn(t *testing.T) {
 	}
 }
 
+// Money back (an insurance payout for a repair) reduces the month's
+// spending, as in cash flow: safe to spend grows by it, income doesn't.
+func TestComputeRefundsReduceSpending(t *testing.T) {
+	now := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	food := line(1, "Food", "spending", []string{"food"}, 500)
+	txs := []ledger.Tx{tx("2026-10-02", "housing.maintenance", 300), tx("2026-10-05", "food.groceries", 100), tx("2026-10-14", "refunds", 184.28), tx("2026-10-09", "salary", 3500)}
+	r := plan.Compute([]plan.Budget{food}, txs, "2026-10", now, set)
+	if r.Refunds != E(184.28) || r.DiscretionarySpent != E(400-184.28) || r.IncomeActual != E(3500) {
+		t.Fatalf("refunds %v, discretionary %v, income %v", r.Refunds, r.DiscretionarySpent, r.IncomeActual)
+	}
+	if r.SafeToSpend != E(5000-400+184.28) {
+		t.Fatalf("safe %v", r.SafeToSpend)
+	}
+	if r.FreeSpentByDay["2026-10"][14] != -E(184.28) {
+		t.Errorf("refund day on the timeline: %v", r.FreeSpentByDay["2026-10"])
+	}
+	// The median income base counts salaries, not money back.
+	med := plan.Compute(nil, []ledger.Tx{tx("2026-09-10", "salary", 3000), tx("2026-09-20", "refunds", 900)}, "2026-10", now, plan.Settings{})
+	if med.IncomeBase != E(3000) {
+		t.Errorf("median base %v", med.IncomeBase)
+	}
+}
+
 func TestComputeYearlyAndSuggestion(t *testing.T) {
 	now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	gifts := line(1, "Gifts", "spending", []string{"gifts"}, 1200)

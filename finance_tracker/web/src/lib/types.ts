@@ -101,7 +101,7 @@ export interface PlanLine extends Budget {
 export interface PlanReport {
   month: string; months: string[]; income_base: number; income_base_source: string; income_actual: number
   lines: PlanLine[]; fixed_planned: number; saving_planned: number; spending_planned: number; fixed_spent: number; saved_actual: number
-  discretionary_spent: number; fund_contributions: number; fund_spent: number; fund_overdrawn?: number; safe_to_spend: number
+  discretionary_spent: number; fund_contributions: number; fund_spent: number; fund_overdrawn?: number; refunds?: number; safe_to_spend: number
   unbudgeted: { category: string; spent: number; year_spent: number; history: MonthCell[]; suggestion?: Suggestion }[]
 }
 
