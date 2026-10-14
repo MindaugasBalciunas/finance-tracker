@@ -300,6 +300,9 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
             <Area dataKey="cum" stroke="var(--s1)" strokeWidth={2} fill="url(#mt-cum)" dot={false} isAnimationActive={false} connectNulls={false} />
             <Line dataKey="proj" stroke={over ? 'rgb(var(--warn))' : 'var(--s1)'} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
             <ReferenceLine x={today} stroke="rgb(var(--ink))" strokeOpacity={0.5} label={{ value: 'today', position: 'top', fontSize: 10, fill: 'var(--chart-text)' }} />
+            {/* What is left today: the gap from your spending up to the free money. */}
+            <ReferenceLine segment={[{ x: today, y: cumToday }, { x: today, y: free }]} stroke={p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))'} strokeWidth={3} ifOverflow="extendDomain"
+              label={{ value: p.safe_to_spend < 0 ? `${eur(-p.safe_to_spend)} over` : `${eur(p.safe_to_spend)} left`, position: today > dim * 0.6 ? 'left' : 'right', fontSize: 11, fontWeight: 600, fill: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))' }} />
             {runOut != null && (
               <ReferenceDot x={runOut} y={free} r={4} fill="rgb(var(--warn))" stroke="var(--chart-surface)" strokeWidth={2} ifOverflow="visible"
                 label={{ value: `runs out ~${runOut}`, position: 'top', fontSize: 10, fill: 'rgb(var(--warn))' }} />
