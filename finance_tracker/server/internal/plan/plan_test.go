@@ -125,6 +125,35 @@ func TestComputeFundCarriesOver(t *testing.T) {
 	}
 }
 
+// A fund pays only what it holds: the rest of a big bill (a €769 car
+// service from a transport fund opened this month with €80) comes out of
+// this month's free money. An overdraft carried in from earlier months
+// already hit those months and isn't counted again.
+func TestComputeFundOverdrawn(t *testing.T) {
+	now := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	car := line(1, "Transport", "spending", []string{"transport"}, 80)
+	car.Fund, car.StartMonth = true, "2026-10"
+	txs := []ledger.Tx{tx("2026-10-03", "transport.fuel", 58.33), tx("2026-10-14", "transport.car", 769.25)}
+	r := plan.Compute([]plan.Budget{car}, txs, "2026-10", now, set)
+	if r.FundOverdrawn != E(747.58) || r.SafeToSpend != E(5000-80-747.58) {
+		t.Fatalf("overdrawn %v, safe %v", r.FundOverdrawn, r.SafeToSpend)
+	}
+	// Enough saved: nothing extra.
+	car.StartMonth = "2025-10" // a year of €80 (€960) held before October
+	r = plan.Compute([]plan.Budget{car}, txs, "2026-10", now, set)
+	if r.FundOverdrawn != 0 || r.SafeToSpend != E(5000-80) {
+		t.Fatalf("covered: overdrawn %v, safe %v", r.FundOverdrawn, r.SafeToSpend)
+	}
+	// In the red since September: October's €80 share pays €80 of
+	// October's €100, the other €20 is October's own overdraft.
+	car.StartMonth = "2026-09"
+	r = plan.Compute([]plan.Budget{car}, []ledger.Tx{tx("2026-09-10", "transport.car", 500), tx("2026-10-05", "transport.fuel", 100)}, "2026-10", now, set)
+	if r.FundOverdrawn != E(20) {
+		t.Fatalf("carried overdraft counted again: %v", r.FundOverdrawn)
+	}
+}
+
 func TestComputeYearlyAndSuggestion(t *testing.T) {
 	now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	gifts := line(1, "Gifts", "spending", []string{"gifts"}, 1200)

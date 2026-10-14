@@ -58,7 +58,7 @@ export interface Overview {
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
     free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null
-    income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number
+    income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number; fund_overdrawn?: number
     fixed?: { name: string; budgeted: number; spent: number; due?: string; paid?: string }[] | null
     days?: { day: number; spent: number; cum?: number; typical: number }[] | null
     events?: { day: number; kind: 'fixed' | 'income'; label: string; amount: number; done: boolean }[] | null }
@@ -101,7 +101,7 @@ export interface PlanLine extends Budget {
 export interface PlanReport {
   month: string; months: string[]; income_base: number; income_base_source: string; income_actual: number
   lines: PlanLine[]; fixed_planned: number; saving_planned: number; spending_planned: number; fixed_spent: number; saved_actual: number
-  discretionary_spent: number; fund_contributions: number; fund_spent: number; safe_to_spend: number
+  discretionary_spent: number; fund_contributions: number; fund_spent: number; fund_overdrawn?: number; safe_to_spend: number
   unbudgeted: { category: string; spent: number; year_spent: number; history: MonthCell[]; suggestion?: Suggestion }[]
 }
 

@@ -344,9 +344,11 @@ function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number
     { key: 'saved', label: 'Saved', v: savedDone, color: 'var(--s6)', faded: false },
     { key: 'saving-due', label: 'Saving still to do', v: p.saving_planned - savedDone, color: 'var(--s6)', faded: true },
     { key: 'funds', label: 'Set aside in funds', v: p.fund_set_aside, color: 'var(--s4)', faded: false },
+    { key: 'overdrawn', label: 'Paid beyond a fund', v: p.fund_overdrawn ?? 0, color: 'rgb(var(--bad))', faded: false },
     { key: 'spent', label: 'Spent', v: p.free_spent, color: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : warn ? 'rgb(var(--warn))' : 'var(--s1)', faded: false },
   ].filter((x) => x.v > 0.005)
-  const committed = p.fixed_planned + p.saving_planned + p.fund_set_aside
+  // A fund overdraft is spending nothing was set aside for: committed first.
+  const committed = p.fixed_planned + p.saving_planned + p.fund_set_aside + (p.fund_overdrawn ?? 0)
   const total = Math.max(p.income_base, committed + p.free_spent, 1)
   const pctOf = (v: number) => `${(v / total) * 100}%`
   // Free money = what was spent + what is left; progress is the share a
@@ -367,6 +369,7 @@ function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number
         <Swatch color="var(--s7)" label="Fixed" v={p.fixed_planned} />
         <Swatch color="var(--s6)" label="Saving" v={p.saving_planned} />
         {p.fund_set_aside > 0 && <Swatch color="var(--s4)" label="Funds" v={p.fund_set_aside} />}
+        {(p.fund_overdrawn ?? 0) > 0.005 && <Swatch color="rgb(var(--bad))" label="Beyond funds" v={p.fund_overdrawn!} />}
         <Swatch color="var(--s1)" label="Spent" v={p.free_spent} />
         <Swatch color="rgb(var(--sunken))" label="Left" v={Math.max(p.safe_to_spend, 0)} border />
         <span className="inline-flex items-center gap-1"><span className="h-2 w-2.5 rounded-sm" style={hatch('rgb(var(--ink2))')} />striped = still to pay</span>

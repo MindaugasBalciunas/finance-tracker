@@ -169,7 +169,7 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
             <div className="text-sm text-ink2">{current ? 'Safe to spend this month' : 'Left after the plan'}</div>
             <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : 'text-good')}>{eur(r.safe_to_spend)}</div>
           </div>
-          <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds</div>
+          <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds{(r.fund_overdrawn ?? 0) > 0.005 && <> − <span className="text-bad">{eur(r.fund_overdrawn!)} paid beyond what funds held</span></>}</div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
           {rows.map((x) => (

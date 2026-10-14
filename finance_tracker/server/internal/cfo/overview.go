@@ -79,12 +79,14 @@ type PlanPulse struct {
 	Budgeted       money.Cents `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
-	IncomeActual  money.Cents  `json:"income_actual"`
-	FixedPlanned  money.Cents  `json:"fixed_planned"`
-	FixedSpent    money.Cents  `json:"fixed_spent"`
-	SavingPlanned money.Cents  `json:"saving_planned"`
-	SavedActual   money.Cents  `json:"saved_actual"`
-	FundSetAside  money.Cents  `json:"fund_set_aside"`
+	IncomeActual  money.Cents `json:"income_actual"`
+	FixedPlanned  money.Cents `json:"fixed_planned"`
+	FixedSpent    money.Cents `json:"fixed_spent"`
+	SavingPlanned money.Cents `json:"saving_planned"`
+	SavedActual   money.Cents `json:"saved_actual"`
+	FundSetAside  money.Cents `json:"fund_set_aside"`
+	// FundOverdrawn: funds paid beyond what they held — taken from free money.
+	FundOverdrawn money.Cents  `json:"fund_overdrawn"`
 	Fixed         []FixedBrief `json:"fixed"` // each obligation: paid, or when it is due
 	// The month as a timeline: free spending day by day (cumulative), the
 	// typical month's curve, and dated events (obligations, income).
@@ -234,7 +236,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	var fixedCats [][]string
 	if r, err := BudgetReport(d, thisM, now); err == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
-			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions}
+			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)
 		for _, l := range r.Lines {

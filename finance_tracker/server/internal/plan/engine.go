@@ -94,7 +94,11 @@ type Report struct {
 	DiscretionarySpent money.Cents `json:"discretionary_spent"`
 	FundContributions  money.Cents `json:"fund_contributions"`
 	FundSpent          money.Cents `json:"fund_spent"`
-	SafeToSpend        money.Cents `json:"safe_to_spend"`
+	// FundOverdrawn: what funds paid this month beyond what they held
+	// (opening + this month's share) — nothing was set aside for it, so it
+	// comes out of this month's free money.
+	FundOverdrawn money.Cents `json:"fund_overdrawn"`
+	SafeToSpend   money.Cents `json:"safe_to_spend"`
 	// Free spending per month (discretionary minus what funds covered) —
 	// the same money SafeToSpend draws on. For daily pace and "typical".
 	FreeSpentByMonth map[string]money.Cents `json:"-"`
@@ -336,6 +340,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 			l.Spent = fs.Spent
 			l.Remaining = fs.Available
 			r.FundContributions += fs.Contribution
+			if over := fs.Spent - max(fs.Opening, 0) - fs.Contribution; over > 0 {
+				r.FundOverdrawn += over
+			}
 		case b.Period == "yearly":
 			yp := &YearProgress{Year: year, Budget: amount, Elapsed: elapsed}
 			for m := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC); m.Format("2006-01") <= month; m = m.AddDate(0, 1, 0) {
@@ -425,7 +432,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	})
 
 	r.IncomeBase, r.IncomeBaseSource = IncomeBase(settings, income, month, nowYM)
-	r.SafeToSpend = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions - (r.DiscretionarySpent - r.FundSpent)
+	r.SafeToSpend = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions - (r.DiscretionarySpent - r.FundSpent) - r.FundOverdrawn
 	return r
 }
 
