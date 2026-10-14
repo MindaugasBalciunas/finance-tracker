@@ -120,6 +120,11 @@ const OneOff = money.Cents(250 * 100)
 
 func ym(date string) string { return date[:7] }
 
+type dayAmount struct {
+	day    int
+	amount money.Cents
+}
+
 func dayOf(date string) int {
 	d := 0
 	for _, c := range date[8:10] {
@@ -215,6 +220,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	freeByDay := map[string]map[int]money.Cents{}
 	everydayByDay := map[string]map[int]money.Cents{}
 	fundSpent := map[string]money.Cents{}
+	fundDays := make([][]dayAmount, len(lines)) // this month's fund payments, per line
 	fixedSpent := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
 	income := map[string]money.Cents{}
@@ -278,6 +284,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 				covered = true
 				if b.Fund {
 					fundTx = true
+					if m == month {
+						fundDays[j] = append(fundDays[j], dayAmount{dayOf(t.Date), t.Amount})
+					}
 				}
 			}
 			spent[j][m] += t.Amount
@@ -357,6 +366,21 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 			r.FundContributions += fs.Contribution
 			if over := fs.Spent - max(fs.Opening, 0) - fs.Contribution; over > 0 {
 				r.FundOverdrawn += over
+				// The day-by-day free spending shows the overdraft on the day
+				// a payment went past what the fund held.
+				days := fundDays[i]
+				sort.SliceStable(days, func(a, c int) bool { return days[a].day < days[c].day })
+				held, paid := max(fs.Opening, 0)+fs.Contribution, money.Cents(0)
+				for _, d := range days {
+					before := paid
+					paid += d.amount
+					if beyond := paid - max(held, before); beyond > 0 {
+						if freeByDay[month] == nil {
+							freeByDay[month] = map[int]money.Cents{}
+						}
+						freeByDay[month][d.day] += beyond
+					}
+				}
 			}
 		case b.Period == "yearly":
 			yp := &YearProgress{Year: year, Budget: amount, Elapsed: elapsed}

@@ -249,7 +249,10 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
   if (days.length < 28) return null
   const dim = days.length
   const today = days.filter((d) => d.cum != null).length
-  const free = p.free_spent + p.safe_to_spend
+  // The month's free money as planned: the day line also carries what was
+  // paid beyond what funds held (on the day it happened), so the gap at
+  // today is still exactly what is left.
+  const free = p.free_spent + (p.fund_overdrawn ?? 0) + p.safe_to_spend
   const cumToday = days[today - 1]?.cum ?? 0
   const projEnd = cumToday + p.expected_day * (dim - today)
   const over = projEnd > free

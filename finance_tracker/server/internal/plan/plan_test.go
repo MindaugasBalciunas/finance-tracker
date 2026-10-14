@@ -139,6 +139,11 @@ func TestComputeFundOverdrawn(t *testing.T) {
 	if r.FundOverdrawn != E(747.58) || r.SafeToSpend != E(5000-80-747.58) {
 		t.Fatalf("overdrawn %v, safe %v", r.FundOverdrawn, r.SafeToSpend)
 	}
+	// The day chart shows it the day the service bill went past the fund
+	// (the €58.33 of fuel on the 3rd fitted in the €80).
+	if d := r.FreeSpentByDay["2026-10"]; d[14] != E(747.58) || d[3] != 0 {
+		t.Fatalf("overdraft by day: %v", d)
+	}
 	// Enough saved: nothing extra.
 	car.StartMonth = "2025-10" // a year of €80 (€960) held before October
 	r = plan.Compute([]plan.Budget{car}, txs, "2026-10", now, set)
