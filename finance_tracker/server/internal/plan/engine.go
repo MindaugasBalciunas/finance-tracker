@@ -489,8 +489,8 @@ func IncomeBase(s Settings, income map[string]money.Cents, month, nowYM string) 
 			return money.FromFloat(s.ManualIncome), "manual"
 		}
 	case "gross":
-		if s.GrossSalary > 0 {
-			return money.FromFloat(LTNetSalary(s.GrossSalary, s.MonthlyDeductions)), "gross salary, net of LT taxes"
+		if g := s.GrossFor(month); g > 0 {
+			return money.FromFloat(LTNetSalary(g, s.MonthlyDeductions)), "gross salary, net of LT taxes"
 		}
 	}
 	last := addMonths(month, -1)

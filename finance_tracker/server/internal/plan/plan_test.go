@@ -379,3 +379,19 @@ func TestPatchSettings(t *testing.T) {
 		t.Error("a rejected patch changed nothing")
 	}
 }
+
+// A planned raise counts from its month: the months before keep the old
+// salary (the past and this month aren't rewritten).
+func TestGrossChangesByMonth(t *testing.T) {
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: 8400, GrossChanges: []plan.GrossChange{{From: "2026-12", Gross: 10000}, {From: "2027-06", Gross: 11000}}}
+	for m, want := range map[string]float64{"2026-04": 8400, "2026-10": 8400, "2026-12": 10000, "2027-03": 10000, "2027-06": 11000} {
+		if g := s.GrossFor(m); g != want {
+			t.Errorf("%s: %v want %v", m, g, want)
+		}
+	}
+	oct, _ := plan.IncomeBase(s, nil, "2026-10", "2026-10")
+	dec, _ := plan.IncomeBase(s, nil, "2026-12", "2026-10")
+	if oct != money.FromFloat(plan.LTNetSalary(8400, 0)) || dec != money.FromFloat(plan.LTNetSalary(10000, 0)) {
+		t.Errorf("income base oct %v dec %v", oct, dec)
+	}
+}

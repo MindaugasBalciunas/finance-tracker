@@ -584,6 +584,12 @@ function PlanSettings() {
               <Field label="Gross salary €/month"><NumberInput value={v.gross_salary || undefined} onChange={num('gross_salary')} /></Field>
               <Field label="Other deductions €/month"><NumberInput value={v.monthly_deductions || undefined} onChange={num('monthly_deductions')} /></Field>
               <div className="col-span-2 text-xs text-muted">Net after Lithuanian taxes ≈ {eur(data.net_from_gross)} (saved settings)</div>
+              {(v.gross_changes ?? []).map((c: { from: string; gross: number }, i: number) => (
+                <div key={c.from} className="col-span-2 flex items-center gap-2 text-sm">
+                  <span className="flex-1">From {monthLabel(c.from, true)}: <b className="tnum">{eur(c.gross)}</b> gross</span>
+                  <button className="text-xs text-muted" onClick={() => setS({ ...v, gross_changes: v.gross_changes.filter((_: unknown, j: number) => j !== i) })}>Remove</button>
+                </div>
+              ))}
             </div>
           )}
           {v.income_mode === 'manual' && <Field label="Monthly income €"><NumberInput value={v.manual_income || undefined} onChange={num('manual_income')} /></Field>}

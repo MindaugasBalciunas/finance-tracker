@@ -46,10 +46,14 @@ export function ForecastView() {
   const set = (p: Partial<Scenario>) => setSc((x) => ({ ...x, ...p }))
   const applySalary = async () => {
     try {
-      await api.put('/plan/settings', { ...(await api.get<any>('/plan/settings')).settings, income_mode: 'gross', gross_salary: sc.gross })
+      const cur = (await api.get<any>('/plan/settings')).settings
+      // From a month on: a dated change, so this month and the past keep today's salary.
+      await api.put('/plan/settings', sc.from
+        ? { ...cur, income_mode: 'gross', gross_changes: [...(cur.gross_changes ?? []).filter((c: any) => c.from !== sc.from), { from: sc.from, gross: sc.gross }] }
+        : { ...cur, income_mode: 'gross', gross_salary: sc.gross })
       qc.invalidateQueries()
       setSc((x) => ({ ...x, gross: undefined }))
-      toast(`Plan income now from ${eur(sc.gross!)} gross`, 'good')
+      toast(sc.from ? `${eur(sc.gross!)} gross from ${monthLabel(sc.from, true)} saved` : `Plan income now from ${eur(sc.gross!)} gross`, 'good')
     } catch (e) { toast((e as Error).message, 'bad') }
   }
 

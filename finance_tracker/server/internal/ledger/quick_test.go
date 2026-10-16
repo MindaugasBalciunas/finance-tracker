@@ -14,7 +14,7 @@ import (
 // never do.
 func TestQuickPicks(t *testing.T) {
 	d := DB(t)
-	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) // a Wednesday
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)                                  // a Wednesday
 	for _, day := range []string{"2026-10-07", "2026-10-08", "2026-10-13", "2026-09-30"} { // weekdays
 		Tx(t, d, ledger.Tx{Date: day, Amount: E(8.5), Category: "food.work_lunch", AccountID: "cash", Merchant: "Caffeine"})
 	}

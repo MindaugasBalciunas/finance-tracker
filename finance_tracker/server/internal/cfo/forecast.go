@@ -224,22 +224,34 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 
 	a := Assumptions{Income: cur.IncomeBase, Fixed: cur.FixedPlanned, Saving: cur.SavingPlanned, Everyday: medianCents(ev),
 		OneOffs: max(0, (oneOffs-datedOneOffs)/12)}
-	if settings.IncomeMode == "gross" && settings.GrossSalary > 0 {
-		a.Gross = settings.GrossSalary
+	if settings.IncomeMode == "gross" && settings.GrossFor(thisM) > 0 {
+		a.Gross = settings.GrossFor(thisM)
+	}
+	// A dated salary change counts from its month.
+	incomeFor := func(m string) money.Cents {
+		if settings.IncomeMode == "gross" {
+			if g := settings.GrossFor(m); g > 0 {
+				return money.FromFloat(plan.LTNetSalary(g, settings.MonthlyDeductions))
+			}
+		}
+		return a.Income
 	}
 	f.Assumed = a
 
 	// The scenario, from its month on.
 	changed := a
 	scFrom := ""
+	scIncome := false // the scenario sets income itself
 	if sc != nil {
 		scFrom = sc.From
 		if sc.Gross > 0 {
 			changed.Gross = sc.Gross
 			changed.Income = money.FromFloat(plan.LTNetSalary(sc.Gross, settings.MonthlyDeductions))
+			scIncome = true
 		}
 		if sc.Income != nil {
 			changed.Income = money.FromFloat(*sc.Income)
+			scIncome = true
 		}
 		if sc.Saving != nil {
 			changed.Saving = money.FromFloat(*sc.Saving)
@@ -263,8 +275,12 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 	for i := 0; i < horizon; i++ {
 		m := time.Date(now.Year(), now.Month()+time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
 		in := a
+		in.Income = incomeFor(m)
 		if sc != nil && (scFrom == "" || m >= scFrom) {
 			in = changed
+			if !scIncome {
+				in.Income = incomeFor(m)
+			}
 		}
 		fm := ForecastMonth{Month: m, Income: in.Income, Fixed: in.Fixed, Saving: in.Saving, Everyday: in.Everyday, OneOffs: in.OneOffs, Dated: dated[m]}
 		if i == 0 {

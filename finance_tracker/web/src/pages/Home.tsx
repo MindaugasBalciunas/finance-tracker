@@ -335,6 +335,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
     { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid${due.length ? ` · ${due.map((f) => `${f.name}${f.due ? ` ${shortDate(f.due)}` : ''}`).join(', ')} still to pay` : ''}`, sign: '−' },
     { label: 'Saving & investing', value: p.saving_planned, sub: `${eur(p.saved_actual)} done`, sign: '−' },
     ...(p.fund_set_aside > 0 ? [{ label: 'Set aside in funds', value: p.fund_set_aside, sub: 'trips, car and other lumpy costs', sign: '−' as const }] : []),
+    ...((p.fund_overdrawn ?? 0) > 0.005 ? [{ label: 'Paid beyond funds', value: p.fund_overdrawn!, sub: (p.funds_over ?? []).map((f) => f.name).join(', ') || 'more than a fund held', sign: '−' as const }] : []),
     { label: 'Spent so far', value: p.free_spent, sub: (p.unreviewed ?? 0) > 0 ? `day-to-day, incl. ${eur(p.unreviewed!)} not reviewed yet` : 'day-to-day, outside funds', sign: '−' },
   ]
   return (

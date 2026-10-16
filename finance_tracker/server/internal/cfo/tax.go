@@ -84,13 +84,16 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 
 	// Salary above the 25% bracket.
 	if limit, ok := bracket25[year]; ok {
-		if settings.GrossSalary > 0 {
-			annual := settings.GrossSalary * 12
+		var annual float64 // the year's gross, month by month (a raise counts from its month)
+		for m := 1; m <= 12; m++ {
+			annual += settings.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+		}
+		if annual > 0 {
 			if over := annual - limit; over > 0 {
 				due := money.FromFloat(over * 0.05)
 				t.add(TaxItem{Key: "bracket", Kind: "due", Amount: due, Title: "Salary above the 25% bracket",
-					Detail: fmt.Sprintf("€%s of your €%s a year (gross %s × 12) is above €%s, taxed 25%% instead of 20%%. If your employer withholds 20%% each month, about %s is left to pay with the declaration.",
-						thousands(over), thousands(annual), eurS(money.FromFloat(settings.GrossSalary)), thousands(limit), eurS(due))})
+					Detail: fmt.Sprintf("€%s of your €%s gross for the year is above €%s, taxed 25%% instead of 20%%. If your employer withholds 20%% each month, about %s is left to pay with the declaration.",
+						thousands(over), thousands(annual), thousands(limit), eurS(due))})
 			} else {
 				t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Salary within the 20% bracket", Detail: fmt.Sprintf("€%s a year is under €%s.", thousands(annual), thousands(limit))})
 			}
@@ -150,8 +153,12 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 	}
 	if pillar > 0 {
 		base := min(pillar, money.FromFloat(pillar3Max))
-		if settings.GrossSalary > 0 {
-			base = min(base, money.FromFloat(settings.GrossSalary*12*0.25))
+		var annual float64
+		for m := 1; m <= 12; m++ {
+			annual += settings.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+		}
+		if annual > 0 {
+			base = min(base, money.FromFloat(annual*0.25))
 		}
 		refund := money.FromFloat(base.Float() * pillar3Refund)
 		it := TaxItem{Key: "pillar3", Title: "3rd-pillar pension contributions", Amount: refund}

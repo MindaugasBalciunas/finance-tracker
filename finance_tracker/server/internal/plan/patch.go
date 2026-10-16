@@ -126,6 +126,11 @@ func ValidateSettings(d *sql.DB, st Settings) error {
 	if err := ValidSalaryRules(st.SalaryRules); err != nil {
 		return err
 	}
+	for _, c := range st.GrossChanges {
+		if _, err := time.Parse("2006-01", c.From); err != nil || c.Gross <= 0 || c.Gross > 1e6 {
+			return errors.New("a salary change needs a month (YYYY-MM) and a gross amount")
+		}
+	}
 	switch st.IncomeMode {
 	case "", "median", "manual", "gross":
 	default:

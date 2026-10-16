@@ -208,10 +208,13 @@ func Delete(d *sql.DB, id int64) error {
 
 // Settings drive the income base the plan measures against.
 type Settings struct {
-	IncomeMode        string  `json:"income_mode"` // median | manual | gross
-	ManualIncome      float64 `json:"manual_income"`
-	GrossSalary       float64 `json:"gross_salary"`
-	MonthlyDeductions float64 `json:"monthly_deductions"`
+	IncomeMode   string  `json:"income_mode"` // median | manual | gross
+	ManualIncome float64 `json:"manual_income"`
+	GrossSalary  float64 `json:"gross_salary"`
+	// GrossChanges: a new salary from a month on (a raise, a new job), so a
+	// change planned for December doesn't rewrite October or the past.
+	GrossChanges      []GrossChange `json:"gross_changes,omitempty"`
+	MonthlyDeductions float64       `json:"monthly_deductions"`
 	// FI planning
 	TargetAge       int     `json:"target_age"`
 	BirthYear       int     `json:"birth_year"`
@@ -228,6 +231,23 @@ type Settings struct {
 	// Buffers: what each everyday account should never drop below, in euros,
 	// by account id. Missing or 0 = worked out from the account's history.
 	Buffers map[string]float64 `json:"buffers,omitempty"`
+}
+
+type GrossChange struct {
+	From  string  `json:"from"` // YYYY-MM
+	Gross float64 `json:"gross"`
+}
+
+// GrossFor is the gross salary for a month: the latest change from that
+// month or before, else GrossSalary.
+func (s Settings) GrossFor(month string) float64 {
+	g, from := s.GrossSalary, ""
+	for _, c := range s.GrossChanges {
+		if c.From <= month && c.From >= from {
+			g, from = c.Gross, c.From
+		}
+	}
+	return g
 }
 
 type SalaryRule struct {
