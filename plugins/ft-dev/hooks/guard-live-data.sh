@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse guard for Bash: asks the owner before a command that could change
-# live finance data — mutating HTTP calls at the local instance or production,
+# PreToolUse guard for Bash: asks the owner before `git push` (they push
+# manually) and before a command that could change live finance data — mutating HTTP calls at the local instance or production,
 # SQL writes or file operations on the local databases. Probe copies in a
 # scratch directory on other ports pass untouched.
 set -uo pipefail
@@ -12,6 +12,11 @@ ask() {
   jq -n --arg r "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $r}}'
   exit 0
 }
+
+# The owner pushes to main themselves (every push builds and publishes an image).
+if grep -Eq '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+push([[:space:]]|$)' <<<"$cmd"; then
+  ask "ft-dev guard: the owner pushes manually. Stop and tell them the commit is ready (SHA, version, what changed) instead of pushing — approve only if they asked you to push this change in this conversation."
+fi
 
 live_host='(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(8080|5175|8099)|duckdns\.org|\.ts\.net|homeassistant'
 mutating='(-X|--request)[ =]*["'\'']?(POST|PUT|PATCH|DELETE)|(^|[ ])(-[a-zA-Z]*[dFT]|--data[a-z-]*|--form|--upload-file|--json)([ =]|$)'

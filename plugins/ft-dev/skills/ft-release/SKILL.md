@@ -1,11 +1,14 @@
 ---
 name: ft-release
-description: The finance-tracker release flow — pre-release gate, version bump in finance_tracker/config.yaml, commit message format, push to main, watching the GitHub Actions run by commit SHA and verifying the ghcr.io image tag. Load when a change is built and verified and should ship, or when asked to release, bump the version, commit or push.
+description: The finance-tracker release flow — pre-release gate, version bump in finance_tracker/config.yaml, commit message format, then STOP — the owner pushes to main themselves; after their push, watching the GitHub Actions run by commit SHA and verifying the ghcr.io image tag. Load when a change is built and verified and should ship, or when asked to release, bump the version, commit or push.
 ---
 
 # Releasing
 
-The owner's rule: **once a change is built and verified green, ship it** — don't hold finished work waiting for another "release?" confirmation. Still stop and ask for anything destructive or irreversible, and never ship red or unverified code.
+The owner's rules:
+- **Never `git push` yourself.** The owner pushes manually (since 2026-10-16). Every push to `main` triggers CI and an image build, so pushing is theirs to decide.
+- Once a change is built and verified green, **prepare it fully** — version bump and local commit — without asking again for each step, then stop and tell the owner it is ready to push. Never prepare red or unverified code.
+- Push only when the owner explicitly says so in the current conversation, for that change.
 
 ## 1. Gate
 
@@ -35,10 +38,13 @@ Co-Authored-By: <attribution line from the session's system reminder>
 
 `feat(vX.Y.0): …` for features; a short bullet list in the body is fine for multi-part features. Stage files by name, not `git add -A`.
 
-## 4. Push and watch CI by SHA
+## 4. Hand over, then watch CI by SHA after the owner pushes
+
+Stop here and report: the commit SHA, the version, what changed, and `git push origin main` as the command for the owner to run (or `! git push origin main` in this prompt). Do not push.
+
+Once the owner says they pushed (or asked you to in this conversation), watch the run:
 
 ```bash
-git push origin main
 SHA=$(git rev-parse HEAD)
 # the run can take a few seconds to register — poll until it exists, never use --limit 1
 gh run list --json databaseId,headSha --jq ".[] | select(.headSha==\"$SHA\") | .databaseId"

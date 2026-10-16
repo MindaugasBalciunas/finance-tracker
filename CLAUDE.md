@@ -18,6 +18,7 @@ The `ft-dev` plugin (`plugins/ft-dev`, enabled in `.claude/settings.json`) holds
 Before shipping a non-trivial change, run the `ft-reviewer` agent on the diff.
 
 Hard rules:
+- Never `git push`. Commit locally when work is verified, then tell the owner it is ready; they push manually.
 - `make test` must be green before anything is called done.
 - Never mutate the owner's live data (local `finance_tracker/backend/*.db`, `:8080`, production). Verify on a `VACUUM INTO` copy on other ports. The plugin's hook asks before risky commands.
 - Migrations in `internal/db/db.go` are append-only; new tables go into `backup.tables`.
