@@ -67,7 +67,7 @@ export function Spending() {
         </Card>
         <div className="space-y-4">
           <Card icon="pie" color="var(--s2)" title="Where it went">
-            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub="spent" />
+            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub="spent" stacked />
           </Card>
           <Card pad={false} icon="utensils" color="var(--s4)" title="Top merchants">
             <div className="divide-y divide-line border-t border-line">

@@ -1,6 +1,7 @@
 package cfo_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -140,5 +141,60 @@ func TestTrackRecordAndFundsOver(t *testing.T) {
 	}
 	if p.Days[len(p.Days)-1].Proj == nil || p.ExpectedRest <= 0 || p.ProjectedLeft != p.SafeToSpend-p.ExpectedRest {
 		t.Errorf("forecast rest %v left %v", p.ExpectedRest, p.ProjectedLeft)
+	}
+}
+
+// Spending still waiting in the bank inbox counts on the day it happened —
+// the line and left to spend move when you spend, not when you review. Rows
+// flagged as duplicates or own-account moves, and obligations the plan
+// already counts in full, are left out.
+func TestUnreviewedSpendingCountsToday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	for _, m := range []string{"2026-07", "2026-08", "2026-09", "2026-10"} {
+		Tx(t, d, ledger.Tx{Date: m + "-10", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-05", Amount: E(100), Category: "food.groceries", AccountID: "swed"})
+	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(500)}
+	if err := plan.Save(d, &alimony, ""); err != nil {
+		t.Fatal(err)
+	}
+	before, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range []struct {
+		date, kind, cat, verdict, state string
+		amount                          float64
+	}{
+		{"2026-10-15", "expense", "food.restaurants", "new", "open", 40},     // counts
+		{"2026-10-16", "expense", "", "needs_review", "open", 12.5},          // counts, no category yet
+		{"2026-10-16", "expense", "food.groceries", "duplicate", "open", 99}, // already in the ledger
+		{"2026-10-16", "expense", "kids.alimony", "new", "open", 500},        // the obligation is planned in full
+		{"2026-10-14", "expense", "food.groceries", "new", "imported", 77},   // already imported
+		{"2026-09-30", "expense", "food.groceries", "new", "open", 66},       // last month
+		{"2026-10-16", "transfer", "transfer.internal", "internal", "open", 1000},
+	} {
+		if _, err := d.Exec(`INSERT INTO bank_inbox(external_id,date,kind,amount,category,verdict,state,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+			fmt.Sprint("x", i), r.date, r.kind, E(r.amount), r.cat, r.verdict, r.state, "2026-10-16T00:00:00Z", "2026-10-16T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := o.Plan
+	if p.Unreviewed != E(52.5) || p.UnreviewedCount != 2 {
+		t.Fatalf("unreviewed %v ×%d", p.Unreviewed, p.UnreviewedCount)
+	}
+	if p.SafeToSpend != before.Plan.SafeToSpend-E(52.5) || p.FreeSpent != before.Plan.FreeSpent+E(52.5) {
+		t.Errorf("safe %v (was %v), free %v (was %v)", p.SafeToSpend, before.Plan.SafeToSpend, p.FreeSpent, before.Plan.FreeSpent)
+	}
+	if p.Days[14].Spent != E(40) || p.Days[15].Spent != E(12.5) || *p.Days[15].Cum != E(152.5) {
+		t.Errorf("days 15–16: %v %v cum %v", p.Days[14].Spent, p.Days[15].Spent, *p.Days[15].Cum)
+	}	// Plan shows the same left-to-spend as Home.
+	if r, err := cfo.BudgetReport(d, "2026-10", now); err != nil || r.SafeToSpend != p.SafeToSpend || r.Unreviewed != E(52.5) {
+		t.Errorf("plan %v / unreviewed %v vs home %v", r.SafeToSpend, r.Unreviewed, p.SafeToSpend)
 	}
 }

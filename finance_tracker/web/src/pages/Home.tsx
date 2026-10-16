@@ -404,7 +404,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
     { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid`, sign: '−' },
     { label: 'Saving & investing', value: p.saving_planned, sub: `${eur(p.saved_actual)} done`, sign: '−' },
     ...(p.fund_set_aside > 0 ? [{ label: 'Set aside in funds', value: p.fund_set_aside, sub: 'trips, car and other lumpy costs', sign: '−' as const }] : []),
-    { label: 'Spent so far', value: p.free_spent, sub: 'day-to-day, outside funds', sign: '−' },
+    { label: 'Spent so far', value: p.free_spent, sub: (p.unreviewed ?? 0) > 0 ? `day-to-day, incl. ${eur(p.unreviewed!)} not reviewed yet` : 'day-to-day, outside funds', sign: '−' },
   ]
   return (
     // Phones: one column. Wide screens: the month chart on the left at full
@@ -491,6 +491,7 @@ function Verdict({ p }: { p: Overview['plan'] }) {
   const funds = p.funds_over ?? []
   const rows: { key: string; label: string; sub: string; value: ReactNode; tone?: string }[] = [
     ...funds.map((f) => ({ key: f.name, label: `${f.name} fund overdrawn`, sub: `held ${eur(f.budgeted)}, paid ${eur(f.spent)}`, value: `−${eur(-f.remaining)}`, tone: 'text-bad' })),
+    ...((p.unreviewed ?? 0) > 0 ? [{ key: 'unreviewed', label: 'Not reviewed yet', sub: `${p.unreviewed_count} bank ${p.unreviewed_count === 1 ? 'payment' : 'payments'} in the inbox, already counted`, value: `−${eur(p.unreviewed!)}` }] : []),
     ...(left > 0 && rest > 0 ? [{ key: 'rest', label: 'Rest of a usual month', sub: [(p.typical_one_offs ?? 0) > 0 && 'incl. one-offs', p.projected_left < 0 && runOut && `runs out ~${runOut}`].filter(Boolean).join(' · '), value: `−${eur(rest)}` }] : []),
     ...(p.typical_day > 0 && p.avg_day > 0 ? [{ key: 'pace', label: 'Day-to-day pace', sub: `${eur(p.typical_day)}/day usual`,
       value: <>{eur(p.avg_day)}/day <span className={clsx(vsTypical > 0.1 ? 'text-bad' : vsTypical < -0.1 ? 'text-good' : 'text-muted')}>{vsTypical >= 0 ? '+' : '−'}{pct(Math.abs(vsTypical), 0)}</span></> }] : []),

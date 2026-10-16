@@ -101,6 +101,11 @@ type Report struct {
 	// (opening + this month's share) — nothing was set aside for it, so it
 	// comes out of this month's free money.
 	FundOverdrawn money.Cents `json:"fund_overdrawn"`
+	// Unreviewed: this month's spending still waiting in the bank inbox,
+	// counted provisionally in discretionary spending and safe to spend
+	// (filled in by cfo.BudgetReport, which can read the inbox).
+	Unreviewed      money.Cents `json:"unreviewed,omitempty"`
+	UnreviewedCount int         `json:"unreviewed_count,omitempty"`
 	SafeToSpend   money.Cents `json:"safe_to_spend"`
 	// Free spending per month (discretionary minus what funds covered) —
 	// the same money SafeToSpend draws on. For daily pace and "typical".

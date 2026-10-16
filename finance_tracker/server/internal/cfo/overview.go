@@ -88,10 +88,15 @@ type PlanPulse struct {
 	Track []MonthEnd `json:"track"`
 	// FundsOver names the funds that paid beyond what they held this month.
 	FundsOver []LineBrief `json:"funds_over,omitempty"`
-	Over      []LineBrief `json:"over"`  // spending lines over budget
-	Lines     []LineBrief `json:"lines"` // busiest spending lines (most of budget used first)
-	Spent     money.Cents `json:"spent"`
-	Budgeted  money.Cents `json:"budgeted"`
+	// Unreviewed is spending still waiting in the bank inbox (booked rows,
+	// or reservations flagged for a look). It is counted provisionally in
+	// free spending and safe to spend, so the day you spend moves the day.
+	Unreviewed      money.Cents `json:"unreviewed,omitempty"`
+	UnreviewedCount int         `json:"unreviewed_count,omitempty"`
+	Over            []LineBrief `json:"over"`  // spending lines over budget
+	Lines           []LineBrief `json:"lines"` // busiest spending lines (most of budget used first)
+	Spent           money.Cents `json:"spent"`
+	Budgeted        money.Cents `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
 	IncomeActual  money.Cents `json:"income_actual"`
@@ -181,7 +186,14 @@ func BudgetReport(d *sql.DB, month string, now time.Time) (*plan.Report, error) 
 			txs = append(txs, t)
 		}
 	}
-	return plan.Compute(budgets, txs, month, now, plan.LoadSettings(d)), nil
+	r := plan.Compute(budgets, txs, month, now, plan.LoadSettings(d))
+	// The month in progress counts bank rows not reviewed yet, so Home, Plan
+	// and the assistants agree on one left-to-spend.
+	if month == now.Format("2006-01") {
+		r.Unreviewed, r.UnreviewedCount = countUnreviewed(d, r, month, now.Format("2006-01-02"))
+		r.DiscretionarySpent += r.Unreviewed
+	}
+	return r, nil
 }
 
 // BuildOverview is the Home screen.
@@ -260,6 +272,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	if r, err := BudgetReport(d, thisM, now); err == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
+		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
 		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)
@@ -363,6 +376,47 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	rec, _ := ledger.List(d, ledger.Filter{Limit: 8})
 	o.Recent = rec.Items
 	return o, nil
+}
+
+// countUnreviewed adds the month's expenses still open in the bank inbox to
+// the report's free spending (by day) and takes them off safe to spend.
+// Rows a fixed obligation or a fund covers are left out — those are planned
+// already — as are rows flagged as duplicates or own-account moves.
+func countUnreviewed(d *sql.DB, r *plan.Report, month, today string) (money.Cents, int) {
+	rows, err := d.Query(`SELECT date, amount, category, merchant FROM bank_inbox
+		WHERE state='open' AND kind='expense' AND matched_tx_id IS NULL AND verdict NOT IN ('duplicate','internal')
+		AND date >= ? AND date <= ?`, month+"-01", today)
+	if err != nil {
+		return 0, 0
+	}
+	defer rows.Close()
+	var total money.Cents
+	n := 0
+	for rows.Next() {
+		t := ledger.Tx{Kind: "expense"}
+		if rows.Scan(&t.Date, &t.Amount, &t.Category, &t.Merchant) != nil || t.Amount <= 0 {
+			continue
+		}
+		planned := false
+		for _, l := range r.Lines {
+			if (l.Kind == "fixed" || l.Fund) && t.Category != "" && l.Matches(&t) {
+				planned = true
+				break
+			}
+		}
+		if planned {
+			continue
+		}
+		total += t.Amount
+		n++
+		if r.FreeSpentByDay[month] == nil {
+			r.FreeSpentByDay[month] = map[int]money.Cents{}
+		}
+		r.FreeSpentByDay[month][dayFrom(t.Date)] += t.Amount
+	}
+	r.FreeSpentByMonth[month] += total
+	r.SafeToSpend -= total
+	return total, n
 }
 
 // fillDaily turns the month's free money into a daily allowance and pace.
