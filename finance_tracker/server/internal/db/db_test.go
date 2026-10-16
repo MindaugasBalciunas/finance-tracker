@@ -132,3 +132,47 @@ func TestSnapshotsLeaveIBKRTokenOut(t *testing.T) {
 		t.Fatal("the live database lost the sign-in")
 	}
 }
+
+// Migration 13 records that the owner's Artea contract predates 2025 — only
+// on a database that has the Artea account, and never over an answer given.
+func TestArteaPredates2025(t *testing.T) {
+	setup := func(t *testing.T, extra string) *sql.DB {
+		path := filepath.Join(t.TempDir(), "a.db")
+		raw, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for v := 0; v < 12; v++ {
+			if _, err := raw.Exec(migrations[v]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		raw.Exec(`INSERT INTO accounts(id,name,kind,liquid,created_at,updated_at) VALUES('artea','Artea','pension',1,'x','x')`)
+		if extra != "" {
+			raw.Exec(extra)
+		}
+		raw.Exec(`PRAGMA user_version = 12`)
+		raw.Close()
+		d, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { d.Close() })
+		return d
+	}
+	var v string
+	setup(t, "").QueryRow(`SELECT value FROM settings WHERE key='tax'`).Scan(&v)
+	if v != `{"pillar3_before_2025":true}` {
+		t.Errorf("recorded %q", v)
+	}
+	v = ""
+	setup(t, `INSERT INTO settings(key,value) VALUES('tax','{"pillar3_before_2025":false}')`).QueryRow(`SELECT value FROM settings WHERE key='tax'`).Scan(&v)
+	if v != `{"pillar3_before_2025":false}` {
+		t.Errorf("overwrote the owner's answer: %q", v)
+	}
+	d, _ := OpenMemory()
+	defer d.Close()
+	if d.QueryRow(`SELECT value FROM settings WHERE key='tax'`).Scan(&v) == nil {
+		t.Error("a fresh database without Artea got an answer")
+	}
+}

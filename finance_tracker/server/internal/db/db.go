@@ -115,6 +115,11 @@ CREATE TABLE IF NOT EXISTS goal_moves (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS goal_moves_goal ON goal_moves(goal_id);`,
+	// 13: the owner's 3rd-pillar (Artea) contract was signed before 2025, so
+	// its contributions still earn the 20% income-tax refund. Recorded only
+	// where no answer was given yet (a fresh database asks in the app).
+	`INSERT OR IGNORE INTO settings(key,value)
+SELECT 'tax', '{"pillar3_before_2025":true}' WHERE EXISTS (SELECT 1 FROM accounts WHERE id='artea');`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

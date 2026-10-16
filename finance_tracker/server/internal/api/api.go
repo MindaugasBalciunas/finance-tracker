@@ -43,7 +43,8 @@ type Server struct {
 	syncMu   sync.Mutex
 	lastSync atomic.Int64
 
-	chats chatJobs // the question being answered in the background
+	chats  chatJobs     // the question being answered in the background
+	origin atomic.Value // last app origin written to settings
 }
 
 func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath, version, false) }
@@ -314,3 +315,22 @@ func psu(r *http.Request) openbanking.PSU {
 }
 
 func today() string { return time.Now().Format("2006-01-02") }
+
+// rememberOrigin keeps the address the app is opened at, so background
+// notifications (alerts) can link back into it. Written only on change.
+func (s *Server) rememberOrigin(r *http.Request) {
+	// Only behind the app lock: then only the signed-in owner reaches this,
+	// and a forged Origin can't plant a link in their notifications.
+	if s.isDemo || !s.Auth.Enabled() || r.Header.Get("Origin") == "" && r.Header.Get("Referer") == "" {
+		return
+	}
+	_, origin := hostOrigin(r)
+	if u, err := url.Parse(origin); err != nil || u.Scheme == "" || u.Host == "" {
+		return
+	}
+	if prev, _ := s.origin.Load().(string); prev == origin {
+		return
+	}
+	s.origin.Store(origin)
+	s.DB.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('app_origin',?)`, origin)
+}

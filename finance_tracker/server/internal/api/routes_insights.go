@@ -27,6 +27,7 @@ func window(r *http.Request) (string, string) {
 
 func (s *Server) insightRoutes() {
 	s.handle("GET /api/overview", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		s.rememberOrigin(r)
 		return cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
 	})
 	// The income declaration ahead: estimates from the ledger.

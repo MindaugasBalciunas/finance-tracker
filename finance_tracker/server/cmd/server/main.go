@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"ft/internal/cfo"
 	"log"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ func main() {
 
 	go nightly(d, path)
 	go ibkrDaily(d)
+	go alerts(d)
 
 	srv := api.New(d, path, version)
 	addr := ":" + envOr("PORT", "8080")
@@ -58,6 +60,18 @@ func nightly(d *sql.DB, path string) {
 			}
 		}
 		time.Sleep(time.Hour)
+	}
+}
+
+// alerts pushes what needs the owner's attention (money to move, a bill
+// that went up, a double charge, the month close) to Home Assistant,
+// each once, in waking hours.
+func alerts(d *sql.DB) {
+	for {
+		if n := cfo.SendAlerts(d, time.Now()); n > 0 {
+			log.Printf("alerts: %d sent", n)
+		}
+		time.Sleep(30 * time.Minute)
 	}
 }
 
