@@ -1,0 +1,13 @@
+{
+  "description": "Ask before Bash commands that could change live finance-tracker data",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/guard-live-data.sh\"", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}

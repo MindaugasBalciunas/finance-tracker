@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "finance-tracker": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/mindaugas/finance-tracker"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "ft-dev@finance-tracker": true
+  }
+}

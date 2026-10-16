@@ -1,0 +1,13 @@
+{
+  "name": "finance-tracker",
+  "owner": { "name": "Mindaugas Balciunas" },
+  "metadata": { "description": "Development plugins for the finance-tracker repository" },
+  "plugins": [
+    {
+      "name": "ft-dev",
+      "source": "./plugins/ft-dev",
+      "description": "Architecture, security, testing, migration, UI, live-verification and release skills for finance-tracker v2, plus a reviewer agent and a live-data guard hook",
+      "version": "1.0.0"
+    }
+  ]
+}

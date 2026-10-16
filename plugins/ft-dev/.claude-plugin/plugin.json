@@ -1,0 +1,6 @@
+{
+  "name": "ft-dev",
+  "version": "1.0.0",
+  "description": "How to build on finance-tracker v2: architecture, security, testing, migrations, web UI, live verification and release — with a reviewer agent and a guard against mutating live data",
+  "author": { "name": "Mindaugas Balciunas" }
+}
