@@ -29,6 +29,9 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/overview", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
 	})
+	s.handle("GET /api/insights/summary", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.BuildSummary(s.DB, time.Now())
+	})
 	s.handle("GET /api/insights/cashflow", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		q := r.URL.Query()
 		from, to := q.Get("from"), q.Get("to")
