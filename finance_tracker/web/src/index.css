@@ -92,6 +92,17 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 .tnum { font-variant-numeric: tabular-nums; }
 .recharts-wrapper:focus, .recharts-surface:focus { outline: none; }
 @utility card { @apply rounded-2xl bg-surface border border-line; }
+/* The headline card of a page: two soft colour pools over the surface. */
+@utility hero {
+  @apply rounded-2xl border border-line;
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in oklab, var(--s1) 32%, transparent), transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, color-mix(in oklab, var(--s7) 30%, transparent), transparent 55%), rgb(var(--surface));
+}
+/* Headline figures in the brand gradient. */
+@utility grad-text {
+  background-image: linear-gradient(90deg, var(--s1), var(--s7));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 @utility btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 h-10 text-sm font-medium transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
 @utility btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
 @utility btn-ghost { @apply btn text-ink2 hover:bg-sunken; }

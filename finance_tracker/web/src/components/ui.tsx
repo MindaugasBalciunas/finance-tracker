@@ -1,16 +1,32 @@
-import { createContext, InputHTMLAttributes, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, type CSSProperties, InputHTMLAttributes, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Icon, IconTile } from './Icon'
+import { Icon } from './Icon'
 import { eur, parseNum, signed } from '../lib/format'
+
+// Every card carries its colour: a soft glow from the top-left corner, the
+// icon on a tinted chip and the title in small capitals of that colour.
+const glow = (c: string, strength = 14): CSSProperties => ({ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${c} ${strength}%, transparent), transparent 62%)` })
+
+function Chip({ name, color, size = 28 }: { name: string; color: string; size?: number }) {
+  return (
+    <span className="grid shrink-0 place-items-center rounded-lg" style={{ width: size, height: size, color, background: `color-mix(in oklab, ${color} 20%, transparent)` }}>
+      <Icon name={name} size={Math.round(size * 0.55)} />
+    </span>
+  )
+}
 
 // The header wraps: the title keeps its line and a long action drops
 // underneath on narrow screens instead of squeezing the title.
 export function Card({ children, className = '', title, action, pad = true, icon, color = 'rgb(var(--accent))' }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
   return (
-    <section className={clsx('card', pad && 'p-4', className)}>
+    <section className={clsx('card', pad && 'p-4', className)} style={glow(color, icon ? 14 : 8)}>
       {(title || action) && (
         <div className={clsx('flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
-          {title && <h2 className="flex min-w-0 shrink-0 items-center gap-2 text-sm font-semibold text-ink">{icon && <IconTile name={icon} color={color} size={26} />}{title}</h2>}
+          {/* A plain title in small capitals of the card's colour; a composite one
+              (name + figures) keeps its case and wraps rather than overflowing. */}
+          {title && <h2 className={clsx('flex min-w-0 items-center gap-2', typeof title === 'string' ? 'text-xs font-semibold uppercase tracking-wide' : 'flex-wrap text-sm font-semibold')} style={typeof title === 'string' ? { color } : undefined}>
+            {icon && <Chip name={icon} color={color} />}<span className="min-w-0">{title}</span>
+          </h2>}
           {action}
         </div>
       )}
@@ -23,9 +39,9 @@ export function Card({ children, className = '', title, action, pad = true, icon
 export function Stat({ label, value, sub, tone, onClick, icon, color = 'rgb(var(--accent))' }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; icon?: string; color?: string }) {
   const C = onClick ? 'button' : 'div'
   return (
-    <C onClick={onClick} className={clsx('card p-3.5 text-left min-w-0', onClick && 'hover:bg-sunken/50 transition')}>
-      <div className="flex items-center gap-2 text-xs text-ink2 min-w-0">{icon && <IconTile name={icon} color={color} size={28} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
-      <div className={clsx('mt-1 text-xl font-semibold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
+    <C onClick={onClick} className={clsx('card p-3.5 text-left min-w-0', onClick && 'hover:brightness-110 transition')} style={glow(color, 18)}>
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide min-w-0" style={{ color }}>{icon && <Chip name={icon} color={color} size={26} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
+      <div className={clsx('mt-1.5 text-2xl font-bold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted truncate">{sub}</div>}
     </C>
   )

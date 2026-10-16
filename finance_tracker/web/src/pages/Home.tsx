@@ -56,15 +56,15 @@ export default function Home() {
     <div className="flex flex-col gap-4">
       <QuickActions inboxOpen={o.inbox_open} />
 
-      {/* Net worth */}
-      <section className="card overflow-hidden">
+      {/* Net worth: the page's hero */}
+      <section className="hero overflow-hidden">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
             <div className="flex items-center justify-between gap-4">
               <div className="text-sm text-ink2">{liquid ? 'Liquid assets' : 'Net worth'}</div>
               <span className="text-xs sm:hidden"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
             </div>
-            <div className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">{eur(liquid ? o.liquid : o.net_worth)}</div>
+            <div className="grad-text mt-1 text-4xl font-bold tracking-tight sm:text-5xl">{eur(liquid ? o.liquid : o.net_worth)}</div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <span className="text-muted">30 days <Delta value={liquid ? o.liquid_30d : o.net_worth_30d} /></span>
               <span className="text-muted">This year <Delta value={liquid ? o.liquid_ytd : o.net_worth_ytd} /></span>
@@ -344,7 +344,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   return (
     // Phones: one column. Wide screens: the month chart on the left at full
     // height, so its lines separate; figures and obligations on the right.
-    <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense">
+    <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense" style={{ backgroundImage: 'linear-gradient(135deg, color-mix(in oklab, var(--s1) 12%, transparent), transparent 55%)' }}>
       <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30 lg:col-start-2" title="Left to spend this month — the same figure as on Plan">
         <div className="flex items-center gap-3">
           <IconTile name="wallet" color="var(--s1)" size={32} />

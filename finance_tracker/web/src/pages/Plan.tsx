@@ -274,7 +274,7 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
   const trim = unallocated < 0 ? r.lines.filter((l) => l.kind === 'spending' && l.period === 'monthly' && !l.fund && l.monthly_share > -unallocated).sort((a, b) => b.monthly_share - a.monthly_share)[0] : undefined
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-      <section className="card p-4 lg:col-span-2">
+      <section className="hero p-4 lg:col-span-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <div className="shrink-0">
             <div className="text-sm text-ink2">{current ? 'Left to spend this month' : 'Left after the plan'}</div>

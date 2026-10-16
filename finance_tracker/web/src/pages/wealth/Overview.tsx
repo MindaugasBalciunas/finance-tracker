@@ -62,12 +62,12 @@ export function Overview() {
   return (
     <div className="space-y-4">
       <MoneyStrip byGroup={byGroup} liquidOnly={liquidOnly} />
-      <section className="card p-4">
+      <section className="hero p-4">
         {/* What: the headline and the liquid filter. How: one toolbar for the cut and the period. */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm text-ink2">{liquidOnly ? 'Liquid assets' : 'Net worth'}</div>
-            <div className="text-3xl font-semibold tracking-tight">{eur(head)}</div>
+            <div className="grad-text text-3xl font-bold tracking-tight">{eur(head)}</div>
             <div className="text-sm text-muted">{rangeLabel(range)} <Delta value={change} /></div>
           </div>
           <span className="pt-1 text-xs"><Toggle checked={liquidOnly} onChange={setLiquidOnly} label="Liquid only" /></span>

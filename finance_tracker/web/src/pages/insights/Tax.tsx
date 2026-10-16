@@ -30,7 +30,7 @@ export function TaxView() {
   return (
     <div className="space-y-4">
       <Segmented value={year} onChange={setYear} options={[{ value: String(now - 1), label: String(now - 1) }, { value: String(now), label: `${now} so far` }]} />
-      <section className="card p-4">
+      <section className="hero p-4">
         <div className="text-xs text-ink2">Income declaration for {t.year} · opens {shortDate(t.opens)} (VMI pre-fills it) · due by {shortDate(t.deadline)}</div>
         <div className={clsx('mt-1 text-2xl font-semibold tracking-tight tnum', net > 0 ? 'text-warn' : net < 0 ? 'text-good' : '')}>
           {net > 0 ? `About ${eur(net)} to pay` : net < 0 ? `About ${eur(-net)} back` : 'Nothing extra expected'}

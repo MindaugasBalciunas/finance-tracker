@@ -65,7 +65,7 @@ export function ForecastView() {
 
   return (
     <div className="space-y-4">
-      <section className="card p-4">
+      <section className="hero p-4">
         <div className="text-xs text-ink2">{s ? 'With your what-if' : 'At the current plan'} · cash in checking, savings and cash</div>
         <div className={clsx('mt-1 flex items-start gap-2 text-sm font-medium', verdict.tone)}><Icon name={verdict.icon} size={18} className="mt-0.5 shrink-0" /><span>{verdict.text}</span></div>
         {data.summary?.length ? <ul className="mt-2 space-y-0.5 text-xs text-ink2">{data.summary.map((x) => <li key={x}>· {x}</li>)}</ul> : null}

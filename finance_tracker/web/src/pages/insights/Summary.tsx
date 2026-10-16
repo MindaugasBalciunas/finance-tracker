@@ -91,7 +91,7 @@ function FindingCard({ f }: { f: Finding }) {
   const t = TONE[f.tone]
   const items = f.items ?? []
   return (
-    <section className="card flex flex-col p-4">
+    <section className="card flex flex-col p-4" style={{ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${t.color} 16%, transparent), transparent 60%)` }}>
       <div className="flex items-start gap-3">
         <IconTile name={ICON[f.key] ?? t.icon} color={t.color} size={32} />
         <div className="min-w-0 flex-1">
