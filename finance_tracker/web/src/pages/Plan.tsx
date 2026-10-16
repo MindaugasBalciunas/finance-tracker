@@ -14,18 +14,20 @@ import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Wishlist } from './plan/Wishlist'
+import { ForecastView } from './plan/Forecast'
 
 export default function Plan() {
   const loc = useLocation()
   const nav = useNavigate()
-  const tab = loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
+  const tab = loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
       <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'month' ? '/plan' : `/plan/${v}`)}
-        tabs={[{ value: 'month', label: 'Budget' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
+        tabs={[{ value: 'month', label: 'Budget' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>
         <Route path="/" element={<Month />} />
+        <Route path="/forecast" element={<ForecastView />} />
         <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/trips" element={<Trips />} />
         <Route path="/settings" element={<PlanSettings />} />

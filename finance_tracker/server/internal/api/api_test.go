@@ -139,6 +139,8 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot restore", tokRW, "POST", "/import/backup?confirm=replace", map[string]any{}, 403},
 		// Routes added in 2.1–2.4 stay outside every token's scope.
 		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
+		{"ro reads the forecast", tokRO, "GET", "/forecast", nil, 200},
+		{"rw cannot run scenarios", tokRW, "POST", "/forecast", map[string]any{"gross": 9000}, 403},
 		{"ro cannot read prefs", tokRO, "GET", "/prefs", nil, 403},
 		{"rw cannot change prefs", tokRW, "PUT", "/prefs", map[string]any{"liquid_only": true}, 403},
 		// Managing the plan is open to read-write tokens (2.28.3); only the

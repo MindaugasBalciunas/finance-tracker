@@ -23,6 +23,20 @@ func (s *Server) planRoutes() {
 		}
 		return cfo.BudgetReport(s.DB, m, time.Now())
 	})
+	// The year ahead: cash month by month, and a what-if beside it.
+	s.handle("GET /api/forecast", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), nil)
+	})
+	s.handle("POST /api/forecast", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var sc cfo.Scenario
+		if err := decode(r, &sc); err != nil {
+			return nil, err
+		}
+		if sc.Gross < 0 || sc.Gross > 1e6 || sc.EverydayPct < -90 || sc.EverydayPct > 300 || len(sc.Purchases) > 50 {
+			return nil, bad("scenario out of range")
+		}
+		return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), &sc)
+	})
 	s.handle("GET /api/prefs", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return loadPrefs(s.DB), nil
 	})

@@ -356,6 +356,7 @@ func newServer() *mcp.Server {
 	for _, t := range []struct{ name, desc, path string }{
 		{"get_recurring", "Recurring money movements: bills and subscriptions, standing orders between accounts and expected income — amount, accounts, usual day, next date.", "/insights/recurring"},
 		{"get_fi", "Financial-independence projection and emergency fund.", "/insights/fi"},
+		{"get_forecast", "Cash month by month for the next 12 months at the current plan: income, obligations, saving, usual everyday spending, one-off allowance, dated yearly bills and wish-list goals; the first month below the emergency target or out of cash. Bonuses and extra investing are not included.", "/forecast"},
 		{"get_loans", "Loans: balance, rate, next payment split, payoff, equity/LTV, rate reset.", "/loans"},
 		{"get_trips", "Trips with totals and per-day cost, untagged travel that looks like a trip, and planned trips being saved for on the wish list.", "/trips"},
 		{"get_bank_inbox", "Bank rows waiting for the owner's review (not in the ledger yet), with proposals and likely duplicates.", "/bank/inbox"},

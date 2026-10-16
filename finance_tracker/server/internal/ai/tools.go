@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ft/internal/cfo"
 	"sort"
 	"strings"
 	"time"
@@ -56,6 +57,9 @@ func toolDefs() []tool {
 		{Name: "get_budget_status", Description: "The monthly plan: every budget line (with its id for save_budget) (fixed / spending / saving, funds and yearly lines), spent vs budgeted, suggestions, unbudgeted spending, left to spend (field safe_to_spend).",
 			InputSchema: obj(map[string]any{"month": str("YYYY-MM, default current")})},
 		{Name: "get_recurring", Description: "Recurring money movements the cash plan uses: bills and subscriptions, standing orders between accounts (transfers) and expected income — amount, monthly cost, accounts, usual day, next date, whether this month's one is done. source: detected, edited or manual (added by the owner).", InputSchema: obj(map[string]any{})},
+		{Name: "get_forecast", Description: "Cash (checking, savings, cash) month by month for the next 12 months: the plan's income, obligations and saving, usual everyday spending, the one-off allowance, dated yearly bills and wish-list goals in their month; the first month below the emergency target or out of cash. Pass scenario fields to compare a what-if with the baseline (it does the arithmetic — use it instead of calculating): gross (new gross salary, LT taxes applied), saving (saving lines per month), everyday_pct (−20 = 20% less everyday spending), from (YYYY-MM the change starts), purchases [{label, month, amount}]. Bonuses and extra investing are not in the baseline.",
+			InputSchema: obj(map[string]any{"gross": num("new gross salary per month"), "saving": num("saving lines per month, EUR"), "everyday_pct": num("change to everyday spending, %"),
+				"from": str("YYYY-MM the change starts"), "purchases": map[string]any{"type": "array", "description": "extra one-off purchases", "items": obj(map[string]any{"label": str("what"), "month": str("YYYY-MM"), "amount": num("EUR")}, "month", "amount")}})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
 		{Name: "get_loans", Description: "Loans (mortgage): balance, rate, next payment split, payoff date, equity and LTV, principal/interest paid in the last 12 months.", InputSchema: obj(map[string]any{})},
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
@@ -167,6 +171,13 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 	switch name {
 	case "get_overview":
 		return jsonOut(a.Overview(now))
+	case "get_forecast":
+		var sc cfo.Scenario
+		json.Unmarshal(raw, &sc)
+		if sc.Gross == 0 && sc.Saving == nil && sc.Income == nil && sc.EverydayPct == 0 && len(sc.Purchases) == 0 {
+			return jsonOut2(cfo.CompareForecast(a.DB, now, 12, nil))
+		}
+		return jsonOut2(cfo.CompareForecast(a.DB, now, 12, &sc))
 	case "search_transactions":
 		f := ledger.Filter{From: args.s("from"), To: args.s("to"), Kind: args.s("kind"), Merchant: args.s("merchant"), Query: args.s("query"),
 			Min: money.FromFloat(args.f("min")), Max: money.FromFloat(args.f("max")), Sort: args.s("sort"), Limit: int(args.f("limit"))}
