@@ -7,6 +7,7 @@ package goals
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,16 @@ type Goal struct {
 	ETA string `json:"eta,omitempty"`
 	// PerMonth needed to reach the target by TargetDate.
 	PerMonth money.Cents `json:"per_month,omitempty"`
+	// Outlook says plainly whether it will happen: on track for its date,
+	// late (when instead, and what a month it would take), or not funding
+	// at all — counting every goal ahead of it in priority.
+	Outlook *Outlook `json:"outlook,omitempty"`
+}
+
+type Outlook struct {
+	Tone string      `json:"tone"` // good | warn | bad
+	Text string      `json:"text"`
+	Gap  money.Cents `json:"gap,omitempty"` // more left over a month that would make its date
 }
 
 type Move struct {
@@ -375,7 +386,21 @@ func Build(d *sql.DB, ym string, now time.Time) (*Plan, error) {
 					n = 1
 				}
 				g.PerMonth = (g.Remaining + money.Cents(n) - 1) / money.Cents(n)
+				// With the goals ahead of it, its date needs this much left over a month.
+				need := (ahead + money.Cents(n) - 1) / money.Cents(n)
+				when := t.Format("January 2006")
+				switch {
+				case p.AvgLeftOver >= need:
+					g.Outlook = &Outlook{Tone: "good", Text: fmt.Sprintf("On track for %s", when)}
+				case p.AvgLeftOver <= 0:
+					g.Outlook = &Outlook{Tone: "bad", Gap: need, Text: fmt.Sprintf("Won't make %s: nothing was left over in the last six months. It needs %s a month left over, with the goals ahead of it.", when, eurS(need))}
+				default:
+					eta, _ := time.Parse("2006-01", g.ETA)
+					g.Outlook = &Outlook{Tone: "warn", Gap: need - p.AvgLeftOver, Text: fmt.Sprintf("Late: funded about %s, not %s. %s a month more left over would make it.", eta.Format("January 2006"), when, eurS(need-p.AvgLeftOver))}
+				}
 			}
+		} else if g.Target > 0 && g.Remaining > 0 && p.AvgLeftOver <= 0 {
+			g.Outlook = &Outlook{Tone: "bad", Text: "Nothing was left over in the last six months — at this rate it doesn't get funded."}
 		}
 	}
 	return p, nil
@@ -433,4 +458,14 @@ func Fund(d *sql.DB, ym string, allocs []Allocation, now time.Time) (*Plan, erro
 		return nil, err
 	}
 	return Build(d, ym, now)
+}
+
+// eurS writes whole euros: €1,234.
+func eurS(c money.Cents) string {
+	v := (c.Abs() + 50) / 100
+	s := fmt.Sprintf("%d", v)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return "€" + s
 }

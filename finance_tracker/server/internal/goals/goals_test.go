@@ -153,3 +153,52 @@ func TestGoalWithoutPrice(t *testing.T) {
 		t.Error("funded a goal without a price")
 	}
 }
+
+// Each dated goal says plainly whether it makes its date, counting the goals
+// ahead of it: on track, late (and what a month would fix it), or never
+// when nothing is left over.
+func TestGoalOutlook(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.Local)
+	for m := 4; m <= 9; m++ {
+		day := time.Date(2026, time.Month(m), 15, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(5000), Category: "salary", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(4000), Category: "food.groceries", AccountID: "swed"})
+	}
+	printer := goals.Goal{Name: "Printer", Target: E(700)}
+	sauna := goals.Goal{Name: "Sauna", Target: E(6000), TargetDate: "2027-06-01"}
+	trip := goals.Goal{Name: "Trip", Target: E(3000), TargetDate: "2026-12-01"}
+	for _, g := range []*goals.Goal{&printer, &sauna, &trip} {
+		goals.Save(d, g)
+	}
+	p, _ := goals.Build(d, "", now)
+	byName := map[string]goals.Goal{}
+	for _, g := range p.Goals {
+		byName[g.Name] = g
+	}
+	// €1,000 a month left over. Sauna: 6,700 with the printer over 8 months = 838 → on track.
+	if o := byName["Sauna"].Outlook; o == nil || o.Tone != "good" {
+		t.Errorf("sauna %+v", o)
+	}
+	// Trip: 9,700 with both ahead over 2 months = 4,850 → €3,850 a month short.
+	if o := byName["Trip"].Outlook; o == nil || o.Tone != "warn" || o.Gap != E(3850) {
+		t.Errorf("trip %+v", o)
+	}
+	if byName["Printer"].Outlook != nil {
+		t.Error("no date, money left over: the ETA says it")
+	}
+
+	// Nothing left over: every unfunded goal says so.
+	d2 := DB(t)
+	for m := 4; m <= 9; m++ {
+		day := time.Date(2026, time.Month(m), 15, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+		Tx(t, d2, ledger.Tx{Date: day, Amount: E(3000), Category: "salary", AccountID: "swed"})
+		Tx(t, d2, ledger.Tx{Date: day, Amount: E(3200), Category: "food.groceries", AccountID: "swed"})
+	}
+	gun := goals.Goal{Name: "Licence", Target: E(1500), TargetDate: "2027-03-01"}
+	goals.Save(d2, &gun)
+	p, _ = goals.Build(d2, "", now)
+	if o := p.Goals[0].Outlook; o == nil || o.Tone != "bad" {
+		t.Errorf("licence %+v", o)
+	}
+}

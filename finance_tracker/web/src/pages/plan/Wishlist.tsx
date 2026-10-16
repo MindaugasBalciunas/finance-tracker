@@ -9,7 +9,7 @@ import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, Shee
 import { Icon } from '../../components/Icon'
 
 type Goal = { id: number; name: string; target: number; priority: number; target_date: string; note: string; url: string; tag: string; spent?: number; status: 'active' | 'bought' | 'dropped'; done_on: string
-  saved: number; remaining: number; eta?: string; per_month?: number }
+  saved: number; remaining: number; eta?: string; per_month?: number; outlook?: { tone: 'good' | 'warn' | 'bad'; text: string; gap?: number } }
 type MonthFlow = { month: string; income: number; invested: number; spending: number; left_over: number; funded: number; available: number; complete: boolean }
 type Alloc = { goal_id: number; name?: string; amount: number }
 type WishPlan = { goals: Goal[]; funding: MonthFlow; proposal: Alloc[]; history: MonthFlow[]; avg_left_over: number; total_saved: number; total_needed: number }
@@ -177,7 +177,9 @@ function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; ran
         {g.tag && (g.spent ?? 0) !== 0 && (
           <div className="mt-0.5 text-[11px] text-muted">spent so far <b className="tnum text-ink2">{eur(g.spent ?? 0)}</b> · {g.saved >= (g.spent ?? 0) ? `${eur(g.saved - (g.spent ?? 0))} of the savings left` : `${eur((g.spent ?? 0) - g.saved)} more than saved`}</div>
         )}
-        {priced && !full && g.target_date && (
+        {priced && !full && g.outlook ? (
+          <div className={clsx('mt-1 text-xs', g.outlook.tone === 'good' ? 'text-good' : g.outlook.tone === 'warn' ? 'text-warn' : 'text-bad')}>{g.outlook.text}</div>
+        ) : priced && !full && g.target_date && (
           <div className="mt-0.5 text-[11px] text-muted">by {shortDate(g.target_date)}: <b className="tnum text-ink2">{eur(g.per_month ?? 0)}</b>/month</div>
         )}
       </button>
