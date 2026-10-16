@@ -98,7 +98,7 @@ export function foldSlices(slices: Slice[], max = 8): Slice[] {
   if (pos.length <= max) return pos
   const keep = pos.slice(0, max - 1)
   const rest = pos.slice(max - 1).reduce((a, s) => a + s.value, 0)
-  return [...keep, { key: 'other', label: 'Other', value: rest, color: 'var(--s-other)' }]
+  return [...keep, { key: '__rest', label: 'Other', value: rest, color: 'var(--s-other)' }] // not 'other': that is a real category id
 }
 
 /** Donut with the total in the middle, a tooltip, and an HTML legend with shares. */

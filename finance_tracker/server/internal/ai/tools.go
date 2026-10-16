@@ -41,7 +41,7 @@ func toolDefs() []tool {
 	date := "YYYY-MM-DD"
 	return []tool{
 		{Type: webSearchType, Name: "web_search", MaxUses: 5},
-		{Name: "get_overview", Description: "Today's CFO snapshot: net worth and its parts, this month's cash flow vs the trailing average, plan pulse (safe to spend, budget lines over limit), emergency-fund months, FI progress, bank inbox size.", InputSchema: obj(map[string]any{})},
+		{Name: "get_overview", Description: "Today's CFO snapshot: net worth and its parts, this month's cash flow vs the trailing average, plan pulse (left to spend — field safe_to_spend, budget lines over limit), emergency-fund months, FI progress, bank inbox size.", InputSchema: obj(map[string]any{})},
 		{Name: "search_transactions", Description: "Find transactions. Returns at most 200 rows plus totals over the whole match. Categories are ids like 'food' or 'food.groceries' (a parent includes children).",
 			InputSchema: obj(map[string]any{"from": str(date), "to": str(date), "kind": str("income | expense | transfer"), "categories": arr("category ids"),
 				"accounts": arr("account ids"), "tags": arr("tags (any match)"), "merchant": str("exact merchant"), "query": str("free text over merchant/note/tags"),
@@ -53,7 +53,7 @@ func toolDefs() []tool {
 		{Name: "get_net_worth", Description: "Net worth on a date (by account and group) or its history (month ends). Includes house, car and mortgage.",
 			InputSchema: obj(map[string]any{"date": str("snapshot date (default today)"), "history_from": str("if set, return month-end history from this date")})},
 		{Name: "get_account_history", Description: "Balance points of one account.", InputSchema: obj(map[string]any{"account_id": str("account id"), "from": str(date)}, "account_id")},
-		{Name: "get_budget_status", Description: "The monthly plan: every budget line (with its id for save_budget) (fixed / spending / saving, funds and yearly lines), spent vs budgeted, suggestions, unbudgeted spending, safe-to-spend.",
+		{Name: "get_budget_status", Description: "The monthly plan: every budget line (with its id for save_budget) (fixed / spending / saving, funds and yearly lines), spent vs budgeted, suggestions, unbudgeted spending, left to spend (field safe_to_spend).",
 			InputSchema: obj(map[string]any{"month": str("YYYY-MM, default current")})},
 		{Name: "get_recurring", Description: "Recurring money movements the cash plan uses: bills and subscriptions, standing orders between accounts (transfers) and expected income — amount, monthly cost, accounts, usual day, next date, whether this month's one is done. source: detected, edited or manual (added by the owner).", InputSchema: obj(map[string]any{})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},

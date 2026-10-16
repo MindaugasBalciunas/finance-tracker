@@ -147,6 +147,9 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   const { data: hist, isLoading } = useNetWorthHistory(from, rangeStep(range), true)
   const { prefs, set } = usePrefs()
   const off = new Set(prefs.hidden_accounts ?? [])
+  // The switchboard repeats the Accounts list below, so it stays folded
+  // until you want to leave something out of the chart.
+  const [pick, setPick] = useState(false)
   const toggle = (ids: string[]) => {
     const next = new Set(off)
     const allOff = ids.every((id) => next.has(id))
@@ -229,10 +232,15 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
           </ResponsiveContainer>
         )}
       </ChartFrame>
-      <div className="mt-4 mb-2 text-xs text-muted"><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id) && bal[id] > 0).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''} · tap one to leave it out of the chart</div>
+      <div className="mt-4 mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+        <span><b className="tnum text-ink">{eur(total)}</b> in {shown.reduce((t, x) => t + x.ids.filter((id) => !off.has(id) && bal[id] > 0).length, 0)} {liquidOnly ? 'liquid ' : ''}accounts{view === 'banks' ? ` in ${shown.length} ${shown.length === 1 ? 'place' : 'places'}` : ''}{off.size > 0 && <> · <span className="text-warn">{off.size} left out</span></>}</span>
+        <button type="button" className="inline-flex items-center gap-1 text-accent" aria-expanded={pick} onClick={() => setPick(!pick)}>
+          {pick ? 'Done' : view === 'banks' ? 'Choose banks' : 'Choose accounts'}<Icon name="chevronD" size={12} className={clsx('transition', pick && 'rotate-180')} />
+        </button>
+      </div>
       {/* The legend is the switchboard: a compact table of every account (or
           bank) — amount and share of what is shown; tap a row to leave it out. */}
-      <div className="columns-1 gap-3 sm:columns-2 lg:columns-3">
+      {pick && <div className="columns-1 gap-3 sm:columns-2 lg:columns-3">
         {blocks.map((blk) => (
           <div key={blk.bank + blk.items[0].key} className="mb-3 break-inside-avoid divide-y divide-line overflow-hidden rounded-lg border border-line">
             {view === 'accounts' && <div className="bg-sunken/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{blk.bank}</div>}
@@ -256,7 +264,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
         })}
           </div>
         ))}
-      </div>
+      </div>}
     </>
   )
 }

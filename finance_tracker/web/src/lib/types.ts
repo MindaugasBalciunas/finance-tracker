@@ -55,7 +55,7 @@ export interface Overview {
   net_worth_30d: number; net_worth_ytd: number; net_worth_12m: number
   liquid_30d: number; liquid_ytd: number; liquid_12m: number
   spark: { date: string; value: number; liquid: number }[]
-  month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
+  month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number; usual_saved?: number; usual_rate?: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
     free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; expected_rest?: number; projected_left: number; run_out_day?: number
     free_planned?: number; track?: { month: string; left: number; spent: number }[] | null; funds_over?: LineBrief[] | null; unreviewed?: number; unreviewed_count?: number; over: LineBrief[] | null; lines?: LineBrief[] | null

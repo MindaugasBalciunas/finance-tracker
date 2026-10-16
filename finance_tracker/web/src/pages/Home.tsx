@@ -2,24 +2,23 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { CashAccount, CashPlan, Overview } from '../lib/types'
+import type { CashAccount, CashItem, CashPlan, Overview } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
-import { eur, eurk, monthLabel, parseNum, pct, shortDate, signed, todayISO } from '../lib/format'
-import { AskCFO, Card, Delta, ErrorBox, Loading, Meter, Segmented, Stat, Toggle, useToast } from '../components/ui'
+import { eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
+import { AskCFO, Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
 import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { Icon, IconTile } from '../components/Icon'
-import { catIcon, useCats, GROUPS, LIQUID_GROUPS } from '../lib/categories'
+import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 
 export default function Home() {
   const { data: o, isLoading, error } = useOverview()
   const editor = useTxEditor()
   const nav = useNavigate()
-  const cats = useCats()
   const { prefs, set: setPrefs } = usePrefs()
   const liquid = prefs.liquid_only
   // The chart's period, remembered like every other chart's.
@@ -99,7 +98,8 @@ export default function Home() {
               <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) =>
                 active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: liquid ? 'Liquid' : 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
               <Area type="monotone" dataKey={liquid ? 'liquid' : 'value'} stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
-              {hi && lo && hi.i !== lo.i && <>
+              {/* A low that is just the series starting near zero (an account opened) says nothing. */}
+              {hi && lo && hi.i !== lo.i && Math.abs(lo.p[key]) > Math.abs(hi.p[key]) * 0.05 && <>
                 <ReferenceDot x={hi.p.date} y={hi.p[key]} r={4} fill="var(--s6)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(hi, true) }} />
                 <ReferenceDot x={lo.p.date} y={lo.p[key]} r={4} fill="var(--s8)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(lo, false) }} />
               </>}
@@ -119,11 +119,12 @@ export default function Home() {
 
       <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
 
-      {o.cash && <CashUntilPayday c={o.cash} />}
+      {o.cash && <UntilPayday c={o.cash} />}
 
       {/* Progress: the slow numbers that say whether wealth is being built */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="piggy" color="var(--s6)" label="Savings rate · 12 mo" value={pct(avg.savings_rate)} sub={`${eur(avg.saved)}/month kept`} tone={avg.savings_rate < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
+        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={pct(o.usual_rate ?? avg.savings_rate)}
+          sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
         <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
           tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/insights/fi')} />
         <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/insights/fi')} />
@@ -140,75 +141,6 @@ export default function Home() {
         </div>
         <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
       </Card>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card icon="target" color="var(--s3)" title="Plan this month" action={<div className="flex items-center gap-1"><AskCFO q="Give me a short briefing on this month: spending vs plan, anything unusual, and what to watch before month end." label="Brief me" /><Link to="/plan" className="text-sm text-accent">Open plan</Link></div>}>
-          <div className="mb-2 flex items-baseline justify-between text-sm">
-            <span className="text-ink2">Spending budgets</span>
-            <span className="tnum"><b>{eur(o.plan.spent)}</b> <span className="text-muted">of {eur(o.plan.budgeted)}</span></span>
-          </div>
-          <Meter value={o.plan.spent} max={o.plan.budgeted} pace={o.month_progress} />
-          {(o.plan.over ?? []).length > 0 ? (
-            <div className="mt-4 space-y-2">
-              <div className="section-title">Over budget</div>
-              {o.plan.over!.map((l) => (
-                <div key={l.name} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-1.5"><Icon name="alert" size={15} className="text-bad" />{l.name}</span>
-                  <span className="tnum text-bad">{signed(-l.remaining).replace('+', '')} over</span>
-                </div>
-              ))}
-            </div>
-          ) : o.plan.projected_left >= 0 ? (
-            <div className="mt-3 flex items-center gap-1.5 text-sm text-good"><Icon name="check" size={16} />Every budget is on track</div>
-          ) : null}
-          {(o.plan.lines ?? []).length > 0 && (
-            <div className="mt-4 space-y-2.5">
-              <div className="section-title">Busiest budgets</div>
-              {o.plan.lines!.map((l) => (
-                <div key={l.name}>
-                  <div className="mb-1 flex items-baseline justify-between text-sm">
-                    <span className="truncate">{l.name}</span>
-                    <span className="shrink-0 tnum"><b>{eur(l.spent)}</b> <span className="text-muted">of {eur(l.budgeted)}</span></span>
-                  </div>
-                  <Meter value={l.spent} max={l.budgeted} pace={o.month_progress} />
-                </div>
-              ))}
-            </div>
-          )}
-          {(o.anomalies ?? []).length > 0 && (
-            <div className="mt-4 space-y-1.5">
-              <div className="section-title">Running hot</div>
-              {o.anomalies!.slice(0, 3).map((a) => (
-                <div key={a.category} className="flex items-center justify-between text-sm">
-                  <span>{cats.name(a.category)}</span>
-                  <span className="text-muted tnum">on pace for {eur(a.projected)} · usually {eur(a.typical)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card icon="calendar" color="var(--s4)" title="Coming up" action={<Link to="/insights/recurring" className="text-sm text-accent">All recurring</Link>}>
-          {(o.upcoming ?? []).length === 0 ? (
-            <div className="text-sm text-muted">No other recurring charges in the next two weeks.</div>
-          ) : (
-            <div className="divide-y divide-line">
-              {o.upcoming!.slice(0, 6).map((r) => (
-                <div key={r.merchant} className="flex items-center gap-3 py-2 text-sm">
-                  <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={32} round />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{r.merchant}</div>
-                    <div className="truncate text-xs text-muted">{[shortDate(r.next), r.category && cats.path(r.category)].filter(Boolean).join(' · ')}</div>
-                  </div>
-                  <div className="tnum">{eur(r.amount)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-
-
     </div>
   )
 }
@@ -292,7 +224,7 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
               ]} />
             }} />
             <ReferenceLine y={free} stroke="var(--chart-axis)" strokeDasharray="4 3"
-              label={{ value: `free money ${eurk(free)}`, position: 'insideBottomLeft', fontSize: 10, fill: 'var(--chart-text)' }} />
+              label={{ value: `spending money ${eurk(free)}`, position: 'insideBottomLeft', fontSize: 10, fill: 'var(--chart-text)' }} />
             {/* Your usual rhythm squeezed into this month's free money: where
                 spending should be by each day to land on plan. */}
             <Line dataKey="pace" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -315,7 +247,7 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded bg-[var(--s1)]" />you</span>
         <span className="inline-flex items-center gap-1" title="The rest of the month as your last six months spent it, one-offs included"><span className="w-3 border-t-2 border-dashed" style={{ borderColor: over ? 'rgb(var(--warn))' : 'var(--s1)' }} />expected</span>
-        <span className="inline-flex items-center gap-1" title="This month's free money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />on plan</span>
+        <span className="inline-flex items-center gap-1" title="This month's spending money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />on plan</span>
         {events.length > 0 && <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2" style={{ borderColor: 'var(--s7)' }} />due · <span className="h-2 w-2 rounded-full" style={{ background: 'var(--s7)' }} />paid</span>}
       </div>
     </div>
@@ -386,7 +318,7 @@ function Swatch({ color, label, v, border = false }: { color: string; label: str
 }
 
 /** The everyday question: how much free money is left this month, and what
- *  that means per day. Same money as Plan's "safe to spend" — with what is
+ *  that means per day. Same figure as Plan's "left to spend" — with what is
  *  still to pay (alimony, loan) in view and the sum behind it one tap away. */
 function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: number; month: string }) {
   const [open, setOpen] = useState(() => { try { return localStorage.getItem('home-left-open') === '1' } catch { return false } })
@@ -398,10 +330,9 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   const pace = p.days?.length ? typicalShare(p, Math.max(today, 1)) : progress
   const fixed = p.fixed ?? []
   const due = fixed.filter((f) => f.spent < f.budgeted).sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9'))
-  const paid = fixed.filter((f) => f.spent >= f.budgeted)
   const rows: { label: string; value: number; sub?: string; sign: '' | '−' | '=' }[] = [
     { label: 'Income this month', value: p.income_base, sub: p.income_actual < p.income_base ? `${eur(p.income_actual)} received so far` : 'received', sign: '' },
-    { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid`, sign: '−' },
+    { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid${due.length ? ` · ${due.map((f) => `${f.name}${f.due ? ` ${shortDate(f.due)}` : ''}`).join(', ')} still to pay` : ''}`, sign: '−' },
     { label: 'Saving & investing', value: p.saving_planned, sub: `${eur(p.saved_actual)} done`, sign: '−' },
     ...(p.fund_set_aside > 0 ? [{ label: 'Set aside in funds', value: p.fund_set_aside, sub: 'trips, car and other lumpy costs', sign: '−' as const }] : []),
     { label: 'Spent so far', value: p.free_spent, sub: (p.unreviewed ?? 0) > 0 ? `day-to-day, incl. ${eur(p.unreviewed!)} not reviewed yet` : 'day-to-day, outside funds', sign: '−' },
@@ -410,7 +341,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
     // Phones: one column. Wide screens: the month chart on the left at full
     // height, so its lines separate; figures and obligations on the right.
     <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense">
-      <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30 lg:col-start-2" title="Free money this month — same as Plan's safe to spend">
+      <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30 lg:col-start-2" title="Left to spend this month — the same figure as on Plan">
         <div className="flex items-center gap-3">
           <IconTile name="wallet" color="var(--s1)" size={32} />
           <div className="min-w-0 flex-1">
@@ -426,30 +357,6 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
         <Verdict p={p} />
       </Link>
       <div className="min-w-0 px-4 pb-3 lg:col-start-1 lg:row-span-6 lg:row-start-1 lg:border-r lg:border-line lg:py-3"><MonthTimeline p={p} /></div>
-      {fixed.length > 0 && (
-        <div className="border-t border-line px-4 py-2.5 lg:col-start-2">
-          <div className="mb-1.5 flex items-baseline justify-between text-xs">
-            <span className="font-medium text-ink2">{due.length ? 'Still to pay — already taken off' : 'Fixed obligations'}</span>
-            <span className="text-muted tnum">{paid.length} of {fixed.length} paid</span>
-          </div>
-          <div className="space-y-1">
-            {due.map((f) => (
-              <div key={f.name} className="flex items-center gap-2 text-sm">
-                <span className="h-2 w-2 shrink-0 rounded-full border border-warn" />
-                <span className="min-w-0 flex-1 truncate">{f.name}{f.due && <span className="text-xs text-muted"> · due {shortDate(f.due)}</span>}</span>
-                <span className="tnum">{eur(f.budgeted - f.spent)}</span>
-              </div>
-            ))}
-            {paid.map((f) => (
-              <div key={f.name} className="flex items-center gap-2 text-sm text-muted">
-                <Icon name="check" size={12} className="shrink-0 text-good" />
-                <span className="min-w-0 flex-1 truncate">{f.name} paid</span>
-                <span className="tnum">{eur(f.spent)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       <TrackRecord p={p} />
       <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30 lg:col-start-2">
         <span>How {eur(left)} is worked out</span>
@@ -567,52 +474,64 @@ function TrackRecord({ p }: { p: Overview['plan'] }) {
   )
 }
 
-/** Cash by the day it moves, per account, until the next salary: what each
- *  everyday account must pay, how low it gets, and the top-ups from savings —
- *  staged as late as possible so savings keep earning. Read-only advice. */
-function CashUntilPayday({ c }: { c: CashPlan }) {
+type Entry = { date: string; label: string; account?: string; amount: number; kind: CashItem['kind'] | 'move' | 'save'; move?: CashPlan['moves'][number] }
+
+/** Everything that moves money until the next salary, in one dated list:
+ *  obligations, bills, standing orders and the top-ups that keep every
+ *  account above its buffer (each as late as is safe, so savings keep
+ *  earning). Per-account low points and buffers sit below. Read-only advice:
+ *  recording a move opens an ordinary transfer for review. */
+function UntilPayday({ c }: { c: CashPlan }) {
   const editor = useTxEditor()
+  const [all, setAll] = useState(false)
   if (!c.payday || !c.accounts.length) return null
-  // Recording a move is an ordinary transfer entry, opened for review — never saved without you.
   const record = (m: CashPlan['moves'][number], note: string) =>
     editor.open({ kind: 'transfer', date: todayISO(), amount: m.amount, account_id: m.from, to_account_id: m.to, category: 'transfer.internal', note })
   const days = Math.round((new Date(c.payday + 'T00:00:00').getTime() - new Date(todayISO() + 'T00:00:00').getTime()) / 86400000)
   const salary = c.accounts.find((a) => a.id === c.salary_account)?.name
+  const entries: Entry[] = [
+    ...c.accounts.flatMap((a) => (a.items ?? []).filter((it) => it.kind !== 'spending' && !it.within).map((it) => ({ date: it.date, label: it.label, account: a.name, amount: it.amount, kind: it.kind }))),
+    ...c.moves.map((m) => ({ date: m.by, label: `${m.from_name} → ${m.to_name}`, account: m.for ? `for ${m.for.charAt(0).toLowerCase()}${m.for.slice(1)}` : undefined, amount: m.amount, kind: 'move' as const, move: m })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'move' ? -1 : b.kind === 'move' ? 1 : 0))
+  const shown = all ? entries : entries.slice(0, 7)
+  const day = (d: string) => (d <= todayISO() ? 'Today' : shortDate(d).replace(/ \d{2}$/, ''))
   return (
     <section id="cash" className="card scroll-mt-16">
       <div className="flex items-start gap-3 px-4 pt-3">
-        <IconTile name="swap" color="var(--s7)" size={32} />
+        <IconTile name="calendar" color="var(--s7)" size={32} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">Cash until payday</div>
-          <div className="text-xs text-muted">Salary by <b className="text-ink2">{shortDate(c.payday)}</b>{salary && <> into {salary}</>} · {days} days · day-to-day at {eur(c.daily)}/day (your plan)</div>
+          <div className="text-sm font-semibold">Until payday</div>
+          <div className="text-xs text-muted">Salary by <b className="text-ink2">{shortDate(c.payday)}</b>{salary && <> into {salary}</>} · {days} days · day-to-day at {eur(c.daily)}/day</div>
         </div>
       </div>
       <div className="px-4 py-3">
-        {c.moves.length > 0 ? (
-          <>
-            <div className="mb-1.5 text-xs text-ink2">Top up from savings in {c.moves.length} {c.moves.length === 1 ? 'step' : 'steps'}, each as late as is safe — every account stays above its buffer, and savings keep earning until then:</div>
-            <div className="space-y-1.5">
-              {c.moves.map((m, i) => (
-                <div key={i} className="flex items-start gap-3 rounded-lg bg-sunken/50 px-3 py-2 text-sm">
-                  <span className="w-14 shrink-0 text-xs text-muted">by<br /><b className="text-ink">{shortDate(m.by).replace(/ \d{2}$/, '')}</b></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block"><b className="tnum">{eur(m.amount)}</b> {m.from_name} → {m.to_name}</span>
-                    {m.for && <span className="block truncate text-xs text-muted">for {m.for}</span>}
-                  </span>
-                  <button className="btn-ghost h-7 shrink-0 px-2 text-xs" onClick={() => record(m, `Top-up for ${m.for.charAt(0).toLowerCase()}${m.for.slice(1)}`)} title="Made the transfer? Record it">Record</button>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="flex items-center gap-1.5 text-sm text-good"><Icon name="check" size={16} />Every account covers what's due until payday</div>
-        )}
+        {c.moves.length === 0 && <div className="mb-2 flex items-center gap-1.5 text-sm text-good"><Icon name="check" size={16} />Every account covers what's due until payday</div>}
         {c.short > 0 && (
-          <div className={clsx('mt-2 flex items-start gap-1.5 text-sm', c.cash >= c.short ? 'text-warn' : 'text-bad')}>
+          <div className={clsx('mb-2 flex items-start gap-1.5 text-sm', c.cash >= c.short ? 'text-warn' : 'text-bad')}>
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <span>Savings fall <b className="tnum">{eur(c.short)}</b> short — {c.cash >= c.short ? <>deposit that much of your {eur(c.cash)} cash, or lower a buffer below</> : 'lower a buffer below or spend less until payday'}.</span>
           </div>
         )}
+        <div className="divide-y divide-line">
+          {shown.map((e, i) => (
+            <div key={i} className={clsx('flex items-center gap-3 py-1.5 text-sm', e.kind === 'move' && '-mx-2 rounded-lg border-0 bg-accent/10 px-2')}>
+              <span className={clsx('w-12 shrink-0 text-xs', e.date <= todayISO() ? 'font-semibold text-warn' : 'text-muted')}>{e.kind === 'move' ? 'by ' : ''}{day(e.date)}</span>
+              <span className="min-w-0 flex-1">
+                <span className={clsx('block truncate', e.kind === 'move' && 'font-medium')}>{e.label}</span>
+                {e.account && <span className="block truncate text-xs text-muted">{e.account}</span>}
+              </span>
+              {e.move ? (
+                <>
+                  <span className="shrink-0 font-medium tnum">{eur(e.amount)}</span>
+                  <button className="btn-ghost h-7 shrink-0 px-2 text-xs" onClick={() => record(e.move!, `Top-up for ${e.move!.for.charAt(0).toLowerCase()}${e.move!.for.slice(1)}`)} title="Made the transfer? Record it">Record</button>
+                </>
+              ) : (
+                <span className={clsx('shrink-0 tnum', e.amount > 0 && 'text-good')}>{e.amount > 0 ? '+' : '−'}{eur(Math.abs(e.amount))}</span>
+              )}
+            </div>
+          ))}
+        </div>
+        {entries.length > 7 && <button className="mt-1 text-xs text-accent" onClick={() => setAll(!all)}>{all ? 'Show less' : `Show all ${entries.length}`}</button>}
         {(c.to_savings ?? []).map((m, i) => (
           <div key={i} className="mt-2 flex items-start gap-3 rounded-lg border border-good/30 bg-good/5 px-3 py-2 text-sm">
             <Icon name="piggy" size={16} className="mt-0.5 shrink-0 text-good" />

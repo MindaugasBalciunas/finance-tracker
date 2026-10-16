@@ -133,6 +133,10 @@ func TestTrackRecordAndFundsOver(t *testing.T) {
 			t.Errorf("%s: left %v spent %v", m.Month, m.Left, m.Spent)
 		}
 	}
+	// A usual month: each of these spent €500 more than came in.
+	if o.UsualSaved != E(-500) || o.UsualRate > -0.16 || o.UsualRate < -0.17 {
+		t.Errorf("usual month %v / %.3f", o.UsualSaved, o.UsualRate)
+	}
 	if p.FreePlanned != E(2950) {
 		t.Errorf("free planned %v", p.FreePlanned)
 	}

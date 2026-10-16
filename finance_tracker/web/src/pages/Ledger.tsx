@@ -145,9 +145,11 @@ function Transactions() {
       <Owed />
       {data && (
         <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="card px-2 py-2"><div className="text-muted">In</div><div className="tnum text-sm font-semibold text-good">{eur(data.income)}</div></div>
-          <div className="card px-2 py-2"><div className="text-muted">Out</div><div className="tnum text-sm font-semibold">{eur(data.expense)}</div></div>
-          <div className="card px-2 py-2"><div className="text-muted">Moved</div><div className="tnum text-sm font-semibold text-ink2">{eur(data.transfer)}</div></div>
+          {/* What these rows add up to — every expense, obligations included; Home's
+              "spent" is only the day-to-day part of it. */}
+          <div className="card px-2 py-2"><div className="text-muted">Income</div><div className="tnum text-sm font-semibold text-good">{eur(data.income)}</div></div>
+          <div className="card px-2 py-2" title="Every expense in these rows, obligations and one-offs included — Home's 'spent' counts day-to-day spending only"><div className="text-muted">All spending</div><div className="tnum text-sm font-semibold">{eur(data.expense)}</div></div>
+          <div className="card px-2 py-2" title="Transfers between your accounts, investing and loan principal"><div className="text-muted">Transfers</div><div className="tnum text-sm font-semibold text-ink2">{eur(data.transfer)}</div></div>
         </div>
       )}
 

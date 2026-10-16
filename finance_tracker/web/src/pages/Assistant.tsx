@@ -51,6 +51,9 @@ function ModelPicker() {
   )
 }
 
+/** Messages shown before "Show earlier": the last few questions and answers. */
+const RECENT = 6
+
 export default function Assistant() {
   const qc = useQueryClient()
   const refresh = useRefresh()
@@ -59,6 +62,8 @@ export default function Assistant() {
   const [image, setImage] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  // Long histories open on the latest exchange; older ones stay one tap away.
+  const [earlier, setEarlier] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   // The server saves the question as soon as it is asked, so a refreshed
@@ -179,7 +184,14 @@ export default function Assistant() {
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)} className="card p-3 text-left text-sm hover:bg-sunken/50">{s}</button>)}
             </div>
           </div>
-        ) : msgs.map((m, i) => <Bubble key={m.id ?? `l${i}`} m={m} />)}
+        ) : <>
+          {!earlier && msgs.length > RECENT && (
+            <button className="w-full rounded-xl border border-dashed border-line px-3 py-2 text-xs text-accent hover:bg-sunken/50" onClick={() => setEarlier(true)}>
+              Show {msgs.length - RECENT} earlier {msgs.length - RECENT === 1 ? 'message' : 'messages'}
+            </button>
+          )}
+          {(earlier ? msgs : msgs.slice(-RECENT)).map((m, i) => <Bubble key={m.id ?? `l${i}`} m={m} />)}
+        </>}
         {busy && <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="h-4 w-4" />Looking at your data… <span className="text-xs">you can leave the app — it carries on and notifies you</span></div>}
         {!busy && pending !== null && (
           <div className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm text-muted">

@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { api } from '../lib/api'
-import { usePlan, useRefresh } from '../lib/hooks'
+import { useOverview, usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Budget, PlanLine, PlanReport, TxList } from '../lib/types'
@@ -67,6 +67,7 @@ function Month() {
         <div className="text-base font-semibold">{monthLabel(month, true)}</div>
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
+      {current && <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })} />}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
       <Suggestions lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
         onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
@@ -74,7 +75,7 @@ function Month() {
       {groups.map((g) => {
         const lines = r.lines.filter((l) => l.kind === g.kind)
         return (
-          <Card key={g.kind} pad={false} title={<span>{g.title} <span className="font-normal text-muted">{eur(lines.reduce((a, l) => a + l.monthly_share, 0))}/mo</span></span>}
+          <div key={g.kind} id={`plan-${g.kind}`} className="scroll-mt-16"><Card pad={false} title={<span>{g.title} <span className="font-normal text-muted">{eur(lines.reduce((a, l) => a + l.monthly_share, 0))}/mo</span></span>}
             action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ kind: g.kind as any, period: 'monthly', categories: [], tag: '', amount: 0 })}><Icon name="plus" size={14} />Line</button>}>
             <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
             {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
@@ -82,7 +83,7 @@ function Month() {
                 {lines.map((l) => <LineRow key={l.id} l={l} monthPace={current ? monthProgress() : undefined} onEdit={() => setEdit(l)} />)}
               </div>
             )}
-          </Card>
+          </Card></div>
         )
       })}
       {r.unbudgeted.length > 0 && (
@@ -110,6 +111,72 @@ function Month() {
   )
 }
 
+/** When recent months keep ending over the plan, the plan comes first:
+ *  the track record, the gap in a usual month, and the three levers that
+ *  close it — each with its amount and one tap to act. Budget lines don't
+ *  change left to spend on their own (it is income − obligations − saving −
+ *  funds − what is spent), so the saving target and funds are named too. */
+function Rebalance({ r, onAddLine }: { r: PlanReport; onAddLine: (u: PlanReport['unbudgeted'][number]) => void }) {
+  const { data: o } = useOverview()
+  const cats = useCats()
+  const t = o?.plan.track ?? []
+  const overs = t.filter((m) => m.left < 0).length
+  if (t.length < 3 || overs < 2) return null
+  const s = [...t.map((m) => m.spent)].sort((a, b) => a - b)
+  const usualSpent = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
+  const free = o?.plan.free_planned ?? 0
+  const gap = usualSpent - free
+  const off = r.lines.filter((l) => l.suggestion && l.kind === 'spending')
+  const unb = r.unbudgeted.filter((u) => u.suggestion).sort((a, b) => b.suggestion!.amount - a.suggestion!.amount)
+  const unbTotal = unb.reduce((a, u) => a + u.suggestion!.amount, 0)
+  const saving = r.lines.filter((l) => l.kind === 'saving')
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return (
+    <section className="card border-warn/40 p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn/15 text-warn"><Icon name="target" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">This plan ended over in {overs} of the last {t.length} months</div>
+          <div className="mt-0.5 text-sm text-ink2">
+            A usual month spends <b className="tnum text-ink">{eur(usualSpent)}</b> day to day; the plan leaves <b className="tnum text-ink">{eur(free)}</b> — a gap of <b className="tnum text-warn">{eur(gap)}</b> a month.
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex gap-1" aria-label={t.map((m) => `${monthLabel(m.month)} ${m.left < 0 ? 'over' : 'left'} ${eur(Math.abs(m.left))}`).join(', ')}>
+        {t.map((m) => (
+          <span key={m.month} className={clsx('flex-1 rounded px-1 py-0.5 text-center text-[10px] tnum', m.left < 0 ? 'bg-bad/15 text-bad' : 'bg-good/15 text-good')}>
+            {monthLabel(m.month).split(' ')[0]} {m.left < 0 ? '−' : '+'}{eur(Math.round(Math.abs(m.left)))}
+          </span>
+        ))}
+      </div>
+      <div className="mt-3 divide-y divide-line border-t border-line text-sm">
+        <div className="flex items-center gap-3 py-2.5">
+          <span className="min-w-0 flex-1">
+            <b>1. Fund what you really spend on</b>
+            <span className="block text-xs text-muted">{unb.length ? <>{unb.slice(0, 3).map((u) => cats.name(u.category)).join(', ')}{unb.length > 3 && ` +${unb.length - 3}`} have no line — about <span className="tnum">{eur(unbTotal)}</span>/mo. A fund for lumpy ones keeps them from tipping a month.</> : 'Every category you spend on has a line.'}</span>
+          </span>
+          {unb[0] && <button className="chip shrink-0 hover:bg-sunken" onClick={() => onAddLine(unb[0])}>+ {cats.name(unb[0].category)} {eur(unb[0].suggestion!.amount)}{unb[0].suggestion!.lumpy ? ' fund' : ''}</button>}
+        </div>
+        <div className="flex items-center gap-3 py-2.5">
+          <span className="min-w-0 flex-1">
+            <b>2. Set lines to what is real</b>
+            <span className="block text-xs text-muted">{off.length ? `${off.length} ${off.length === 1 ? 'line differs' : 'lines differ'} from the last 12 months — realistic lines make the plan's warnings mean something.` : 'Every line matches the last 12 months.'}</span>
+          </span>
+          {off.length > 0 && <button className="chip shrink-0 hover:bg-sunken" onClick={() => scrollTo('plan-suggestions')}>Review {off.length}</button>}
+        </div>
+        <div className="flex items-center gap-3 py-2.5">
+          <span className="min-w-0 flex-1">
+            <b>3. Decide the saving target</b>
+            <span className="block text-xs text-muted">The plan saves <span className="tnum">{eur(r.saving_planned)}</span> first{o?.usual_saved != null && <>; a usual month has left <span className="tnum">{eur(Math.round(o.usual_saved))}</span> from income</>}. Keep it and spend <span className="tnum">{eur(gap)}</span> less, or lower it to what the month funds.</span>
+          </span>
+          {saving[0] && <button className="chip shrink-0 hover:bg-sunken" onClick={() => scrollTo('plan-saving')}>Saving lines</button>}
+        </div>
+      </div>
+      <div className="mt-2 flex justify-end"><AskCFO q={`My plan ended over in ${overs} of the last ${t.length} months; a usual month spends ${eur(usualSpent)} day to day and the plan leaves ${eur(free)}. Propose a rebalanced plan: which lines to change, which to add, and whether my ${eur(r.saving_planned)} saving target is realistic.`} label="Ask CFO for a rebalanced plan" /></div>
+    </section>
+  )
+}
+
 /** Every "the last 12 months disagree with this budget" in one place, instead
  *  of a box under each line. */
 function Suggestions({ lines, unallocated, busy, onApply, onApplyAll }: { lines: PlanLine[]; unallocated: number; busy: boolean; onApply: (l: PlanLine, fund?: boolean) => void; onApplyAll: (ls: PlanLine[]) => void }) {
@@ -117,7 +184,7 @@ function Suggestions({ lines, unallocated, busy, onApply, onApplyAll }: { lines:
   if (lines.length === 0) return null
   const delta = lines.reduce((a, l) => a + l.suggestion!.amount - l.monthly_share, 0)
   return (
-    <section className="card p-4">
+    <section id="plan-suggestions" className="card scroll-mt-16 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
         <div className="min-w-0 flex-1 text-sm">
@@ -151,6 +218,9 @@ function Suggestions({ lines, unallocated, busy, onApply, onApplyAll }: { lines:
 }
 
 function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTrim: (l: PlanLine, amount: number) => void }) {
+  // Same colour as Home: amber when the month is heading over at the usual rhythm.
+  const { data: o } = useOverview()
+  const heading = current && (o?.plan.projected_left ?? 0) < 0
   const planned = r.fixed_planned + r.saving_planned + r.spending_planned
   const rows = [
     { label: 'Income base', value: r.income_base, sub: r.income_base_source },
@@ -166,8 +236,9 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
       <section className="card p-4 lg:col-span-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <div className="shrink-0">
-            <div className="text-sm text-ink2">{current ? 'Safe to spend this month' : 'Left after the plan'}</div>
-            <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : 'text-good')}>{eur(r.safe_to_spend)}</div>
+            <div className="text-sm text-ink2">{current ? 'Left to spend this month' : 'Left after the plan'}</div>
+            <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : heading ? 'text-warn' : 'text-good')}>{eur(r.safe_to_spend)}</div>
+            {heading && r.safe_to_spend >= 0 && <div className="text-xs text-warn">heading for {eur(-o!.plan.projected_left)} over by month end</div>}
           </div>
           <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds (net of {(r.refunds ?? 0) > 0.005 ? <span className="text-good">{eur(r.refunds!)} refunds</span> : 'refunds'}){(r.fund_overdrawn ?? 0) > 0.005 && <> − <span className="text-bad">{eur(r.fund_overdrawn!)} paid beyond what funds held</span></>}{(r.unreviewed ?? 0) > 0.005 && <> · incl. <span className="text-ink2">{eur(r.unreviewed!)} in the bank inbox, not reviewed yet</span></>}</div>
         </div>

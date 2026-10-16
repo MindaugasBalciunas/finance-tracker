@@ -349,7 +349,7 @@ func newServer() *mcp.Server {
 			}
 			return text(call("GET", "/networth", vals("date", a.Date), nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_budget_status", Description: "The monthly plan: every budget line (fixed/spending/saving, funds, yearly), spent vs budget, suggestions, unbudgeted spending, safe to spend."},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_budget_status", Description: "The monthly plan: every budget line (fixed/spending/saving, funds, yearly), spent vs budget, suggestions, unbudgeted spending, left to spend (field safe_to_spend)."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/plan", vals("month", a.Month), nil))
 		})

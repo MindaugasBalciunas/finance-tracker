@@ -40,6 +40,10 @@ type Overview struct {
 	Month         insights.Flow          `json:"month"` // this month so far
 	LastMonth     insights.Flow          `json:"last_month"`
 	Avg12         insights.Flow          `json:"avg12"`          // trailing 12 complete months, monthly average
+	// A usual month over the same twelve: the median, which a bonus month
+	// can't lift the way it lifts the average.
+	UsualSaved money.Cents `json:"usual_saved"`
+	UsualRate  float64     `json:"usual_rate"`
 	Year          insights.Flow          `json:"year"`           // year to date
 	MonthProgress float64                `json:"month_progress"` // share of the month elapsed
 	Plan          PlanPulse              `json:"plan"`
@@ -225,6 +229,8 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	lastM := now.AddDate(0, -1, 0).Format("2006-01")
 	var avg insights.Flow
 	n := 0
+	var savedM []money.Cents
+	var rates []float64
 	for _, f := range flows {
 		switch {
 		case f.Period == thisM:
@@ -241,6 +247,10 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			avg.Invested += f.Invested
 			avg.Principal += f.Principal
 			n++
+			savedM = append(savedM, f.Saved)
+			if f.Income > 0 {
+				rates = append(rates, float64(f.Saved)/float64(f.Income))
+			}
 		}
 		if f.Period[:4] == thisM[:4] {
 			o.Year.Income += f.Income
@@ -260,6 +270,15 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		}
 	}
 	avg.Period = "avg12"
+	o.UsualSaved = medianCents(savedM)
+	if len(rates) > 0 {
+		sort.Float64s(rates)
+		if k := len(rates); k%2 == 1 {
+			o.UsualRate = rates[k/2]
+		} else {
+			o.UsualRate = (rates[k/2-1] + rates[k/2]) / 2
+		}
+	}
 	o.Avg12 = avg
 	o.Year.Period = thisM[:4]
 	if o.Year.Income > 0 {
