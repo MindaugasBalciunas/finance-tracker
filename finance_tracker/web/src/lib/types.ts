@@ -57,10 +57,11 @@ export interface Overview {
   spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number
   plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number;
-    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; projected_left: number; over: LineBrief[] | null; lines?: LineBrief[] | null
+    free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; expected_rest?: number; projected_left: number; run_out_day?: number
+    free_planned?: number; track?: { month: string; left: number; spent: number }[] | null; funds_over?: LineBrief[] | null; over: LineBrief[] | null; lines?: LineBrief[] | null
     income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number; fund_overdrawn?: number
     fixed?: { name: string; budgeted: number; spent: number; due?: string; paid?: string }[] | null
-    days?: { day: number; spent: number; cum?: number; typical: number }[] | null
+    days?: { day: number; spent: number; cum?: number; typical: number; proj?: number }[] | null
     events?: { day: number; kind: 'fixed' | 'income'; label: string; amount: number; done: boolean }[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
   fi_progress: number; years_to_fi: number

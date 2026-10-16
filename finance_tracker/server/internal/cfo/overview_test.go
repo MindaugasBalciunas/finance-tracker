@@ -102,3 +102,43 @@ func TestBuildOverview(t *testing.T) {
 		t.Errorf("stale %+v", o.Stale)
 	}
 }
+
+// Home tests the plan against how recent months really ended: six complete
+// months of day-to-day spending above what the plan leaves all end over. A
+// fund that paid more than it held is named, with what it held.
+func TestTrackRecordAndFundsOver(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	for _, m := range []string{"2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"} {
+		Tx(t, d, ledger.Tx{Date: m + "-10", Amount: E(3000), Category: "salary", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: m + "-12", Amount: E(3500), Category: "food.groceries", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-10", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-05", Amount: E(300), Category: "transport.car", AccountID: "swed"})
+	transport := plan.Budget{Name: "Transport", Kind: "spending", Categories: []string{"transport"}, Amount: E(50), Fund: true, StartMonth: "2026-10"}
+	if err := plan.Save(d, &transport, ""); err != nil {
+		t.Fatal(err)
+	}
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := o.Plan
+	if len(p.Track) != 6 || p.Track[0].Month != "2026-04" || p.Track[5].Month != "2026-09" {
+		t.Fatalf("track %+v", p.Track)
+	}
+	for _, m := range p.Track {
+		if m.Left != E(-500) || m.Spent != E(3500) {
+			t.Errorf("%s: left %v spent %v", m.Month, m.Left, m.Spent)
+		}
+	}
+	if p.FreePlanned != E(2950) {
+		t.Errorf("free planned %v", p.FreePlanned)
+	}
+	if len(p.FundsOver) != 1 || p.FundsOver[0].Name != "Transport" || p.FundsOver[0].Budgeted != E(50) || p.FundsOver[0].Remaining != E(-250) {
+		t.Errorf("funds over %+v", p.FundsOver)
+	}
+	if p.Days[len(p.Days)-1].Proj == nil || p.ExpectedRest <= 0 || p.ProjectedLeft != p.SafeToSpend-p.ExpectedRest {
+		t.Errorf("forecast rest %v left %v", p.ExpectedRest, p.ProjectedLeft)
+	}
+}

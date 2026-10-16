@@ -69,14 +69,29 @@ type PlanPulse struct {
 	DaysLeft       int         `json:"days_left"`        // including today
 	PerDayLeft     money.Cents `json:"per_day_left"`     // safe to spend ÷ days left
 	AvgDay         money.Cents `json:"avg_day"`          // this month's free spending per elapsed day
-	TypicalOneOffs money.Cents `json:"typical_one_offs"` // one-offs (€250+) per month over the same months, left out of typical
+	TypicalOneOffs money.Cents `json:"typical_one_offs"` // one-offs (€250+) per month over the same months
 	TypicalDay     money.Cents `json:"typical_day"`      // everyday spending per day (one-offs of €250+ left out), previous 6 complete months
-	ExpectedDay    money.Cents `json:"expected_day"`     // pace used for the projection (this month blended with typical)
-	ProjectedLeft  money.Cents `json:"projected_left"`   // what is left at month end at the expected pace
-	Over           []LineBrief `json:"over"`             // spending lines over budget
-	Lines          []LineBrief `json:"lines"`            // busiest spending lines (most of budget used first)
-	Spent          money.Cents `json:"spent"`
-	Budgeted       money.Cents `json:"budgeted"`
+	// The rest of the month as your typical month spends it: its everyday
+	// rhythm after today plus a pro-rata share of its one-offs. Backtested
+	// over twelve months this beat this-month's pace and typical-without-
+	// one-offs: one-offs happen most months, so leaving them out promised
+	// surpluses that never came.
+	ExpectedRest  money.Cents `json:"expected_rest"`
+	ExpectedDay   money.Cents `json:"expected_day"`          // expected rest ÷ days after today
+	ProjectedLeft money.Cents `json:"projected_left"`        // safe to spend − expected rest
+	RunOutDay     int         `json:"run_out_day,omitempty"` // first day the forecast passes the free money
+	// FreePlanned is the month's free money as planned: income base −
+	// fixed − saving − fund set-asides.
+	FreePlanned money.Cents `json:"free_planned"`
+	// Track is how recent complete months ended against this plan — the
+	// test of whether the plan fits how the household really spends.
+	Track []MonthEnd `json:"track"`
+	// FundsOver names the funds that paid beyond what they held this month.
+	FundsOver []LineBrief `json:"funds_over,omitempty"`
+	Over      []LineBrief `json:"over"`  // spending lines over budget
+	Lines     []LineBrief `json:"lines"` // busiest spending lines (most of budget used first)
+	Spent     money.Cents `json:"spent"`
+	Budgeted  money.Cents `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
 	IncomeActual  money.Cents `json:"income_actual"`
@@ -96,9 +111,17 @@ type PlanPulse struct {
 
 type DayPoint struct {
 	Day     int          `json:"day"`
-	Spent   money.Cents  `json:"spent"`         // free spending that day (0 after today)
-	Cum     *money.Cents `json:"cum,omitempty"` // cumulative, up to today only
-	Typical money.Cents  `json:"typical"`       // average cumulative everyday spending (no one-offs) by this day, last 6 months
+	Spent   money.Cents  `json:"spent"`          // free spending that day (0 after today)
+	Cum     *money.Cents `json:"cum,omitempty"`  // cumulative, up to today only
+	Typical money.Cents  `json:"typical"`        // average cumulative everyday spending (no one-offs) by this day, last 6 months
+	Proj    *money.Cents `json:"proj,omitempty"` // forecast cumulative spending, from today on
+}
+
+// MonthEnd is a complete month measured against the current plan.
+type MonthEnd struct {
+	Month string      `json:"month"`
+	Left  money.Cents `json:"left"`  // safe to spend at month end (negative = over)
+	Spent money.Cents `json:"spent"` // free spending, incl. what funds paid beyond what they held
 }
 
 type MonthEvent struct {
@@ -237,9 +260,15 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	if r, err := BudgetReport(d, thisM, now); err == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
+		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)
 		for _, l := range r.Lines {
+			if fs := l.FundState; fs != nil {
+				if held := max(fs.Opening, 0) + fs.Contribution; fs.Spent > held {
+					o.Plan.FundsOver = append(o.Plan.FundsOver, LineBrief{l.Name, fs.Spent, held, held - fs.Spent})
+				}
+			}
 			if l.Kind == "fixed" {
 				o.Plan.Fixed = append(o.Plan.Fixed, FixedBrief{Name: l.Name, Budgeted: l.Budgeted, Spent: l.Spent})
 				fixedCats = append(fixedCats, l.Categories)
@@ -302,6 +331,13 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 		}
 	}
 	o.Plan.addEvents(txs, fixedCats, plan.LoadSettings(d).Salary(), now)
+	o.Plan.Track = []MonthEnd{}
+	for i := 6; i >= 1; i-- {
+		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+		if r, err := BudgetReport(d, m, now); err == nil && len(r.FreeSpentByMonth) > 0 && r.IncomeActual > 0 {
+			o.Plan.Track = append(o.Plan.Track, MonthEnd{m, r.SafeToSpend, r.FreeSpentByMonth[m] + r.FundOverdrawn})
+		}
+	}
 	o.Cash = buildCashPlan(d, txs, &o.Plan, fixedCats, book, now)
 	budgetDiffs := 0
 	if r, err := BudgetReport(d, thisM, now); err == nil {
@@ -365,16 +401,6 @@ func (p *PlanPulse) fillDaily(free map[string]money.Cents, everyday map[string]m
 		p.TypicalDay = total / money.Cents(days)
 		p.TypicalOneOffs = (all - total) / money.Cents(months)
 	}
-	// The rest of the month at an expected daily pace: early on this month's
-	// few days say little, so lean on the typical day and shift to the actual
-	// pace as the month fills in. Today counts as already spent.
-	progress := float64(day) / float64(dim)
-	pace := p.AvgDay.Float()
-	if p.TypicalDay > 0 {
-		pace = progress*p.AvgDay.Float() + (1-progress)*p.TypicalDay.Float()
-	}
-	p.ExpectedDay = money.FromFloat(pace)
-	p.ProjectedLeft = p.SafeToSpend - money.FromFloat(pace*float64(p.DaysLeft-1))
 }
 
 // dueFromHistory guesses this month's due date for an obligation with no
@@ -442,6 +468,38 @@ func (p *PlanPulse) fillTimeline(byDay, everyday map[string]map[int]money.Cents,
 		}
 		p.Days = append(p.Days, pt)
 	}
+	p.forecast(now, len(prev) > 0)
+}
+
+// forecast spends the rest of the month the way your typical month does:
+// its everyday curve after today plus a pro-rata share of its one-offs
+// (today counts as already spent). With no history, this month's pace.
+func (p *PlanPulse) forecast(now time.Time, history bool) {
+	dim, today := len(p.Days), now.Day()
+	if today < 1 || today > dim {
+		return
+	}
+	cum := *p.Days[today-1].Cum
+	base := p.Days[today-1].Typical
+	var rest money.Cents
+	for d := today; d <= dim; d++ {
+		ahead := money.Cents(d - today)
+		if history {
+			rest = p.Days[d-1].Typical - base + p.TypicalOneOffs*ahead/money.Cents(dim)
+		} else {
+			rest = p.AvgDay * ahead
+		}
+		v := cum + rest
+		p.Days[d-1].Proj = &v
+		if p.RunOutDay == 0 && p.SafeToSpend > 0 && rest > p.SafeToSpend {
+			p.RunOutDay = d
+		}
+	}
+	p.ExpectedRest = rest
+	if dim > today {
+		p.ExpectedDay = rest / money.Cents(dim-today)
+	}
+	p.ProjectedLeft = p.SafeToSpend - rest
 }
 
 // addEvents dates what happens to the month's money: each fixed obligation
