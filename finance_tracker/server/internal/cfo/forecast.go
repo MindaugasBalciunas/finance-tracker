@@ -59,7 +59,7 @@ type ForecastMonth struct {
 type ForecastItem struct {
 	ID     int64       `json:"id,omitempty"` // the goal, for leaving it out of a scenario
 	Label  string      `json:"label"`
-	Kind   string      `json:"kind"` // bill | yearly | goal | purchase
+	Kind   string      `json:"kind"` // bill | yearly | tax | goal | purchase (a negative tax amount is a refund)
 	Month  string      `json:"month,omitempty"`
 	Amount money.Cents `json:"amount"`
 }
@@ -186,6 +186,17 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 			dated[m] = append(dated[m], ForecastItem{Label: y.Merchant, Kind: "yearly", Amount: y.Typical})
 		}
 		datedOneOffs += y.Typical
+	}
+	// Income tax settled with the declaration in May (the 25% bracket,
+	// interest and gains above their exemptions, less a 3rd-pillar refund).
+	for _, y := range []int{now.Year() - 1, now.Year()} {
+		m := fmt.Sprintf("%d-05", y+1)
+		if m < thisM || m+"-01" > horizonEnd {
+			continue
+		}
+		if tx, err := Tax(d, y, now); err == nil && tx.Due-tx.Refund != 0 {
+			dated[m] = append(dated[m], ForecastItem{Label: fmt.Sprintf("Income tax %d (estimate)", y), Kind: "tax", Amount: tx.Due - tx.Refund})
+		}
 	}
 	skip := map[int64]bool{}
 	if sc != nil {

@@ -29,6 +29,24 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/overview", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
 	})
+	// The income declaration ahead: estimates from the ledger.
+	s.handle("GET /api/tax", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		y := qint(r, "year", time.Now().Year())
+		if y < 2000 || y > 2100 {
+			return nil, bad("invalid year")
+		}
+		return cfo.Tax(s.DB, y, time.Now())
+	})
+	s.handle("PUT /api/tax/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in cfo.TaxSettings
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := cfo.SaveTaxSettings(s.DB, in); err != nil {
+			return nil, err
+		}
+		return in, nil
+	})
 	// The month close: data steps tick themselves, decisions are ticked here.
 	s.handle("GET /api/close", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		m := r.URL.Query().Get("month")
