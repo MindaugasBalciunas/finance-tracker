@@ -8,7 +8,7 @@ import { AskCFO, Card, ErrorBox, Loading, NumberInput, Segmented, useToast } fro
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { Icon } from '../../components/Icon'
 
-type Item = { id?: number; label: string; kind: 'bill' | 'goal' | 'purchase'; month?: string; amount: number }
+type Item = { id?: number; label: string; kind: 'bill' | 'yearly' | 'goal' | 'purchase'; month?: string; amount: number }
 type Month = { month: string; income: number; fixed: number; saving: number; everyday: number; one_offs: number; dated?: Item[] | null; net: number; end: number }
 type Forecast = {
   start: string; cash: number; floor: number; months: Month[]; lowest: number; lowest_on: string; below_floor?: string; negative?: string; invested: number; unscheduled?: Item[] | null

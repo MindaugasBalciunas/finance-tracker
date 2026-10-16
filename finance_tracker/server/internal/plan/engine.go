@@ -106,7 +106,7 @@ type Report struct {
 	// (filled in by cfo.BudgetReport, which can read the inbox).
 	Unreviewed      money.Cents `json:"unreviewed,omitempty"`
 	UnreviewedCount int         `json:"unreviewed_count,omitempty"`
-	SafeToSpend   money.Cents `json:"safe_to_spend"`
+	SafeToSpend     money.Cents `json:"safe_to_spend"`
 	// Free spending per month (discretionary minus what funds covered) —
 	// the same money SafeToSpend draws on. For daily pace and "typical".
 	FreeSpentByMonth map[string]money.Cents `json:"-"`

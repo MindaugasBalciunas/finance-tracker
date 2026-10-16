@@ -9,6 +9,7 @@ import (
 	"ft/internal/goals"
 	"ft/internal/insights"
 	"ft/internal/ledger"
+	"ft/internal/merchant"
 	"ft/internal/money"
 	"ft/internal/plan"
 	"ft/internal/wealth"
@@ -58,7 +59,7 @@ type ForecastMonth struct {
 type ForecastItem struct {
 	ID     int64       `json:"id,omitempty"` // the goal, for leaving it out of a scenario
 	Label  string      `json:"label"`
-	Kind   string      `json:"kind"` // bill | goal | purchase
+	Kind   string      `json:"kind"` // bill | yearly | goal | purchase
 	Month  string      `json:"month,omitempty"`
 	Amount money.Cents `json:"amount"`
 }
@@ -163,6 +164,28 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 				datedOneOffs += r.Amount * money.Cents(12/step)
 			}
 		}
+	}
+	// Once-a-year costs (the car service every October) in their month,
+	// unless a recurring bill already put them there.
+	billed := map[string]bool{}
+	for _, items := range dated {
+		for _, it := range items {
+			billed[merchant.Fold(it.Label)] = true
+		}
+	}
+	for _, y := range insights.DetectYearly(txs, now, isFixed) {
+		if billed[merchant.Fold(y.Merchant)] {
+			continue
+		}
+		next, err := time.Parse("2006-01", y.Next)
+		if err != nil {
+			continue
+		}
+		for ; next.Format("2006-01-02") <= horizonEnd; next = next.AddDate(1, 0, 0) {
+			m := next.Format("2006-01")
+			dated[m] = append(dated[m], ForecastItem{Label: y.Merchant, Kind: "yearly", Amount: y.Typical})
+		}
+		datedOneOffs += y.Typical
 	}
 	skip := map[int64]bool{}
 	if sc != nil {

@@ -23,6 +23,10 @@ func (s *Server) planRoutes() {
 		}
 		return cfo.BudgetReport(s.DB, m, time.Now())
 	})
+	// Once-a-year costs and whether a fund sets money aside for them.
+	s.handle("GET /api/plan/yearly", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.YearlyCosts(s.DB, time.Now())
+	})
 	// The year ahead: cash month by month, and a what-if beside it.
 	s.handle("GET /api/forecast", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), nil)

@@ -70,6 +70,7 @@ function Month() {
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
       {current && <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })} />}
+      {current && <OnceAYear r={r} onEdit={setEdit} month={month} />}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
       <Suggestions lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
         onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
@@ -176,6 +177,44 @@ function Rebalance({ r, onAddLine }: { r: PlanReport; onAddLine: (u: PlanReport[
       </div>
       <div className="mt-2 flex justify-end"><AskCFO q={`My plan ended over in ${overs} of the last ${t.length} months; a usual month spends ${eur(usualSpent)} day to day and the plan leaves ${eur(free)}. Propose a rebalanced plan: which lines to change, which to add, and whether my ${eur(r.saving_planned)} saving target is realistic.`} label="Ask CFO for a rebalanced plan" /></div>
     </section>
+  )
+}
+
+type YearlyCost = { merchant: string; category: string; month: number; typical: number; last: number; next: string; monthly: number; fund?: string; fund_id?: number; covered: boolean; shortfall?: number }
+
+/** Costs that come once a year — the car service every October — and
+ *  whether a fund sets money aside for them, so they stop tipping the month
+ *  they land in. One tap opens the fund line, filled in. */
+function OnceAYear({ r, onEdit, month }: { r: PlanReport; onEdit: (b: Partial<Budget>) => void; month: string }) {
+  const cats = useCats()
+  const { data } = useQuery({ queryKey: ['plan-yearly'], queryFn: () => api.get<YearlyCost[]>('/plan/yearly'), staleTime: 300_000 })
+  if (!data?.length) return null
+  const open = data.filter((y) => !y.covered)
+  return (
+    <Card icon="calendar" color="var(--s4)" title="Once a year" action={<span className="text-xs text-muted">{open.length ? `${open.length} not set aside for` : 'all set aside for'}</span>}>
+      <div className="-mt-1 mb-2 text-xs text-muted">Costs that come around in the same month every year. Set aside monthly, they stop tipping the month they land in.</div>
+      <div className="divide-y divide-line border-t border-line">
+        {data.map((y) => {
+          const line = y.fund_id ? r.lines.find((l) => l.id === y.fund_id) : undefined
+          return (
+            <div key={y.merchant} className="flex items-center gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm"><span className="font-medium">{y.merchant}</span> <span className="text-muted">· {cats.name(y.category)}</span></div>
+                <div className="text-xs text-muted">
+                  every {monthLabel(y.next, true).split(' ')[0]} · about <span className="tnum text-ink2">{eur(y.typical)}</span>{y.last > y.typical * 1.15 && <> (last time <span className="tnum text-warn">{eur(y.last)}</span>)</>} · <span className="tnum">{eur(y.monthly)}</span>/mo
+                </div>
+                <div className={clsx('text-xs', y.covered ? 'text-good' : 'text-warn')}>
+                  {y.covered ? `Covered by the ${y.fund} fund` : y.fund ? `The ${y.fund} fund is ${eur(y.shortfall!)}/mo short` : 'No fund sets money aside for it'}
+                </div>
+              </div>
+              {!y.covered && (line
+                ? <button className="chip shrink-0 hover:bg-sunken" onClick={() => onEdit({ ...line, amount: Math.ceil(line.monthly_share + (y.shortfall ?? 0)) })}>Raise to {eur(Math.ceil(line.monthly_share + (y.shortfall ?? 0)))}</button>
+                : <button className="chip shrink-0 hover:bg-sunken" onClick={() => onEdit({ kind: 'spending', name: cats.name(y.category), categories: [y.category], amount: Math.ceil(y.monthly), fund: true, start_month: month, period: 'monthly' })}>+ fund {eur(Math.ceil(y.monthly))}/mo</button>)}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
   )
 }
 

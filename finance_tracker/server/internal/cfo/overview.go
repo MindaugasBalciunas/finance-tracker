@@ -23,40 +23,40 @@ type Change struct {
 }
 
 type Overview struct {
-	Cash          *CashPlan              `json:"cash,omitempty"` // per-account cash until the next payday
-	Actions       []Action               `json:"actions"`        // "needs you": one list of things to do, most urgent first
-	Date          string                 `json:"date"`
-	NetWorth      money.Cents            `json:"net_worth"`
-	Liquid        money.Cents            `json:"liquid"`
-	Debt          money.Cents            `json:"debt"`
-	ByGroup       map[string]money.Cents `json:"by_group"`
-	NetWorth30d   money.Cents            `json:"net_worth_30d"` // change vs 30 days ago
-	NetWorthYTD   money.Cents            `json:"net_worth_ytd"` // change since 31 Dec
-	NetWorth12m   money.Cents            `json:"net_worth_12m"` // change vs a year ago
-	Liquid30d     money.Cents            `json:"liquid_30d"`
-	LiquidYTD     money.Cents            `json:"liquid_ytd"`
-	Liquid12m     money.Cents            `json:"liquid_12m"`
-	Spark         []SparkPoint           `json:"spark"` // 24 month-ends
-	Month         insights.Flow          `json:"month"` // this month so far
-	LastMonth     insights.Flow          `json:"last_month"`
-	Avg12         insights.Flow          `json:"avg12"`          // trailing 12 complete months, monthly average
+	Cash        *CashPlan              `json:"cash,omitempty"` // per-account cash until the next payday
+	Actions     []Action               `json:"actions"`        // "needs you": one list of things to do, most urgent first
+	Date        string                 `json:"date"`
+	NetWorth    money.Cents            `json:"net_worth"`
+	Liquid      money.Cents            `json:"liquid"`
+	Debt        money.Cents            `json:"debt"`
+	ByGroup     map[string]money.Cents `json:"by_group"`
+	NetWorth30d money.Cents            `json:"net_worth_30d"` // change vs 30 days ago
+	NetWorthYTD money.Cents            `json:"net_worth_ytd"` // change since 31 Dec
+	NetWorth12m money.Cents            `json:"net_worth_12m"` // change vs a year ago
+	Liquid30d   money.Cents            `json:"liquid_30d"`
+	LiquidYTD   money.Cents            `json:"liquid_ytd"`
+	Liquid12m   money.Cents            `json:"liquid_12m"`
+	Spark       []SparkPoint           `json:"spark"` // 24 month-ends
+	Month       insights.Flow          `json:"month"` // this month so far
+	LastMonth   insights.Flow          `json:"last_month"`
+	Avg12       insights.Flow          `json:"avg12"` // trailing 12 complete months, monthly average
 	// A usual month over the same twelve: the median, which a bonus month
 	// can't lift the way it lifts the average.
-	UsualSaved money.Cents `json:"usual_saved"`
-	UsualRate  float64     `json:"usual_rate"`
-	Year          insights.Flow          `json:"year"`           // year to date
-	MonthProgress float64                `json:"month_progress"` // share of the month elapsed
-	Plan          PlanPulse              `json:"plan"`
-	Emergency     insights.Emergency     `json:"emergency"`
-	FIProgress    float64                `json:"fi_progress"`
-	YearsToFI     float64                `json:"years_to_fi"`
-	Anomalies     []insights.Anomaly     `json:"anomalies"`
-	Upcoming      []insights.Recurring   `json:"upcoming"` // recurring charges expected in the next 14 days
-	Stale         map[string]string      `json:"stale"`
-	InboxOpen     int                    `json:"inbox_open"`
-	Checks        []Check                `json:"checks"`
-	ReviewMonth   string                 `json:"review_month,omitempty"` // first week: last month's review is ready
-	Recent        []ledger.Tx            `json:"recent"`
+	UsualSaved    money.Cents          `json:"usual_saved"`
+	UsualRate     float64              `json:"usual_rate"`
+	Year          insights.Flow        `json:"year"`           // year to date
+	MonthProgress float64              `json:"month_progress"` // share of the month elapsed
+	Plan          PlanPulse            `json:"plan"`
+	Emergency     insights.Emergency   `json:"emergency"`
+	FIProgress    float64              `json:"fi_progress"`
+	YearsToFI     float64              `json:"years_to_fi"`
+	Anomalies     []insights.Anomaly   `json:"anomalies"`
+	Upcoming      []insights.Recurring `json:"upcoming"` // recurring charges expected in the next 14 days
+	Stale         map[string]string    `json:"stale"`
+	InboxOpen     int                  `json:"inbox_open"`
+	Checks        []Check              `json:"checks"`
+	ReviewMonth   string               `json:"review_month,omitempty"` // first week: last month's review is ready
+	Recent        []ledger.Tx          `json:"recent"`
 }
 
 type SparkPoint struct {

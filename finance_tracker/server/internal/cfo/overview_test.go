@@ -197,7 +197,7 @@ func TestUnreviewedSpendingCountsToday(t *testing.T) {
 	}
 	if p.Days[14].Spent != E(40) || p.Days[15].Spent != E(12.5) || *p.Days[15].Cum != E(152.5) {
 		t.Errorf("days 15–16: %v %v cum %v", p.Days[14].Spent, p.Days[15].Spent, *p.Days[15].Cum)
-	}	// Plan shows the same left-to-spend as Home.
+	} // Plan shows the same left-to-spend as Home.
 	if r, err := cfo.BudgetReport(d, "2026-10", now); err != nil || r.SafeToSpend != p.SafeToSpend || r.Unreviewed != E(52.5) {
 		t.Errorf("plan %v / unreviewed %v vs home %v", r.SafeToSpend, r.Unreviewed, p.SafeToSpend)
 	}
