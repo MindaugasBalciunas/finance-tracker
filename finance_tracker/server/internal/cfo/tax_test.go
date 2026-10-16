@@ -47,6 +47,18 @@ func TestTaxYear(t *testing.T) {
 	if tx.Refund != E(240) { // 20% of 1,200
 		t.Errorf("refund %v", tx.Refund)
 	}
+	// Booked salary wins over the setting: €60,500 net paid (≈ €100,000
+	// gross, final pay included) plus November and December at €8,400.
+	d2 := DB(t)
+	plan.SaveSettings(d2, st)
+	Tx(t, d2, ledger.Tx{Date: "2026-04-01", Amount: E(60500), Category: "salary", AccountID: "swed"})
+	t2, _ := cfo.Tax(d2, 2026, now)
+	for _, it := range t2.Items {
+		if it.Key == "bracket" && it.Amount != E(1678.15) { // (116,800 − 83,237) × 5%
+			t.Errorf("from booked salary: %+v", it)
+		}
+	}
+
 	f, err := cfo.ForecastFrom(d, now, 12, nil)
 	if err != nil {
 		t.Fatal(err)

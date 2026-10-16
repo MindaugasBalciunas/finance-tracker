@@ -84,16 +84,13 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 
 	// Salary above the 25% bracket.
 	if limit, ok := bracket25[year]; ok {
-		var annual float64 // the year's gross, month by month (a raise counts from its month)
-		for m := 1; m <= 12; m++ {
-			annual += settings.GrossFor(fmt.Sprintf("%d-%02d", year, m))
-		}
+		annual, basis := yearGross(txs, settings, year, now)
 		if annual > 0 {
 			if over := annual - limit; over > 0 {
 				due := money.FromFloat(over * 0.05)
 				t.add(TaxItem{Key: "bracket", Kind: "due", Amount: due, Title: "Salary above the 25% bracket",
-					Detail: fmt.Sprintf("€%s of your €%s gross for the year is above €%s, taxed 25%% instead of 20%%. If your employer withholds 20%% each month, about %s is left to pay with the declaration.",
-						thousands(over), thousands(annual), thousands(limit), eurS(due))})
+					Detail: fmt.Sprintf("€%s of about €%s gross for the year (%s) is above €%s, taxed 25%% instead of 20%%. If your employers withheld 20%%, about %s is left to pay with the declaration.",
+						thousands(over), thousands(annual), basis, thousands(limit), eurS(due))})
 			} else {
 				t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Salary within the 20% bracket", Detail: fmt.Sprintf("€%s a year is under €%s.", thousands(annual), thousands(limit))})
 			}
@@ -153,11 +150,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 	}
 	if pillar > 0 {
 		base := min(pillar, money.FromFloat(pillar3Max))
-		var annual float64
-		for m := 1; m <= 12; m++ {
-			annual += settings.GrossFor(fmt.Sprintf("%d-%02d", year, m))
-		}
-		if annual > 0 {
+		if annual, _ := yearGross(txs, settings, year, now); annual > 0 {
 			base = min(base, money.FromFloat(annual*0.25))
 		}
 		refund := money.FromFloat(base.Float() * pillar3Refund)
@@ -191,4 +184,46 @@ func (t *TaxYear) add(it TaxItem) {
 func thousands(v float64) string {
 	s := eurS(money.FromFloat(v))
 	return strings.TrimPrefix(s, "€")
+}
+
+// netShare is what reaches the account of each gross euro at this income:
+// 19.5% social security and 20% income tax, no tax-free allowance (it is
+// gone above about €2,600 gross a month).
+const netShare = 0.605
+
+// yearGross is the year's gross salary: what was actually paid into the
+// accounts in the year, grossed up (final pay, holiday pay and a second
+// employer all count — income tax goes by the date paid), plus the plan's
+// gross for the months still to come. With no salary booked yet it is the
+// plan's gross for every month.
+func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (float64, string) {
+	var net money.Cents
+	for i := range txs {
+		t := &txs[i]
+		if t.Kind == "income" && ledger.Top(t.Category) == "salary" && t.Date[:4] == fmt.Sprint(year) {
+			net += t.Amount
+		}
+	}
+	var ahead float64
+	first := 1
+	if year == now.Year() {
+		first = int(now.Month()) + 1
+	} else if year < now.Year() {
+		first = 13
+	}
+	for m := first; m <= 12; m++ {
+		ahead += s.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+	}
+	if net == 0 { // nothing booked: the plan's gross for every month
+		var all float64
+		for m := 1; m <= 12; m++ {
+			all += s.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+		}
+		return all, "the plan's gross salary × 12"
+	}
+	paid := net.Float() / netShare
+	if ahead == 0 {
+		return paid, fmt.Sprintf("%s net paid in %d, grossed up", eurS(net), year)
+	}
+	return paid + ahead, fmt.Sprintf("%s net paid so far, grossed up, plus %s for the months to come", eurS(net), eurS(money.FromFloat(ahead)))
 }
