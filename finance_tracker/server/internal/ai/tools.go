@@ -61,6 +61,7 @@ func toolDefs() []tool {
 			InputSchema: obj(map[string]any{"gross": num("new gross salary per month"), "saving": num("saving lines per month, EUR"), "everyday_pct": num("change to everyday spending, %"),
 				"from": str("YYYY-MM the change starts"), "purchases": map[string]any{"type": "array", "description": "extra one-off purchases", "items": obj(map[string]any{"label": str("what"), "month": str("YYYY-MM"), "amount": num("EUR")}, "month", "amount")}})},
 		{Name: "get_portfolio_quality", Description: "Money-weighted annual return of the investment portfolio, the core funds and the hand-picked stocks; the picks' money in the core fund on the same days (are the picks worth it?); single stocks above the concentration limit; where the next monthly contribution goes toward the owner's target mix (buying only — selling makes gains taxable).", InputSchema: obj(map[string]any{})},
+		{Name: "get_fun_facts", Description: "Fun statistics from the whole history: employers ranked by what they paid, the first pay cheque, lifetime income, most visited shops and where the most money went, little habits added up (coffees, fast food, fuel…), the biggest purchase and day, the big spending weekday, the priciest trips, the biggest spending year. Obligations are left out.", InputSchema: obj(map[string]any{})},
 		{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts.",
 			InputSchema: obj(map[string]any{"year": num("tax year, default this year")})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
@@ -182,6 +183,13 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		p := wealth.BuildPortfolio(trades, true)
 		st := wealth.LoadInvestSettings(a.DB, p)
 		return jsonOut(map[string]any{"quality": wealth.BuildQuality(trades, p, st, func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, "max") }, wealth.LiveEUR(), now), "settings": st})
+	case "get_fun_facts":
+		txs, err := ledger.All(a.DB, ledger.Filter{})
+		if err != nil {
+			return "", err
+		}
+		cats, _ := ledger.CategoryMap(a.DB)
+		return jsonOut(insights.FunFacts(txs, cats, now))
 	case "get_tax":
 		var in struct {
 			Year int `json:"year"`

@@ -10,10 +10,11 @@ import { FI } from './insights/FI'
 import { ReviewTabs } from './insights/MonthReview'
 import { SummaryView } from './insights/Summary'
 import { TaxView } from './insights/Tax'
+import { FunView } from './insights/Fun'
 
 const TABS = [
   { value: 'summary', label: 'Summary' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'spending', label: 'Spending' }, { value: 'trends', label: 'Trends' },
-  { value: 'recurring', label: 'Recurring' }, { value: 'review', label: 'Review' }, { value: 'tax', label: 'Taxes' }, { value: 'fi', label: 'Independence' },
+  { value: 'recurring', label: 'Recurring' }, { value: 'review', label: 'Review' }, { value: 'tax', label: 'Taxes' }, { value: 'fi', label: 'Independence' }, { value: 'fun', label: 'Fun facts' },
 ]
 // Phones show the four most used and "More" — seven tabs scroll off-screen.
 const PHONE = ['summary', 'cashflow', 'spending', 'recurring']
@@ -22,6 +23,7 @@ const MORE = [
   { value: 'review', label: 'Review', icon: 'calendar', sub: 'A finished month or year: what happened and why' },
   { value: 'tax', label: 'Taxes', icon: 'percent', sub: 'The income declaration ahead: what you will pay or get back' },
   { value: 'fi', label: 'Independence', icon: 'trend', sub: 'Financial independence: target, progress, years to go' },
+  { value: 'fun', label: 'Fun facts', icon: 'spark', sub: 'Who paid you most, favourite shops, little habits, records' },
 ]
 
 function useWide() {
@@ -60,6 +62,7 @@ export default function Insights() {
         <Route path="/fi" element={<FI />} />
         <Route path="/review" element={<ReviewTabs />} />
         <Route path="/tax" element={<TaxView />} />
+        <Route path="/fun" element={<FunView />} />
         <Route path="/more" element={<More />} />
       </Routes>
     </div>

@@ -12,6 +12,7 @@ import { AskCFO, Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToa
 import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
+import { FunTeaser } from './insights/Fun'
 import { Icon, IconTile } from '../components/Icon'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 
@@ -130,6 +131,8 @@ export default function Home() {
         <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/insights/fi')} />
         <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={eurk(avg.invested * 12)} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
       </div>
+
+      <FunTeaser />
 
       <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
         <div className="flex gap-1">

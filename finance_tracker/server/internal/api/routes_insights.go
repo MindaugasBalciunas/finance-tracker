@@ -82,6 +82,15 @@ func (s *Server) insightRoutes() {
 		}
 		return cfo.Close(s.DB, in.Month, time.Now())
 	})
+	// Fun facts from the whole history: employers, favourite shops, habits, records.
+	s.handle("GET /api/insights/fun", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, err := ledger.All(s.DB, ledger.Filter{})
+		if err != nil {
+			return nil, err
+		}
+		cats, _ := ledger.CategoryMap(s.DB)
+		return insights.FunFacts(txs, cats, time.Now()), nil
+	})
 	s.handle("GET /api/insights/summary", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildSummary(s.DB, time.Now())
 	})
