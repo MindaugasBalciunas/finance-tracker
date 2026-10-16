@@ -283,7 +283,7 @@ func TestAssistAndTidy(t *testing.T) {
 // when the answer finished in the background and is read from the history.
 func TestUncheckedKeptInHistory(t *testing.T) {
 	toolCall := `{"content":[{"type":"tool_use","id":"tu1","name":"search_transactions","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`
-	reply := `{"content":[{"type":"text","text":"You spent **€23** — about **€9,999** a year."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
+	reply := `{"content":[{"type":"text","text":"You spent **€23** — that is **€9,999** a year."}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
 	a, _ := setup(t, "anthropic", toolCall, reply)
 	Tx(t, a.DB, ledger.Tx{Date: "2026-09-01", Amount: E(23), Category: "food.groceries", Merchant: "Lidl", AccountID: "swed"})
 	res, err := a.Chat(context.Background(), "Food?", nil)

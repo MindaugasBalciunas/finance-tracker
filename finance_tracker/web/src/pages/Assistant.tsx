@@ -269,8 +269,14 @@ const Bubble = memo(function Bubble({ m }: { m: Msg }) {
         <ReactMarkdown remarkPlugins={PLUGINS} components={MARKDOWN}>{m.content}</ReactMarkdown>
       </div>
       {!!m.unchecked?.length && (
-        <div className="mt-2 rounded-lg border border-warn/40 bg-warn/5 px-2.5 py-1.5 text-[11px] text-ink2">
-          Not found in the data it read: <b>{m.unchecked.join(', ')}</b> — its own calculation, or a mistake. Ask it to show the transactions.
+        // Figures nothing in your data accounts for — not read by a tool, not said
+        // by you, not a sum of figures it read, and not labelled as its own estimate.
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warn/40 bg-warn/5 px-2.5 py-1.5 text-xs text-ink2">
+          <Icon name="alert" size={14} className="shrink-0 text-warn" />
+          <span className="min-w-0 flex-1">
+            Couldn't trace {m.unchecked.length === 1 ? 'this figure' : 'these figures'} to your data: <b className="tnum">{m.unchecked.join(', ')}</b> — check before acting on {m.unchecked.length === 1 ? 'it' : 'them'}.
+          </span>
+          <a className="shrink-0 font-medium text-accent" href={`#/ai?q=${encodeURIComponent(`Where do ${m.unchecked.join(', ')} come from? Show the data or the calculation for each.`)}`}>Where from?</a>
         </div>
       )}
       {(m.cost != null || m.tools?.length) && (

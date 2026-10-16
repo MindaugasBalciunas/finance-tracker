@@ -300,7 +300,7 @@ func (a *Assistant) answer(ctx context.Context, s Settings, now time.Time, msgs 
 				return nil, errors.New("the assistant returned an empty answer — try again")
 			}
 			res.Reply = rep.Text
-			res.Unchecked = uncheckedAmounts(rep.Text, seen)
+			res.Unchecked = uncheckedAmounts(rep.Text, seen, ownerText(msgs))
 			break
 		}
 		msgs = append(msgs, message{Role: "assistant", Content: echo(rep.Raw)})
@@ -449,54 +449,148 @@ Never invent a merchant or amount — say so in remark when unreadable.`, string
 var (
 	replyEuro = regexp.MustCompile(`(?:€\s?(\d[\d,  ]*(?:\.\d+)?)(?:\s?[kK]\b)?|(\d[\d,  ]*(?:[.,]\d{1,2})?)\s?€)`)
 	dataNum   = regexp.MustCompile(`-?\d+(?:\.\d+)?`)
+	// Numbers as people type them: 10,000 or 10 000 or 1400.50.
+	spokenNum = regexp.MustCompile(`\d{1,3}(?:[,  ]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`)
+	// A sentence that labels a figure as an estimate or the assistant's own
+	// calculation, as the trust rules ask.
+	estimateLabel = regexp.MustCompile(`(?i)\b(?:about|around|roughly|approximately|approx|probably|estimated?|my (?:rough )?calculation|my estimate|calculated)\b|≈|~`)
 )
 
 // uncheckedAmounts lists euro amounts of €50 or more in reply that match no
 // number in the tool results (within a euro, either sign). Thousands written
 // as "k" and percentages are left alone. Nothing to check against (no tools
 // ran) means nothing is flagged — the reply then made no data claims.
-func uncheckedAmounts(reply string, results []string) []string {
+// uncheckedAmounts lists euro amounts in a reply that nothing accounts for:
+// not in any tool result, not said by the owner, not the sum or difference
+// of two figures it read, and not in a sentence that labels itself an
+// estimate or the assistant's own calculation (the trust rules ask for that
+// label, so a labelled figure is honest by construction).
+func uncheckedAmounts(reply string, results []string, said []string) []string {
 	if len(results) == 0 {
 		return nil
 	}
+	seen := map[float64]bool{}
 	var known []float64
+	add := func(v float64) {
+		v = math.Abs(v)
+		if v >= 1 && !seen[v] {
+			seen[v] = true
+			known = append(known, v)
+		}
+	}
 	for _, r := range results {
 		for _, m := range dataNum.FindAllString(r, -1) {
 			if v, err := strconv.ParseFloat(m, 64); err == nil {
-				known = append(known, math.Abs(v))
+				add(v)
 			}
 		}
 	}
+	for _, t := range said {
+		for _, m := range spokenNum.FindAllString(t, -1) {
+			if v, err := strconv.ParseFloat(strings.NewReplacer(",", "", " ", "", "\u00a0", "").Replace(m), 64); err == nil {
+				add(v)
+			}
+		}
+	}
+	near := func(v float64) bool {
+		for _, k := range known {
+			if math.Abs(k-v) <= 1 {
+				return true
+			}
+		}
+		return false
+	}
+	// A sum or difference of two figures it read (€1,000 + €200 = €1,200),
+	// or a sum of three. Capped so a long search result can't blow it up.
+	derived := func(v float64) bool {
+		ks := known
+		if len(ks) > 1500 {
+			ks = ks[:1500]
+		}
+		for i, a := range ks {
+			for _, b := range ks[i+1:] {
+				if math.Abs(a+b-v) <= 1 || math.Abs(math.Abs(a-b)-v) <= 1 {
+					return true
+				}
+			}
+		}
+		if len(ks) > 150 {
+			ks = ks[:150]
+		}
+		for i, a := range ks {
+			for j := i + 1; j < len(ks); j++ {
+				for _, c := range ks[j+1:] {
+					if math.Abs(a+ks[j]+c-v) <= 1 {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
 	var out []string
 	dup := map[string]bool{}
-	for _, m := range replyEuro.FindAllStringSubmatch(reply, -1) {
-		if strings.HasSuffix(strings.TrimSpace(m[0]), "k") || strings.HasSuffix(strings.TrimSpace(m[0]), "K") {
+	for _, loc := range replyEuro.FindAllStringSubmatchIndex(reply, -1) {
+		whole := reply[loc[0]:loc[1]]
+		if strings.HasSuffix(strings.TrimSpace(whole), "k") || strings.HasSuffix(strings.TrimSpace(whole), "K") {
 			continue
 		}
-		raw := m[1]
-		if raw == "" {
-			raw = m[2]
+		g1, g2 := "", ""
+		if loc[2] >= 0 {
+			g1 = reply[loc[2]:loc[3]]
 		}
-		raw = strings.NewReplacer(",", "", " ", "", " ", "").Replace(strings.TrimSpace(raw))
-		if m[2] != "" && strings.Count(m[2], ",") == 1 && !strings.Contains(m[2], ".") && len(m[2])-strings.Index(m[2], ",") <= 3 {
-			raw = strings.Replace(strings.TrimSpace(m[2]), ",", ".", 1) // "12,50 €"
+		if loc[4] >= 0 {
+			g2 = reply[loc[4]:loc[5]]
+		}
+		raw := g1
+		if raw == "" {
+			raw = g2
+		}
+		raw = strings.NewReplacer(",", "", " ", "", "\u00a0", "").Replace(strings.TrimSpace(raw))
+		if g2 != "" && strings.Count(g2, ",") == 1 && !strings.Contains(g2, ".") && len(g2)-strings.Index(g2, ",") <= 3 {
+			raw = strings.Replace(strings.TrimSpace(g2), ",", ".", 1) // "12,50 €"
 			raw = strings.ReplaceAll(raw, " ", "")
 		}
 		v, err := strconv.ParseFloat(raw, 64)
-		if err != nil || v < 50 {
+		if err != nil || v < 50 || near(v) || estimateLabel.MatchString(around(reply, loc[0], loc[1])) || derived(v) {
 			continue
 		}
-		ok := false
-		for _, k := range known {
-			if math.Abs(k-v) <= 1 {
-				ok = true
-				break
-			}
-		}
-		label := strings.TrimSpace(m[0])
-		if !ok && !dup[label] {
+		label := strings.TrimSpace(whole)
+		if !dup[label] {
 			dup[label] = true
 			out = append(out, label)
+		}
+	}
+	return out
+}
+
+// around is the few words beside a figure, within its clause — where a
+// label like "about €684" or "€684 (my calculation)" sits. A label elsewhere
+// in the sentence doesn't vouch for this figure.
+func around(s string, from, to int) string {
+	start, end := max(0, from-32), min(len(s), to+24)
+	for _, sep := range []string{". ", "! ", "? ", "\n", "; ", " — ", ", "} {
+		if k := strings.LastIndex(s[start:from], sep); k >= 0 {
+			start += k + len(sep)
+		}
+		if k := strings.Index(s[to:end], sep); k >= 0 {
+			end = to + k
+		}
+	}
+	return s[start:end]
+}
+
+// ownerText is what the owner wrote in this conversation.
+func ownerText(msgs []message) []string {
+	var out []string
+	for _, m := range msgs {
+		if m.Role != "user" {
+			continue
+		}
+		for _, b := range m.Content {
+			if b.Type == "text" && b.Text != "" {
+				out = append(out, b.Text)
+			}
 		}
 	}
 	return out
