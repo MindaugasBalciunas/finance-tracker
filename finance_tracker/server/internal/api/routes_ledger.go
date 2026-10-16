@@ -39,6 +39,10 @@ func (s *Server) ledgerRoutes() {
 	s.handle("GET /api/transactions", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return ledger.List(s.DB, filterFrom(r))
 	})
+	// What a new expense most likely is: one tap and an amount.
+	s.handle("GET /api/transactions/quick", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return ledger.Quick(s.DB, time.Now())
+	})
 	s.handle("GET /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := idParam(r, "id")
 		if err != nil {

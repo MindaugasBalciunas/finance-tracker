@@ -21,7 +21,17 @@ export function TxEditorProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [scanning, setScanning] = useState(false)
+  const [askScan, setAskScan] = useState(false)
   const toast = useToast()
+  // Home-screen shortcuts open the app at #/?add=1 or #/?scan=1. A browser
+  // only opens the camera from a tap, so scanning asks for one.
+  useEffect(() => {
+    const h = window.location.hash
+    if (!/[?&](add|scan)=1/.test(h)) return
+    if (/[?&]add=1/.test(h)) setDraft(blank())
+    else setAskScan(true)
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + h.replace(/[?&](add|scan)=1/, ''))
+  }, [])
   const scanFile = async (f: File) => {
     setScanning(true)
     try {
@@ -41,6 +51,13 @@ export function TxEditorProvider({ children }: { children: ReactNode }) {
       {children}
       <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden
         onChange={(e) => { const f = e.target.files?.[0]; if (f) scanFile(f); e.target.value = '' }} />
+      {askScan && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/40 px-6" onClick={() => setAskScan(false)}>
+          <button className="btn-primary h-14 w-full max-w-xs text-base" onClick={(e) => { e.stopPropagation(); setAskScan(false); fileRef.current?.click() }}>
+            <Icon name="camera" size={20} />Take a photo of the receipt
+          </button>
+        </div>
+      )}
       {scanning && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-black/40">
           <div className="card flex items-center gap-3 px-5 py-4 text-sm"><Spinner /> Reading the receipt…</div>
@@ -64,6 +81,14 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   const { data: merchants } = useMerchants()
   const isNew = !t.id
   const set = (patch: Partial<Draft>) => setT((x) => ({ ...x, ...patch }))
+  // A blank new entry starts from habit: the usual account, and the usual
+  // merchants for this kind of day as one-tap chips.
+  const fresh = isNew && !draft.merchant && !draft.category && draft.amount == null
+  const { data: quick } = useQuery({ queryKey: ['quick'], queryFn: () => api.get<{ account_id: string; merchants: { merchant: string; category: string; account_id: string; typical: number }[] }>('/transactions/quick'), enabled: fresh, staleTime: 600_000 })
+  useEffect(() => {
+    if (fresh && quick?.account_id && draft.account_id === 'swed' && t.account_id === 'swed') set({ account_id: quick.account_id })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quick])
 
   // Fill category/tags from rules + history as the user types a merchant.
   useEffect(() => {
@@ -159,6 +184,19 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           </div>
         )}
         <Segmented value={t.kind} onChange={(k) => { set({ kind: k, category: '' }); setTouchedCat(false) }} options={kinds} />
+        {fresh && t.kind === 'expense' && (quick?.merchants ?? []).length > 0 && (
+          <div>
+            <div className="mb-1 text-xs text-muted">Usual on a {[0, 6].includes(new Date().getDay()) ? 'weekend' : 'weekday'} — one tap, then the amount</div>
+            <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+              {quick!.merchants.map((m) => (
+                <button key={m.merchant} type="button" className="chip shrink-0 hover:bg-sunken" title={`${cats.path(m.category)} · usually ${eurc(m.typical)}`}
+                  onClick={() => { set({ merchant: m.merchant, category: m.category, account_id: m.account_id || t.account_id }); setTouchedCat(true); setSuggestedCat(m.category) }}>
+                  {m.merchant} <span className="text-muted">· {cats.name(m.category)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount (€)">
             <input autoFocus={isNew} inputMode="decimal" className="input text-lg font-semibold tnum" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
