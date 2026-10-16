@@ -29,6 +29,40 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/overview", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildOverview(s.DB, time.Now(), s.Bank.OpenCount())
 	})
+	// The month close: data steps tick themselves, decisions are ticked here.
+	s.handle("GET /api/close", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		m := r.URL.Query().Get("month")
+		if m == "" {
+			m = time.Now().AddDate(0, -1, 0).Format("2006-01")
+		}
+		return cfo.Close(s.DB, m, time.Now())
+	})
+	s.handle("PUT /api/close", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Month string `json:"month"`
+			Step  string `json:"step"`
+			Done  bool   `json:"done"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := cfo.TickClose(s.DB, in.Month, in.Step, in.Done); err != nil {
+			return nil, bad(err.Error())
+		}
+		return cfo.Close(s.DB, in.Month, time.Now())
+	})
+	s.handle("POST /api/close/finish", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Month string `json:"month"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := cfo.FinishClose(s.DB, in.Month); err != nil {
+			return nil, bad(err.Error())
+		}
+		return cfo.Close(s.DB, in.Month, time.Now())
+	})
 	s.handle("GET /api/insights/summary", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildSummary(s.DB, time.Now())
 	})

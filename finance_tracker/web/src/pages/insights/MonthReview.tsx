@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
@@ -46,6 +46,7 @@ function MonthReviewView() {
         <div className="text-base font-semibold">{monthLabel(month, true)}{!r.complete && <span className="ml-2 text-xs font-normal text-muted">in progress</span>}</div>
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} disabled={month >= thisMonth()} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
+      {r.complete && <MonthClose month={month} />}
       <section className={clsx('card border-l-4 p-4', toneBorder)}>
         <div className="section-title">The month in one line</div>
         <h2 className="mt-1 text-lg font-semibold">{r.verdict}</h2>
@@ -130,6 +131,63 @@ function MonthReviewView() {
 }
 
 /** Daily spending as a month calendar: one hue, lighter → darker with the amount. */
+type Close = { month: string; done: number; closed: boolean; closed_at?: string; steps: { key: string; title: string; detail: string; link: string; done: boolean; manual: boolean }[] }
+
+/** Closing the month: the data first (inbox, categories, balances), then the
+ *  decisions (the review, the plan, the wish list). Data steps tick
+ *  themselves; the decisions are ticked here. */
+function MonthClose({ month }: { month: string }) {
+  const qc = useQueryClient()
+  const { data: c } = useQuery({ queryKey: ['close', month], queryFn: () => api.get<Close>('/close', { month }) })
+  const [open, setOpen] = useState(false)
+  if (!c) return null
+  const update = (next: Close) => { qc.setQueryData(['close', month], next); qc.invalidateQueries({ queryKey: ['overview'] }) }
+  const tick = async (step: string, done: boolean) => update(await api.put<Close>('/close', { month, step, done }))
+  const finish = async () => update(await api.post<Close>('/close/finish', { month }))
+  const name = monthLabel(month, true).split(' ')[0]
+  if (c.closed && !open) {
+    return (
+      <button className="flex w-full items-center gap-2 rounded-xl border border-good/30 bg-good/5 px-3 py-2 text-left text-sm text-good" onClick={() => setOpen(true)}>
+        <Icon name="check" size={16} />{name} is closed{c.closed_at && <span className="text-xs text-muted"> · {new Date(c.closed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+        <span className="ml-auto text-xs text-accent">Show</span>
+      </button>
+    )
+  }
+  const all = c.done === c.steps.length
+  return (
+    <section className="card p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="font-semibold">Close {name}</div>
+        <span className={clsx('text-xs tnum', all ? 'text-good' : 'text-muted')}>{c.done} of {c.steps.length} done</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken"><div className="h-full rounded-full bg-good transition-all" style={{ width: `${(c.done / c.steps.length) * 100}%` }} /></div>
+      <ol className="mt-3 space-y-2">
+        {c.steps.map((s, i) => (
+          <li key={s.key} className="flex items-start gap-3">
+            {s.manual ? (
+              <button onClick={() => tick(s.key, !s.done)} aria-pressed={s.done} aria-label={`${s.title}: ${s.done ? 'done' : 'mark done'}`}
+                className={clsx('mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border', s.done ? 'border-good bg-good text-white' : 'border-axis hover:border-accent')}>
+                {s.done && <Icon name="check" size={12} />}
+              </button>
+            ) : (
+              <span className={clsx('mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px]', s.done ? 'bg-good text-white' : 'border border-warn text-warn')}>{s.done ? <Icon name="check" size={12} /> : i + 1}</span>
+            )}
+            <span className="min-w-0 flex-1">
+              <span className={clsx('block text-sm', s.done && 'text-muted line-through decoration-muted/50')}>{s.title}</span>
+              <span className="block text-xs text-muted">{s.detail}</span>
+            </span>
+            {!s.done && <Link to={s.link} className="shrink-0 text-xs text-accent">Open</Link>}
+          </li>
+        ))}
+      </ol>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        {c.closed && <button className="btn-ghost h-8 text-xs" onClick={() => setOpen(false)}>Hide</button>}
+        {!c.closed && <button className={all ? 'btn-primary h-8 text-xs' : 'btn-ghost h-8 text-xs'} onClick={finish}>{all ? `Close ${name}` : `Close ${name} anyway`}</button>}
+      </div>
+    </section>
+  )
+}
+
 export function SpendCalendar({ days }: { days: { date: string; spent: number }[] }) {
   const max = Math.max(...days.map((d) => d.spent), 1)
   const first = new Date(days[0].date + 'T00:00:00').getDay()

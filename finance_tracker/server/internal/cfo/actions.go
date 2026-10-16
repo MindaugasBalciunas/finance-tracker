@@ -97,7 +97,13 @@ func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring
 		}
 		out = append(out, Action{Level: "info", Kind: "inbox", Text: t, Link: "/ledger/inbox"})
 	}
-	if o.ReviewMonth != "" {
+	if c := o.Close; c != nil {
+		// The month close carries the review as one of its steps.
+		if m, err := time.Parse("2006-01", c.Month); err == nil {
+			out = append(out, Action{Level: "info", Kind: "close", Text: fmt.Sprintf("Close %s — %d of %d done", m.Format("January"), c.Done, len(c.Steps)),
+				Detail: "inbox, categories, balances, then the review, the plan and the wish list", Link: "/insights/review?month=" + c.Month})
+		}
+	} else if o.ReviewMonth != "" {
 		if m, err := time.Parse("2006-01", o.ReviewMonth); err == nil {
 			out = append(out, Action{Level: "info", Kind: "review", Text: "Your " + m.Format("January 2006") + " review is ready", Detail: "how the month went and what needs a look", Link: "/insights/review?month=" + o.ReviewMonth})
 		}

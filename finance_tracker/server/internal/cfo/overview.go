@@ -56,7 +56,9 @@ type Overview struct {
 	InboxOpen     int                  `json:"inbox_open"`
 	Checks        []Check              `json:"checks"`
 	ReviewMonth   string               `json:"review_month,omitempty"` // first week: last month's review is ready
-	Recent        []ledger.Tx          `json:"recent"`
+	// Close is last month's close, while it is still open (first ten days).
+	Close  *MonthClose `json:"close,omitempty"`
+	Recent []ledger.Tx `json:"recent"`
 }
 
 type SparkPoint struct {
@@ -391,6 +393,11 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")
+	}
+	if now.Day() <= 10 {
+		if c, err := Close(d, time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, time.UTC).Format("2006-01"), now); err == nil && !c.Closed {
+			o.Close = c
+		}
 	}
 	rec, _ := ledger.List(d, ledger.Filter{Limit: 8})
 	o.Recent = rec.Items
