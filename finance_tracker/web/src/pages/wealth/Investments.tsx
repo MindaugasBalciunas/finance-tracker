@@ -116,6 +116,8 @@ export function Investments() {
         <div className="mt-1 text-[11px] text-muted">From your trades and daily/weekly closes at today's exchange rates; fund accounts without trades (Revolut ETF, Swedbank funds) are on Net worth.</div>
       </section>
 
+      <QualityCard />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <Card icon="pie" color="var(--s1)" title="Allocation" action={<Segmented size="sm" value={split} onChange={setSplit} options={[{ value: 'positions', label: 'Positions' }, { value: 'brokers', label: 'Brokers' }, { value: 'currency', label: 'Currency' }]} />}>
           <Donut slices={slices} center={eurk(p.value_eur)} sub="market value" height={180} stacked />
@@ -309,6 +311,100 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
         </div>
         <Field label="Notes"><input className="input" value={t.notes ?? ''} onChange={(e) => setT({ ...t, notes: e.target.value })} /></Field>
         <ErrorBox error={save.error} />
+      </div>
+    </Sheet>
+  )
+}
+
+type Group = { name: 'core' | 'picks'; tickers: string[]; value_eur: number; invested_eur: number; annual_return?: number }
+type QualityData = {
+  quality: { value_eur: number; invested_eur: number; annual_return?: number; since: string; groups: Group[]
+    benchmark?: { ticker: string; value_eur: number; annual_return?: number; of: string }
+    heavy?: { ticker: string; weight: number }[] | null; targets?: { ticker: string; target: number; actual: number; buy_eur: number }[] | null; next_buy?: number }
+  settings: { core: string[] | null; benchmark: string; targets?: Record<string, number>; monthly?: number; max_single?: number }
+}
+
+const yr = (r?: number) => (r == null ? '—' : `${r >= 0 ? '+' : '−'}${(Math.abs(r) * 100).toFixed(1)}%/yr`)
+
+/** What the portfolio really earned (money-weighted, so when each buy
+ *  happened counts), the hand-picked stocks against the same money in the
+ *  core fund, concentration, and where the next contribution goes to move
+ *  toward the target mix — by buying, since selling makes gains taxable. */
+function QualityCard() {
+  const { data, isLoading } = useQuery({ queryKey: ['portfolio-quality'], queryFn: () => api.get<QualityData>('/portfolio/quality'), staleTime: 300_000 })
+  const [edit, setEdit] = useState(false)
+  if (isLoading) return <Card icon="target" color="var(--s3)" title="How it's doing"><Loading label="Working out returns…" /></Card>
+  if (!data) return null
+  const q = data.quality
+  const core = q.groups.find((g) => g.name === 'core')
+  const picks = q.groups.find((g) => g.name === 'picks')
+  const b = q.benchmark
+  const behind = b && picks ? picks.value_eur - b.value_eur : 0
+  return (
+    <Card icon="target" color="var(--s3)" title="How it's doing" action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit(true)}><Icon name="settings" size={14} />Core & targets</button>}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div><div className="text-xs text-muted">Whole portfolio</div><div className={clsx('text-lg font-semibold tnum', (q.annual_return ?? 0) < 0 ? 'text-bad' : 'text-good')}>{yr(q.annual_return)}</div><div className="text-xs text-muted">{eur(q.invested_eur)} in · {eur(q.value_eur)} now</div></div>
+        {core && <div><div className="text-xs text-muted">Core funds · {core.tickers.join(', ')}</div><div className={clsx('text-lg font-semibold tnum', (core.annual_return ?? 0) < 0 ? 'text-bad' : 'text-good')}>{yr(core.annual_return)}</div><div className="text-xs text-muted">{eur(core.invested_eur)} in · {eur(core.value_eur)} now</div></div>}
+        {picks && <div><div className="text-xs text-muted">Picks · {picks.tickers.length} stocks</div><div className={clsx('text-lg font-semibold tnum', (picks.annual_return ?? 0) < 0 ? 'text-bad' : 'text-good')}>{yr(picks.annual_return)}</div><div className="text-xs text-muted">{eur(picks.invested_eur)} in · {eur(picks.value_eur)} now</div></div>}
+      </div>
+      {b && picks && (
+        <div className={clsx('mt-3 rounded-lg px-3 py-2 text-sm', behind < 0 ? 'bg-warn/10' : 'bg-good/10')}>
+          The picks' money in <b>{b.ticker}</b> on the same days would be worth <b className="tnum">{eur(b.value_eur)}</b> ({yr(b.annual_return)}) — the picks are <b className={clsx('tnum', behind < 0 ? 'text-warn' : 'text-good')}>{eur(Math.abs(behind))} {behind < 0 ? 'behind' : 'ahead'}</b>.
+        </div>
+      )}
+      {(q.heavy ?? []).length > 0 && (
+        <div className="mt-2 flex items-start gap-1.5 text-xs text-warn"><Icon name="alert" size={14} className="mt-px shrink-0" />
+          {q.heavy!.map((h) => `${h.ticker} ${pct(h.weight)}`).join(', ')} — a single stock above {pct(data.settings.max_single || 0.1)} of the portfolio.</div>
+      )}
+      {(q.targets ?? []).length > 0 ? (
+        <div className="mt-3 border-t border-line pt-2">
+          <div className="mb-1 text-xs text-muted">Next {eur(q.next_buy ?? 0)} toward your target mix — buying only, nothing sold:</div>
+          {q.targets!.map((t) => (
+            <div key={t.ticker} className="flex items-baseline gap-2 py-0.5 text-sm">
+              <span className="w-16 shrink-0 font-medium">{t.ticker}</span>
+              <span className="flex-1 text-xs text-muted">{pct(t.actual)} now · target {pct(t.target)}</span>
+              <span className={clsx('tnum', t.buy_eur > 0 ? 'font-semibold' : 'text-muted')}>{t.buy_eur > 0 ? `buy ${eur(t.buy_eur)}` : '—'}</span>
+            </div>
+          ))}
+        </div>
+      ) : <div className="mt-3 text-xs text-muted">Set a target mix to see where each month's contribution should go. <button className="text-accent" onClick={() => setEdit(true)}>Set targets</button></div>}
+      <div className="mt-2 text-[11px] text-muted">Money-weighted returns since {shortDate(q.since)}, before tax; under 90 days isn't annualised.</div>
+      {edit && <QualitySettings data={data} onClose={() => setEdit(false)} />}
+    </Card>
+  )
+}
+
+function QualitySettings({ data, onClose }: { data: QualityData; onClose: () => void }) {
+  const refresh = useRefresh()
+  const toast = useToast()
+  const { data: p } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<any>('/portfolio') })
+  const tickers: string[] = (p?.holdings ?? []).map((h: any) => h.ticker)
+  const [core, setCore] = useState<string[]>(data.settings.core ?? [])
+  const [bench, setBench] = useState(data.settings.benchmark)
+  const [targets, setTargets] = useState<Record<string, number | undefined>>(Object.fromEntries(Object.entries(data.settings.targets ?? {}).map(([k, v]) => [k, Math.round(v * 100)])))
+  const [monthly, setMonthly] = useState<number | undefined>(data.settings.monthly || 1000)
+  const sum = Object.values(targets).reduce<number>((a, v) => a + (v ?? 0), 0)
+  const save = async () => {
+    try {
+      await api.put('/portfolio/settings', { core, benchmark: bench, monthly, targets: Object.fromEntries(Object.entries(targets).filter(([, v]) => v).map(([k, v]) => [k, (v as number) / 100])) })
+      refresh(); toast('Saved', 'good'); onClose()
+    } catch (e) { toast((e as Error).message, 'bad') }
+  }
+  return (
+    <Sheet open onClose={onClose} title="Core funds & target mix" footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={sum > 100} onClick={save}>Save</button></>}>
+      <div className="space-y-4 text-sm">
+        <Field label="Core funds — broad index funds; everything else counts as a pick">
+          <div className="flex flex-wrap gap-1.5">{tickers.map((t) => <button key={t} className={core.includes(t) ? 'chip-on' : 'chip'} aria-pressed={core.includes(t)} onClick={() => setCore(core.includes(t) ? core.filter((x) => x !== t) : [...core, t])}>{t}</button>)}</div>
+        </Field>
+        <Field label="Compare the picks against">
+          <select className="input" value={bench} onChange={(e) => setBench(e.target.value)}>{tickers.map((t) => <option key={t}>{t}</option>)}</select>
+        </Field>
+        <Field label={`Target mix — ${sum}% set${sum > 100 ? ' (over 100%)' : ''}`}>
+          <div className="grid grid-cols-2 gap-2">{tickers.map((t) => (
+            <label key={t} className="flex items-center gap-2"><span className="w-14 text-xs">{t}</span><NumberInput integer className="input tnum h-8 w-20" value={targets[t]} onChange={(v) => setTargets({ ...targets, [t]: v })} aria-label={`${t} target %`} /><span className="text-xs text-muted">%</span></label>
+          ))}</div>
+        </Field>
+        <Field label="Invested each month"><NumberInput className="input tnum w-32" value={monthly} onChange={setMonthly} aria-label="Monthly contribution" /></Field>
       </div>
     </Sheet>
   )

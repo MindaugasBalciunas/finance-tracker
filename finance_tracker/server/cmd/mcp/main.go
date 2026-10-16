@@ -356,6 +356,7 @@ func newServer() *mcp.Server {
 	for _, t := range []struct{ name, desc, path string }{
 		{"get_recurring", "Recurring money movements: bills and subscriptions, standing orders between accounts and expected income — amount, accounts, usual day, next date.", "/insights/recurring"},
 		{"get_fi", "Financial-independence projection and emergency fund.", "/insights/fi"},
+		{"get_portfolio_quality", "Money-weighted annual return of the portfolio, core funds vs hand-picked stocks, the picks' money in the core fund on the same days, concentration, and the next contribution toward the target mix.", "/portfolio/quality"},
 		{"get_tax", "This year's Lithuanian income declaration estimate (due 1 May next year): 25% bracket, interest and gains above exemptions, 3rd-pillar refund. Estimates — VMI's pre-filled declaration counts.", "/tax"},
 		{"get_forecast", "Cash month by month for the next 12 months at the current plan: income, obligations, saving, usual everyday spending, one-off allowance, dated yearly bills and wish-list goals; the first month below the emergency target or out of cash. Bonuses and extra investing are not included.", "/forecast"},
 		{"get_loans", "Loans: balance, rate, next payment split, payoff, equity/LTV, rate reset.", "/loans"},

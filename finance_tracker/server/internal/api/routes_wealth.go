@@ -174,6 +174,43 @@ func (s *Server) wealthRoutes() {
 		return wealth.PortfolioHistory(trades, from, now.Format("2006-01-02"),
 			func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, rng) }, wealth.LiveEUR()), nil
 	})
+	// What the portfolio really earned, against its core fund, and where
+	// the next contribution should go.
+	s.handle("GET /api/portfolio/quality", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		trades, err := wealth.ListTrades(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		p := wealth.BuildPortfolio(trades, true)
+		st := wealth.LoadInvestSettings(s.DB, p)
+		q := wealth.BuildQuality(trades, p, st, func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, "max") }, wealth.LiveEUR(), time.Now())
+		return map[string]any{"quality": q, "settings": st}, nil
+	})
+	s.handle("PUT /api/portfolio/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in wealth.InvestSettings
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		var sum float64
+		for t, w := range in.Targets {
+			if !wealth.ValidTicker(t) || w < 0 || w > 1 {
+				return nil, bad("invalid target")
+			}
+			sum += w
+		}
+		if sum > 1.0001 || in.Monthly < 0 || in.MaxSingle < 0 || in.MaxSingle > 1 || (in.Benchmark != "" && !wealth.ValidTicker(in.Benchmark)) {
+			return nil, bad("targets must add up to 100% or less")
+		}
+		for _, t := range in.Core {
+			if !wealth.ValidTicker(t) {
+				return nil, bad("invalid ticker")
+			}
+		}
+		if err := wealth.SaveInvestSettings(s.DB, in); err != nil {
+			return nil, err
+		}
+		return in, nil
+	})
 	s.handle("GET /api/portfolio/scenarios", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		trades, err := wealth.ListTrades(s.DB)
 		if err != nil {

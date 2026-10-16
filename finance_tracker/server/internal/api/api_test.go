@@ -142,6 +142,7 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro reads the forecast", tokRO, "GET", "/forecast", nil, 200},
 		{"ro reads the tax estimate", tokRO, "GET", "/tax", nil, 200},
 		{"rw cannot change tax answers", tokRW, "PUT", "/tax/settings", map[string]any{"pillar3_before_2025": true}, 403},
+		{"rw cannot change investment targets", tokRW, "PUT", "/portfolio/settings", map[string]any{"core": []string{"X"}}, 403},
 		{"rw cannot run scenarios", tokRW, "POST", "/forecast", map[string]any{"gross": 9000}, 403},
 		{"ro cannot read prefs", tokRO, "GET", "/prefs", nil, 403},
 		{"rw cannot change prefs", tokRW, "PUT", "/prefs", map[string]any{"liquid_only": true}, 403},

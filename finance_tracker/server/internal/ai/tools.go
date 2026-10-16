@@ -60,6 +60,7 @@ func toolDefs() []tool {
 		{Name: "get_forecast", Description: "Cash (checking, savings, cash) month by month for the next 12 months: the plan's income, obligations and saving, usual everyday spending, the one-off allowance, dated yearly bills and wish-list goals in their month; the first month below the emergency target or out of cash. Pass scenario fields to compare a what-if with the baseline (it does the arithmetic — use it instead of calculating): gross (new gross salary, LT taxes applied), saving (saving lines per month), everyday_pct (−20 = 20% less everyday spending), from (YYYY-MM the change starts), purchases [{label, month, amount}]. Bonuses and extra investing are not in the baseline.",
 			InputSchema: obj(map[string]any{"gross": num("new gross salary per month"), "saving": num("saving lines per month, EUR"), "everyday_pct": num("change to everyday spending, %"),
 				"from": str("YYYY-MM the change starts"), "purchases": map[string]any{"type": "array", "description": "extra one-off purchases", "items": obj(map[string]any{"label": str("what"), "month": str("YYYY-MM"), "amount": num("EUR")}, "month", "amount")}})},
+		{Name: "get_portfolio_quality", Description: "Money-weighted annual return of the investment portfolio, the core funds and the hand-picked stocks; the picks' money in the core fund on the same days (are the picks worth it?); single stocks above the concentration limit; where the next monthly contribution goes toward the owner's target mix (buying only — selling makes gains taxable).", InputSchema: obj(map[string]any{})},
 		{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts.",
 			InputSchema: obj(map[string]any{"year": num("tax year, default this year")})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
@@ -173,6 +174,14 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 	switch name {
 	case "get_overview":
 		return jsonOut(a.Overview(now))
+	case "get_portfolio_quality":
+		trades, err := wealth.ListTrades(a.DB)
+		if err != nil {
+			return "", err
+		}
+		p := wealth.BuildPortfolio(trades, true)
+		st := wealth.LoadInvestSettings(a.DB, p)
+		return jsonOut(map[string]any{"quality": wealth.BuildQuality(trades, p, st, func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, "max") }, wealth.LiveEUR(), now), "settings": st})
 	case "get_tax":
 		var in struct {
 			Year int `json:"year"`
