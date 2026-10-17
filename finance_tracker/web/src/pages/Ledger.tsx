@@ -5,7 +5,8 @@ import clsx from 'clsx'
 import { api } from '../lib/api'
 import { TxFilter, useInbox, useOverview, useRefresh, useTransactions } from '../lib/hooks'
 import { useCats } from '../lib/categories'
-import { dayLabel, daysAgo, eur, eurc, todayISO } from '../lib/format'
+import { dayLabel, eur, eurc } from '../lib/format'
+import { PERIODS, periodRange } from '../lib/periods'
 import type { InboxRow, Tx } from '../lib/types'
 import { Empty, ErrorBox, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
 import { TxRow, useTxEditor } from '../components/TxEditor'
@@ -31,20 +32,6 @@ export default function Ledger() {
   )
 }
 
-const PERIODS = [
-  { value: 'month', label: 'This month' }, { value: '30', label: '30 days' }, { value: '90', label: '3 months' },
-  { value: 'year', label: 'This year' }, { value: '365', label: '12 months' }, { value: 'all', label: 'All time' },
-]
-
-function periodRange(p: string): { from?: string; to?: string } {
-  const t = todayISO()
-  switch (p) {
-    case 'month': return { from: t.slice(0, 8) + '01', to: t }
-    case 'year': return { from: t.slice(0, 5) + '01-01', to: t }
-    case 'all': return {}
-    default: return { from: daysAgo(Number(p)), to: t }
-  }
-}
 
 function Transactions() {
   const [sp, setSp] = useSearchParams()

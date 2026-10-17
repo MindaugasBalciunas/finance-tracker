@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +31,8 @@ type FactItem struct {
 	N     float64 `json:"n,omitempty"`    // the number behind Value, for bars
 	From  string  `json:"from,omitempty"` // a span (employers: first and last year)
 	To    string  `json:"to,omitempty"`
-	Top   bool    `json:"top,omitempty"` // the highlighted one
+	Top   bool    `json:"top,omitempty"`   // the highlighted one
+	Years []int   `json:"years,omitempty"` // employers: each year they actually paid (gaps stay gaps)
 }
 
 // obligation: money that isn't a choice (alimony, the mortgage, family
@@ -48,8 +50,21 @@ func bill(cat string) bool {
 	return false
 }
 
-// FunFacts digs through the whole ledger for the stories in it.
-func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) []Fact {
+// FunFacts digs through the ledger for the stories in it — the whole
+// history, or the days between from and to (inclusive; "" = open). In a
+// window the lifetime-only facts (the first pay cheque, this year's
+// favourite) are left out and the story counts days instead of years.
+func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, from, to string) []Fact {
+	windowed := from != "" || to != ""
+	if windowed {
+		in := make([]ledger.Tx, 0, len(txs))
+		for _, t := range txs {
+			if (from == "" || t.Date >= from) && (to == "" || t.Date <= to) {
+				in = append(in, t)
+			}
+		}
+		txs = in
+	}
 	var out []Fact
 	eur := func(c money.Cents) string { return eurWhole(c) }
 	day := func(d string) string {
@@ -67,6 +82,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) [
 		total       money.Cents
 		first, last string
 		n           int
+		years       map[int]bool
 	}
 	payers := map[string]*payer{}
 	var firstPay *ledger.Tx
@@ -90,8 +106,11 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) [
 		k := merchant.Fold(t.Merchant)
 		p := payers[k]
 		if p == nil {
-			p = &payer{name: t.Merchant, first: t.Date, last: t.Date}
+			p = &payer{name: t.Merchant, first: t.Date, last: t.Date, years: map[int]bool{}}
 			payers[k] = p
+		}
+		if y, err := strconv.Atoi(t.Date[:4]); err == nil {
+			p.years[y] = true
 		}
 		p.total += t.Amount
 		p.n++
@@ -115,11 +134,16 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) [
 			if year(p.last) != span {
 				span += "–" + year(p.last)
 			}
-			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last)})
+			var ys []int
+			for y := range p.years {
+				ys = append(ys, y)
+			}
+			sort.Ints(ys)
+			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last), Years: ys})
 		}
 		out = append(out, f)
 	}
-	if firstPay != nil {
+	if firstPay != nil && !windowed {
 		var recent money.Cents // the latest full month of salary
 		months := map[string]money.Cents{}
 		for i := range txs {
@@ -140,7 +164,26 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) [
 	if income > 0 && firstDate != "" {
 		f := Fact{Key: "lifetime", Icon: "trend", Title: "Earned since records began", Value: eur(income),
 			Detail: fmt.Sprintf("Since %s, across %s transactions.", day(firstDate), thousandsInt(len(txs)))}
-		if t, err := time.Parse("2006-01-02", firstDate); err == nil {
+		if windowed {
+			end := now.Format("2006-01-02")
+			if to != "" && to < end {
+				end = to
+			}
+			start := firstDate
+			if from != "" {
+				start = from
+			}
+			a, _ := time.Parse("2006-01-02", start)
+			b, _ := time.Parse("2006-01-02", end)
+			days := int(b.Sub(a).Hours()/24) + 1
+			f.Title = "Earned in this period"
+			f.Detail = fmt.Sprintf("%s – %s, across %s transactions.", day(start), day(end), thousandsInt(len(txs)))
+			f.Items = []FactItem{
+				{Label: "days", Value: thousandsInt(days), N: float64(days), From: start, To: end},
+				{Label: "transactions", Value: thousandsInt(len(txs)), N: float64(len(txs))},
+				{Label: "earned", Value: eur(income), N: income.Float()},
+			}
+		} else if t, err := time.Parse("2006-01-02", firstDate); err == nil {
 			f.Items = []FactItem{
 				{Label: "years", Value: fmt.Sprintf("%.0f", now.Sub(t).Hours()/24/365.25), N: math.Floor(now.Sub(t).Hours() / 24 / 365.25), From: year(firstDate)},
 				{Label: "transactions", Value: thousandsInt(len(txs)), N: float64(len(txs))},
@@ -241,7 +284,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time) [
 		out = append(out, f)
 		// This year's favourite: most visits in the last 12 months.
 		sort.Slice(list, func(i, j int) bool { return list[i].recent > list[j].recent })
-		if list[0].recent >= 5 {
+		if list[0].recent >= 5 && !windowed {
 			out = append(out, Fact{Key: "this_year", Icon: "heart", Title: "This year's favourite", Value: list[0].name,
 				Detail: fmt.Sprintf("%d visits in the last 12 months — about one every %d days.", list[0].recent, max(1, 365/list[0].recent))})
 		}

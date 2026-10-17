@@ -206,16 +206,28 @@ export function PageHeader({ title, sub, actions }: { title: ReactNode; sub?: Re
 }
 
 export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode; badge?: number }[] }) {
+  // On a phone the bar scrolls sideways: the chosen tab scrolls itself into
+  // view, and a fade at the right edge says there is more to swipe to.
+  const bar = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  const measure = () => { const el = bar.current; if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4) }
+  useEffect(() => {
+    bar.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' })
+    measure()
+  }, [value, tabs.length])
   return (
-    <div className="no-scrollbar mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line -mx-4 px-4 sm:mx-0 sm:px-0">
-      {tabs.map((t) => (
-        <button key={t.value} onClick={() => onChange(t.value)}
-          className={clsx('relative h-10 px-3 text-sm font-medium whitespace-nowrap transition', value === t.value ? 'text-ink' : 'text-muted hover:text-ink2')}>
-          {t.label}
-          {!!t.badge && <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">{t.badge}</span>}
-          {value === t.value && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
-        </button>
-      ))}
+    <div className="relative mb-4 -mx-4 sm:mx-0">
+      <div ref={bar} onScroll={measure} className="no-scrollbar flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 sm:px-0">
+        {tabs.map((t) => (
+          <button key={t.value} onClick={() => onChange(t.value)} aria-current={value === t.value ? 'page' : undefined}
+            className={clsx('relative h-10 shrink-0 px-3 text-sm font-medium whitespace-nowrap transition', value === t.value ? 'text-ink' : 'text-muted hover:text-ink2')}>
+            {t.label}
+            {!!t.badge && <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">{t.badge}</span>}
+            {value === t.value && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
+          </button>
+        ))}
+      </div>
+      {more && <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-page to-transparent" />}
     </div>
   )
 }

@@ -3,16 +3,19 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { api } from '../../lib/api'
+import { usePeriod } from '../../lib/hooks'
+import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
 import { AskCFO, Loading } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
-type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean }
+type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[] }
 export type Fact = { key: string; icon: string; title: string; value: string; detail?: string; items?: Item[] | null }
 
 const S = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)']
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-export const useFunFacts = () => useQuery({ queryKey: ['fun-facts'], queryFn: () => api.get<Fact[]>('/insights/fun'), staleTime: 3_600_000 })
+export const useFunFacts = (from?: string, to?: string) =>
+  useQuery({ queryKey: ['fun-facts', from ?? '', to ?? ''], queryFn: () => api.get<Fact[]>('/insights/fun', { from, to }), staleTime: 3_600_000, placeholderData: (prev) => prev })
 
 /** One-line "did you know?" stories from the facts — shared with Home. */
 export function funLines(facts: Fact[]): string[] {
@@ -62,12 +65,15 @@ const gradText: CSSProperties = { backgroundImage: 'linear-gradient(90deg, var(-
  *  shops as bars, habits as big numbers, the week and the years as charts.
  *  Obligations (alimony, the mortgage, family support) are left out. */
 export function FunView() {
-  const { data, isLoading } = useFunFacts()
+  const [period, setPeriod] = usePeriod('fun', 'all')
+  const { from, to } = pickerRange(period)
+  const { data, isLoading } = useFunFacts(from, to)
   if (isLoading || !data) return <Loading />
   const by = Object.fromEntries(data.map((f) => [f.key, f])) as Record<string, Fact>
   const rest = data.filter((f) => f.key !== 'lifetime')
   return (
     <div className="space-y-4">
+      <PeriodPicker value={period} onChange={setPeriod} />
       {by.lifetime && <Hero f={by.lifetime} lines={funLines(data)} />}
       <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
         {rest.map((f, i) => (
@@ -92,11 +98,11 @@ function Hero({ f, lines }: { f: Fact; lines: string[] }) {
   return (
     <section className="relative overflow-hidden rounded-2xl border border-line p-5 sm:p-7"
       style={{ background: 'radial-gradient(120% 140% at 0% 0%, color-mix(in oklab, var(--s1) 35%, transparent), transparent 55%), radial-gradient(120% 140% at 100% 100%, color-mix(in oklab, var(--s7) 35%, transparent), transparent 55%), rgb(var(--surface))' }}>
-      <div className="text-xs font-medium uppercase tracking-widest text-ink2">Your money story{it('years')?.from ? ` since ${it('years')!.from}` : ''}</div>
+      <div className="text-xs font-medium uppercase tracking-widest text-ink2">Your money story{it('days') ? ` · ${it('days')!.from} – ${it('days')!.to}` : it('years')?.from ? ` since ${it('years')!.from}` : ''}</div>
       {/* Phones: the earned total gets its own row; three big numbers don't fit side by side. */}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {[['earned', 'earned', true], ['years', 'years tracked', false], ['transactions', 'transactions', false]].map(([k, label, euro]) => (
-          <div key={k as string} className={clsx('min-w-0', k === 'earned' && 'col-span-2 sm:order-2 sm:col-span-1', k === 'years' && 'sm:order-1', k === 'transactions' && 'sm:order-3')}>
+        {[['earned', 'earned', true], it('days') ? ['days', 'days', false] : ['years', 'years tracked', false], ['transactions', 'transactions', false]].map(([k, label, euro]) => (
+          <div key={k as string} className={clsx('min-w-0', k === 'earned' && 'col-span-2 sm:order-2 sm:col-span-1', (k === 'years' || k === 'days') && 'sm:order-1', k === 'transactions' && 'sm:order-3')}>
             <div className="text-2xl font-bold tracking-tight tnum sm:text-4xl" style={gradText}><Count n={it(k as string)?.n ?? 0} euro={euro as boolean} /></div>
             <div className="text-xs text-muted sm:text-sm">{label as string}</div>
           </div>
@@ -127,27 +133,58 @@ function Shell({ f, color, children, big }: { f: Fact; color: string; children?:
   )
 }
 
+// Consecutive years as [first, last] runs: 2016,2017,…,2020,2024 → [2016,2020],[2024,2024].
+function runs(years: number[]): [number, number][] {
+  const out: [number, number][] = []
+  for (const y of [...years].sort((a, b) => a - b)) {
+    const last = out[out.length - 1]
+    if (last && y === last[1] + 1) last[1] = y
+    else out.push([y, y])
+  }
+  return out
+}
+
 function FactCard({ f, color }: { f: Fact; color: string }) {
   const items = f.items ?? []
   const max = Math.max(...items.map((i) => i.n ?? 0), 1)
   switch (f.key) {
     case 'employers': {
+      // A timeline: each bar runs from an employer's first payment year to
+      // its last, against a year axis with a line per year.
       const years = items.flatMap((i) => [Number(i.from), Number(i.to)]).filter(Boolean)
       const lo = Math.min(...years), hi = Math.max(...years) + 1
-      const pos = (y: number) => `${((y - lo) / (hi - lo)) * 100}%`
+      const span = hi - lo
+      const pos = (y: number) => `${((y - lo) / span) * 100}%`
+      const step = span > 10 ? 3 : span > 6 ? 2 : 1
+      const ticks = Array.from({ length: span }, (_, k) => lo + k)
       return (
         <Shell f={f} color={color}>
-          <div className="mt-3 space-y-2">
-            {items.map((it, i) => (
-              <div key={it.label}>
-                <div className="flex items-baseline justify-between text-xs"><span className="truncate font-medium">{it.label}</span><span className="tnum text-ink2">{it.value}</span></div>
-                <div className="relative mt-1 h-2.5 rounded-full bg-sunken">
-                  <div className="absolute inset-y-0 rounded-full" title={it.sub}
-                    style={{ left: pos(Number(it.from)), width: `calc(${pos(Number(it.to) + 1)} - ${pos(Number(it.from))})`, background: S[i % S.length], opacity: 0.35 + 0.65 * ((it.n ?? 0) / max) }} />
+          <div className="mt-3">
+            <div className="relative ml-0 h-4 text-[10px] text-muted tnum">
+              {ticks.filter((y) => (y - lo) % step === 0).map((y) => (
+                <span key={y} className="absolute -translate-x-1/2" style={{ left: `calc(${pos(y)} + ${50 / span}%)` }}>’{String(y).slice(2)}</span>
+              ))}
+            </div>
+            <div className="space-y-2.5">
+              {items.map((it, i) => (
+                <div key={it.label}>
+                  <div className="flex items-baseline gap-2 text-xs">
+                    <span className="min-w-0 truncate font-medium">{it.label}</span>
+                    <span className="shrink-0 text-muted tnum">{runs(it.years ?? [Number(it.from)]).map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(', ')}</span>
+                    <span className="ml-auto shrink-0 font-semibold tnum">{it.value}</span>
+                  </div>
+                  <div className="relative mt-1 h-2.5 rounded-full bg-sunken">
+                    {ticks.slice(1).map((y) => <span key={y} className="absolute inset-y-0 w-px bg-line" style={{ left: pos(y) }} />)}
+                    {/* One block per run of consecutive years paid — a gap stays a gap. */}
+                    {runs(it.years ?? [Number(it.from)]).map(([a, b]) => (
+                      <div key={a} className="absolute inset-y-0 rounded-full" title={`${it.label}: ${a === b ? a : `${a}–${b}`}`}
+                        style={{ left: pos(a), width: `calc(${pos(b + 1)} - ${pos(a)})`, background: S[i % S.length] }} />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div className="flex justify-between text-[10px] text-muted tnum"><span>{lo}</span><span>{hi - 1}</span></div>
+              ))}
+            </div>
+            <div className="mt-2 text-[11px] text-muted">Each block is a year the employer paid you · ranked by total paid</div>
           </div>
         </Shell>
       )
