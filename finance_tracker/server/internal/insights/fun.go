@@ -56,6 +56,7 @@ func bill(cat string) bool {
 // favourite) are left out and the story counts days instead of years.
 func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, from, to string) []Fact {
 	windowed := from != "" || to != ""
+	all := txs // the whole history: "new places" and "the period before" need it
 	if windowed {
 		in := make([]ledger.Tx, 0, len(txs))
 		for _, t := range txs {
@@ -129,6 +130,9 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		sort.Slice(ps, func(i, j int) bool { return ps[i].total > ps[j].total })
 		f := Fact{Key: "employers", Icon: "briefcase", Title: "Who paid you the most", Value: ps[0].name,
 			Detail: fmt.Sprintf("%s over %s–%s, in %d payments.", eur(ps[0].total), year(ps[0].first), year(ps[0].last), ps[0].n)}
+		if year(ps[0].first) == year(ps[0].last) {
+			f.Detail = fmt.Sprintf("%s in %s, in %d payments.", eur(ps[0].total), year(ps[0].first), ps[0].n)
+		}
 		for _, p := range ps[:min(6, len(ps))] {
 			span := year(p.first)
 			if year(p.last) != span {
@@ -361,6 +365,8 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		out = append(out, f)
 	}
 
+	out = append(out, periodFacts(all, txs, now, from, to, windowed, eur, day)...)
+
 	// Spending by year: how life grew.
 	yearly := map[string]money.Cents{}
 	for d, v := range days {
@@ -444,3 +450,265 @@ func thousandsInt(n int) string {
 	}
 	return s
 }
+
+// choice: a payment that was a choice (not an obligation, not a bill).
+func choice(t *ledger.Tx) bool {
+	return t.Kind == "expense" && !obligation(t.Category)
+}
+
+// periodFacts are the facts that read well for any period: the rhythm of
+// spending days, the big and quiet months, new places, the signature price,
+// the smallest purchase, the biggest money back, what was invested, and how
+// the period compares with the one before it.
+func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed bool, eur func(money.Cents) string, day func(string) string) []Fact {
+	var out []Fact
+	if len(txs) == 0 {
+		return out
+	}
+	start, end := from, to
+	if start == "" {
+		start = txs[0].Date
+		for _, t := range txs {
+			if t.Date < start {
+				start = t.Date
+			}
+		}
+	}
+	if end == "" || end > now.Format("2006-01-02") {
+		end = now.Format("2006-01-02")
+	}
+	// For all time, start where the records get dense (the first month with
+	// 15+ payments) — early years with a handful of rows say nothing about habits.
+	if !windowed {
+		perMonth := map[string]int{}
+		for i := range txs {
+			if choice(&txs[i]) {
+				perMonth[txs[i].Date[:7]]++
+			}
+		}
+		var ms []string
+		for m, n := range perMonth {
+			if n >= 15 {
+				ms = append(ms, m)
+			}
+		}
+		sort.Strings(ms)
+		if len(ms) > 0 && ms[0]+"-01" > start {
+			start = ms[0] + "-01"
+			kept := txs[:0:0]
+			for _, t := range txs {
+				if t.Date >= start {
+					kept = append(kept, t)
+				}
+			}
+			txs = kept
+		}
+	}
+	a, _ := time.Parse("2006-01-02", start)
+	b, _ := time.Parse("2006-01-02", end)
+	span := int(b.Sub(a).Hours()/24) + 1
+	if span < 1 {
+		return out
+	}
+	// People paid obligations are never shops, refunds or new places.
+	people := map[string]bool{}
+	for i := range all {
+		if c := all[i].Category; all[i].Kind == "expense" && all[i].Merchant != "" && (c == "kids.alimony" || c == "other.family" || strings.HasPrefix(c, "housing.mortgage")) {
+			people[placeKey(all[i].Merchant)] = true
+		}
+	}
+
+	// Rhythm: days with a choice payment, and the longest break.
+	days := map[string]bool{}
+	var spent money.Cents
+	months := map[string]money.Cents{}
+	amounts := map[money.Cents]int{}
+	amountAt := map[money.Cents]map[string]bool{}
+	var tiny *ledger.Tx
+	for i := range txs {
+		t := &txs[i]
+		if !choice(t) {
+			continue
+		}
+		days[t.Date] = true
+		spent += t.Amount
+		months[t.Date[:7]] += t.Amount
+		if t.Amount >= money.FromFloat(1) && t.Amount < money.FromFloat(50) {
+			amounts[t.Amount]++
+			if amountAt[t.Amount] == nil {
+				amountAt[t.Amount] = map[string]bool{}
+			}
+			if t.Merchant != "" {
+				amountAt[t.Amount][t.Merchant] = true
+			}
+		}
+		if tiny == nil || t.Amount < tiny.Amount {
+			tiny = t
+		}
+	}
+	if len(days) > 0 {
+		ds := make([]string, 0, len(days))
+		for d := range days {
+			ds = append(ds, d)
+		}
+		sort.Strings(ds)
+		gap, gFrom, gTo := 0, "", ""
+		for i := 1; i < len(ds); i++ {
+			x, _ := time.Parse("2006-01-02", ds[i-1])
+			y, _ := time.Parse("2006-01-02", ds[i])
+			if g := int(y.Sub(x).Hours()/24) - 1; g > gap {
+				gap, gFrom, gTo = g, ds[i-1], ds[i]
+			}
+		}
+		f := Fact{Key: "rhythm", Icon: "calendar", Title: "Days you spent money", Value: fmt.Sprintf("%s of %s", thousandsInt(len(days)), thousandsInt(span)),
+			Detail: fmt.Sprintf("%.0f%% of days, about %s a day on choices.", 100*float64(len(days))/float64(span), eur(spent/money.Cents(span)))}
+		if gap >= 2 {
+			f.Detail += fmt.Sprintf(" Longest break: %d days (%s – %s).", gap, day(gFrom), day(gTo))
+		}
+		out = append(out, f)
+	}
+
+	// The big and the quiet month (complete months only, at least three).
+	cur := now.Format("2006-01")
+	var ms []string
+	for m := range months {
+		if m < cur {
+			ms = append(ms, m)
+		}
+	}
+	sort.Strings(ms)
+	if len(ms) >= 3 && len(ms) <= 36 {
+		hi, lo := ms[0], ms[0]
+		for _, m := range ms {
+			if months[m] > months[hi] {
+				hi = m
+			}
+			if months[m] < months[lo] {
+				lo = m
+			}
+		}
+		mName := func(m string) string { t, _ := time.Parse("2006-01", m); return t.Format("January 2006") }
+		f := Fact{Key: "months", Icon: "chart", Title: "Big month, quiet month", Value: mName(hi),
+			Detail: fmt.Sprintf("%s on choices, against %s in %s.", eur(months[hi]), eur(months[lo]), mName(lo))}
+		for _, m := range ms {
+			t, _ := time.Parse("2006-01", m)
+			f.Items = append(f.Items, FactItem{Label: t.Format("Jan"), Sub: m, Value: eur(months[m]), N: months[m].Float(), Top: m == hi})
+		}
+		out = append(out, f)
+	}
+
+	// New places: merchants first paid in this period.
+	if windowed {
+		first := map[string]string{}
+		name := map[string]string{}
+		count := map[string]int{}
+		for i := range all {
+			t := &all[i]
+			if t.Kind != "expense" || t.Merchant == "" {
+				continue
+			}
+			k := placeKey(t.Merchant)
+			if d, ok := first[k]; !ok || t.Date < d {
+				first[k] = t.Date // the first payment of any kind
+			}
+			if t.Date >= start && t.Date <= end && choice(t) && !bill(t.Category) && !people[k] {
+				count[k]++
+				name[k] = t.Merchant
+			}
+		}
+		var fresh []string
+		for k, d := range first {
+			if d >= start && d <= end && count[k] > 0 {
+				fresh = append(fresh, k)
+			}
+		}
+		if len(fresh) > 0 {
+			sort.Slice(fresh, func(i, j int) bool {
+				return count[fresh[i]] > count[fresh[j]] || count[fresh[i]] == count[fresh[j]] && first[fresh[i]] < first[fresh[j]]
+			})
+			f := Fact{Key: "new_places", Icon: "spark", Title: "New places", Value: fmt.Sprintf("%d you'd never paid before", len(fresh))}
+			for _, k := range fresh[:min(5, len(fresh))] {
+				f.Items = append(f.Items, FactItem{Label: name[k], Value: fmt.Sprintf("%d×", count[k]), Sub: "first on " + day(first[k]), N: float64(count[k])})
+			}
+			out = append(out, f)
+		}
+	}
+
+	// The signature price: the amount paid most often.
+	if len(amounts) > 0 {
+		var best money.Cents
+		for a, n := range amounts {
+			if n > amounts[best] || n == amounts[best] && a < best {
+				best = a
+			}
+		}
+		if amounts[best] >= 3 {
+			var where []string
+			for m := range amountAt[best] {
+				where = append(where, m)
+			}
+			sort.Strings(where)
+			if len(where) > 3 {
+				where = where[:3]
+			}
+			f := Fact{Key: "signature", Icon: "coins", Title: "Your signature price", Value: "€" + best.String(),
+				Detail: fmt.Sprintf("Paid exactly that %d times", amounts[best])}
+			if len(where) > 0 {
+				f.Detail += " — " + strings.Join(where, ", ")
+			}
+			f.Detail += "."
+			out = append(out, f)
+		}
+	}
+	if tiny != nil && tiny.Amount < money.FromFloat(1) {
+		out = append(out, Fact{Key: "tiny", Icon: "coins", Title: "Smallest payment", Value: "€" + tiny.Amount.String(),
+			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(tiny.Merchant, tiny.Note, "a payment"), day(tiny.Date))})
+	}
+
+	// The biggest money back, and what went into wealth.
+	var refund *ledger.Tx
+	var invested money.Cents
+	for i := range txs {
+		t := &txs[i]
+		if t.Kind == "income" && ledger.Top(t.Category) == "refunds" && !people[placeKey(t.Merchant)] && (refund == nil || t.Amount > refund.Amount) {
+			refund = t
+		}
+		if t.Kind == "transfer" && (t.Category == "transfer.invest" || t.Category == "transfer.pension" || t.Category == "transfer.debt") {
+			invested += t.Amount
+		}
+	}
+	if refund != nil && refund.Amount >= money.FromFloat(20) {
+		out = append(out, Fact{Key: "refund", Icon: "piggy", Title: "Biggest money back", Value: eur(refund.Amount),
+			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(refund.Merchant, refund.Note, "a refund"), day(refund.Date))})
+	}
+	if invested > 0 {
+		out = append(out, Fact{Key: "invested", Icon: "trend", Title: "Paid yourself first", Value: eur(invested),
+			Detail: fmt.Sprintf("Into investments, pension and loan principal — about %s a day.", eur(invested/money.Cents(span)))})
+	}
+
+	// The period against the same length before it.
+	if windowed && from != "" {
+		pTo := a.AddDate(0, 0, -1)
+		pFrom := pTo.AddDate(0, 0, -(span - 1))
+		var before money.Cents
+		for i := range all {
+			t := &all[i]
+			if choice(t) && t.Date >= pFrom.Format("2006-01-02") && t.Date <= pTo.Format("2006-01-02") {
+				before += t.Amount
+			}
+		}
+		if before > 0 {
+			ch := (spent.Float() - before.Float()) / before.Float()
+			word := "more"
+			if ch < 0 {
+				word = "less"
+			}
+			out = append(out, Fact{Key: "vs_before", Icon: "trend", Title: "Against the period before", Value: fmt.Sprintf("%.0f%% %s", math.Abs(ch)*100, word),
+				Detail: fmt.Sprintf("%s on choices, against %s in the %d days before (%s – %s).", eur(spent), eur(before), span, day(pFrom.Format("2006-01-02")), day(pTo.Format("2006-01-02")))})
+		}
+	}
+	return out
+}
+
+// placeKey folds a merchant name for matching, spaces ignored ("360 Arena" = "360arena").
+func placeKey(m string) string { return strings.ReplaceAll(merchant.Fold(m), " ", "") }

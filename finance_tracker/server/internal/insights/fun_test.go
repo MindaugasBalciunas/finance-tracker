@@ -1,6 +1,7 @@
 package insights_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -96,5 +97,49 @@ func TestFunFactsInAPeriod(t *testing.T) {
 	l := by["lifetime"]
 	if l.Title != "Earned in this period" || l.Value != "€5,000" || l.Items[0].Label != "days" || l.Items[0].N != 30 {
 		t.Errorf("story %+v", l)
+	}
+}
+
+// Facts that work for any period: spending days and the longest break, new
+// places (never paid before, under any category), the signature price, the
+// biggest money back (never from a person paid obligations) and the period
+// against the one before.
+func TestPeriodFacts(t *testing.T) {
+	e := money.FromFloat
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	tx := func(date, kind, cat, m string, eur float64) ledger.Tx {
+		return ledger.Tx{Date: date, Kind: kind, Category: cat, Merchant: m, Amount: e(eur)}
+	}
+	txs := []ledger.Tx{
+		tx("2026-08-10", "expense", "housing.maintenance", "Senukai", 30), // seen before, under housing
+		tx("2026-08-20", "expense", "food.groceries", "Lidl", 100),        // the period before
+		tx("2026-08-25", "expense", "kids.alimony", "Ex", 500),            // makes Ex a person
+		tx("2026-09-01", "expense", "food.coffee", "Caffeine", 3.7),
+		tx("2026-09-02", "expense", "food.coffee", "Caffeine", 3.7),
+		tx("2026-09-03", "expense", "food.coffee", "Caffeine", 3.7),
+		tx("2026-09-10", "expense", "shopping.other", "Senukai", 20),
+		tx("2026-09-12", "expense", "food.groceries", "Lidl", 50),
+		tx("2026-09-14", "income", "refunds", "Ex", 300),
+		tx("2026-09-15", "income", "refunds", "Shop", 25),
+	}
+	by := map[string]insights.Fact{}
+	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30") {
+		by[f.Key] = f
+	}
+	if f := by["rhythm"]; f.Value != "5 of 30" || !strings.Contains(f.Detail, "Longest break: 6 days") {
+		t.Errorf("rhythm %+v", f)
+	}
+	if f := by["new_places"]; f.Value != "1 you'd never paid before" || f.Items[0].Label != "Caffeine" {
+		t.Errorf("new places %+v", f)
+	}
+	if f := by["signature"]; f.Value != "€3.70" {
+		t.Errorf("signature %+v", f)
+	}
+	if f := by["refund"]; f.Value != "€25" {
+		t.Errorf("money back from a person counted: %+v", f)
+	}
+	// 81.10 against 130 (Lidl 100 + Senukai 30) in the 30 days before (2–31 Aug).
+	if f := by["vs_before"]; f.Value != "38% less" {
+		t.Errorf("vs before %+v", f)
 	}
 }

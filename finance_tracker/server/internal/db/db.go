@@ -120,6 +120,12 @@ CREATE INDEX IF NOT EXISTS goal_moves_goal ON goal_moves(goal_id);`,
 	// where no answer was given yet (a fresh database asks in the app).
 	`INSERT OR IGNORE INTO settings(key,value)
 SELECT 'tax', '{"pillar3_before_2025":true}' WHERE EXISTS (SELECT 1 FROM accounts WHERE id='artea');`,
+	// 14: three Navaturas trip payments had their description typed into the
+	// merchant ("Final payment for Navaturas Egypt trip"); the note already
+	// carries it, so the merchant becomes the tour operator. Exact strings
+	// only — a row edited since stays as it is.
+	`UPDATE transactions SET merchant='Navaturas' WHERE merchant IN
+('20% Prepaid for Navaturas Egipt trip','20% Prepaid for Navaturas BGY/Madonna da','Final payment for Navaturas Egypt trip');`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

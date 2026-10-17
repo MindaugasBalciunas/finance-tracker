@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { api } from '../../lib/api'
+import { shortDate } from '../../lib/format'
 import { usePeriod } from '../../lib/hooks'
 import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
 import { AskCFO, Loading } from '../../components/ui'
@@ -32,6 +33,10 @@ export function funLines(facts: Fact[]): string[] {
   if (by.this_year) out.push(`${by.this_year.value} is this year's favourite: ${by.this_year.detail?.split(' — ')[1] ?? by.this_year.detail}`)
   if (by.weekday) out.push(`${by.weekday.value} is your big spending day.`)
   if (by.biggest) out.push(`The biggest single purchase: ${by.biggest.value} — ${by.biggest.detail?.split(' · ')[0]}.`)
+  if (by.signature) out.push(`${by.signature.value} is your signature price — ${by.signature.detail?.replace(/^Paid exactly that /, 'paid exactly that ')}`)
+  if (by.rhythm?.detail?.includes('Longest break')) out.push(`Longest break from spending: ${by.rhythm.detail.split('Longest break: ')[1]}`)
+  if (by.new_places) out.push(`${by.new_places.value.replace(" you'd never paid before", '')} new places — ${by.new_places.items?.slice(0, 2).map((i) => i.label).join(' and ')} among them.`)
+  if (by.vs_before) out.push(`${by.vs_before.value} spent than in the period before.`)
   return out.filter(Boolean)
 }
 
@@ -98,7 +103,7 @@ function Hero({ f, lines }: { f: Fact; lines: string[] }) {
   return (
     <section className="relative overflow-hidden rounded-2xl border border-line p-5 sm:p-7"
       style={{ background: 'radial-gradient(120% 140% at 0% 0%, color-mix(in oklab, var(--s1) 35%, transparent), transparent 55%), radial-gradient(120% 140% at 100% 100%, color-mix(in oklab, var(--s7) 35%, transparent), transparent 55%), rgb(var(--surface))' }}>
-      <div className="text-xs font-medium uppercase tracking-widest text-ink2">Your money story{it('days') ? ` · ${it('days')!.from} – ${it('days')!.to}` : it('years')?.from ? ` since ${it('years')!.from}` : ''}</div>
+      <div className="text-xs font-medium uppercase tracking-widest text-ink2">Your money story{it('days') ? ` · ${shortDate(it('days')!.from!)} – ${shortDate(it('days')!.to!)}` : it('years')?.from ? ` since ${it('years')!.from}` : ''}</div>
       {/* Phones: the earned total gets its own row; three big numbers don't fit side by side. */}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[['earned', 'earned', true], it('days') ? ['days', 'days', false] : ['years', 'years tracked', false], ['transactions', 'transactions', false]].map(([k, label, euro]) => (
@@ -192,6 +197,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
     case 'visits':
     case 'spent_most':
     case 'trips':
+    case 'new_places':
       return (
         <Shell f={f} color={color}>
           <div className="mt-3 space-y-1.5">
@@ -223,6 +229,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
         </Shell>
       )
     case 'weekday':
+    case 'months':
     case 'years': {
       const many = items.length > 8
       return (
@@ -236,7 +243,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
             ))}
           </div>
           <div className="mt-1 flex gap-1">
-            {items.map((it, i) => <span key={it.label} className="min-w-0 flex-1 text-center text-[10px] text-muted">{!many || i % 3 === 0 || it.top ? (many ? `’${it.label.slice(2)}` : it.label) : ''}</span>)}
+            {items.map((it, i) => <span key={it.label} className="min-w-0 flex-1 text-center text-[10px] text-muted">{!many || i % (f.key === 'months' ? 2 : 3) === 0 || it.top ? (many && f.key === 'years' ? `’${it.label.slice(2)}` : it.label) : ''}</span>)}
           </div>
         </Shell>
       )

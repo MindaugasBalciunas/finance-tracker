@@ -176,3 +176,43 @@ func TestArteaPredates2025(t *testing.T) {
 		t.Error("a fresh database without Artea got an answer")
 	}
 }
+
+// Migration 14 names the tour operator on the three Navaturas payments that
+// carried their description as the merchant, and touches nothing else.
+func TestNavaturasMerchant(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "n.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v := 0; v < 13; v++ {
+		if _, err := raw.Exec(migrations[v]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw.Exec(`INSERT INTO categories(id,name,kind) VALUES('travel','Travel','expense')`)
+	for i, m := range []string{"Final payment for Navaturas Egypt trip", "20% Prepaid for Navaturas Egipt trip", "Navaturas tours"} {
+		if _, err := raw.Exec(`INSERT INTO transactions(id,date,kind,amount,category,merchant,note,tags,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			i+1, "2026-09-21", "expense", 92000, "travel", m, "trip note", "", "manual", "x", "x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw.Exec(`PRAGMA user_version = 13`)
+	raw.Close()
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var got []string
+	rows, _ := d.Query(`SELECT merchant FROM transactions ORDER BY id`)
+	for rows.Next() {
+		var m string
+		rows.Scan(&m)
+		got = append(got, m)
+	}
+	rows.Close()
+	if strings.Join(got, "|") != "Navaturas|Navaturas|Navaturas tours" {
+		t.Errorf("merchants %q", got)
+	}
+}
