@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
-import { dayLabel, eurc, parseNum, todayISO } from '../lib/format'
+import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
@@ -230,12 +230,19 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             ))}
           </div>
         )}
-        <Field label="Tags" hint={suggested.length ? `Added by your rules: ${suggested.join(', ')}` : 'People, trips (trip:name), properties'}>
+        <Field label="Tags" hint={suggested.length ? `Added for you: ${suggested.map(tagLabel).join(', ')} — remove any that don't fit` : 'People, trips (trip:name), properties'}>
           <TagInput value={t.tags ?? []} onChange={(v) => {
             const removed = (t.tags ?? []).filter((x) => !v.includes(x) && suggested.includes(x))
             if (removed.length) setSuppressed([...suppressed, ...removed])
             set({ tags: v })
           }} />
+          <TagHints t={t} isNew={isNew} suppressed={suppressed}
+            onToggle={(tag) => {
+              const has = (t.tags ?? []).includes(tag)
+              if (has && suggested.includes(tag)) setSuppressed([...suppressed, tag])
+              set({ tags: has ? (t.tags ?? []).filter((x) => x !== tag) : [...(t.tags ?? []), tag] })
+            }}
+            onAuto={(tag) => { set({ tags: [...(t.tags ?? []), tag] }); setSuggested((x) => [...x, tag]) }} />
         </Field>
         {t.merchant && t.category && t.category !== suggestedCat && touchedCat && (
           <label className="flex items-center gap-2 text-sm text-ink2">
@@ -332,4 +339,55 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t:
 
 export function useAfterChange() {
   return useRefresh()
+}
+
+const tagLabel = (tag: string) => (tag.startsWith('trip:') ? '✈ ' + tripName(tag) : tag)
+const tripName = (tag: string) => { const n = tag.slice(5).replace(/-/g, ' '); return n.charAt(0).toUpperCase() + n.slice(1) }
+
+type TagSuggest = {
+  trip?: { tag: string; start: string; end: string; why: 'dates' | 'booking'; sure: boolean; home: boolean }
+  usual: { tag: string; n: number; of: number }[]
+  frequent: string[]
+}
+
+/** One-tap tags: the trip whose dates hold the date (added by itself on a
+ *  new expense, unless removed by hand) or that a booking is probably for,
+ *  the tags this merchant usually gets, and the most used lately. */
+function TagHints({ t, isNew, suppressed, onToggle, onAuto }: { t: Draft; isNew: boolean; suppressed: string[]; onToggle: (tag: string) => void; onAuto: (tag: string) => void }) {
+  const [q, setQ] = useState({ merchant: t.merchant ?? '', date: t.date, category: t.category, kind: t.kind })
+  useEffect(() => {
+    const h = setTimeout(() => setQ({ merchant: t.merchant ?? '', date: t.date, category: t.category, kind: t.kind }), 350)
+    return () => clearTimeout(h)
+  }, [t.merchant, t.date, t.category, t.kind])
+  const { data } = useQuery({ queryKey: ['tag-suggest', q], queryFn: () => api.get<TagSuggest>('/tags/suggest', q), staleTime: 60_000, placeholderData: (p) => p })
+  const tags = t.tags ?? []
+  const trip = data?.trip
+  useEffect(() => {
+    // Only when surely the trip's (not a merchant you pay at home, not kids' costs…); otherwise it waits for a tap.
+    if (isNew && trip?.why === 'dates' && trip.sure && !tags.some((x) => x.startsWith('trip:')) && !suppressed.includes(trip.tag)) onAuto(trip.tag)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.tag, trip?.why, trip?.sure, isNew])
+  if (!data) return null
+  const chips: { tag: string; label: string; sub?: string; strong?: boolean }[] = []
+  if (trip) chips.push({ tag: trip.tag, label: `✈ ${tripName(trip.tag)}`, sub: trip.why === 'booking' ? 'booked ahead?' : trip.home ? 'dates match · you pay here at home too' : `${shortDate(trip.start)} – ${shortDate(trip.end)}`, strong: true })
+  for (const u of data.usual) chips.push({ tag: u.tag, label: u.tag, sub: `${u.n} of last ${u.of}`, strong: true })
+  // Popular tags are already offered by the tag box itself; this row adds what it can't know.
+  const shown = chips.filter((c) => c.strong || !tags.includes(c.tag)).slice(0, 10)
+  if (!shown.length) return null
+  return (
+    <div className="mt-2">
+      <div className="mb-1 text-[11px] text-muted">Suggested — tap to add or remove</div>
+      <div className="flex flex-wrap gap-1.5">
+        {shown.map((c) => {
+          const on = tags.includes(c.tag)
+          return (
+            <button key={c.tag} type="button" onClick={() => onToggle(c.tag)} aria-pressed={on}
+              className={clsx(on ? 'chip-on' : 'chip hover:bg-sunken', !c.strong && !on && 'text-muted')}>
+              {c.label}{c.sub && <span className="text-[10px] opacity-70">· {c.sub}</span>}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }

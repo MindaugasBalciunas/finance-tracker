@@ -196,6 +196,11 @@ func (s *Server) ledgerRoutes() {
 		}
 		return map[string]int{"changed": n}, tx.Commit()
 	})
+	// One-tap tags for the form: the trip by date, the merchant's usual tags, the most used.
+	s.handle("GET /api/tags/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		q := r.URL.Query()
+		return ledger.SuggestTags(s.DB, q.Get("merchant"), q.Get("date"), q.Get("category"), q.Get("kind"), time.Now())
+	})
 	s.handle("POST /api/transactions/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in ledger.Tx
 		if err := decode(r, &in); err != nil {

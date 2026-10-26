@@ -3,6 +3,7 @@ package ledger
 import (
 	"database/sql"
 	"strings"
+	"time"
 
 	"ft/internal/db"
 	"ft/internal/merchant"
@@ -120,6 +121,8 @@ func (m Matcher) Match(t *Tx, f Folded) bool {
 // Engine applies rules plus what the ledger's history says.
 type Engine struct {
 	rules []Rule
+	trips []TripDates     // real trip periods: expenses inside get the trip tag
+	home  map[string]bool // merchants paid at home: never tagged with a trip by themselves
 	cats  map[string]Category
 	// learned: merchant → most frequent category, per kind.
 	learned map[string]string
@@ -136,6 +139,8 @@ func LoadEngine(q querier) (*Engine, error) {
 		return nil, err
 	}
 	e := &Engine{rules: rules, cats: cats, learned: map[string]string{}}
+	e.trips, _ = ListTripDates(q) // none set (or an older database): no trip tagging
+	e.home = HomeMerchants(q, e.trips, time.Now())
 	rows, err := q.Query(`SELECT kind, merchant, category, COUNT(*) n FROM transactions
 		WHERE merchant != '' AND date >= date('now','-3 years') GROUP BY kind, merchant, category ORDER BY n`)
 	if err != nil {
@@ -157,6 +162,7 @@ type Outcome struct {
 	Merchant string   `json:"merchant,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
 	Learned  bool     `json:"learned,omitempty"`
+	Trip     string   `json:"trip,omitempty"` // added because the date falls in this trip's dates
 	RuleIDs  []int64  `json:"rule_ids,omitempty"`
 }
 
@@ -208,6 +214,15 @@ func (e *Engine) Apply(t *Tx, guessedCategory bool, suppressed []string) Outcome
 			t.Category = c
 			out.Category = c
 			out.Learned = true
+		}
+	}
+	// Inside a trip's dates: the trip's, unless it is a bill or obligation,
+	// already carries a trip tag, or the owner removed that tag by hand.
+	if SureTrip(t, e.home) && !hasTripTag(t.Tags) {
+		if trip := TripOn(e.trips, t.Date); trip != "" && !sup[trip] {
+			t.Tags = append(t.Tags, trip)
+			out.Tags = append(out.Tags, trip)
+			out.Trip = trip
 		}
 	}
 	t.Tags = NormalizeTags(t.Tags)

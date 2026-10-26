@@ -161,7 +161,32 @@ func (s *Server) planRoutes() {
 		if sugg == nil {
 			sugg = []plan.TripSuggestion{}
 		}
-		return map[string]any{"trips": trips, "suggestions": sugg, "planned": plannedTrips(s)}, nil
+		dates, _ := ledger.ListTripDates(s.DB)
+		return map[string]any{"trips": trips, "suggestions": sugg, "planned": plannedTrips(s), "dates": dates}, nil
+	})
+	// A trip's real dates: set, clear, and what they show it missed.
+	s.handle("PUT /api/trips/dates", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in ledger.TripDates
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := ledger.SaveTripDates(s.DB, in); err != nil {
+			return nil, bad(err.Error())
+		}
+		return ledger.ListTripDates(s.DB)
+	})
+	s.handle("DELETE /api/trips/dates", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := ledger.DeleteTripDates(s.DB, r.URL.Query().Get("tag")); err != nil {
+			return nil, err
+		}
+		return ledger.ListTripDates(s.DB)
+	})
+	s.handle("GET /api/trips/untagged", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		likely, maybe, book, err := ledger.TripUntagged(s.DB, r.URL.Query().Get("tag"))
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return map[string]any{"in_dates": likely, "maybe": maybe, "bookings": book}, nil
 	})
 	s.handle("POST /api/trips/tag", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {

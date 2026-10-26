@@ -126,6 +126,15 @@ SELECT 'tax', '{"pillar3_before_2025":true}' WHERE EXISTS (SELECT 1 FROM account
 	// only — a row edited since stays as it is.
 	`UPDATE transactions SET merchant='Navaturas' WHERE merchant IN
 ('20% Prepaid for Navaturas Egipt trip','20% Prepaid for Navaturas BGY/Madonna da','Final payment for Navaturas Egypt trip');`,
+	// 15: a trip's real dates, so expenses inside them get its trip:… tag
+	// automatically (until now a trip's period was guessed from its rows).
+	`CREATE TABLE IF NOT EXISTS trip_dates (
+    tag        TEXT PRIMARY KEY,      -- trip:italy-spring-2026
+    start_date TEXT NOT NULL,         -- first day, YYYY-MM-DD
+    end_date   TEXT NOT NULL,         -- last day
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema
