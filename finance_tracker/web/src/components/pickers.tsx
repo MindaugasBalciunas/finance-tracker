@@ -3,63 +3,166 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import clsx from 'clsx'
 import { useAccounts, useTags } from '../lib/hooks'
-import { catColor, useCats } from '../lib/categories'
-import { Icon } from './Icon'
+import { catIcon, useCats } from '../lib/categories'
+import { tagLabel, tagStyle, tint } from '../lib/tags'
+import { Icon, IconTile } from './Icon'
 import { Sheet } from './ui'
 import type { Kind } from '../lib/types'
 
-/** Category picker: a button that opens a searchable, grouped sheet. */
-export function CategoryPicker({ value, onChange, kind, allowParents = true, placeholder = 'Category' }: {
+export type CatHint = { id: string; why?: string }
+
+// Phones get no keyboard until they ask for it: it would cover the list.
+const coarse = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+
+/** Category picker: a button that opens a sheet of category tiles. Tap a
+ *  group to see its subcategories (big rows, thumb-sized); type to search
+ *  them all; the suggested ones sit on top. */
+export function CategoryPicker({ value, onChange, kind, allowParents = true, placeholder = 'Category', suggest = [], badge }: {
   value: string; onChange: (id: string, kind: Kind) => void; kind?: Kind | ''; allowParents?: boolean; placeholder?: string
+  suggest?: CatHint[]; badge?: string
 }) {
   const cats = useCats()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const groups = useMemo(() => {
+  const [group, setGroup] = useState('')
+  const groups = useMemo(() => cats.tree
+    .filter((p) => !p.archived && (!kind || p.kind === kind))
+    .map((p) => ({ ...p, children: p.children.filter((c) => !c.archived) })), [cats.tree, kind])
+  // Search: every match in one list, best first (name starts with it, then contains it, then its group does).
+  const hits = useMemo(() => {
     const ql = q.trim().toLowerCase()
-    return cats.tree
-      .filter((p) => !p.archived && (!kind || p.kind === kind))
-      .map((p) => ({ ...p, children: p.children.filter((c) => !c.archived && (!ql || c.name.toLowerCase().includes(ql) || p.name.toLowerCase().includes(ql))) }))
-      .filter((p) => !ql || p.name.toLowerCase().includes(ql) || p.children.length)
-  }, [cats.tree, q, kind])
+    if (!ql) return []
+    const out: { id: string; score: number }[] = []
+    for (const p of groups) {
+      const pn = p.name.toLowerCase()
+      if (allowParents && pn.includes(ql)) out.push({ id: p.id, score: pn.startsWith(ql) ? 0 : 2 })
+      for (const c of p.children) {
+        const cn = c.name.toLowerCase()
+        if (cn.includes(ql)) out.push({ id: c.id, score: cn.startsWith(ql) ? 0 : 1 })
+        else if (pn.includes(ql)) out.push({ id: c.id, score: 3 })
+      }
+    }
+    return out.sort((a, b) => a.score - b.score).map((x) => x.id)
+  }, [groups, q, allowParents])
+  const show = (o: boolean) => {
+    setOpen(o)
+    setQ('')
+    setGroup(o && value ? cats.top(value) : '')
+  }
   const pick = (id: string) => {
     onChange(id, cats.byId[id]?.kind ?? 'expense')
-    setOpen(false)
-    setQ('')
+    show(false)
   }
+  const hints = suggest.filter((h) => cats.byId[h.id] && (!kind || cats.byId[h.id].kind === kind)).slice(0, 5)
+  const g = groups.find((p) => p.id === group)
+  const [icon, color] = catIcon(value)
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="input flex items-center gap-2 text-left">
+      <button type="button" onClick={() => show(true)} className="input flex h-auto min-h-11 items-center gap-2.5 py-1.5 text-left">
         {value ? (
           <>
-            <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: catColor(value) }} />
-            <span className="truncate">{cats.path(value)}</span>
+            <IconTile name={icon} color={color} size={30} />
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate font-medium">{cats.name(value)}</span>
+              {cats.byId[value]?.parent && <span className="block truncate text-[11px] text-muted">{cats.name(cats.byId[value].parent!)}</span>}
+            </span>
+            {badge && <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">{badge}</span>}
           </>
         ) : (
-          <span className="text-muted">{placeholder}</span>
+          <span className="flex-1 text-muted">{placeholder}</span>
         )}
-        <Icon name="chevronD" size={16} className="ml-auto shrink-0 text-muted" />
+        <Icon name="chevronD" size={16} className="shrink-0 text-muted" />
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title="Category">
-        <input autoFocus className="input mb-3" placeholder="Search categories" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="space-y-4">
-          {groups.map((p) => (
-            <div key={p.id}>
-              <button onClick={() => allowParents && pick(p.id)} className={clsx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold', allowParents && 'hover:bg-sunken', value === p.id && 'text-accent')}>
-                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(p.id) }} />
-                {p.name}
-                <span className="ml-auto text-[10px] uppercase tracking-wide text-muted">{p.kind}</span>
-              </button>
-              <div className="mt-1 flex flex-wrap gap-1.5 pl-6">
-                {p.children.map((c) => (
-                  <button key={c.id} onClick={() => pick(c.id)} className={value === c.id ? 'chip-on' : 'chip hover:bg-sunken'}>{c.name}</button>
-                ))}
+      <Sheet open={open} onClose={() => show(false)} title="Category" tall>
+        <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-3 bg-surface px-4 pb-2 pt-4">
+          <div className="relative">
+            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input autoFocus={!coarse()} className="input pl-9" placeholder="Search categories" value={q} enterKeyHint="done"
+              onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && hits[0] && (e.preventDefault(), pick(hits[0]))} />
+            {q && <button type="button" className="absolute right-1 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center text-muted" onClick={() => setQ('')} aria-label="Clear search"><Icon name="x" size={14} /></button>}
+          </div>
+        </div>
+        {q.trim() ? (
+          hits.length ? (
+            <div className="-mx-1">{hits.map((id) => <CatRow key={id} id={id} on={id === value} onPick={pick} sub={cats.byId[id]?.parent ? cats.name(cats.byId[id].parent!) : 'Whole group'} />)}</div>
+          ) : <div className="py-8 text-center text-sm text-muted">No category matches “{q.trim()}”</div>
+        ) : g ? (
+          <div>
+            <button type="button" className="mb-2 flex h-10 items-center gap-1 text-sm text-accent" onClick={() => setGroup('')}><Icon name="chevronL" size={16} />All categories</button>
+            <div className="-mx-1">
+              {allowParents && !g.children.some((c) => /general/i.test(c.name)) && <CatRow id={g.id} on={value === g.id} onPick={pick} label={`${g.name} — general`} />}
+              {g.children.map((c) => <CatRow key={c.id} id={c.id} on={value === c.id} onPick={pick} />)}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {hints.length > 0 && (
+              <div>
+                <div className="mb-1.5 text-xs font-medium text-muted">Suggested</div>
+                <div className="-mx-1">{hints.map((h) => <CatRow key={h.id} id={h.id} on={h.id === value} onPick={pick} sub={h.why ?? (cats.byId[h.id]?.parent ? cats.name(cats.byId[h.id].parent!) : undefined)} />)}</div>
+              </div>
+            )}
+            <div>
+              {hints.length > 0 && <div className="mb-1.5 text-xs font-medium text-muted">All categories</div>}
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {groups.map((p) => {
+                  const [ic, co] = catIcon(p.id)
+                  const here = !!value && cats.top(value) === p.id
+                  return (
+                    <button key={p.id} type="button" onClick={() => (p.children.length ? setGroup(p.id) : pick(p.id))}
+                      className={clsx('flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 rounded-xl border px-1 py-2 text-center text-xs leading-tight transition active:scale-[.97]',
+                        here ? 'border-accent bg-accent/5 font-semibold' : 'border-line hover:bg-sunken')}>
+                      <IconTile name={ic} color={co} size={34} />
+                      <span className="line-clamp-2">{p.name}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </Sheet>
     </>
+  )
+}
+
+function CatRow({ id, on, onPick, label, sub }: { id: string; on: boolean; onPick: (id: string) => void; label?: string; sub?: string }) {
+  const cats = useCats()
+  const [icon, color] = catIcon(id)
+  return (
+    <button type="button" onClick={() => onPick(id)} aria-pressed={on}
+      className={clsx('flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition', on ? 'bg-accent/10' : 'hover:bg-sunken active:bg-sunken')}>
+      <IconTile name={icon} color={color} size={32} />
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className={clsx('block truncate text-sm', on ? 'font-semibold text-accent' : 'text-ink')}>{label ?? cats.name(id)}</span>
+        {sub && <span className="block truncate text-[11px] text-muted">{sub}</span>}
+      </span>
+      {on && <Icon name="check" size={18} className="text-accent" />}
+    </button>
+  )
+}
+
+/** One-tap categories under the picker: the merchant's usual ones, then the
+ *  most used lately. The picked one is highlighted. */
+export function CategoryChips({ value, hints, onPick }: { value: string; hints: CatHint[]; onPick: (id: string) => void }) {
+  const cats = useCats()
+  const list = hints.filter((h) => cats.byId[h.id])
+  if (!list.length) return null
+  return (
+    <div className="no-scrollbar -mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+      {list.map((h) => {
+        const on = h.id === value
+        const [icon, color] = catIcon(h.id)
+        return (
+          <button key={h.id} type="button" onClick={() => onPick(h.id)} aria-pressed={on} title={cats.path(h.id)}
+            className="chip h-8 shrink-0 gap-1.5 pl-1.5 hover:bg-sunken" style={tint(color, on)}>
+            <IconTile name={icon} color={color} size={20} round />
+            {cats.name(h.id)}
+            {h.why && <span className="text-[10px] opacity-70">· {h.why}</span>}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -111,12 +214,16 @@ export function TagInput({ value, onChange, placeholder = 'Add tag' }: { value: 
   return (
     <div>
       <div className="input flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5" onClick={() => ref.current?.focus()}>
-        {value.map((x) => (
-          <span key={x} className="chip bg-sunken">
-            {x}
-            <button type="button" onClick={() => onChange(value.filter((y) => y !== x))} aria-label={`Remove ${x}`}><Icon name="x" size={12} /></button>
-          </span>
-        ))}
+        {value.map((x) => {
+          const st = tagStyle(x)
+          return (
+            <span key={x} className="chip gap-1 pr-1" style={tint(st.color, true)} title={x}>
+              <Icon name={st.icon} size={13} />
+              {tagLabel(x)}
+              <button type="button" className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" onClick={(e) => { e.stopPropagation(); onChange(value.filter((y) => y !== x)) }} aria-label={`Remove ${x}`}><Icon name="x" size={12} /></button>
+            </span>
+          )
+        })}
         <span className="relative min-w-[6rem] flex-1">
           {completion && hi < 0 && <span aria-hidden className="pointer-events-none absolute inset-0 truncate text-sm"><span className="invisible">{text}</span><span className="text-muted">{completion.slice(text.length)}</span></span>}
           <input ref={ref} value={text} onChange={(e) => { setText(e.target.value); setHi(-1) }} placeholder={value.length ? '' : placeholder}
@@ -134,7 +241,9 @@ export function TagInput({ value, onChange, placeholder = 'Add tag' }: { value: 
       {sugg.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {sugg.map((x, i) => (
-            <button type="button" key={x.tag} onClick={() => add(x.tag)} className={clsx('chip hover:bg-sunken', (i === hi || (hi < 0 && x.tag === completion)) && 'ring-1 ring-accent')}>+ {x.tag}</button>
+            <button type="button" key={x.tag} onClick={() => add(x.tag)} title={x.tag} className={clsx('chip h-8 hover:bg-sunken', (i === hi || (hi < 0 && x.tag === completion)) && 'ring-1 ring-accent')}>
+              <Icon name={tagStyle(x.tag).icon} size={13} className="opacity-70" style={{ color: tagStyle(x.tag).color }} />{tagLabel(x.tag)}
+            </button>
           ))}
         </div>
       )}

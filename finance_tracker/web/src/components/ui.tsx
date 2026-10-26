@@ -118,7 +118,7 @@ export function Segmented<T extends string>({ value, options, onChange, size = '
 }
 
 /** Bottom sheet on phones, centred dialog on wider screens. */
-export function Sheet({ open, onClose, title, children, footer, wide = false }: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Sheet({ open, onClose, title, children, footer, wide = false, tall = false }: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean; tall?: boolean }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -134,7 +134,7 @@ export function Sheet({ open, onClose, title, children, footer, wide = false }: 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
-      <div className={clsx('relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl sm:rounded-2xl bg-surface border border-line shadow-xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+      <div className={clsx('relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl sm:rounded-2xl bg-surface border border-line shadow-xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg', tall && 'h-[88dvh] sm:h-[min(40rem,88dvh)]')}>
         <div className="flex items-center justify-between gap-2 border-b border-line px-4 h-14 shrink-0">
           <div className="text-base font-semibold truncate">{title}</div>
           <button className="btn-ghost h-9 w-9 px-0" onClick={onClose} aria-label="Close"><Icon name="x" /></button>

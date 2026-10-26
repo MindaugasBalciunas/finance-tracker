@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 // Minimal stroke icon set (24px grid, 1.75 stroke).
 const P: Record<string, string> = {
   home: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
@@ -68,14 +69,16 @@ const P: Record<string, string> = {
   plane: 'M10 14 3 11l1.5-1.5 7 1 4-4.5c1-1 2.5-1.5 3-1s0 2-1 3l-4.5 4 1 7L12.5 21z',
   download: 'M12 4v11m0 0 4-4m-4 4-4-4M4 20h16',
   upload: 'M12 16V5m0 0 4 4m-4-4-4 4M4 20h16',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5a7.5 7.5 0 0 1 15 0',
+  users: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.3a6.5 6.5 0 0 1 3.5 5.7',
 }
 // Optical centring for drawings whose bounding box isn't centred in 24×24
 // (measured with getBBox); keeps icons level with the text beside them.
 const NUDGE: Record<string, string> = { plane: 'translate(1.15 -0.9)', heart: 'translate(0 -0.93)' }
 
-export function Icon({ name, size = 20, className = '' }: { name: keyof typeof P | string; size?: number; className?: string }) {
+export function Icon({ name, size = 20, className = '', style }: { name: keyof typeof P | string; size?: number; className?: string; style?: CSSProperties }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`} aria-hidden>
+    <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`} aria-hidden>
       <path d={P[name] ?? ''} transform={NUDGE[name]} />
     </svg>
   )

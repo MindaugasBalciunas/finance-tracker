@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
@@ -6,7 +6,8 @@ import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
 import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
-import { AccountSelect, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
+import { AccountSelect, CategoryChips, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, type CatHint } from './pickers'
+import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
 import { Icon, IconTile } from './Icon'
 import { DateInput } from './DateInput'
@@ -113,6 +114,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.merchant, t.note, t.kind])
 
+  const keepTags = (t.tags ?? []).filter((x) => !x.startsWith('trip:') && !x.startsWith('owed:'))
   const submit = async () => {
     const value = parseNum(amount) ?? NaN
     if (!(value > 0)) return toast('Enter an amount', 'bad')
@@ -120,7 +122,12 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     try {
       await save.mutateAsync({ ...t, amount: value, suppressed_tags: suppressed })
       if (makeRule && t.merchant) {
-        await api.post('/rules', { pattern: t.merchant, set_category: t.category, add_tags: (t.tags ?? []).filter((x) => !x.startsWith('trip:') && !x.startsWith('owed:')), enabled: true })
+        // One rule per merchant: an earlier one for the same name is updated, not repeated.
+        const tags = ruleTags ? keepTags : []
+        const rules = await api.get<{ id: number; pattern: string; when_category: string; when_kind: string; set_category: string; add_tags: string[]; enabled: boolean; priority: number }[]>('/rules')
+        const same = (rules ?? []).find((r) => r.pattern.trim().toLowerCase() === t.merchant!.trim().toLowerCase() && !r.when_category && !r.when_kind && r.set_category)
+        if (same) await api.put(`/rules/${same.id}`, { ...same, set_category: t.category, add_tags: tags, enabled: true })
+        else await api.post('/rules', { pattern: t.merchant, set_category: t.category, add_tags: tags, enabled: true })
         toast(`From now on ${t.merchant} → ${cats.path(t.category ?? '')}`, 'good')
       }
       toast(isNew ? 'Added' : 'Saved', 'good')
@@ -142,6 +149,24 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   const [assisting, setAssisting] = useState(false)
   const [makeRule, setMakeRule] = useState(false)
   const [suggestedCat, setSuggestedCat] = useState<string>('')
+  const [ruleTags, setRuleTags] = useState(false)
+  const [cq, setCq] = useState({ merchant: t.merchant ?? '', kind: t.kind })
+  useEffect(() => {
+    const h = setTimeout(() => setCq({ merchant: t.merchant ?? '', kind: t.kind }), 350)
+    return () => clearTimeout(h)
+  }, [t.merchant, t.kind])
+  const { data: catSug } = useQuery({ queryKey: ['cat-suggest', cq], queryFn: () => api.get<{ merchant: { id: string; n: number }[]; recent: string[] }>('/categories/suggest', cq), staleTime: 60_000, placeholderData: (p) => p })
+  // The rules' pick first, then where this merchant was filed before, then the most used lately.
+  const catHints = useMemo(() => {
+    const out: CatHint[] = []
+    const add = (h: CatHint) => { if (h.id && !out.some((x) => x.id === h.id)) out.push(h) }
+    if (suggestedCat) add({ id: suggestedCat, why: 'suggested' })
+    if (t.category) add({ id: t.category })
+    const m = catSug?.merchant ?? []
+    for (const x of m) add({ id: x.id, why: m.length > 1 || x.n > 1 ? `${x.n}× here` : 'here before' })
+    for (const id of catSug?.recent ?? []) add({ id })
+    return out.slice(0, 9)
+  }, [catSug, suggestedCat, t.category])
   const { data: owed } = useQuery({ queryKey: ['owed'], queryFn: () => api.get<Record<string, number>>('/owed'), enabled: t.kind === 'income' })
   const assist = async () => {
     if (!describe.trim()) return
@@ -192,7 +217,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
               {quick!.merchants.map((m) => (
                 <button key={m.merchant} type="button" className="chip shrink-0 hover:bg-sunken" title={`${cats.path(m.category)} · usually ${eurc(m.typical)}`}
                   onClick={() => { set({ merchant: m.merchant, category: m.category, account_id: m.account_id || t.account_id }); setTouchedCat(true); setSuggestedCat(m.category) }}>
-                  {m.merchant} <span className="text-muted">· {cats.name(m.category)}</span>
+                  <IconTile name={catIcon(m.category)[0]} color={catIcon(m.category)[1]} size={18} round />{m.merchant} <span className="text-muted">· {cats.name(m.category)}</span>
                 </button>
               ))}
             </div>
@@ -209,7 +234,9 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           <datalist id="merchants">{(merchants ?? []).slice(0, 300).map((m) => <option key={m.merchant} value={m.merchant} />)}</datalist>
         </Field>
         <Field label="Category">
-          <CategoryPicker value={t.category ?? ''} kind={t.kind} onChange={(id, kind) => { set({ category: id, kind }); setTouchedCat(true) }} />
+          <CategoryPicker value={t.category ?? ''} kind={t.kind} suggest={catHints.filter((h) => h.id !== t.category || h.why)} badge={isNew && !!t.category && t.category === suggestedCat && !touchedCat ? 'suggested' : undefined}
+            onChange={(id, kind) => { set({ category: id, kind }); setTouchedCat(true) }} />
+          <CategoryChips value={t.category ?? ''} hints={catHints} onPick={(id) => { set({ category: id, kind: cats.byId[id]?.kind ?? t.kind }); setTouchedCat(true) }} />
         </Field>
         <div className={clsx('grid gap-3', t.kind === 'transfer' ? 'grid-cols-2' : 'grid-cols-1')}>
           <Field label={t.kind === 'income' ? 'Into account' : t.kind === 'transfer' ? 'From account' : 'Paid from'}>
@@ -249,6 +276,12 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           <label className="flex items-center gap-2 text-sm text-ink2">
             <input type="checkbox" checked={makeRule} onChange={(e) => setMakeRule(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--accent))]" />
             Always file <b className="text-ink">{t.merchant}</b> as {cats.path(t.category)}
+          </label>
+        )}
+        {makeRule && keepTags.length > 0 && t.merchant && t.category && t.category !== suggestedCat && touchedCat && (
+          <label className="-mt-2 flex items-center gap-2 pl-6 text-xs text-ink2">
+            <input type="checkbox" checked={ruleTags} onChange={(e) => setRuleTags(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--accent))]" />
+            and tag every one {keepTags.map(tagLabel).join(', ')} <span className="text-muted">— only if that's always true</span>
           </label>
         )}
         {t.external_id && <div className="text-xs text-muted">From the bank · {t.external_id}</div>}
@@ -342,8 +375,6 @@ export function useAfterChange() {
   return useRefresh()
 }
 
-const tagLabel = (tag: string) => (tag.startsWith('trip:') ? '✈ ' + tripName(tag) : tag)
-const tripName = (tag: string) => { const n = tag.slice(5).replace(/-/g, ' '); return n.charAt(0).toUpperCase() + n.slice(1) }
 
 type TagSuggest = {
   trip?: { tag: string; start: string; end: string; why: 'dates' | 'booking'; sure: boolean; home: boolean }
@@ -370,7 +401,7 @@ function TagHints({ t, isNew, suppressed, onToggle, onAuto }: { t: Draft; isNew:
   }, [trip?.tag, trip?.why, trip?.sure, isNew])
   if (!data) return null
   const chips: { tag: string; label: string; sub?: string; strong?: boolean }[] = []
-  if (trip) chips.push({ tag: trip.tag, label: `✈ ${tripName(trip.tag)}`, sub: trip.why === 'booking' ? 'booked ahead?' : trip.home ? 'dates match · you pay here at home too' : `${shortDate(trip.start)} – ${shortDate(trip.end)}`, strong: true })
+  if (trip) chips.push({ tag: trip.tag, label: tripName(trip.tag), sub: trip.why === 'booking' ? 'booked ahead?' : trip.home ? 'dates match · you pay here at home too' : `${shortDate(trip.start)} – ${shortDate(trip.end)}`, strong: true })
   for (const u of data.usual) chips.push({ tag: u.tag, label: u.tag, sub: `${u.n} of last ${u.of}`, strong: true })
   // Popular tags are already offered by the tag box itself; this row adds what it can't know.
   const shown = chips.filter((c) => c.strong || !tags.includes(c.tag)).slice(0, 10)
@@ -382,9 +413,9 @@ function TagHints({ t, isNew, suppressed, onToggle, onAuto }: { t: Draft; isNew:
         {shown.map((c) => {
           const on = tags.includes(c.tag)
           return (
-            <button key={c.tag} type="button" onClick={() => onToggle(c.tag)} aria-pressed={on}
-              className={clsx(on ? 'chip-on' : 'chip hover:bg-sunken', !c.strong && !on && 'text-muted')}>
-              {c.label}{c.sub && <span className="text-[10px] opacity-70">· {c.sub}</span>}
+            <button key={c.tag} type="button" onClick={() => onToggle(c.tag)} aria-pressed={on} style={tint(tagStyle(c.tag).color, on)}
+              className={clsx('chip h-8 hover:bg-sunken', !c.strong && !on && 'text-muted')}>
+              <Icon name={on ? 'check' : tagStyle(c.tag).icon} size={13} />{c.label}{c.sub && <span className="text-[10px] opacity-70">· {c.sub}</span>}
             </button>
           )
         })}

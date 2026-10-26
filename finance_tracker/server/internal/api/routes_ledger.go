@@ -201,6 +201,11 @@ func (s *Server) ledgerRoutes() {
 		q := r.URL.Query()
 		return ledger.SuggestTags(s.DB, q.Get("merchant"), q.Get("date"), q.Get("category"), q.Get("kind"), time.Now())
 	})
+	// One-tap categories for the form: the merchant's usual ones, then the most used lately.
+	s.handle("GET /api/categories/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		q := r.URL.Query()
+		return ledger.SuggestCategories(s.DB, q.Get("merchant"), q.Get("kind"))
+	})
 	s.handle("POST /api/transactions/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in ledger.Tx
 		if err := decode(r, &in); err != nil {
