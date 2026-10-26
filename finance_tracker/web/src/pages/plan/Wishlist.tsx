@@ -7,6 +7,7 @@ import { useRefresh } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
+import { DateInput } from '../../components/DateInput'
 
 type Goal = { id: number; name: string; target: number; priority: number; target_date: string; note: string; url: string; tag: string; spent?: number; status: 'active' | 'bought' | 'dropped'; done_on: string
   saved: number; remaining: number; eta?: string; per_month?: number; outlook?: { tone: 'good' | 'warn' | 'bad'; text: string; gap?: number } }
@@ -250,7 +251,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
         <Field label="What"><input className="input" value={v.name ?? ''} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="e.g. Bambu Lab X2D" autoFocus={!g.id} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Price" hint="leave empty if you don't know yet"><NumberInput value={v.target || undefined} onChange={(x) => setV({ ...v, target: x })} placeholder="€" /></Field>
-          <Field label="Wanted by" hint="optional"><input type="date" className="input" value={v.target_date ?? ''} onChange={(e) => setV({ ...v, target_date: e.target.value })} /></Field>
+          <Field label="Wanted by" hint="optional"><DateInput clearable value={v.target_date ?? ''} onChange={(d) => setV({ ...v, target_date: d })} /></Field>
         </div>
         <div className="rounded-xl border border-line p-3">
           <Toggle checked={v.tag != null && v.tag !== ''} onChange={(on) => setV({ ...v, tag: on ? (v.tag || 'trip:' + (v.name ?? '').toLowerCase().trim().replace(/[^a-z0-9ąčęėįšųūž]+/g, '-').replace(/^-|-$/g, '')) : '' })} label="It's a trip" />

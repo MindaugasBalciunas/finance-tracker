@@ -11,6 +11,7 @@ import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice
 import { IBKRPanel } from '../../components/IBKRPanel'
 import { Icon } from '../../components/Icon'
 import { brandColor } from '../../lib/brand'
+import { DateInput } from '../../components/DateInput'
 
 // ── investments ─────────────────────────────────────────────────────
 
@@ -303,7 +304,7 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
         <Segmented value={t.action} onChange={(a) => setT({ ...t, action: a })} options={[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell' }]} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ticker"><input className="input uppercase" value={t.ticker ?? ''} onChange={(e) => setT({ ...t, ticker: e.target.value.toUpperCase() })} /></Field>
-          <Field label="Date"><input type="date" className="input" value={t.date} onChange={(e) => setT({ ...t, date: e.target.value })} /></Field>
+          <Field label="Date"><DateInput value={t.date} onChange={(v) => setT({ ...t, date: v })} /></Field>
           <Field label="Shares"><NumberInput value={t.shares} onChange={(v) => setT({ ...t, shares: v })} /></Field>
           <Field label="Price per share"><NumberInput value={t.price} onChange={(v) => setT({ ...t, price: v })} /></Field>
           <Field label="Currency"><select className="input select-pad" value={t.currency} onChange={(e) => setT({ ...t, currency: e.target.value })}>{['USD', 'EUR', 'GBP'].map((c) => <option key={c}>{c}</option>)}</select></Field>

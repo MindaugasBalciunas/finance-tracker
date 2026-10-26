@@ -9,6 +9,7 @@ import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
 import { Icon, IconTile } from './Icon'
+import { DateInput } from './DateInput'
 
 type Draft = Partial<Tx> & { kind: Kind }
 type Ctx = { open: (t?: Partial<Tx>) => void; scan: () => void }
@@ -201,7 +202,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           <Field label="Amount (€)">
             <input autoFocus={isNew} inputMode="decimal" className="input text-lg font-semibold tnum" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
           </Field>
-          <Field label="Date"><input type="date" className="input" value={t.date} onChange={(e) => set({ date: e.target.value })} /></Field>
+          <Field label="Date"><DateInput value={t.date ?? ""} onChange={(v) => set({ date: v })} /></Field>
         </div>
         <Field label={t.kind === 'income' ? 'From (payer)' : t.kind === 'transfer' ? 'Counterparty' : 'Merchant'}>
           <input className="input" list="merchants" value={t.merchant ?? ''} onChange={(e) => set({ merchant: e.target.value })} placeholder="e.g. Maxima" />

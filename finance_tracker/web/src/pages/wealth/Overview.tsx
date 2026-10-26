@@ -14,6 +14,7 @@ import { axisProps, Donut, GroupBar, gridProps, Legend, TooltipBox, type Slice }
 import { Icon, IconTile } from '../../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
+import { DateInput } from '../../components/DateInput'
 
 export function Overview() {
   const [range, setRange] = usePeriod('wealth', '3y', RANGES.map((r) => r.value))
@@ -415,7 +416,7 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
       <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>Save</button>
     </>}>
       <div className="mb-3 grid grid-cols-2 gap-3">
-        <Field label="As of"><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="As of"><DateInput clearable value={date} onChange={(v) => setDate(v)} /></Field>
         <Field label="BTC price €"><input className="input tnum" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
       </div>
       <div className="text-xs text-muted mb-2">Leave a field empty to keep it. Bank-synced accounts update themselves on sync.</div>
@@ -536,7 +537,7 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
           return (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Purchased on"><input type="date" className="input" value={d.purchase_date ?? ''} onChange={(e) => put('purchase_date', e.target.value)} /></Field>
+                <Field label="Purchased on"><DateInput clearable value={d.purchase_date ?? ''} onChange={(v) => put('purchase_date', v)} /></Field>
                 <Field label="Purchase price €"><NumberInput value={d.purchase_price} onChange={(n) => put('purchase_price', n)} /></Field>
               </div>
               <Field label={v.kind === 'vehicle' ? 'Description' : 'Address'}><input className="input" value={d.address ?? ''} onChange={(e) => put('address', e.target.value)} /></Field>

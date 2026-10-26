@@ -12,6 +12,7 @@ import { Empty, ErrorBox, Loading, NumberInput, PageHeader, Segmented, Sheet, Sp
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { AccountSelect, CategoryPicker, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
 import { Icon } from '../components/Icon'
+import { DateInput } from '../components/DateInput'
 
 export default function Ledger() {
   const loc = useLocation()
@@ -226,8 +227,8 @@ function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () 
             options={[{ value: '', label: 'All' }, { value: 'expense', label: 'Expenses' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfers' }]} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label><span className="label">From</span><input type="date" className="input" value={draft.get('from') || ''} onChange={(e) => upd((n) => { n.set('from', e.target.value); n.delete('period') })} /></label>
-          <label><span className="label">To</span><input type="date" className="input" value={draft.get('to') || ''} onChange={(e) => upd((n) => { n.set('to', e.target.value); n.delete('period') })} /></label>
+          <label><span className="label">From</span><DateInput clearable value={draft.get('from') || ''} onChange={(v) => upd((n) => { n.set('from', v); n.delete('period') })} /></label>
+          <label><span className="label">To</span><DateInput clearable value={draft.get('to') || ''} onChange={(v) => upd((n) => { n.set('to', v); n.delete('period') })} /></label>
         </div>
         <div>
           <div className="label">Category</div>
@@ -477,7 +478,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label><span className="label">Amount €</span><NumberInput value={r.amount} onChange={(v) => setR({ ...r, amount: v as number })} /></label>
-          <label><span className="label">Date</span><input type="date" className="input" value={r.date} onChange={(e) => setR({ ...r, date: e.target.value })} /></label>
+          <label><span className="label">Date</span><DateInput clearable value={r.date} onChange={(v) => setR({ ...r, date: v })} /></label>
         </div>
         <label className="block"><span className="label">Merchant</span><input className="input" value={r.merchant} onChange={(e) => setR({ ...r, merchant: e.target.value })} /></label>
         <div><span className="label">Category</span><CategoryPicker value={r.category} onChange={(id, kind) => setR({ ...r, category: id, kind })} /></div>

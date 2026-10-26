@@ -15,6 +15,7 @@ import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Wishlist } from './plan/Wishlist'
 import { ForecastView } from './plan/Forecast'
+import { DateInput } from '../components/DateInput'
 
 export default function Plan() {
   const loc = useLocation()
@@ -599,8 +600,8 @@ function TripDatesRow({ tag, dates, guess }: { tag: string; dates?: { start: str
           <button className="btn-primary" disabled={!start || !end || end < start} onClick={() => save()}>Save</button>
         </>}>
           <div className="grid grid-cols-2 gap-3">
-            <label><span className="label">First day</span><input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-            <label><span className="label">Last day</span><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label>
+            <label><span className="label">First day</span><DateInput value={start} onChange={(v) => setStart(v)} /></label>
+            <label><span className="label">Last day</span><DateInput value={end} min={start} onChange={(v) => setEnd(v)} /></label>
           </div>
           <p className="mt-3 text-sm text-muted">New and bank-synced expenses dated inside get <b>{tag}</b> automatically — bills, obligations and transfers aside. Flights and hotels booked earlier are suggested, not added.</p>
         </Sheet>
@@ -708,7 +709,7 @@ function PlanSettings() {
               <div className="flex flex-wrap items-end gap-3">
                 <Field label={n === 0 && !r.from ? 'From' : 'From (payment date)'}>
                   {n === 0 && !r.from ? <div className="input flex items-center text-muted">the beginning</div>
-                    : <input type="date" className="input" value={r.from} onChange={(e) => setRules(rules.map((x, j) => (j === r.i ? { ...x, from: e.target.value } : x)))} />}
+                    : <DateInput value={r.from} onChange={(v) => setRules(rules.map((x, j) => (j === r.i ? { ...x, from: v } : x)))} />}
                 </Field>
                 <Field label="Counts for last month if paid by day">
                   <NumberInput integer className="input w-24 tnum" value={r.paid_by_day} onChange={(d) => setRules(rules.map((x, j) => (j === r.i ? { ...x, paid_by_day: Math.max(0, Math.min(15, d ?? 0)) } : x)))} />

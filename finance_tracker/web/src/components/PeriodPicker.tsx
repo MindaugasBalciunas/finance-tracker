@@ -3,6 +3,7 @@ import { PERIODS, periodRange } from '../lib/periods'
 import { shortDate, todayISO } from '../lib/format'
 import { Sheet } from './ui'
 import { Icon } from './Icon'
+import { DateInput } from './DateInput'
 
 /** The Ledger's period chips — This month … All time — plus a custom
  *  From–To range. value is a preset, or "custom:YYYY-MM-DD:YYYY-MM-DD". */
@@ -22,8 +23,8 @@ export function PeriodPicker({ value, onChange }: { value: string; onChange: (v:
       <Sheet open={open} onClose={() => setOpen(false)} title="Period" footer={
         <button className="btn-primary" disabled={!from || !to || from > to} onClick={() => { onChange(`custom:${from}:${to}`); setOpen(false) }}>Show</button>}>
         <div className="grid grid-cols-2 gap-3">
-          <label><span className="label">From</span><input type="date" className="input" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label><span className="label">To</span><input type="date" className="input" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
+          <label><span className="label">From</span><DateInput value={from} max={to || undefined} onChange={(v) => setFrom(v)} /></label>
+          <label><span className="label">To</span><DateInput value={to} min={from || undefined} onChange={(v) => setTo(v)} /></label>
         </div>
       </Sheet>
     </>

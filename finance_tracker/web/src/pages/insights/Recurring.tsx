@@ -10,6 +10,7 @@ import { Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, Stat, useToast
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
+import { DateInput } from '../../components/DateInput'
 
 // ── recurring ───────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount €"><input className="input tnum" inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
           {isBill || v.cadence === 'flexible'
-            ? <Field label="Next charge"><input type="date" className="input" value={v.next_date} onChange={(e) => setV({ ...v, next_date: e.target.value })} /></Field>
+            ? <Field label="Next charge"><DateInput clearable value={v.next_date} onChange={(d) => setV({ ...v, next_date: d })} /></Field>
             : <Field label="Day of month"><input className="input w-24 tnum" inputMode="numeric" value={v.day} placeholder="e.g. 11" onChange={(e) => setV({ ...v, day: e.target.value })} /></Field>}
         </div>
         <Field label="Note" hint="Two bills from one merchant? Give each a note (e.g. phone, internet) — payments are matched by the words in their note."><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional, e.g. phone" /></Field>

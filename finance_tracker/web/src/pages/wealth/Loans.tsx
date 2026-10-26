@@ -10,6 +10,7 @@ import { Card, Empty, ErrorBox, Field, Loading, Sheet, useToast } from '../../co
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { Icon } from '../../components/Icon'
 import { AccountSelect } from '../../components/pickers'
+import { DateInput } from '../../components/DateInput'
 
 // ── loans ───────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ function LoanEditor({ id, onClose }: { id: string; onClose: () => void }) {
             <div className="section-title mb-2">Balance owed</div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Owed €" hint={a?.balance != null ? `now ${eurc(Math.abs(a.balance))}` : undefined}><input className="input tnum" inputMode="decimal" value={owed} onChange={(e) => setOwed(e.target.value)} placeholder="leave empty to keep" /></Field>
-              <Field label="As of"><input type="date" className="input" value={owedDate} onChange={(e) => setOwedDate(e.target.value)} /></Field>
+              <Field label="As of"><DateInput value={owedDate} onChange={(v) => setOwedDate(v)} /></Field>
             </div>
           </div>
           <ErrorBox error={save.error} />
