@@ -52,6 +52,18 @@ The first start of 2.x converts `/data/finance.db` into `/data/finance-v2.db`, c
 
 ## MCP server
 
+### In Claude chat (custom connector)
+
+The app serves its MCP tools itself at `https://your-host/mcp`, with OAuth sign-in, so Claude chat (web, desktop and mobile) can use them — including live, read-only Interactive Brokers data (`ibkr_live`):
+
+1. Set the add-on's `public_url` option to the address the app is reachable at from the internet over https (e.g. `https://budget.example`). Without it the app names itself from each request's host.
+2. In Claude: **Settings → Connectors → Add custom connector**, paste `https://your-host/mcp`, press **Connect**.
+3. The app opens its approval page (behind its web password and lock): choose **read only** or **read and write**, then **Allow**.
+
+Connections are listed in Settings → Security → AI apps, with when each was last used, and can be disconnected there; they stop working at once. Access tokens last an hour and refresh tokens rotate (30 days from last use); using a refresh token twice ends the connection. Redirects are accepted only to `claude.ai`, `claude.com` or localhost. nginx lets only `/mcp`, `/oauth/authorize|token|register` and the two `/.well-known/oauth-*` documents past the web password; every MCP call checks the connection's own token and scope, exactly like API tokens. A read-only connection isn't offered the write tools at all. The plain API tokens (`ftk_`/`ftkw_`) don't work on `/mcp` — it skips the web password; use the stdio server below for them. With demo mode on, a connection sees the demo data, like API tokens.
+
+### Stdio server
+
 `finance-tracker-mcp` (built into the image at `/app/finance-tracker-mcp`, or `make mcp`) exposes the API as MCP tools for Claude Desktop / Claude Code:
 
 ```json

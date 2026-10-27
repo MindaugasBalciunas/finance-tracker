@@ -135,6 +135,29 @@ SELECT 'tax', '{"pillar3_before_2025":true}' WHERE EXISTS (SELECT 1 FROM account
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );`,
+	// 16: AI apps connected over OAuth (Claude's custom connectors and other
+	// MCP clients): the registered apps and each approved connection, with
+	// only hashes of its tokens.
+	`CREATE TABLE IF NOT EXISTS oauth_clients (
+    id            TEXT PRIMARY KEY,      -- ftc_…
+    name          TEXT NOT NULL,         -- what the app calls itself, e.g. Claude
+    redirect_uris TEXT NOT NULL,         -- JSON array
+    created_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_grants (
+    id                INTEGER PRIMARY KEY,
+    client_id         TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+    scope             TEXT NOT NULL,                 -- ro | rw
+    access_hash       TEXT NOT NULL,
+    access_expires    TEXT NOT NULL,
+    refresh_hash      TEXT NOT NULL,
+    refresh_expires   TEXT NOT NULL,
+    prev_refresh_hash TEXT NOT NULL DEFAULT '',      -- replaying it ends the connection
+    created_at        TEXT NOT NULL,
+    last_used_at      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_access ON oauth_grants(access_hash);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh ON oauth_grants(refresh_hash);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema
@@ -234,14 +257,22 @@ func Backup(d *sql.DB, dbPath, prefix string) error {
 
 // scrub takes credentials that are easy to grant again out of a snapshot,
 // so dozens of copies on the device don't each carry them: the IBKR sign-in
-// (reconnect in two clicks after restoring a snapshot).
+// and connected AI apps (reconnect in two clicks after restoring a snapshot).
 func scrub(path string) error {
 	s, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	_, err = s.Exec(`UPDATE settings SET value=json_remove(value,'$.access_token','$.refresh_token','$.expires_at') WHERE key='ibkr' AND json_valid(value)`)
+	if _, err = s.Exec(`UPDATE settings SET value=json_remove(value,'$.access_token','$.refresh_token','$.expires_at') WHERE key='ibkr' AND json_valid(value)`); err != nil {
+		return err
+	}
+	// Connected AI apps reconnect in two clicks too. Snapshots taken before
+	// migration 16 have no such table, so its absence is not an error.
+	var n int
+	if s.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='oauth_grants'`).Scan(&n); n > 0 {
+		_, err = s.Exec(`DELETE FROM oauth_grants`)
+	}
 	return err
 }
 

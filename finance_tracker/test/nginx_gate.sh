@@ -83,4 +83,21 @@ curl -s -c "$T/jar" -u admin:secret -H 'Content-Type: application/json' -d '{"pi
 expect 200 "data with the session, no password" -b "$T/jar" $B/api/overview
 expect 401 "a made-up session is refused" -b "ft_session=forged" $B/api/overview
 
+echo "— AI apps: the MCP endpoint and its OAuth sign-in skip the password, nothing else"
+expect 200 "authorization server metadata" $B/.well-known/oauth-authorization-server
+expect 200 "protected resource metadata" $B/.well-known/oauth-protected-resource
+curl -s -D - -o /dev/null -X POST -H 'Content-Type: application/json' -d '{}' $B/mcp | grep -qi '^www-authenticate: bearer resource_metadata' \
+  && echo "ok   /mcp answers with the app's own Bearer challenge" || { echo "FAIL /mcp did not reach the app"; fail=1; }
+expect 201 "client registration" -X POST -H 'Content-Type: application/json' -d '{"client_name":"Claude","redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}' $B/oauth/register
+expect 400 "token endpoint (bad grant, but reached)" -X POST -d 'grant_type=x' $B/oauth/token
+loc=$(curl -s -o /dev/null -w '%{redirect_url}' "$B/oauth/authorize?client_id=x&state=y")
+case "$loc" in */#/connect\?client_id=x\&state=y) echo "ok   authorize hands over to the app";; *) echo "FAIL authorize redirect: $loc"; fail=1;; esac
+expect 401 "connections list still needs the password" $B/api/oauth/grants
+expect 401 "approving still needs the password" -X POST -H 'Content-Type: application/json' -d '{"allow":true}' $B/api/oauth/approve
+for p in '/mcp/../api/overview' '/oauth/../api/overview' '/oauth/token/../../api/overview' '/.well-known/../api/overview' \
+         '/.well-known/oauth-authorization-server/../../api/overview' '/%2e%2e/api/overview'; do
+  got=$(code --path-as-is "$B$p")
+  if [ "$got" = 401 ] || [ "$got" = 400 ] || [ "$got" = 404 ]; then echo "ok   refused without password: $p ($got)"; else echo "FAIL $p got through: $got"; fail=1; fi
+done
+
 [ $fail = 0 ] && echo "nginx gate: all good" || { echo "nginx gate: FAILED"; tail -20 "$T/logs/error.log"; exit 1; }

@@ -22,7 +22,8 @@ import (
 
 // demoAlwaysReal are routes the real server answers even in demo mode.
 func demoAlwaysReal(p string) bool {
-	return p == "/api/health" || strings.HasPrefix(p, "/api/auth/") || p == "/api/demo" || strings.HasPrefix(p, "/api/demo/")
+	return p == "/api/health" || strings.HasPrefix(p, "/api/auth/") || p == "/api/demo" || strings.HasPrefix(p, "/api/demo/") ||
+		strings.HasPrefix(p, "/api/oauth/") || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/") || p == "/mcp"
 }
 
 // demoBlocked are routes that touch real files, credentials or money flows.
@@ -45,7 +46,8 @@ func demoLockedAuth(r *http.Request) bool {
 	}
 	p := r.URL.Path
 	return strings.HasPrefix(p, "/api/auth/pin/setup") || strings.HasPrefix(p, "/api/auth/pin/disable") ||
-		strings.HasPrefix(p, "/api/auth/passkey/register") || strings.HasPrefix(p, "/api/auth/passkeys") || p == "/api/auth/token"
+		strings.HasPrefix(p, "/api/auth/passkey/register") || strings.HasPrefix(p, "/api/auth/passkeys") || p == "/api/auth/token" ||
+		p == "/api/oauth/approve"
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {

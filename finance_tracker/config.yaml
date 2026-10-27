@@ -1,6 +1,6 @@
 name: "Finance Tracker"
 description: "Personal CFO — net worth, cash flow, plan, bank sync and an AI adviser"
-version: "2.47.0"
+version: "2.48.0"
 slug: "finance_tracker"
 init: false
 image: "ghcr.io/mindaugasbalciunas/finance-tracker"
@@ -42,6 +42,7 @@ options:
   nexos_gateway_url: ""
   auth_user: "admin"
   auth_password: ""
+  public_url: ""
 
 schema:
   anthropic_api_key: str?
@@ -50,3 +51,4 @@ schema:
   nexos_gateway_url: str?
   auth_user: str?
   auth_password: str?
+  public_url: str?

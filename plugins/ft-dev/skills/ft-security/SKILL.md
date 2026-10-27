@@ -19,6 +19,7 @@ recoverer → crossOriginGuard → limitBodies → authenticate → routes
 - **crossOriginGuard** — `http.CrossOriginProtection`: blocks browser state-changing requests from another site. Consequence: **GET handlers must never change state** (they're not CSRF-protected and read tokens can call them).
 - **limitBodies** — 2 MB JSON; 200 MB only for `/api/import/`, `/api/ai/chat`, `/api/ai/scan`. A new upload route must be added there deliberately.
 - **authenticate** — skipped for `/api/auth/*` and `/api/health`; when the lock is enabled requires a valid `ft_session` cookie (HttpOnly, SameSite=Lax, Secure on HTTPS) or an API token.
+- **Outside `/api/`** `authenticate` checks nothing: those routes guard themselves. The AI-connector paths (`/mcp`, `/oauth/authorize|token|register`, `/.well-known/oauth-*`) are the only ones nginx lets past the web password (exact regex location, `test/nginx_gate.sh` probes neighbours and traversals). `/mcp` accepts only an OAuth connection's `ftoa_` token and runs tools in process through `tokenAllows` with that scope; approving a connection (`/api/oauth/approve`) is session-only and locked in demo mode. Never let API tokens (`ftk_`/`ftkw_`) work on a path that skips the password.
 
 ## API tokens (MCP, scripts)
 

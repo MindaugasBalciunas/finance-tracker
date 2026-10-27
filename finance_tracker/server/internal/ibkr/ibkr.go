@@ -546,6 +546,32 @@ func (s *Service) Live(ctx context.Context, tool string, args map[string]any) (j
 	return c.call(ctx, tool, args)
 }
 
+// Views name the read tools by what they show, for assistants:
+// summary, positions, balances, orders, instructions, trades.
+var Views = map[string]string{"summary": "get_account_summary", "positions": "get_account_positions", "balances": "get_account_balances", "trades": "get_account_trades",
+	"orders": "get_account_orders", "instructions": "get_order_instructions"}
+
+// LiveView runs the read tool behind a view; trades take a period
+// (TODAY, DAYS_7, DAYS_30 — the default —, DAYS_90, MONTH_TO_DATE, YEAR_TO_DATE, LAST_QUARTER…).
+func (s *Service) LiveView(ctx context.Context, what, period string) (json.RawMessage, error) {
+	if !s.Connected() {
+		return nil, ErrNotConnected
+	}
+	tool := Views[what]
+	if tool == "" {
+		return nil, fmt.Errorf("what must be summary, positions, balances, trades, orders or instructions")
+	}
+	var in map[string]any
+	if tool == "get_account_trades" {
+		p := strings.ToUpper(period)
+		if p == "" {
+			p = "DAYS_30"
+		}
+		in = map[string]any{"period": p}
+	}
+	return s.Live(ctx, tool, in)
+}
+
 func (s *Service) note(lastErr string, synced bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

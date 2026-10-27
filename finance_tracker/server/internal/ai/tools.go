@@ -397,25 +397,12 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		}
 		return "", errors.New("what must be categories, accounts, tags, rules or merchants")
 	case "ibkr_live":
-		if a.IBKR == nil || !a.IBKR.Connected() {
+		if a.IBKR == nil {
 			return "", ibkr.ErrNotConnected
-		}
-		tool := map[string]string{"summary": "get_account_summary", "positions": "get_account_positions", "balances": "get_account_balances", "trades": "get_account_trades",
-			"orders": "get_account_orders", "instructions": "get_order_instructions"}[args.s("what")]
-		if tool == "" {
-			return "", fmt.Errorf("what must be summary, positions, balances, trades, orders or instructions")
-		}
-		var in map[string]any
-		if tool == "get_account_trades" {
-			p := strings.ToUpper(args.s("period"))
-			if p == "" {
-				p = "DAYS_30"
-			}
-			in = map[string]any{"period": p}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		out, err := a.IBKR.Live(ctx, tool, in)
+		out, err := a.IBKR.LiveView(ctx, args.s("what"), args.s("period"))
 		if err != nil {
 			return "", err
 		}

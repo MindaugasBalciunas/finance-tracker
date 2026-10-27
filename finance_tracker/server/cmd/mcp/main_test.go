@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"ft/internal/advice"
+	"ft/internal/mcptools"
 )
 
 // The server hands clients the shared rules, lists the ready-made analyses
@@ -27,12 +28,12 @@ func TestInstructionsPromptsAndReconciliation(t *testing.T) {
 	}))
 	defer api.Close()
 	apiURL, apiToken = api.URL+"/api", "ftk_test"
-	now = func() time.Time { return time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC) }
-	defer func() { now = time.Now }()
+	mcptools.Now = func() time.Time { return time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC) }
+	defer func() { mcptools.Now = time.Now }()
 
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	if _, err := newServer().Connect(ctx, st, nil); err != nil {
+	if _, err := mcptools.New(call).Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)

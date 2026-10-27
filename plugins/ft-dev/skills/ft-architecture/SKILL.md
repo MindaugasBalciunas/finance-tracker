@@ -12,7 +12,7 @@ A personal CFO for one household, shipped as a Home Assistant add-on: one contai
 | Path | What |
 |---|---|
 | `finance_tracker/server` | Go module `ft`. stdlib `net/http`, `modernc.org/sqlite` (no CGO), testify only in a few tests |
-| `server/cmd/server` | the app. `cmd/mcp` = MCP server over the HTTP API. `cmd/v1convert` = offline v1 conversion |
+| `server/cmd/server` | the app. `cmd/mcp` = stdio MCP server over the HTTP API (tools in `internal/mcptools`, also served at `/mcp`). `cmd/v1convert` = offline v1 conversion |
 | `server/internal/<domain>` | `ledger` `wealth` `plan` `goals` `insights` `cfo` `bank` `ibkr` `market` `merchant` `ai` `advice` `auth` `backup` `db` `boot` `importv1` `demo` `notify` `usage` `money` `testutil` |
 | `server/internal/api` | HTTP surface: `api.go` (middleware, helpers), `routes.go`, one `routes_<domain>.go` per domain |
 | `finance_tracker/web` | React 18 + TS, React Router 7 (**HashRouter**), TanStack Query 5, Tailwind 4, Recharts, Vitest |
@@ -24,7 +24,7 @@ A personal CFO for one household, shipped as a Home Assistant add-on: one contai
 1. **Domain packages are plain functions over the database.** `ledger.Validate(q querier, t *Tx)`, `ledger.SaveAccount(e execer, a Account)`, `plan.LoadSettings(d)`. No repository/service/interface layers. Accept the narrowest of `querier` / `execer` / `*sql.Tx` / `*sql.DB` so the function works inside a transaction. Only things holding external clients or state are structs (`bank.Service`, `ibkr.Service`, `ai.Assistant`, `auth.Service`).
 2. **Business rules live in the domain package, not the handler.** Handlers decode, call domain functions, return. Invariants (e.g. property/vehicle never "paid from") are enforced in the domain (`ledger.Validate`) *and* mirrored in the UI (`AccountSelect kinds`), never only in the UI.
 3. **Cross-domain views go in `cfo`** (Home overview, plan report, cash until payday) or `insights`; they read, they don't write. Computations that depend on "today" take `now time.Time` as a parameter.
-4. **`api` imports domains; domains never import `api`.** `advice` holds assistant rules shared by `ai` and `cmd/mcp` — keep one source of truth.
+4. **`api` imports domains; domains never import `api`.** `advice` holds assistant rules shared by `ai` and `mcptools` — keep one source of truth.
 5. **Dependencies: stdlib first.** A new module needs a strong reason (security surface, Docker image size, `govulncheck`). Never `go mod tidy` with a newer local toolchain without checking the `go` directive still matches the Dockerfile's `golang:` image.
 
 ## Types and data conventions

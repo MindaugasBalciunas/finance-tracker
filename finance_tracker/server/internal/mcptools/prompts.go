@@ -1,4 +1,4 @@
-package main
+package mcptools
 
 import (
 	"context"
@@ -27,7 +27,8 @@ type reconArgs struct {
 }
 
 // now is replaceable in tests.
-var now = time.Now
+// Now is the clock prompts use for "last month"; tests replace it.
+var Now = time.Now
 
 func addPrompts(s *mcp.Server) {
 	monthArg := func(def string) []*mcp.PromptArgument {
@@ -46,7 +47,7 @@ func addPrompts(s *mcp.Server) {
 
 	prompt("month_close", "Month close", "Close a finished month: cash flow vs the usual, the budget, what drove it, and the wish-list funding.", monthArg("the last finished month"),
 		func(a map[string]string) (string, error) {
-			m, err := month(a["month"], firstOfMonth(now()).AddDate(0, -1, 0))
+			m, err := month(a["month"], firstOfMonth(Now()).AddDate(0, -1, 0))
 			if err != nil {
 				return "", err
 			}
@@ -65,7 +66,7 @@ Answer with one verdict line, a table of the key numbers (this month vs the 6-mo
 
 	prompt("budget_review", "Budget review", "Lines that are over or under, and concrete changes to the plan — applied only after approval.", monthArg("this month"),
 		func(a map[string]string) (string, error) {
-			m, err := month(a["month"], now())
+			m, err := month(a["month"], Now())
 			if err != nil {
 				return "", err
 			}
@@ -82,7 +83,7 @@ Propose changes as a table (line, now → new, why), with the monthly effect in 
 
 	prompt("wishlist_review", "Wish list and trips", "Are the goals and planned trips realistic at the left-over rate, and what would bring them closer?", nil,
 		func(map[string]string) (string, error) {
-			from := now().AddDate(-1, 0, 0).Format("2006-01-02")
+			from := Now().AddDate(-1, 0, 0).Format("2006-01-02")
 			return fmt.Sprintf(`Review my wish list and planned trips.
 
 1. get_user_context, get_goals, get_trips.
@@ -97,7 +98,7 @@ Answer with a table of goals (goal, remaining, ETA now, ETA with the changes) an
 		func(a map[string]string) (string, error) {
 			from := strings.TrimSpace(a["from"])
 			if from == "" {
-				from = now().AddDate(0, 0, -30).Format("2006-01-02")
+				from = Now().AddDate(0, 0, -30).Format("2006-01-02")
 			} else if _, err := time.Parse("2006-01-02", from); err != nil {
 				return "", fmt.Errorf("from must be YYYY-MM-DD")
 			}

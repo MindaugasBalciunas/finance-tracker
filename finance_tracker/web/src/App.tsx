@@ -21,6 +21,7 @@ const Wealth = lazy(() => import('./pages/Wealth'))
 const Insights = lazy(() => import('./pages/Insights'))
 const Assistant = lazy(() => import('./pages/Assistant'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Connect = lazy(() => import('./pages/Connect'))
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -197,6 +198,7 @@ function Shell() {
             <Route path="/insights/*" element={<Insights />} />
             <Route path="/ai" element={<Assistant />} />
             <Route path="/settings/*" element={<Settings />} />
+            <Route path="/connect" element={<Connect />} />
             {/* v1 bookmarks */}
             <Route path="/banking" element={<Navigate to="/settings/banks" replace />} />
             <Route path="/transactions" element={<Navigate to="/ledger" replace />} />

@@ -14,6 +14,11 @@ if [ -f "$OPTIONS_FILE" ]; then
     NEXOS_GATEWAY_URL=$(jq -r '.nexos_gateway_url // ""' "$OPTIONS_FILE")
     export NEXOS_API_KEY NEXOS_MODEL NEXOS_GATEWAY_URL
 
+    # The address AI apps reach the app at (e.g. https://budget.example), for
+    # Claude's custom connector; empty = taken from each request's host.
+    FT_PUBLIC_URL=$(jq -r '.public_url // ""' "$OPTIONS_FILE")
+    export FT_PUBLIC_URL
+
     AUTH_PASSWORD=$(jq -r '.auth_password // ""' "$OPTIONS_FILE")
     AUTH_USER=$(jq -r '.auth_user // "admin"' "$OPTIONS_FILE")
 else

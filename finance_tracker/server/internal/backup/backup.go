@@ -21,10 +21,12 @@ const Format = "finance-tracker-backup"
 
 // Tables in dependency order (parents first).
 var tables = []string{"settings", "accounts", "categories", "balances", "balance_log", "transactions", "rules", "budgets", "budget_amounts", "trades", "recurring_items", "goals", "goal_moves", "trip_dates",
-	"bank_connections", "bank_accounts", "bank_inbox", "webauthn_credentials", "ai_messages", "ai_spend", "ai_topups"}
+	"bank_connections", "bank_accounts", "bank_inbox", "webauthn_credentials", "ai_messages", "ai_spend", "ai_topups",
+	"oauth_clients", "oauth_grants"}
 
 // Secret-only tables and settings keys.
-var secretTables = map[string]bool{"webauthn_credentials": true, "bank_connections": true, "bank_accounts": true, "bank_inbox": true}
+var secretTables = map[string]bool{"webauthn_credentials": true, "bank_connections": true, "bank_accounts": true, "bank_inbox": true,
+												"oauth_clients": true, "oauth_grants": true} // oauth: connected AI apps and their token hashes
 var secretSettings = map[string]bool{"auth": true, "bank": true, "ibkr": true, "notify": true} // ibkr: OAuth tokens; notify: HA webhook URL
 
 type Table struct {

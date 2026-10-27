@@ -61,6 +61,7 @@ export function Security() {
           <div className="text-xs text-muted">Each device unlocks with its own passkey — a phone's passkey isn't on your Mac. Open the app on the MacBook and tap Add this device there to use Touch ID.</div>
         </div>
       </Card>
+      <Connectors />
       <Card title="API tokens (MCP server)">
         <div className="mb-2 text-xs text-muted">Read-only tokens see data routes only; read-write tokens may also edit transactions, rules, tags and inbox proposals — never settings, backups or accepting bank rows.</div>
         {token && <div className="mb-2 break-all rounded-xl bg-sunken p-2 font-mono text-xs">{token}<div className="mt-1 font-sans text-warn">Copy it now — it is shown only once.</div></div>}
@@ -72,5 +73,61 @@ export function Security() {
         </div>
       </Card>
     </div>
+  )
+}
+
+// Stored in UTC; the day shown is the local one.
+const localDay = (ts: string) => new Date(ts).toLocaleDateString('sv')
+
+type Grant = { id: number; client_name: string; scope: 'ro' | 'rw'; created_at: string; last_used_at: string }
+
+/** AI apps connected over OAuth: the address to add as a custom connector,
+ *  and every connection with what it may do and when it was last used. */
+function Connectors() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { data } = useQuery({ queryKey: ['oauth-grants'], queryFn: () => api.get<{ grants: Grant[]; mcp_url: string; public_url_set: boolean }>('/oauth/grants') })
+  if (!data) return null
+  // Without the add-on's public_url the server names itself from this
+  // request; the browser's own address is the better guess then.
+  const url = data.public_url_set ? data.mcp_url : `${window.location.origin}/mcp`
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); toast('Copied', 'good') } catch { toast('Copy it by hand', 'bad') }
+  }
+  const revoke = async (g: Grant) => {
+    if (!confirm(`Disconnect ${g.client_name}? It stops working at once.`)) return
+    try {
+      await api.del(`/oauth/grants/${g.id}`)
+      qc.invalidateQueries({ queryKey: ['oauth-grants'] })
+      toast('Disconnected')
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    }
+  }
+  return (
+    <Card title="AI apps (Claude connector)">
+      <div className="space-y-3 text-sm">
+        <p className="text-xs text-ink2">Use your finances in Claude chat — including live IBKR data. In Claude: <b>Settings → Connectors → Add custom connector</b>, paste this address, then press Connect and approve it here. You choose read-only or read and write each time.</p>
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-xl bg-sunken px-3 py-2 text-xs">{url}</code>
+          <button className="btn-outline shrink-0" onClick={copy} aria-label="Copy the connector address"><Icon name="copy" size={16} />Copy</button>
+        </div>
+        {!data.public_url_set && <p className="text-[11px] text-muted">This is the address you opened the app at. Claude must reach it over https from the internet — if your public address differs, set it in the add-on's <i>public_url</i> option.</p>}
+        {data.grants.length > 0 && (
+          <ul className="divide-y divide-line rounded-xl border border-line">
+            {data.grants.map((g) => (
+              <li key={g.id} className="flex items-center gap-3 px-3 py-2">
+                <Icon name="link" size={16} className="text-muted" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{g.client_name} <span className="text-xs font-normal text-muted">· {g.scope === 'rw' ? 'read and write' : 'read only'}</span></div>
+                  <div className="text-[11px] text-muted">Connected {shortDate(localDay(g.created_at))}{g.last_used_at ? ` · last used ${shortDate(localDay(g.last_used_at))}` : ''}</div>
+                </div>
+                <button className="btn-ghost h-8 text-xs text-bad" onClick={() => revoke(g)}>Disconnect</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
   )
 }

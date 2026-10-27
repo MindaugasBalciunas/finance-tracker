@@ -139,6 +139,13 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot restore", tokRW, "POST", "/import/backup?confirm=replace", map[string]any{}, 403},
 		// Routes added in 2.1–2.4 stay outside every token's scope.
 		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
+		// IBKR: the live read views only (409 here: not connected), never the connection itself.
+		{"ro reads IBKR live views", tokRO, "GET", "/ibkr/live?what=summary", nil, 409},
+		{"ro cannot read the IBKR connection", tokRO, "GET", "/ibkr", nil, 403},
+		{"rw cannot sync IBKR", tokRW, "POST", "/ibkr/sync", nil, 403},
+		// Connected AI apps are managed in the app only.
+		{"ro cannot list connections", tokRO, "GET", "/oauth/grants", nil, 403},
+		{"rw cannot approve a connection", tokRW, "POST", "/oauth/approve", map[string]any{"allow": true}, 403},
 		{"ro reads the forecast", tokRO, "GET", "/forecast", nil, 200},
 		{"ro reads the tax estimate", tokRO, "GET", "/tax", nil, 200},
 		{"rw cannot change tax answers", tokRW, "PUT", "/tax/settings", map[string]any{"pillar3_before_2025": true}, 403},

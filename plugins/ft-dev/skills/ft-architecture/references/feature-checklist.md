@@ -15,7 +15,7 @@ Go through this list for any new entity, field, endpoint or computed view. Tick 
 | 7 | `server/internal/api/api.go` `tokenReadPrefixes` / `tokenWriteRoutes` | only if API tokens (MCP, scripts) should reach it | Default is session-only. Writes need a deliberate decision (see `ft-security`) |
 | 8 | `server/internal/api/api_test.go` | new endpoint, esp. auth-relevant | `TestAuthBoundaries`, `TestSecretsNeverEchoed` style |
 | 9 | `server/internal/ai/tools.go` (+ `writeTools`) and `assistant.go` dispatch | Ask CFO should read/act on it | Mutating tools must be in `writeTools` (confirmation required) |
-| 10 | `server/cmd/mcp/main.go` | Claude Desktop/Code should see it | Keep tool names identical to Ask CFO's; route must be inside the token scope from #7 |
+| 10 | `server/internal/mcptools/tools.go` (+ `WriteTools` for writes) | Claude Desktop/Code should see it | Keep tool names identical to Ask CFO's; route must be inside the token scope from #7 |
 | 11 | `server/internal/advice/advice.go` | the way data should be read/advised changes | Shared rules for Ask CFO and MCP |
 | 12 | `server/internal/demo/seed.go` | a page would look empty in demo mode | Demo mode must look like a real household; `TestSeedBuildsAUsableDemo` |
 | 13 | `server/internal/importv1` | only if v1 data maps to it | v1 → v2 conversion is verified to the cent |

@@ -21,6 +21,7 @@ import (
 	"ft/internal/bank"
 	"ft/internal/bank/openbanking"
 	"ft/internal/ibkr"
+	"ft/internal/oauth"
 )
 
 type Server struct {
@@ -32,6 +33,9 @@ type Server struct {
 	AI      *ai.Assistant
 	Version string
 	mux     *http.ServeMux
+
+	OAuth     *oauth.Server // connected AI apps (routes_mcp.go)
+	PublicURL string        // the app's public address for them; empty = from the request
 
 	// Demo mode (see demo.go): a second Server over fictional data.
 	isDemo bool
@@ -52,6 +56,8 @@ func New(d *sql.DB, dbPath, version string) *Server { return newServer(d, dbPath
 func newServer(d *sql.DB, dbPath, version string, isDemo bool) *Server {
 	s := &Server{DB: d, DBPath: dbPath, Version: version, Auth: &auth.Service{DB: d}, Bank: &bank.Service{DB: d}, mux: http.NewServeMux(), isDemo: isDemo}
 	s.IBKR = ibkr.New(d)
+	s.OAuth = &oauth.Server{DB: d}
+	s.PublicURL = PublicURLFromEnv()
 	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Bank: s.Bank, IBKR: s.IBKR}
 	s.routes()
 	if !isDemo {
@@ -203,7 +209,7 @@ const sessionCookie = "ft_session"
 // exports or the chat.
 var tokenReadPrefixes = []string{"/api/health", "/api/overview", "/api/transactions", "/api/categories", "/api/accounts", "/api/tags",
 	"/api/merchants", "/api/rules", "/api/networth", "/api/balances", "/api/loans", "/api/portfolio", "/api/trades", "/api/market",
-	"/api/plan", "/api/forecast", "/api/tax$", "/api/budgets", "/api/trips", "/api/goals", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks"}
+	"/api/plan", "/api/forecast", "/api/tax$", "/api/budgets", "/api/trips", "/api/goals", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks", "/api/ibkr/live$"}
 
 // Writes a read-write token may make: improve the data and manage the plan,
 // never move money into the ledger from the bank, delete in bulk or touch
@@ -232,6 +238,31 @@ func pathUnder(p, prefix string) bool {
 	return p == prefix || strings.HasPrefix(p, prefix+"/")
 }
 
+// tokenAllows: reads under tokenReadPrefixes for any token, the listed
+// writes for read-write ones only.
+func tokenAllows(scope, method, p string) bool {
+	if scope == "" {
+		return false
+	}
+	if method == http.MethodGet {
+		for _, pre := range tokenReadPrefixes {
+			if pathUnder(p, pre) {
+				return true
+			}
+		}
+		return false
+	}
+	if scope != "rw" {
+		return false
+	}
+	for _, wr := range tokenWriteRoutes {
+		if method == wr.method && pathUnder(p, wr.prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -256,24 +287,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		if ok {
 			scope := s.Auth.TokenScope(strings.TrimSpace(bearer))
+			if scope == "" && oauth.IsAccessToken(strings.TrimSpace(bearer)) {
+				scope = s.OAuth.Scope(strings.TrimSpace(bearer))
+			}
 			if scope == "" {
 				writeJSON(w, 401, map[string]string{"error": "invalid API token"})
 				return
 			}
-			if r.Method == http.MethodGet {
-				for _, pre := range tokenReadPrefixes {
-					if pathUnder(p, pre) {
-						next.ServeHTTP(w, r)
-						return
-					}
-				}
-			} else if scope == "rw" {
-				for _, wr := range tokenWriteRoutes {
-					if r.Method == wr.method && pathUnder(p, wr.prefix) {
-						next.ServeHTTP(w, r)
-						return
-					}
-				}
+			if tokenAllows(scope, r.Method, p) {
+				next.ServeHTTP(w, r)
+				return
 			}
 			writeJSON(w, 403, map[string]string{"error": "this route is outside the API token's scope"})
 			return

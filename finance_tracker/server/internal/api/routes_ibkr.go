@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"ft/internal/ibkr"
 	"ft/internal/ledger"
@@ -15,6 +18,23 @@ func (s *Server) ibkrRoutes() {
 	s.handle("GET /api/ibkr", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		rep, _ := s.IBKR.LastReport()
 		return map[string]any{"status": s.IBKR.Status(), "report": rep}, nil
+	})
+	// Live read-only views of the IBKR account, for the MCP connector (token read scope).
+	s.handle("GET /api/ibkr/live", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		what := r.URL.Query().Get("what")
+		if ibkr.Views[what] == "" {
+			return nil, bad("what must be summary, positions, balances, trades, orders or instructions")
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		out, err := s.IBKR.LiveView(ctx, what, r.URL.Query().Get("period"))
+		switch {
+		case errors.Is(err, ibkr.ErrNotConnected) || errors.Is(err, ibkr.ErrSignInLapsed):
+			return nil, &HTTPError{Status: http.StatusConflict, Msg: err.Error()}
+		case err != nil:
+			return nil, &HTTPError{Status: http.StatusBadGateway, Msg: err.Error()}
+		}
+		return out, nil
 	})
 	s.handle("POST /api/ibkr/connect", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var in struct {
