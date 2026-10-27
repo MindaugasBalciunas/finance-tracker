@@ -86,7 +86,7 @@ func ListTripDates(q querier) ([]TripDates, error) {
 
 // SaveTripDates sets (or replaces) a trip's period.
 func SaveTripDates(e execer, t TripDates) error {
-	t.Tag = strings.TrimSpace(strings.ToLower(t.Tag))
+	t.Tag = tripKey(t.Tag)
 	if !TripTag(t.Tag) || len(t.Tag) <= len("trip:") {
 		return errors.New("a trip tag starts with trip:")
 	}
@@ -108,9 +108,13 @@ func SaveTripDates(e execer, t TripDates) error {
 }
 
 func DeleteTripDates(e execer, tag string) error {
-	_, err := e.Exec(`DELETE FROM trip_dates WHERE tag=?`, tag)
+	_, err := e.Exec(`DELETE FROM trip_dates WHERE tag=?`, tripKey(tag))
 	return err
 }
+
+// tripKey is how a trip's tag is stored: trimmed and lower case, so
+// "trip:Rome" from an assistant finds the dates saved as trip:rome.
+func tripKey(tag string) string { return strings.TrimSpace(strings.ToLower(tag)) }
 
 // TripOn is the trip whose dates hold date, or "".
 func TripOn(trips []TripDates, date string) string {
@@ -262,7 +266,7 @@ func sortShares(s []TagShare) {
 // before it.
 func TripUntagged(q querier, tag string) (likely, maybe, bookings []Tx, err error) {
 	var tr TripDates
-	if err := q.QueryRow(`SELECT tag, start_date, end_date FROM trip_dates WHERE tag=?`, tag).Scan(&tr.Tag, &tr.Start, &tr.End); err != nil {
+	if err := q.QueryRow(`SELECT tag, start_date, end_date FROM trip_dates WHERE tag=?`, tripKey(tag)).Scan(&tr.Tag, &tr.Start, &tr.End); err != nil {
 		return nil, nil, nil, errors.New("this trip has no dates yet")
 	}
 	trips, _ := ListTripDates(q)

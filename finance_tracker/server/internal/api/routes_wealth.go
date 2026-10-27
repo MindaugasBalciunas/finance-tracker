@@ -82,9 +82,15 @@ func (s *Server) wealthRoutes() {
 		if err != nil {
 			return nil, err
 		}
-		pts := book.Series(r.URL.Query().Get("account"))
-		if pts == nil {
-			pts = []wealth.Point{}
+		pts := []wealth.Point{}
+		from := r.URL.Query().Get("from")
+		for _, p := range book.Series(r.URL.Query().Get("account")) {
+			if p.Date >= from {
+				pts = append(pts, p)
+			}
+		}
+		if n := qint(r, "limit", 0); n > 0 && len(pts) > n {
+			pts = pts[len(pts)-n:] // the latest
 		}
 		return pts, nil
 	})
@@ -274,6 +280,14 @@ func (s *Server) wealthRoutes() {
 			rng = "1y"
 		}
 		return market.History(t, rng)
+	})
+	// News headlines, public social chatter (unverified) and Fear & Greed — for the assistants.
+	s.handle("GET /api/market/buzz/{ticker}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		t, err := ticker(r)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"fear_greed": market.FearGreed(), "headlines": market.Headlines(t, 8), "social": market.SocialBuzz(t, 8)}, nil
 	})
 	s.handle("GET /api/market/analyst/{ticker}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		t, err := ticker(r)

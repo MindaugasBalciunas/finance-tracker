@@ -72,7 +72,7 @@ Connections are listed in Settings → Security → AI apps, with when each was 
   "env": {"FT_API_URL": "https://your-host/api", "FT_API_TOKEN": "ftk_…", "FT_BASIC_AUTH": "user:password"}}}}
 ```
 
-Mint tokens in Settings → Security. A read-only token (`ftk_`) reads data; a read-write token (`ftkw_`) may also add/edit transactions, rules and tags and improve bank-inbox proposals — never accept bank rows, change settings or read backups.
+Mint tokens in Settings → Security. A read-only token (`ftk_`) reads data; a read-write token (`ftkw_`) may also add/edit transactions, rules and tags, improve bank-inbox proposals, and manage the plan (budget lines, plan settings, recurring items, goals, trips and their dates) and the assistant's memory — never accept bank rows, change settings or read backups.
 
 On connect the server sends Claude the same data model, strategy and trust rules Ask CFO follows in the app (`internal/advice`), and offers four ready-made analyses as prompts — `/` commands in Claude Code, one click in Claude Desktop:
 

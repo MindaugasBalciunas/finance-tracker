@@ -28,18 +28,25 @@ func (s *Server) planRoutes() {
 		return cfo.YearlyCosts(s.DB, time.Now())
 	})
 	// The year ahead: cash month by month, and a what-if beside it.
+	// A what-if comes as ?scenario=<json> too: it only computes, so the
+	// read-only MCP tools (GET) can compare one with the baseline.
 	s.handle("GET /api/forecast", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), nil)
+		raw := r.URL.Query().Get("scenario")
+		if raw == "" {
+			return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), nil)
+		}
+		var sc cfo.Scenario
+		if err := json.Unmarshal([]byte(raw), &sc); err != nil {
+			return nil, bad("invalid scenario: " + err.Error())
+		}
+		return s.scenario(r, &sc)
 	})
 	s.handle("POST /api/forecast", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var sc cfo.Scenario
 		if err := decode(r, &sc); err != nil {
 			return nil, err
 		}
-		if sc.Gross < 0 || sc.Gross > 1e6 || sc.EverydayPct < -90 || sc.EverydayPct > 300 || len(sc.Purchases) > 50 {
-			return nil, bad("scenario out of range")
-		}
-		return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), &sc)
+		return s.scenario(r, &sc)
 	})
 	s.handle("GET /api/prefs", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return loadPrefs(s.DB), nil
@@ -215,4 +222,11 @@ func plannedTrips(s *Server) []goals.Goal {
 		}
 	}
 	return planned
+}
+
+func (s *Server) scenario(r *http.Request, sc *cfo.Scenario) (any, error) {
+	if sc.Gross < 0 || sc.Gross > 1e6 || sc.EverydayPct < -90 || sc.EverydayPct > 300 || len(sc.Purchases) > 50 {
+		return nil, bad("scenario out of range")
+	}
+	return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), sc)
 }

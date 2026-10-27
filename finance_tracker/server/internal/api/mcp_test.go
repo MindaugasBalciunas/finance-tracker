@@ -234,6 +234,29 @@ func TestMCPConnector(t *testing.T) {
 	if n != 1 {
 		t.Errorf("created %d rows", n)
 	}
+	// The read views added for parity with Ask CFO answer through the
+	// connector (in process, within the scope), with their arguments.
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"get_forecast", map[string]any{"everyday_pct": -20}, `"scenario"`},
+		{"get_account_history", map[string]any{"account_id": "swed", "from": "2026-01-01"}, `[`},
+		{"get_checks", nil, `[`},
+		{"get_month_review", map[string]any{"month": "2026-09"}, `"month":"2026-09"`},
+		{"get_bank_inbox", nil, `[`},
+		{"get_tax", map[string]any{"year": 2025}, `"year":2025`},
+		{"get_fun_facts", map[string]any{"from": "2026-01-01", "to": "2026-12-31"}, `{`},
+		{"get_net_worth_movement", map[string]any{"from": "2026-01-01"}, `[`},
+		{"set_trip_dates", map[string]any{"tag": "trip:rome", "start": "2026-06-23", "end": "2026-06-27"}, `"trip:rome"`},
+		{"get_trip_untagged", map[string]any{"tag": "trip:rome"}, `"in_dates"`},
+	} {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err != nil || res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, c.want) {
+			t.Errorf("%s: %v %+v", c.tool, err, res)
+		}
+	}
 	cs.Close()
 
 	// Refresh rotates; the old access token stops; replaying the old
@@ -315,5 +338,22 @@ func TestWriteToolsListed(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(writes, want) {
 		t.Errorf("WRITES tools %v, WriteTools %v", writes, want)
+	}
+}
+
+// One account's balance points: from a date, and only the latest when capped.
+func TestBalancesFromAndLimit(t *testing.T) {
+	s, c := newServer(t)
+	for _, d := range []string{"2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"} {
+		Bal(t, s.DB, "swed", d, 100)
+	}
+	var pts []struct{ Date string }
+	c.ok("GET", "/balances?account=swed&from=2026-02-01", nil, &pts)
+	if len(pts) != 3 || pts[0].Date != "2026-02-28" {
+		t.Errorf("from: %+v", pts)
+	}
+	c.ok("GET", "/balances?account=swed&limit=2", nil, &pts)
+	if len(pts) != 2 || pts[0].Date != "2026-03-31" || pts[1].Date != "2026-04-30" {
+		t.Errorf("limit: %+v", pts)
 	}
 }

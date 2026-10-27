@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -141,6 +142,14 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
 		// IBKR: the live read views only (409 here: not connected), never the connection itself.
 		{"ro reads IBKR live views", tokRO, "GET", "/ibkr/live?what=summary", nil, 409},
+		{"ro runs a forecast what-if (computes only)", tokRO, "GET", "/forecast?scenario=" + url.QueryEscape(`{"everyday_pct":-10}`), nil, 200},
+		{"ro what-if out of range", tokRO, "GET", "/forecast?scenario=" + url.QueryEscape(`{"everyday_pct":-95}`), nil, 400},
+		{"ro what-if not JSON", tokRO, "GET", "/forecast?scenario=nope", nil, 400},
+		{"ro cannot clear trip dates", tokRO, "DELETE", "/trips/dates?tag=trip:x", nil, 403},
+		{"ro cannot set trip dates", tokRO, "PUT", "/trips/dates", map[string]any{"tag": "trip:x", "start": "2026-06-01", "end": "2026-06-05"}, 403},
+		{"rw sets trip dates", tokRW, "PUT", "/trips/dates", map[string]any{"tag": "trip:x", "start": "2026-06-01", "end": "2026-06-05"}, 200},
+		{"rw clears trip dates", tokRW, "DELETE", "/trips/dates?tag=trip:x", nil, 200},
+		{"rw cannot change a trip's dates by another path", tokRW, "PUT", "/trips/dates/x", map[string]any{}, 403},
 		{"ro cannot read the IBKR connection", tokRO, "GET", "/ibkr", nil, 403},
 		{"rw cannot sync IBKR", tokRW, "POST", "/ibkr/sync", nil, 403},
 		// Connected AI apps are managed in the app only.
@@ -150,7 +159,7 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro reads the tax estimate", tokRO, "GET", "/tax", nil, 200},
 		{"rw cannot change tax answers", tokRW, "PUT", "/tax/settings", map[string]any{"pillar3_before_2025": true}, 403},
 		{"rw cannot change investment targets", tokRW, "PUT", "/portfolio/settings", map[string]any{"core": []string{"X"}}, 403},
-		{"rw cannot run scenarios", tokRW, "POST", "/forecast", map[string]any{"gross": 9000}, 403},
+		{"POST what-ifs stay session-only (tokens compute them with GET)", tokRW, "POST", "/forecast", map[string]any{"gross": 9000}, 403},
 		{"ro cannot read prefs", tokRO, "GET", "/prefs", nil, 403},
 		{"rw cannot change prefs", tokRW, "PUT", "/prefs", map[string]any{"liquid_only": true}, 403},
 		// Managing the plan is open to read-write tokens (2.28.3); only the

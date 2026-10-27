@@ -222,6 +222,7 @@ var tokenWriteRoutes = []struct{ method, prefix string }{
 	// The plan: budget lines, its settings, trips, recurring items and the
 	// assistant's memory — what managing the budget takes.
 	{"PATCH", "/api/budgets$"}, {"DELETE", "/api/budgets/"}, {"PATCH", "/api/plan/settings$"}, {"POST", "/api/trips/tag$"},
+	{"PUT", "/api/trips/dates$"}, {"DELETE", "/api/trips/dates$"},
 	{"POST", "/api/recurring$"}, {"PUT", "/api/recurring/"}, {"DELETE", "/api/recurring/"}, {"POST", "/api/ai/remember$"},
 	{"POST", "/api/goals"}, {"PUT", "/api/goals/"},
 }

@@ -240,23 +240,7 @@ func (s *Server) ledgerRoutes() {
 		return map[string]bool{"ok": true}, ledger.Unsplit(s.DB, id)
 	})
 	s.handle("GET /api/owed", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		txs, err := ledger.All(s.DB, ledger.Filter{Query: "owed:"})
-		if err != nil {
-			return nil, err
-		}
-		by := map[string]money.Cents{}
-		for _, t := range txs {
-			for _, tag := range t.Tags {
-				if p, ok := strings.CutPrefix(tag, "owed:"); ok {
-					if t.Kind == "income" {
-						by[p] -= t.Amount
-					} else {
-						by[p] += t.Amount
-					}
-				}
-			}
-		}
-		return by, nil
+		return ledger.Owed(s.DB)
 	})
 
 	s.handle("GET /api/categories", func(w http.ResponseWriter, r *http.Request) (any, error) { return ledger.ListCategories(s.DB) })

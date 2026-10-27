@@ -36,7 +36,7 @@ func arr(d string) map[string]any {
 
 // writeTools change data; the system prompt requires explicit confirmation.
 var writeTools = map[string]bool{"remember": true, "create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
-	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true, "save_goal": true, "fund_goals": true}
+	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true, "save_goal": true, "fund_goals": true, "set_trip_dates": true}
 
 func toolDefs() []tool {
 	date := "YYYY-MM-DD"
@@ -59,7 +59,8 @@ func toolDefs() []tool {
 		{Name: "get_recurring", Description: "Recurring money movements the cash plan uses: bills and subscriptions, standing orders between accounts (transfers) and expected income — amount, monthly cost, accounts, usual day, next date, whether this month's one is done. source: detected, edited or manual (added by the owner).", InputSchema: obj(map[string]any{})},
 		{Name: "get_forecast", Description: "Cash (checking, savings, cash) month by month for the next 12 months: the plan's income, obligations and saving, usual everyday spending, the one-off allowance, dated yearly bills and wish-list goals in their month; the first month below the emergency target or out of cash. Pass scenario fields to compare a what-if with the baseline (it does the arithmetic — use it instead of calculating): gross (new gross salary, LT taxes applied), saving (saving lines per month), everyday_pct (−20 = 20% less everyday spending), from (YYYY-MM the change starts), purchases [{label, month, amount}]. Bonuses and extra investing are not in the baseline.",
 			InputSchema: obj(map[string]any{"gross": num("new gross salary per month"), "saving": num("saving lines per month, EUR"), "everyday_pct": num("change to everyday spending, %"),
-				"from": str("YYYY-MM the change starts"), "purchases": map[string]any{"type": "array", "description": "extra one-off purchases", "items": obj(map[string]any{"label": str("what"), "month": str("YYYY-MM"), "amount": num("EUR")}, "month", "amount")}})},
+				"from": str("YYYY-MM the change starts"), "purchases": map[string]any{"type": "array", "description": "extra one-off purchases", "items": obj(map[string]any{"label": str("what"), "month": str("YYYY-MM"), "amount": num("EUR")}, "month", "amount")},
+				"income": num("or a net income per month, EUR"), "skip_goals": map[string]any{"type": "array", "description": "wish-list goal ids to leave out", "items": map[string]any{"type": "number"}}})},
 		{Name: "get_portfolio_quality", Description: "Money-weighted annual return of the investment portfolio, the core funds and the hand-picked stocks; the picks' money in the core fund on the same days (are the picks worth it?); single stocks above the concentration limit; where the next monthly contribution goes toward the owner's target mix (buying only — selling makes gains taxable).", InputSchema: obj(map[string]any{})},
 		{Name: "get_fun_facts", Description: "Fun statistics from the whole history: employers ranked by what they paid, the first pay cheque, lifetime income, most visited shops and where the most money went, little habits added up (coffees, fast food, fuel…), the biggest purchase and day, the big spending weekday, the priciest trips, the biggest spending year. Obligations are left out. Optional from/to limit it to a period.", InputSchema: obj(map[string]any{"from": str("YYYY-MM-DD, optional"), "to": str("YYYY-MM-DD, optional")})},
 		{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts.",
@@ -69,12 +70,19 @@ func toolDefs() []tool {
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
 		{Name: "get_quote", Description: "Live quote, 52-week range and analyst targets for a ticker.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
 		{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
-		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split, plus untagged travel spending that looks like a trip, and planned trips being saved for on the wish list.", InputSchema: obj(map[string]any{})},
+		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split; their real dates where set (spending inside them gets the trip tag by itself); untagged travel spending that looks like a trip; planned trips being saved for on the wish list.", InputSchema: obj(map[string]any{})},
 		{Name: "get_reconciliation", Description: "Checks each cash, savings and loan account: its recorded balances (bank-synced or entered) vs the transactions dated between them, since a date (default 30 days ago). Per account: reconciles (true = matches, or only a late_booking — a payment the bank booked a few days off its date), the unexplained total, and gaps — timing ones (undone within days: booking date ≠ transaction date) vs lasting ones (a missing, duplicated or mis-assigned transaction). Use it to answer whether the ledger matches the banks.",
 			InputSchema: obj(map[string]any{"from": str("YYYY-MM-DD, default 30 days ago")})},
 		{Name: "get_reference", Description: "Reference data: categories, accounts, tags, rules or merchants.", InputSchema: obj(map[string]any{"what": str("categories | accounts | tags | rules | merchants")}, "what")},
 		{Name: "ibkr_live", Description: "Live, read-only data from the owner's Interactive Brokers account (when connected in Settings → Banks): 'summary' (net liquidation, cash, buying power), 'positions' (quantity, price, value, P&L, cost basis), balances' (cash by currency), 'orders' (live orders and their status), 'instructions' (saved order instructions — not live until the owner submits them in IBKR), or 'trades' for a period (TODAY, DAYS_7, DAYS_30, DAYS_90, MONTH_TO_DATE, YEAR_TO_DATE, LAST_QUARTER…). Prefer it over get_portfolio for what IBKR holds right now; it cannot trade.",
 			InputSchema: obj(map[string]any{"what": str("summary | positions | balances | orders | instructions | trades"), "period": str("for trades; default DAYS_30")}, "what")},
+		{Name: "get_month_review", Description: "A month's review as the app shows it: income, spending and saving vs the previous month and the six-month average, a verdict, highlights, the net worth change, categories vs their norm, top expenses and income, daily spending, a 12-month trend, the budget brief, money owed to the owner and data checks. Default: the current month.", InputSchema: obj(map[string]any{"month": str("YYYY-MM, default current")})},
+		{Name: "get_checks", Description: "Data-health to-dos: stale balances or valuations, bank consent running out, inbox rows waiting, vague categories, an overdue backup, loan rate resets — each with a level (warn | info) and where in the app to fix it.", InputSchema: obj(map[string]any{})},
+		{Name: "get_owed", Description: "Money people owe the owner: per person, expenses tagged owed:<who> minus their repayments. Positive = still owed.", InputSchema: obj(map[string]any{})},
+		{Name: "get_net_worth_movement", Description: "Which accounts drove net worth between two dates: each account's balance at the start and end and the change, largest first. Default: the last 12 months.", InputSchema: obj(map[string]any{"from": str(date), "to": str(date)})},
+		{Name: "get_trip_untagged", Description: "For a trip with real dates: spending inside the dates that lacks its tag — likely (paid away from home) and maybe (merchants also paid at home) — and travel bookings made before it. Tag the right ones with tag_trip after the owner confirms.", InputSchema: obj(map[string]any{"tag": str("trip:<name>")}, "tag")},
+		{Name: "set_trip_dates", Description: "Set a trip's real first and last day (tag trip:<name>), so new expenses inside them get the tag by themselves; clear=true removes the dates. ONLY after approval.",
+			InputSchema: obj(map[string]any{"tag": str("trip:<name>"), "start": str("first day YYYY-MM-DD"), "end": str("last day YYYY-MM-DD"), "clear": map[string]any{"type": "boolean"}}, "tag")},
 		{Name: "get_inbox", Description: "Bank rows waiting for review (proposed category, merchant, likely duplicates).", InputSchema: obj(map[string]any{})},
 		{Name: "create_transaction", Description: "Add a transaction. ONLY after the user confirmed the details.",
 			InputSchema: obj(map[string]any{"date": str(date), "amount": num("EUR, positive"), "category": str("category id"), "merchant": str("merchant"), "note": str("description"),
@@ -202,7 +210,7 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 	case "get_forecast":
 		var sc cfo.Scenario
 		json.Unmarshal(raw, &sc)
-		if sc.Gross == 0 && sc.Saving == nil && sc.Income == nil && sc.EverydayPct == 0 && len(sc.Purchases) == 0 {
+		if sc.Gross == 0 && sc.Saving == nil && sc.Income == nil && sc.EverydayPct == 0 && len(sc.Purchases) == 0 && len(sc.SkipGoals) == 0 {
 			return jsonOut2(cfo.CompareForecast(a.DB, now, 12, nil))
 		}
 		return jsonOut2(cfo.CompareForecast(a.DB, now, 12, &sc))
@@ -360,6 +368,44 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		return jsonOut(insights.Reconcile(book, txs, from))
+	case "get_month_review":
+		return jsonOut2(cfo.BuildMonthReview(a.DB, args.s("month"), now))
+	case "get_checks":
+		return jsonOut(cfo.Checks(a.DB, now))
+	case "get_owed":
+		return jsonOut2(ledger.Owed(a.DB))
+	case "get_net_worth_movement":
+		book, err := wealth.LoadBook(a.DB)
+		if err != nil {
+			return "", err
+		}
+		from, to := args.s("from"), args.s("to")
+		if to == "" {
+			to = now.Format("2006-01-02")
+		}
+		if from == "" {
+			from = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+		mv := book.Movement(from, to)
+		if mv == nil {
+			mv = []wealth.Move{}
+		}
+		return jsonOut(mv)
+	case "get_trip_untagged":
+		likely, maybe, book, err := ledger.TripUntagged(a.DB, args.s("tag"))
+		if err != nil {
+			return "", err
+		}
+		return jsonOut(map[string]any{"in_dates": likely, "maybe": maybe, "bookings": book})
+	case "set_trip_dates":
+		if b, _ := args["clear"].(bool); b {
+			if err := ledger.DeleteTripDates(a.DB, args.s("tag")); err != nil {
+				return "", err
+			}
+		} else if err := ledger.SaveTripDates(a.DB, ledger.TripDates{Tag: args.s("tag"), Start: args.s("start"), End: args.s("end")}); err != nil {
+			return "", err
+		}
+		return jsonOut2(ledger.ListTripDates(a.DB))
 	case "get_trips":
 		txs, err := ledger.All(a.DB, ledger.Filter{})
 		if err != nil {
@@ -375,7 +421,8 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 				}
 			}
 		}
-		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg, "planned": planned})
+		dates, _ := ledger.ListTripDates(a.DB)
+		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg, "planned": planned, "dates": dates})
 	case "get_reference":
 		switch args.s("what") {
 		case "categories":

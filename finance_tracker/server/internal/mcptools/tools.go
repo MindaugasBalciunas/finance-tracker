@@ -190,6 +190,45 @@ type fundArgs struct {
 	} `json:"allocations,omitempty" jsonschema:"omit to use the suggested split by priority"`
 }
 
+type periodArgs struct {
+	From string `json:"from,omitempty" jsonschema:"YYYY-MM-DD"`
+	To   string `json:"to,omitempty" jsonschema:"YYYY-MM-DD"`
+}
+
+type historyArgs struct {
+	AccountID string `json:"account_id" jsonschema:"account id"`
+	From      string `json:"from,omitempty" jsonschema:"YYYY-MM-DD, optional"`
+}
+
+type forecastArgs struct {
+	Gross       float64  `json:"gross,omitempty" jsonschema:"a new gross salary per month, EUR (LT taxes applied)"`
+	Income      *float64 `json:"income,omitempty" jsonschema:"or a net income per month, EUR"`
+	Saving      *float64 `json:"saving,omitempty" jsonschema:"saving lines per month, EUR"`
+	EverydayPct float64  `json:"everyday_pct,omitempty" jsonschema:"-20 = everyday spending 20% lower"`
+	From        string   `json:"from,omitempty" jsonschema:"YYYY-MM the change starts"`
+	Purchases   []struct {
+		Label  string  `json:"label"`
+		Month  string  `json:"month" jsonschema:"YYYY-MM"`
+		Amount float64 `json:"amount" jsonschema:"EUR"`
+	} `json:"purchases,omitempty" jsonschema:"extra one-off buys"`
+	SkipGoals []int64 `json:"skip_goals,omitempty" jsonschema:"wish-list goal ids to leave out"`
+}
+
+type yearArgs struct {
+	Year int `json:"year,omitempty" jsonschema:"default this year"`
+}
+
+type tripTagArgs struct {
+	Tag string `json:"tag" jsonschema:"trip:<name>"`
+}
+
+type tripDatesArgs struct {
+	Tag   string `json:"tag" jsonschema:"trip:<name>"`
+	Start string `json:"start,omitempty" jsonschema:"first day YYYY-MM-DD"`
+	End   string `json:"end,omitempty" jsonschema:"last day YYYY-MM-DD"`
+	Clear bool   `json:"clear,omitempty" jsonschema:"remove the dates instead"`
+}
+
 type ibkrArgs struct {
 	What   string `json:"what" jsonschema:"summary | positions | balances | orders | instructions | trades"`
 	Period string `json:"period,omitempty" jsonschema:"trades only: TODAY, DAYS_7, DAYS_30 (default), DAYS_90, MONTH_TO_DATE, YEAR_TO_DATE, LAST_QUARTER"`
@@ -221,7 +260,7 @@ func getTx(call Caller, id int64) (map[string]any, error) {
 // WriteTools change data (their descriptions start with WRITES). A
 // read-only connection isn't offered them at all.
 var WriteTools = []string{"create_transaction", "update_transaction", "save_rule", "delete_rule", "rename_tag", "update_inbox_row", "save_budget", "delete_budget",
-	"update_plan_settings", "tag_trip", "save_recurring", "delete_recurring", "save_goal", "fund_goals", "remember"}
+	"update_plan_settings", "tag_trip", "save_recurring", "delete_recurring", "save_goal", "fund_goals", "remember", "set_trip_dates"}
 
 // New is every tool, the shared instructions and the ready-made analyses
 // (prompts) over call. The stdio server passes an HTTP client of the API;
@@ -286,17 +325,15 @@ func New(call Caller) *mcp.Server {
 			return text(call("GET", "/plan", vals("month", a.Month), nil))
 		})
 	for _, t := range []struct{ name, desc, path string }{
-		{"get_recurring", "Recurring money movements: bills and subscriptions, standing orders between accounts and expected income — amount, accounts, usual day, next date.", "/insights/recurring"},
-		{"get_fi", "Financial-independence projection and emergency fund.", "/insights/fi"},
-		{"get_portfolio_quality", "Money-weighted annual return of the portfolio, core funds vs hand-picked stocks, the picks' money in the core fund on the same days, concentration, and the next contribution toward the target mix.", "/portfolio/quality"},
-		{"get_fun_facts", "Fun statistics from the whole history: top employers, first pay cheque, favourite shops, little habits added up, records, trips. Obligations left out.", "/insights/fun"},
-		{"get_tax", "This year's Lithuanian income declaration estimate (due 1 May next year): 25% bracket, interest and gains above exemptions, 3rd-pillar refund. Estimates — VMI's pre-filled declaration counts.", "/tax"},
-		{"get_forecast", "Cash month by month for the next 12 months at the current plan: income, obligations, saving, usual everyday spending, one-off allowance, dated yearly bills and wish-list goals; the first month below the emergency target or out of cash. Bonuses and extra investing are not included.", "/forecast"},
-		{"get_loans", "Loans: balance, rate, next payment split, payoff, equity/LTV, rate reset.", "/loans"},
-		{"get_trips", "Trips with totals and per-day cost, untagged travel that looks like a trip, and planned trips being saved for on the wish list.", "/trips"},
-		{"get_bank_inbox", "Bank rows waiting for the owner's review (not in the ledger yet), with proposals and likely duplicates.", "/bank/inbox"},
+		{"get_recurring", "Recurring money movements the cash plan uses: bills and subscriptions, standing orders between accounts (transfers) and expected income — amount, monthly cost, accounts, usual day, next date, whether this month's one is done. source: detected, edited or manual (added by the owner).", "/insights/recurring"},
+		{"get_fi", "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", "/insights/fi"},
+		{"get_portfolio_quality", "Money-weighted annual return of the investment portfolio, the core funds and the hand-picked stocks; the picks' money in the core fund on the same days (are the picks worth it?); single stocks above the concentration limit; where the next monthly contribution goes toward the owner's target mix (buying only — selling makes gains taxable).", "/portfolio/quality"},
+		{"get_loans", "Loans (mortgage): balance, rate, next payment split, payoff date, equity and LTV, rate reset, principal/interest paid in the last 12 months.", "/loans"},
+		{"get_trips", "Trips (trip:* tags) with totals, per day and category split; their real dates where set (spending inside them gets the trip tag by itself); untagged travel spending that looks like a trip; planned trips being saved for on the wish list.", "/trips"},
+		{"get_bank_inbox", "Bank rows waiting for the owner's review (not in the ledger yet), with proposals, likely duplicates and the ids update_inbox_row takes. Accepting them stays with the owner, in the app.", "/bank/inbox"},
 		{"get_bank_connections", "Bank connections, consent expiry and mapped accounts.", "/bank/connections"},
-		{"get_owed", "Money people owe the owner (split parts marked owed, minus repayments).", "/owed"},
+		{"get_owed", "Money people owe the owner: per person, expenses tagged owed:<who> minus their repayments. Positive = still owed.", "/owed"},
+		{"get_checks", "Data-health to-dos: stale balances or valuations, bank consent running out, inbox rows waiting, vague categories, an overdue backup, loan rate resets — each with a level (warn | info) and where in the app to fix it.", "/checks"},
 	} {
 		path := t.path
 		mcp.AddTool(s, &mcp.Tool{Name: t.name, Description: t.desc}, func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
@@ -477,6 +514,53 @@ func New(call Caller) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "ibkr_live", Description: "Live, read-only data from the owner's Interactive Brokers account (when connected in the app, Settings → Banks): 'summary' (net liquidation, cash, buying power), 'positions' (quantity, price, value, P&L, cost basis), 'balances' (cash by currency), 'orders' (live orders and their status), 'instructions' (saved order instructions — not live until the owner submits them in IBKR), or 'trades' for a period. Prefer it over get_portfolio for what IBKR holds right now. It cannot trade. IBKR ends its sign-in every 7 days; if it has lapsed, tell the owner to connect again in the app."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a ibkrArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/ibkr/live", vals("what", a.What, "period", a.Period), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_account_history", Description: "Balance points of one account (recorded or bank-synced), from a date — the latest 400 at most."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a historyArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/balances", vals("account", a.AccountID, "from", a.From, "limit", "400"), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_forecast", Description: "Cash (checking, savings, cash) month by month for the next 12 months: the plan's income, obligations and saving, usual everyday spending, the one-off allowance, dated yearly bills and wish-list goals in their month; the first month below the emergency target or out of cash. Pass scenario fields to compare a what-if with the baseline (it does the arithmetic — use it instead of calculating). Bonuses and extra investing are not in the baseline."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a forecastArgs) (*mcp.CallToolResult, any, error) {
+			if a.Gross == 0 && a.Income == nil && a.Saving == nil && a.EverydayPct == 0 && len(a.Purchases) == 0 && len(a.SkipGoals) == 0 {
+				return text(call("GET", "/forecast", nil, nil))
+			}
+			b, _ := json.Marshal(a)
+			return text(call("GET", "/forecast", vals("scenario", string(b)), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a yearArgs) (*mcp.CallToolResult, any, error) {
+			q := url.Values{}
+			if a.Year > 0 {
+				q.Set("year", fmt.Sprint(a.Year))
+			}
+			return text(call("GET", "/tax", q, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_fun_facts", Description: "Fun statistics from the whole history: employers ranked by what they paid, the first pay cheque, lifetime income, most visited shops and where the most money went, little habits added up (coffees, fast food, fuel…), the biggest purchase and day, the big spending weekday, the priciest trips, the biggest spending year. Obligations are left out. Optional from/to limit it to a period."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/insights/fun", vals("from", a.From, "to", a.To), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified — say so."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a tickerArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/market/buzz/"+url.PathEscape(strings.ToUpper(a.Ticker)), nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_month_review", Description: "A month's review as the app shows it: income, spending and saving vs the previous month and the six-month average, a verdict, highlights, the net worth change, categories vs their norm, top expenses and income, daily spending, a 12-month trend, the budget brief, money owed to the owner and data checks. Default: the current month."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/insights/month", vals("month", a.Month), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_net_worth_movement", Description: "Which accounts drove net worth between two dates: each account's balance at the start and end and the change, largest first. Default: the last 12 months."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/networth/movement", vals("from", a.From, "to", a.To), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_trip_untagged", Description: "For a trip with real dates: spending inside the dates that lacks its tag — likely (paid away from home) and maybe (merchants also paid at home) — and travel bookings made before it. Tag the right ones with tag_trip after the owner confirms."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a tripTagArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/trips/untagged", vals("tag", a.Tag), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "set_trip_dates", Description: "WRITES — read-write token. Sets a trip's real first and last day (tag trip:<name>), so new expenses inside them get the tag by themselves; clear=true removes the dates. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a tripDatesArgs) (*mcp.CallToolResult, any, error) {
+			if a.Clear {
+				return text(call("DELETE", "/trips/dates", vals("tag", a.Tag), nil))
+			}
+			return text(call("PUT", "/trips/dates", nil, map[string]any{"tag": a.Tag, "start": a.Start, "end": a.End}))
 		})
 	addPrompts(s)
 	return s
