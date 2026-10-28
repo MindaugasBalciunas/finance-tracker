@@ -47,6 +47,40 @@ export function Stat({ label, value, sub, tone, onClick, icon, color = 'rgb(var(
   )
 }
 
+const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+/** A number that runs up to its value (from 0 the first time, then from the
+ *  last value shown), easing out — instant with reduced motion. */
+export function useCountUp(target: number, ms = 600) {
+  const [v, setV] = useState(() => (reducedMotion() || !Number.isFinite(target) ? target : 0))
+  const last = useRef(v)
+  useEffect(() => {
+    if (reducedMotion() || !Number.isFinite(target)) { last.current = target; setV(target); return }
+    const from = last.current
+    if (from === target) return
+    let raf = 0
+    const t0 = performance.now()
+    const tick = (t: number) => {
+      // A frame's timestamp can be a little before t0: clamp, or the first frame overshoots below the start.
+      const p = Math.min(1, Math.max(0, (t - t0) / ms))
+      const x = from + (target - from) * (1 - Math.pow(1 - p, 3))
+      last.current = p < 1 ? x : target
+      setV(last.current)
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, ms])
+  return v
+}
+
+/** A headline figure that counts up; `format` turns the number into text
+ *  (eur, pct, …). Screen readers get the final value only. */
+export function CountUp({ value, format = (v: number) => String(Math.round(v)), ms = 600 }: { value: number; format?: (v: number) => string; ms?: number }) {
+  const v = useCountUp(value, ms)
+  return <span className="tnum" aria-label={format(value)}><span aria-hidden>{format(v)}</span></span>
+}
+
 /** Change vs a reference. goodWhenUp=false for costs. Always carries an arrow, never colour alone. */
 export function Delta({ value, goodWhenUp = true, format = signed, className = '' }: { value: number; goodWhenUp?: boolean; format?: (v: number) => string; className?: string }) {
   if (!value || Math.abs(value) < 0.5) return <span className={clsx('text-muted', className)}>±0</span>

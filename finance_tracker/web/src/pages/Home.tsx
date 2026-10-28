@@ -8,7 +8,7 @@ import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceDot, Refe
 import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
-import { Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
+import { CountUp, Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
 import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
@@ -64,7 +64,7 @@ export default function Home() {
               <div className="text-sm text-ink2">{liquid ? 'Liquid assets' : 'Net worth'}</div>
               <span className="text-xs sm:hidden"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
             </div>
-            <div className="grad-text mt-1 text-4xl font-bold tracking-tight sm:text-5xl">{eur(liquid ? o.liquid : o.net_worth)}</div>
+            <div className="grad-text mt-1 text-4xl font-bold tracking-tight sm:text-5xl"><CountUp value={liquid ? o.liquid : o.net_worth} format={eur} /></div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <span className="text-muted">30 days <Delta value={liquid ? o.liquid_30d : o.net_worth_30d} /></span>
               <span className="text-muted">This year <Delta value={liquid ? o.liquid_ytd : o.net_worth_ytd} /></span>
@@ -136,12 +136,12 @@ export default function Home() {
 
       {/* Progress: the slow numbers that say whether wealth is being built */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={pct(o.usual_rate ?? avg.savings_rate)}
+        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={<CountUp value={o.usual_rate ?? avg.savings_rate} format={pct} />}
           sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
+        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={<CountUp value={o.emergency.months} format={(v) => `${v.toFixed(1)} mo`} />} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
           tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={eurk(avg.invested * 12)} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
+        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={<CountUp value={o.fi_progress} format={(v) => pct(v, 1)} />} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
+        <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={<CountUp value={avg.invested * 12} format={eurk} />} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
       </div>
 
       <FunTeaser />
@@ -352,7 +352,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           <div className="min-w-0 flex-1">
             <div className="text-xs text-ink2">Left to spend in {month}</div>
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className={clsx('text-xl font-semibold tracking-tight tnum', left < 0 ? 'text-bad' : p.projected_left < 0 ? 'text-warn' : 'text-good')}>{eur(left)}</span>
+              <span className={clsx('text-xl font-semibold tracking-tight tnum', left < 0 ? 'text-bad' : p.projected_left < 0 ? 'text-warn' : 'text-good')}><CountUp value={left} format={eur} /></span>
               <span className="text-xs text-muted">{left > 0 ? <>≈ <b className="tnum text-ink">{eur(p.per_day_left)}</b>/day · {p.days_left} days left</> : <span className="text-bad">over budget</span>}</span>
             </div>
           </div>

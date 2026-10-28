@@ -7,7 +7,7 @@ import { catColor, useCats } from '../../lib/categories'
 import { eur, eurk, monthLabel, pct, todayISO } from '../../lib/format'
 import type { Flow, Tx } from '../../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
-import { Card, Loading, Stat } from '../../components/ui'
+import { CountUp, Card, Loading, Stat } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { incomeCategories, ledgerLink } from '../../lib/links'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
@@ -34,10 +34,10 @@ export function Review() {
         <span className="text-sm text-muted">vs {Number(year) - 1}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat onClick={() => nav(ledgerLink({ kind: 'income', category: incomeCategories(cats.tree), year, salaryMonth: true }))} label="Income" value={eur(f.income)} sub={p.income ? `${f.income >= p.income ? '+' : ''}${pct(f.income / p.income - 1)} vs last year` : ''} />
-        <Stat onClick={() => nav(ledgerLink({ kind: 'expense', year }))} label="Spending" value={eur(f.spending)} sub={p.spending ? `${f.spending >= p.spending ? '+' : ''}${pct(f.spending / p.spending - 1)} vs last year` : ''} />
-        <Stat label="Savings rate" value={pct(f.savings_rate)} sub={`last year ${pct(p.savings_rate)}`} tone={f.saved < 0 ? 'bad' : 'good'} />
-        <Stat label="Net worth change" value={eur(nwChange)} sub={`${eur(r.net_worth_start)} → ${eur(r.net_worth_end)}`} tone={nwChange < 0 ? 'bad' : 'good'} />
+        <Stat onClick={() => nav(ledgerLink({ kind: 'income', category: incomeCategories(cats.tree), year, salaryMonth: true }))} label="Income" value={<CountUp value={f.income} format={eur} />} sub={p.income ? `${f.income >= p.income ? '+' : ''}${pct(f.income / p.income - 1)} vs last year` : ''} />
+        <Stat onClick={() => nav(ledgerLink({ kind: 'expense', year }))} label="Spending" value={<CountUp value={f.spending} format={eur} />} sub={p.spending ? `${f.spending >= p.spending ? '+' : ''}${pct(f.spending / p.spending - 1)} vs last year` : ''} />
+        <Stat label="Savings rate" value={<CountUp value={f.savings_rate} format={pct} />} sub={`last year ${pct(p.savings_rate)}`} tone={f.saved < 0 ? 'bad' : 'good'} />
+        <Stat label="Net worth change" value={<CountUp value={nwChange} format={eur} />} sub={`${eur(r.net_worth_start)} → ${eur(r.net_worth_end)}`} tone={nwChange < 0 ? 'bad' : 'good'} />
       </div>
       <Card title="Month by month">
         <div className="h-52">

@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
 import { usePeriod } from '../../lib/hooks'
 import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
-import { AskCFO, Loading } from '../../components/ui'
+import { AskCFO, Loading, useCountUp } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
 type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; link?: string }
@@ -57,27 +57,10 @@ function Linked({ to, className, title, children }: { to?: string; className?: s
   return <Link to={to} className={clsx(className, 'block transition hover:brightness-95 focus-visible:outline-2')} title={title} aria-label={title}>{children}</Link>
 }
 
-function useCountUp(target: number, ms = 1100) {
-  const [v, setV] = useState(reduced() ? target : 0)
-  useEffect(() => {
-    if (reduced()) { setV(target); return }
-    let raf = 0
-    const t0 = performance.now()
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / ms)
-      setV(target * (1 - Math.pow(1 - p, 3)))
-      if (p < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [target, ms])
-  return v
-}
-
 const fmt = (n: number, euro = false) => (euro ? '€' : '') + Math.round(n).toLocaleString('en-GB')
 
 function Count({ n, euro }: { n: number; euro?: boolean }) {
-  return <>{fmt(useCountUp(n), euro)}</>
+  return <>{fmt(useCountUp(n, 1100), euro)}</>
 }
 
 const glow = (c: string): CSSProperties => ({ background: `linear-gradient(135deg, color-mix(in oklab, ${c} 22%, rgb(var(--surface))), rgb(var(--surface)) 70%)` })

@@ -9,7 +9,7 @@ import { GROUPS, LIQUID_GROUPS } from '../../lib/categories'
 import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../../lib/periods'
 import type { Account } from '../../lib/types'
-import { Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
+import { CountUp, Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
 import { Icon, IconTile } from '../../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
@@ -67,7 +67,7 @@ export function Overview() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm text-ink2">{liquidOnly ? 'Liquid assets' : 'Net worth'}</div>
-            <div className="grad-text text-3xl font-bold tracking-tight">{eur(head)}</div>
+            <div className="grad-text text-3xl font-bold tracking-tight"><CountUp value={head} format={eur} /></div>
             <div className="text-sm text-muted">{rangeLabel(range)} <Delta value={change} /></div>
           </div>
           <span className="pt-1 text-xs"><Toggle checked={liquidOnly} onChange={setLiquidOnly} label="Liquid only" /></span>

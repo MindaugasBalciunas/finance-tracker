@@ -7,7 +7,7 @@ import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth } from '../../lib/format'
 import type { Flow, Tx } from '../../lib/types'
-import { Card, Delta, Loading, Meter, Segmented, Stat } from '../../components/ui'
+import { CountUp, Card, Delta, Loading, Meter, Segmented, Stat } from '../../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon } from '../../components/Icon'
@@ -71,10 +71,10 @@ function MonthReviewView() {
         )}
       </section>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Income" value={eur(f.income)} sub={<>vs last month {vs(f.income, prev.income, true)}</>} />
-        <Stat label="Spending" value={eur(f.spending)} sub={<>vs 6-mo avg {vs(f.spending, avg.spending, false)}</>} />
-        <Stat label="Saved" value={eur(f.saved)} tone={f.saved < 0 ? 'bad' : undefined} sub={<>vs 6-mo avg {vs(f.saved, avg.saved, true)}</>} />
-        <Stat label="Net worth" value={eur(r.net_worth.end)} sub={<Delta value={r.net_worth.change} />} />
+        <Stat label="Income" value={<CountUp value={f.income} format={eur} />} sub={<>vs last month {vs(f.income, prev.income, true)}</>} />
+        <Stat label="Spending" value={<CountUp value={f.spending} format={eur} />} sub={<>vs 6-mo avg {vs(f.spending, avg.spending, false)}</>} />
+        <Stat label="Saved" value={<CountUp value={f.saved} format={eur} />} tone={f.saved < 0 ? 'bad' : undefined} sub={<>vs 6-mo avg {vs(f.saved, avg.saved, true)}</>} />
+        <Stat label="Net worth" value={<CountUp value={r.net_worth.end} format={eur} />} sub={<Delta value={r.net_worth.change} />} />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Where it went" action={<span className="text-xs text-muted">tick = 6-month average</span>}>

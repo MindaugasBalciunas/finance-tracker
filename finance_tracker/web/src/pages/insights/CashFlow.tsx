@@ -5,7 +5,7 @@ import { useCashflow, usePeriod } from '../../lib/hooks'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth, todayISO } from '../../lib/format'
 import type { Flow } from '../../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
-import { Card, Loading, Segmented, Stat } from '../../components/ui'
+import { CountUp, Card, Loading, Segmented, Stat } from '../../components/ui'
 import { incomeCategories, ledgerLink } from '../../lib/links'
 import { useCats } from '../../lib/categories'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
@@ -37,10 +37,10 @@ export function CashFlow() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="briefcase" color="var(--s6)" label="Income · 12 mo" value={eur(inc)} sub={`${eur(inc / 12)}/month`} />
-        <Stat icon="bag" color="var(--s2)" label="Spending · 12 mo" value={eur(sp)} sub={`${eur(sp / 12)}/month`} />
-        <Stat icon="piggy" color="var(--s3)" label="Savings rate" value={pct(inc ? (inc - sp) / inc : 0)} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
-        <Stat icon="trend" color="var(--s7)" label="Invested · 12 mo" value={eur(sum('invested'))} sub={`incl. ${eur(sum('principal'))} loan principal`} />
+        <Stat icon="briefcase" color="var(--s6)" label="Income · 12 mo" value={<CountUp value={inc} format={eur} />} sub={`${eur(inc / 12)}/month`} />
+        <Stat icon="bag" color="var(--s2)" label="Spending · 12 mo" value={<CountUp value={sp} format={eur} />} sub={`${eur(sp / 12)}/month`} />
+        <Stat icon="piggy" color="var(--s3)" label="Savings rate" value={<CountUp value={inc ? (inc - sp) / inc : 0} format={pct} />} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
+        <Stat icon="trend" color="var(--s7)" label="Invested · 12 mo" value={<CountUp value={sum('invested')} format={eur} />} sub={`incl. ${eur(sum('principal'))} loan principal`} />
       </div>
       <Card title="Income vs spending" action={<Segmented size="sm" value={span} onChange={setSpan} options={SPANS} />}>
         <div className="h-64">

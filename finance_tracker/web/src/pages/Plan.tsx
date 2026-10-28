@@ -9,7 +9,7 @@ import { useOverview, usePlan, useRefresh } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
 import type { Budget, PlanLine, PlanReport, Tx, TxList } from '../lib/types'
-import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import { AskCFO, Card, CountUp, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -297,7 +297,7 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <div className="shrink-0">
             <div className="text-sm text-ink2">{current ? 'Left to spend this month' : 'Left after the plan'}</div>
-            <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : heading ? 'text-warn' : 'text-good')}>{eur(r.safe_to_spend)}</div>
+            <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : heading ? 'text-warn' : 'text-good')}><CountUp value={r.safe_to_spend} format={eur} /></div>
             {heading && r.safe_to_spend >= 0 && <div className="text-xs text-warn">heading for {eur(-o!.plan.projected_left)} over by month end</div>}
           </div>
           <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds (net of {(r.refunds ?? 0) > 0.005 ? <span className="text-good">{eur(r.refunds!)} refunds</span> : 'refunds'}){(r.fund_overdrawn ?? 0) > 0.005 && <> − <span className="text-bad">{eur(r.fund_overdrawn!)} paid beyond what funds held</span></>}{(r.unreviewed ?? 0) > 0.005 && <> · incl. <span className="text-ink2">{eur(r.unreviewed!)} in the bank inbox, not reviewed yet</span></>}</div>
