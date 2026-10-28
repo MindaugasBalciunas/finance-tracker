@@ -145,7 +145,8 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	f.Saved = f.Income - f.Fixed - f.Everyday - f.OneOffs
 	s.Flow = f
 
-	// 1. Does the plan fit? Recent months measured against today's plan.
+	// 1. Does the plan fit? Recent months measured against today's lines and
+	// the income each one actually had.
 	cur, err := BudgetReport(d, now.Format("2006-01"), now)
 	if err != nil {
 		return nil, err

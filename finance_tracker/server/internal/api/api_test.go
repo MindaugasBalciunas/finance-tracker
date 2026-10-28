@@ -381,9 +381,14 @@ func TestWealthPlanInsightsEndpoints(t *testing.T) {
 		t.Fatal(rep.Lines)
 	}
 	c.ok("PUT", "/plan/settings", map[string]any{"income_mode": "manual", "manual_income": 5050}, nil)
-	c.ok("GET", "/plan?month=2026-09", nil, &rep)
+	c.ok("GET", "/plan", nil, &rep)
 	if rep.IncomeBase != 5050 {
-		t.Fatal(rep.IncomeBase)
+		t.Fatal("this month uses the setting:", rep.IncomeBase)
+	}
+	// A finished month with its salary booked keeps the income that came in.
+	c.ok("GET", "/plan?month=2026-09", nil, &rep)
+	if rep.IncomeBase != 5000 {
+		t.Fatal("history uses actual income:", rep.IncomeBase)
 	}
 
 	for _, p := range []string{"/overview", "/insights/cashflow?granularity=year", "/insights/breakdown?preset=ytd", "/insights/trends?months=12",

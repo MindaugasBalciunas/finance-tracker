@@ -213,19 +213,23 @@ func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (float
 	} else if year < now.Year() {
 		first = 13
 	}
+	// Tax goes by the date paid; each payment is the gross of the month it
+	// pays for (October's salary paid in November is October's gross).
+	rules := s.Salary()
+	paid := func(m int) float64 { return s.GrossFor(plan.PaysFor(fmt.Sprintf("%d-%02d", year, m), rules)) }
 	for m := first; m <= 12; m++ {
-		ahead += s.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+		ahead += paid(m)
 	}
 	if net == 0 { // nothing booked: the plan's gross for every month
 		var all float64
 		for m := 1; m <= 12; m++ {
-			all += s.GrossFor(fmt.Sprintf("%d-%02d", year, m))
+			all += paid(m)
 		}
 		return all, "the plan's gross salary × 12"
 	}
-	paid := net.Float() / netShare
+	grossPaid := net.Float() / netShare
 	if ahead == 0 {
-		return paid, fmt.Sprintf("%s net paid in %d, grossed up", eurS(net), year)
+		return grossPaid, fmt.Sprintf("%s net paid in %d, grossed up", eurS(net), year)
 	}
-	return paid + ahead, fmt.Sprintf("%s net paid so far, grossed up, plus %s for the months to come", eurS(net), eurS(money.FromFloat(ahead)))
+	return grossPaid + ahead, fmt.Sprintf("%s net paid so far, grossed up, plus %s for the months to come", eurS(net), eurS(money.FromFloat(ahead)))
 }

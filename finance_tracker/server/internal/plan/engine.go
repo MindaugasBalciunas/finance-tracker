@@ -229,6 +229,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	fixedSpent := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
 	income := map[string]money.Cents{}
+	salaryIn := map[string]money.Cents{} // salary, in the month it pays for
 	refunds := map[string]money.Cents{}
 	unbudgeted := map[string]map[string]money.Cents{}
 	firstYM := ""
@@ -258,6 +259,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		}
 		if t.Kind == "income" {
 			income[m] += t.Amount
+			if ledger.Top(t.Category) == "salary" {
+				salaryIn[m] += t.Amount
+			}
 			continue
 		}
 		// Money back out of a pension or broker counts against saving.
@@ -481,6 +485,20 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	})
 
 	r.IncomeBase, r.IncomeBaseSource = IncomeBase(settings, income, month, nowYM)
+	// A finished month whose pay window has closed (a salary paid by the rule's
+	// day of the next month counts for it) is measured against what actually
+	// came in, so a new salary setting never rewrites the past. Gross mode
+	// models salary, so it takes the salary that arrived; a fixed amount
+	// models all income. Until the window closes — and for this month and the
+	// ones ahead — the setting stands in.
+	if SalarySettled(month, salary, now) {
+		switch {
+		case settings.IncomeMode == "gross" && salaryIn[month] > 0:
+			r.IncomeBase, r.IncomeBaseSource = salaryIn[month], "salary received for that month"
+		case settings.IncomeMode == "manual" && income[month] > 0:
+			r.IncomeBase, r.IncomeBaseSource = income[month], "income received that month"
+		}
+	}
 	r.SafeToSpend = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions - (r.DiscretionarySpent - r.FundSpent) - r.FundOverdrawn
 	return r
 }

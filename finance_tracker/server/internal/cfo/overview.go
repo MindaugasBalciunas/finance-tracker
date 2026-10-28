@@ -128,7 +128,8 @@ type DayPoint struct {
 	Proj    *money.Cents `json:"proj,omitempty"` // forecast cumulative spending, from today on
 }
 
-// MonthEnd is a complete month measured against the current plan.
+// MonthEnd is a complete month measured against today's budget lines and,
+// once its pay window has closed, the income that actually came in.
 type MonthEnd struct {
 	Month string      `json:"month"`
 	Left  money.Cents `json:"left"`  // safe to spend at month end (negative = over)

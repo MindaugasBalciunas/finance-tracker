@@ -98,3 +98,27 @@ func TestTaxPillarIgnoresPayout(t *testing.T) {
 	}
 	t.Fatalf("no 3rd-pillar item: %+v", r.Items)
 }
+
+// A raise from November is paid from December: November's payment is
+// October's salary at the old gross (tax goes by the date paid).
+func TestTaxRaisePaidNextMonth(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.GrossSalary = "gross", 8400
+	st.GrossChanges = []plan.GrossChange{{From: "2026-11", Gross: 10000}}
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	if err := plan.SaveSettings(d, st); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := cfo.Tax(d, 2026, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range tx.Items {
+		// 11 × 8,400 + 10,000 = 102,400; (102,400 − 83,237) × 5% = 958.15.
+		if it.Key == "bracket" && it.Amount != E(958.15) {
+			t.Errorf("bracket %v: %s", it.Amount, it.Detail)
+		}
+	}
+}

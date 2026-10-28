@@ -105,9 +105,10 @@ func toolDefs() []tool {
 				"from_month": str("YYYY-MM the new amount starts"), "all_months": map[string]any{"type": "boolean", "description": "rewrite the amount for every month"},
 				"start_month": str("YYYY-MM the line starts; a fund sets money aside from this month, before it the line is a plain monthly envelope"), "archived": map[string]any{"type": "boolean"}})},
 		{Name: "delete_budget", Description: "Delete a budget line and its history by id. Prefer save_budget with archived=true. ONLY after approval.", InputSchema: obj(map[string]any{"id": num("budget line id")}, "id")},
-		{Name: "get_plan_settings", Description: "The plan's settings: income basis (income_mode median|manual|gross, manual_income, gross_salary, monthly_deductions), salary_rules (when salary paid early in a month counts for the month before), salary_account, buffers per account, emergency_months, FI targets (target_age, birth_year, fi_monthly_spend, withdrawal_rate, expected_return), plus net salary from gross.", InputSchema: obj(map[string]any{})},
-		{Name: "update_plan_settings", Description: "Change plan settings; only the fields given change, buffers merge per account (0 removes one). salary_rules replaces the whole list — send every rule, e.g. [{\"from\":\"\",\"paid_by_day\":3},{\"from\":\"2026-11-01\",\"paid_by_day\":10}] for a new job paying by the 10th for the month before. ONLY after approval.",
-			InputSchema: obj(map[string]any{"income_mode": str("median | manual | gross"), "manual_income": num("EUR net per month"), "gross_salary": num("EUR gross per month"),
+		{Name: "get_plan_settings", Description: "The plan's settings: income basis (income_mode median|manual|gross, manual_income, gross_salary, gross_changes — a new gross from a month on, monthly_deductions), salary_rules (when salary paid early in a month counts for the month before), salary_account, buffers per account, emergency_months, FI targets (target_age, birth_year, fi_monthly_spend, withdrawal_rate, expected_return), plus net salary from gross.", InputSchema: obj(map[string]any{})},
+		{Name: "update_plan_settings", Description: "Change plan settings; only the fields given change, buffers merge per account (0 removes one). salary_rules replaces the whole list — send every rule, e.g. [{\"from\":\"\",\"paid_by_day\":3},{\"from\":\"2026-11-01\",\"paid_by_day\":10}] for a new job paying by the 10th for the month before. A raise or new salary from a later month goes in gross_changes (replaces the list — send every change), not gross_salary, so the months before keep the old salary; a finished month uses the salary that came in once its pay window has closed. ONLY after approval.",
+			InputSchema: obj(map[string]any{"income_mode": str("median | manual | gross"), "manual_income": num("EUR net per month"), "gross_salary": num("EUR gross per month — the salary before any gross_changes"),
+				"gross_changes": map[string]any{"type": "array", "items": obj(map[string]any{"from": str("YYYY-MM the new salary starts"), "gross": num("EUR gross per month")})},
 				"monthly_deductions": num("EUR"), "salary_rules": map[string]any{"type": "array", "items": obj(map[string]any{"from": str("YYYY-MM-DD or empty"), "paid_by_day": num("0–28")})},
 				"salary_account": str("account id"), "buffers": map[string]any{"type": "object", "description": "account id → EUR floor", "additionalProperties": map[string]any{"type": "number"}},
 				"emergency_months": num("months of spending"), "target_age": num("FI age"), "birth_year": num("year"), "fi_monthly_spend": num("EUR"), "withdrawal_rate": num("%"), "expected_return": num("% real")})},
@@ -556,7 +557,7 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		return `{"deleted":true}`, plan.Delete(a.DB, int64(args.f("id")))
 	case "get_plan_settings":
 		st := plan.LoadSettings(a.DB)
-		return jsonOut(map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossSalary, st.MonthlyDeductions)})
+		return jsonOut(map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossFor(time.Now().Format("2006-01")), st.MonthlyDeductions)})
 	case "update_plan_settings":
 		st, err := plan.PatchSettings(a.DB, raw)
 		return jsonOut2(map[string]any{"saved": st}, err)

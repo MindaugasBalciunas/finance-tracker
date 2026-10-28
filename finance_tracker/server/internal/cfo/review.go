@@ -224,7 +224,8 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 		r.Budget = b
 	}
 	r.OwedToYou = OwedTotal(d)
-	// Cash flow already counts a salary paid on the 1st–3rd of next month here;
+	// Cash flow already counts a salary paid early next month (by the salary
+	// rule's day) here;
 	// say so, since the bank statement shows it in the other month.
 	for i := range txs {
 		if t := &txs[i]; t.Date > to && plan.FlowDate(t, salary) <= to && t.Kind == "income" {

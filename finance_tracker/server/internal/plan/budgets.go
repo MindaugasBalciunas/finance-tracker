@@ -281,18 +281,44 @@ func FlowDate(t *ledger.Tx, rules []SalaryRule) string {
 	if t.Kind != "income" || ledger.Top(t.Category) != "salary" || len(t.Date) != 10 {
 		return t.Date
 	}
-	by := 0
-	from := ""
-	for _, r := range rules {
-		if r.From <= t.Date && r.From >= from {
-			by, from = r.PaidByDay, r.From
-		}
-	}
+	by := paidBy(t.Date, rules)
 	d, err := time.Parse("2006-01-02", t.Date)
 	if err != nil || by <= 0 || d.Day() > by {
 		return t.Date
 	}
 	return time.Date(d.Year(), d.Month(), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+}
+
+// paidBy is the rule in force for a salary paid on date (YYYY-MM-DD).
+func paidBy(date string, rules []SalaryRule) int {
+	by, from := 0, ""
+	for _, r := range rules {
+		if r.From <= date && r.From >= from {
+			by, from = r.PaidByDay, r.From
+		}
+	}
+	return by
+}
+
+// SalarySettled: month (YYYY-MM) is over and the days in which its salary
+// may still arrive (the rule's paid-by day of the next month) have passed.
+func SalarySettled(month string, rules []SalaryRule, now time.Time) bool {
+	first, err := time.Parse("2006-01", month)
+	if err != nil {
+		return false
+	}
+	next := first.AddDate(0, 1, 0)
+	by := paidBy(next.Format("2006-01-02"), rules)
+	return now.Format("2006-01-02") >= next.AddDate(0, 0, by).Format("2006-01-02")
+}
+
+// PaysFor is the month a salary paid in payMonth is for: the month before
+// when the rule in force counts early-month pay for it.
+func PaysFor(payMonth string, rules []SalaryRule) string {
+	if paidBy(payMonth+"-01", rules) > 0 {
+		return addMonths(payMonth, -1)
+	}
+	return payMonth
 }
 
 // MaxSalaryDays is how far past a period to load so late salary reaches it.

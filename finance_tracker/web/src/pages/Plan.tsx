@@ -672,6 +672,51 @@ function TripSweep({ tag, onClose }: { tag: string; onClose: () => void }) {
 
 // ── settings ────────────────────────────────────────────────────────
 
+type GrossChange = { from: string; gross: number }
+
+/** Gross salary as a timeline: what you earn now, then each change from
+ *  its month (a raise, a new job) — the months before a change keep the old
+ *  salary. All of it is saved with the form. */
+function SalaryTimeline({ v, setS }: { v: any; setS: (s: any) => void }) {
+  const changes: GrossChange[] = [...(v.gross_changes ?? [])].sort((a, b) => a.from.localeCompare(b.from))
+  const set = (cs: GrossChange[]) => setS({ ...v, gross_changes: cs })
+  const [from, setFrom] = useState(addMonths(thisMonth(), 1))
+  const [gross, setGross] = useState<number | undefined>()
+  const months = Array.from({ length: 19 }, (_, i) => addMonths(thisMonth(), i))
+  return (
+    <div className="col-span-2 space-y-2">
+      <div className="text-sm font-medium">Gross salary €/month</div>
+      <div className="divide-y divide-line rounded-xl border border-line">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <span className="min-w-0 flex-1 text-sm">{changes.length ? <>Until {monthLabel(addMonths(changes[0].from, -1), true)}</> : 'Now'}</span>
+          <NumberInput aria-label="Gross salary" className="input w-28 tnum" value={v.gross_salary || undefined} onChange={(n) => setS({ ...v, gross_salary: n ?? 0 })} />
+          <span className="w-9" />
+        </div>
+        {changes.map((c, i) => (
+          <div key={c.from} className="flex items-center gap-3 px-3 py-2">
+            <span className="min-w-0 flex-1 text-sm">From {monthLabel(c.from, true)}</span>
+            <NumberInput aria-label={`Gross salary from ${monthLabel(c.from, true)}`} className="input w-28 tnum" value={c.gross || undefined}
+              onChange={(n) => set(changes.map((x, j) => (j === i ? { ...x, gross: n ?? 0 } : x)))} />
+            <button className="btn-ghost h-9 w-9 px-0 text-muted hover:text-bad" onClick={() => set(changes.filter((_, j) => j !== i))} aria-label={`Remove the change from ${monthLabel(c.from, true)}`}><Icon name="trash" size={16} /></button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          <span className="text-sm text-muted">New salary from</span>
+          <select className="input w-40 min-w-0" aria-label="New salary from" value={from} onChange={(e) => setFrom(e.target.value)}>
+            {months.map((m) => <option key={m} value={m}>{monthLabel(m, true)}</option>)}
+          </select>
+          <NumberInput aria-label="New gross salary" placeholder="gross €" className="input w-28 tnum" value={gross} onChange={setGross} />
+          <button className="btn-outline h-10" disabled={!gross || gross <= 0}
+            onClick={() => { set([...changes.filter((x) => x.from !== from), { from, gross: gross! }].sort((a, b) => a.from.localeCompare(b.from))); setGross(undefined) }}>
+            <Icon name="plus" size={14} />Add
+          </button>
+        </div>
+      </div>
+      <div className="text-xs text-muted">A raise or a new job: add it from the month it starts, then Save.</div>
+    </div>
+  )
+}
+
 function PlanSettings() {
   const { data, isLoading } = useQuery({ queryKey: ['plan-settings'], queryFn: () => api.get<any>('/plan/settings') })
   const [s, setS] = useState<any>(null)
@@ -700,15 +745,9 @@ function PlanSettings() {
             options={[{ value: 'median', label: 'From history' }, { value: 'gross', label: 'Gross salary' }, { value: 'manual', label: 'Fixed amount' }]} />
           {v.income_mode === 'gross' && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Gross salary €/month"><NumberInput value={v.gross_salary || undefined} onChange={num('gross_salary')} /></Field>
+              <SalaryTimeline v={v} setS={setS} />
               <Field label="Other deductions €/month"><NumberInput value={v.monthly_deductions || undefined} onChange={num('monthly_deductions')} /></Field>
-              <div className="col-span-2 text-xs text-muted">Net after Lithuanian taxes ≈ {eur(data.net_from_gross)} (saved settings)</div>
-              {(v.gross_changes ?? []).map((c: { from: string; gross: number }, i: number) => (
-                <div key={c.from} className="col-span-2 flex items-center gap-2 text-sm">
-                  <span className="flex-1">From {monthLabel(c.from, true)}: <b className="tnum">{eur(c.gross)}</b> gross</span>
-                  <button className="text-xs text-muted" onClick={() => setS({ ...v, gross_changes: v.gross_changes.filter((_: unknown, j: number) => j !== i) })}>Remove</button>
-                </div>
-              ))}
+              <div className="col-span-2 text-xs text-muted">This month ≈ <b className="tnum text-ink">{eur(data.net_from_gross)}</b> net after Lithuanian taxes (saved settings). Months already paid use the salary that actually arrived, so nothing here rewrites them.</div>
             </div>
           )}
           {v.income_mode === 'manual' && <Field label="Monthly income €"><NumberInput value={v.manual_income || undefined} onChange={num('manual_income')} /></Field>}

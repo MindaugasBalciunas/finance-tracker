@@ -437,3 +437,54 @@ func TestGrossChangesByMonth(t *testing.T) {
 		t.Errorf("income base oct %v dec %v", oct, dec)
 	}
 }
+
+// A finished month is measured against the salary that came in, so a new
+// gross salary setting doesn't rewrite it — but only once its pay window has
+// closed: a salary paid by the 10th of the next month (the rule from
+// November 2026) still belongs to the month before.
+func TestFinishedMonthUsesActualSalary(t *testing.T) {
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: 10000, SalaryRules: []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}}
+	setting := money.FromFloat(plan.LTNetSalary(10000, 0))
+	at := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 12, 0, 0, 0, time.UTC) }
+	txs := []ledger.Tx{
+		tx("2026-10-02", "salary", 5000),          // September's, paid on the 2nd
+		tx("2026-09-20", "side_income.rent", 300), // not salary: gross mode leaves it out
+		tx("2026-10-30", "salary.final_pay", 800), // October: a final payment from the old job…
+	}
+	sep := plan.Compute(nil, txs, "2026-09", at(2026, 11, 5), s)
+	if sep.IncomeBase != E(5000) || sep.IncomeBaseSource != "salary received for that month" {
+		t.Errorf("September: actual salary, not the new setting: %v (%s)", sep.IncomeBase, sep.IncomeBaseSource)
+	}
+	// …so on 5 November October has some salary, but its main pay can still
+	// come until the 10th: the setting stands in.
+	oct := plan.Compute(nil, txs, "2026-10", at(2026, 11, 5), s)
+	if oct.IncomeBase != setting {
+		t.Errorf("October inside its pay window: %v want %v", oct.IncomeBase, setting)
+	}
+	// Paid on 7 November: October's. After the 10th October uses what came in.
+	txs = append(txs, tx("2026-11-07", "salary", 5100))
+	oct = plan.Compute(nil, txs, "2026-10", at(2026, 11, 11), s)
+	if oct.IncomeBase != E(5900) {
+		t.Errorf("October after its window: %v (%s)", oct.IncomeBase, oct.IncomeBaseSource)
+	}
+	// November is in progress: the setting, and the 7 Nov pay isn't November's.
+	nov := plan.Compute(nil, txs, "2026-11", at(2026, 11, 12), s)
+	if nov.IncomeBase != setting || nov.IncomeActual != 0 {
+		t.Errorf("November: %v, actual %v", nov.IncomeBase, nov.IncomeActual)
+	}
+	// Paid on the 15th: past the rule's day, so it is November's own.
+	late := append(txs[:2:2], tx("2026-11-15", "salary", 5100))
+	oct = plan.Compute(nil, late, "2026-10", at(2026, 11, 20), s)
+	if oct.IncomeBase != setting {
+		t.Errorf("a salary on the 15th is not October's: %v", oct.IncomeBase)
+	}
+	// A fixed amount stands for all income; history mode keeps its median.
+	man := plan.Compute(nil, txs, "2026-09", at(2026, 11, 20), plan.Settings{IncomeMode: "manual", ManualIncome: 9000, SalaryRules: s.SalaryRules})
+	if man.IncomeBase != E(5300) {
+		t.Errorf("manual: September's income %v", man.IncomeBase)
+	}
+	med := plan.Compute(nil, txs, "2026-09", at(2026, 11, 20), plan.Settings{IncomeMode: "median", SalaryRules: s.SalaryRules})
+	if med.IncomeBaseSource != "median of the last 12 complete months" {
+		t.Errorf("median mode unchanged: %s", med.IncomeBaseSource)
+	}
+}

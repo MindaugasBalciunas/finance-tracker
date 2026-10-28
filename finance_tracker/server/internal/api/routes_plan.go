@@ -92,7 +92,7 @@ func (s *Server) planRoutes() {
 	})
 	s.handle("GET /api/plan/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		st := plan.LoadSettings(s.DB)
-		return map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossSalary, st.MonthlyDeductions)}, nil
+		return map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossFor(time.Now().Format("2006-01")), st.MonthlyDeductions)}, nil
 	})
 	s.handle("PUT /api/plan/settings", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var st plan.Settings
