@@ -15,19 +15,21 @@ import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Wishlist } from './plan/Wishlist'
 import { ForecastView } from './plan/Forecast'
+import { RecurringView } from './insights/Recurring'
 import { DateInput } from '../components/DateInput'
 
 export default function Plan() {
   const loc = useLocation()
   const nav = useNavigate()
-  const tab = loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
+  const tab = loc.pathname.includes('/recurring') ? 'recurring' : loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
       <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'month' ? '/plan' : `/plan/${v}`)}
-        tabs={[{ value: 'month', label: 'Budget' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
+        tabs={[{ value: 'month', label: 'Budget' }, { value: 'recurring', label: 'Recurring' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>
         <Route path="/" element={<Month />} />
+        <Route path="/recurring" element={<RecurringView />} />
         <Route path="/forecast" element={<ForecastView />} />
         <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/trips" element={<Trips />} />
@@ -70,12 +72,11 @@ function Month() {
         <div className="text-base font-semibold">{monthLabel(month, true)}</div>
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
-      {current && <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })} />}
-      {current && <OnceAYear r={r} onEdit={setEdit} month={month} />}
+      {/* The month's number first, then why and what to change, then the lines; the slower views close the page. */}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
+      {current && <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })} />}
       <Suggestions lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
         onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
-      <YearGrid r={r} />
       {groups.map((g) => {
         const lines = r.lines.filter((l) => l.kind === g.kind)
         return (
@@ -110,12 +111,15 @@ function Month() {
           </div>
         </Card>
       )}
+      {current && <OnceAYear r={r} onEdit={setEdit} month={month} />}
+      <YearGrid r={r} />
       {edit && <BudgetEditor b={edit} month={month} onClose={() => setEdit(null)} />}
     </div>
   )
 }
 
-/** When recent months keep ending over the plan, the plan comes first:
+/** When recent months keep ending over the plan, the case for changing it
+ *  comes right under the month's number:
  *  the track record, the gap in a usual month, and the three levers that
  *  close it — each with its amount and one tap to act. Budget lines don't
  *  change left to spend on their own (it is income − obligations − saving −

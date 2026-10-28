@@ -127,12 +127,10 @@ export default function Home() {
         <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={pct(o.usual_rate ?? avg.savings_rate)}
           sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
         <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
-          tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/insights/fi')} />
-        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/insights/fi')} />
+          tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
+        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
         <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={eurk(avg.invested * 12)} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
       </div>
-
-      <FunTeaser />
 
       <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
         <div className="flex gap-1">
@@ -144,6 +142,8 @@ export default function Home() {
         </div>
         <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
       </Card>
+
+      <FunTeaser />
     </div>
   )
 }

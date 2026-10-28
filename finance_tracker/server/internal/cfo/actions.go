@@ -88,7 +88,7 @@ func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring
 	}
 	for _, r := range plannedLate {
 		out = append(out, Action{Level: "warn", Kind: "planned", Text: fmt.Sprintf("%s %s planned for %s hasn't happened", r.Merchant, eur(r.Amount), shortDay(r.Next)),
-			Link: "/insights/recurring", Due: r.Next})
+			Link: "/plan/recurring", Due: r.Next})
 	}
 	if o.InboxOpen > 0 {
 		t := fmt.Sprintf("%d bank transactions wait for review", o.InboxOpen)

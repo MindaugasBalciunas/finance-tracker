@@ -10,7 +10,7 @@ import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../../lib/f
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../../lib/periods'
 import type { Account } from '../../lib/types'
 import { Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
-import { axisProps, Donut, GroupBar, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
+import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
 import { Icon, IconTile } from '../../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
@@ -62,7 +62,6 @@ export function Overview() {
 
   return (
     <div className="space-y-4">
-      <MoneyStrip byGroup={byGroup} liquidOnly={liquidOnly} />
       <section className="hero p-4">
         {/* What: the headline and the liquid filter. How: one toolbar for the cut and the period. */}
         <div className="flex items-start justify-between gap-3">
@@ -113,8 +112,8 @@ export function Overview() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {GROUPS.filter((g) => byGroup[g.id]?.length).map((g) => {
           const sum = byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0)
-          // Same base as the bar above: liquid money when "Liquid only" is on.
-          const base = stripTotal(byGroup, liquidOnly)
+          // Shares of the same base as the chart: liquid money when "Liquid only" is on.
+          const base = assetBase(byGroup, liquidOnly)
           const inBase = g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id))
           return (
             <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
@@ -291,25 +290,9 @@ function GroupDonut({ byGroup, liquidOnly }: { byGroup: Record<string, number>; 
 }
 
 // Group totals as Home and net worth count them (a negative account lowers its group).
-const stripTotal = (byGroup: Record<string, Account[]>, liquidOnly: boolean) =>
+const assetBase = (byGroup: Record<string, Account[]>, liquidOnly: boolean) =>
   GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
     .reduce((t, g) => t + Math.max(0, (byGroup[g.id] ?? []).reduce((a, x) => a + (x.balance ?? 0), 0)), 0)
-
-/** Where the money is, at a glance — the same bar as on Home. The total
- *  is the chart's headline right below, so it isn't repeated here. */
-function MoneyStrip({ byGroup, liquidOnly }: { byGroup: Record<string, Account[]>; liquidOnly: boolean }) {
-  const parts = GROUPS.filter((g) => g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id)))
-    .map((g) => ({ g, v: Math.max(0, (byGroup[g.id] ?? []).reduce((a, x) => a + (x.balance ?? 0), 0)) })).filter((x) => x.v > 0)
-    .sort((a, b) => b.v - a.v)
-  const total = parts.reduce((t, x) => t + x.v, 0)
-  const debt = liquidOnly ? 0 : Math.abs((byGroup.debt ?? []).reduce((a, x) => a + Math.min(0, x.balance ?? 0), 0))
-  if (!total) return null
-  return (
-    <section className="card px-4 py-3 sm:px-6">
-      <GroupBar parts={parts.map(({ g, v }) => ({ id: g.id, name: g.name, slot: g.slot, v }))} debt={debt} />
-    </section>
-  )
-}
 
 /** Which accounts drove the change over the selected range. */
 function Movement({ from, label }: { from: string; label: string }) {

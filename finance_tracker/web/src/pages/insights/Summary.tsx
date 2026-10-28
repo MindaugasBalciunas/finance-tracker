@@ -22,7 +22,7 @@ const TONE = {
   good: { icon: 'check', color: 'rgb(var(--good))', label: 'Going well' },
 } as const
 const ICON: Record<string, string> = { plan_fit: 'target', one_offs: 'bolt', unbudgeted: 'list', lines_off: 'rule', saving: 'piggy', rising: 'trend', bills: 'repeat', emergency: 'umbrella' }
-const LINK_LABEL: Record<string, string> = { '/plan': 'Open the plan', '/insights/spending': 'See spending', '/insights/recurring': 'See recurring', '/insights/cashflow': 'See cash flow', '/wealth': 'See wealth' }
+const LINK_LABEL: Record<string, string> = { '/plan': 'Open the plan', '/insights/spending': 'See spending', '/plan/recurring': 'See recurring', '/insights/cashflow': 'See cash flow', '/wealth': 'See wealth', '/wealth/fi': 'See emergency fund' }
 
 /** Insights' first page: what a typical month does with the money, then the
  *  findings worth acting on — worst first, each with its numbers and a way

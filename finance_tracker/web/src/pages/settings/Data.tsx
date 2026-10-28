@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
@@ -9,7 +9,7 @@ import { DemoCard } from './Usage'
 
 // ── data ────────────────────────────────────────────────────────────
 
-export function Data() {
+export function Data({ top }: { top?: ReactNode }) {
   const toast = useToast()
   const qc = useQueryClient()
   const { data: snaps } = useQuery({ queryKey: ['backups'], queryFn: () => api.get<any>('/backups') })
@@ -38,6 +38,7 @@ export function Data() {
   }
   return (
     <div className="max-w-2xl space-y-4">
+      {top}
       <DemoCard />
       <Card title="Backup">
         <div className="mb-3 text-sm text-muted">A full copy of every table. Without secrets it is safe to keep anywhere; a restore then keeps this instance's keys and PIN.{snaps?.last_download ? ` Last downloaded ${shortDate(snaps.last_download.slice(0, 10))}.` : ''}</div>
@@ -50,9 +51,8 @@ export function Data() {
       <Card title="Exports">
         <div className="flex flex-wrap gap-2">
           <a className="btn-outline" href="api/export/transactions.csv">Transactions CSV</a>
-          <a className="btn-outline" href="api/export/ai.zip">Export for AI (zip)</a>
         </div>
-        <div className="mt-2 text-xs text-muted">The AI export bundles every transaction, monthly cash flow and net worth, balances, loans, this month's budget, recurring bills, the wish list and trips as 9 files — upload them unzipped with PROMPT.md first (Gemini takes up to 10).</div>
+        <div className="mt-2 text-xs text-muted">For an AI assistant use Export for AI above: 9 files — upload them unzipped with PROMPT.md first (Gemini takes up to 10).</div>
       </Card>
       <Card title="Snapshots on the server" action={<button className="btn-ghost h-8 text-xs" onClick={async () => { await api.post('/backups'); qc.invalidateQueries({ queryKey: ['backups'] }); toast('Snapshot taken', 'good') }}>Take one now</button>}>
         <div className="max-h-64 divide-y divide-line overflow-y-auto text-sm">

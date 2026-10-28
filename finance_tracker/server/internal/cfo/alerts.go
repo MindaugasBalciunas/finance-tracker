@@ -53,7 +53,7 @@ func Alerts(d *sql.DB, now time.Time) ([]Alert, error) {
 		for _, r := range rec {
 			if r.Changed && r.LastAmount > r.Amount && r.Last >= now.AddDate(0, 0, -7).Format("2006-01-02") {
 				out = append(out, Alert{Key: fmt.Sprintf("price:%s:%s", r.Merchant, r.Last), Title: fmt.Sprintf("%s went up", r.Merchant),
-					Message: fmt.Sprintf("%s instead of the usual %s (%s).", eurS(r.LastAmount), eurS(r.Amount), r.Cadence), URL: "/#/insights/recurring"})
+					Message: fmt.Sprintf("%s instead of the usual %s (%s).", eurS(r.LastAmount), eurS(r.Amount), r.Cadence), URL: "/#/plan/recurring"})
 			}
 		}
 	}

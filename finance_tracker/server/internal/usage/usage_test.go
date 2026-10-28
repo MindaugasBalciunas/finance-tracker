@@ -28,17 +28,19 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 		{At: at(3629), Kind: "view", Path: "/wealth", DwellMS: 2_000},
 		{At: at(3631), Kind: "view", Path: "/wealth/loans", DwellMS: 2_000},
 		{At: at(3633), Kind: "view", Path: "/wealth/history", DwellMS: 45_000},
+		// A page that moved since: counts where it lives now.
+		{At: at(3680), Kind: "view", Path: "/insights/recurring", DwellMS: 30_000},
 		{At: at(3700), Kind: "view", Path: "bad path!", DwellMS: 1},
 	}
 	n, err := usage.Record(d, evs)
-	if err != nil || n != 12 {
+	if err != nil || n != 13 {
 		t.Fatalf("recorded %d %v", n, err)
 	}
 	s, err := usage.Summarise(d, 30, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Sessions != 2 || s.Views != 11 {
+	if s.Sessions != 2 || s.Views != 12 {
 		t.Fatalf("sessions %d views %d", s.Sessions, s.Views)
 	}
 	if len(s.Hunts) == 0 || s.Hunts[0].Target != "/wealth/history" || s.Hunts[0].Count != 2 {
@@ -59,6 +61,11 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 	if len(s.Actions) != 1 || s.Actions[0].Label != "Add # to ledger €#" {
 		t.Errorf("numbers masked in labels: %+v", s.Actions)
 	}
+	for _, u := range s.Unused {
+		if u == "/plan/recurring" {
+			t.Error("a view under the old path should count for the moved page")
+		}
+	}
 	if s.Names["/wealth/history"] != "Balance history" || usage.Label("/settings/ai") != "Settings → AI" || usage.Label("/settings/x") != "/settings/x" {
 		t.Errorf("names: %v", s.Names)
 	}
@@ -66,7 +73,7 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 		t.Error("a repeated hunt should produce a suggestion")
 	}
 	raw, _ := usage.Events(d, 30, time.Now())
-	if len(raw) != 12 || raw[5].X == nil || *raw[5].X != 0.25 {
+	if len(raw) != 13 || raw[5].X == nil || *raw[5].X != 0.25 {
 		t.Errorf("raw events keep click positions: %+v", raw[5])
 	}
 	usage.Clear(d)

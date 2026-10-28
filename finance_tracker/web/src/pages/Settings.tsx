@@ -12,9 +12,10 @@ import { Security } from './settings/Security'
 import { Appearance, Data } from './settings/Data'
 import { UsageView } from './settings/Usage'
 
+// Where the money comes from, how it is sorted, then the app itself.
 const SECTIONS = [
-  { to: 'categories', label: 'Categories' }, { to: 'accounts', label: 'Accounts' }, { to: 'rules', label: 'Rules' }, { to: 'tags', label: 'Tags' }, { to: 'banks', label: 'Banks' },
-  { to: 'ai', label: 'AI' }, { to: 'security', label: 'Security' }, { to: 'data', label: 'Data & backup' }, { to: 'usage', label: 'Usage' }, { to: 'appearance', label: 'Appearance' },
+  { to: 'banks', label: 'Banks' }, { to: 'accounts', label: 'Accounts' }, { to: 'categories', label: 'Categories' }, { to: 'tags', label: 'Tags' }, { to: 'rules', label: 'Rules' },
+  { to: 'ai', label: 'AI' }, { to: 'security', label: 'Security' }, { to: 'data', label: 'Data & backup' }, { to: 'appearance', label: 'Appearance' }, { to: 'usage', label: 'Usage' },
 ]
 
 // A stray deep path (e.g. an old link that stacked sections) lands on its
@@ -22,7 +23,7 @@ const SECTIONS = [
 function UnknownSection() {
   const rest = useParams()['*'] || ''
   const last = rest.split('/').reverse().find((seg) => SECTIONS.some((s) => s.to === seg))
-  return <Navigate to={`/settings/${last || 'categories'}`} replace />
+  return <Navigate to={`/settings/${last || 'banks'}`} replace />
 }
 
 const AI_SHARE_TEXT = 'The attached zip is my complete finances. Open PROMPT.md and follow it, using README.md for the file formats.'
@@ -53,7 +54,7 @@ function ShareForAI() {
     } finally { setBusy(false) }
   }
   return (
-    <section className="card mb-4 flex flex-wrap items-center gap-3 p-4">
+    <section className="card flex flex-wrap items-center gap-3 p-4">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
       <div className="min-w-0 flex-1 basis-48">
         <div className="text-sm font-medium">Export for AI</div>
@@ -68,15 +69,14 @@ function ShareForAI() {
 
 export default function Settings() {
   const nav = useNavigate()
-  const seg = useLocation().pathname.split('/')[2] || 'categories'
-  const tab = SECTIONS.some((s) => s.to === seg) ? seg : 'categories'
+  const seg = useLocation().pathname.split('/')[2] || 'banks'
+  const tab = SECTIONS.some((s) => s.to === seg) ? seg : 'banks'
   return (
     <div>
       <PageHeader title="Settings" />
-      <ShareForAI />
       <Tabs value={tab} onChange={(v) => nav(`/settings/${v}`)} tabs={SECTIONS.map((s) => ({ value: s.to, label: s.label }))} />
       <Routes>
-        <Route path="/" element={<Categories />} />
+        <Route path="/" element={<Banks />} />
         <Route path="categories" element={<Categories />} />
         <Route path="accounts" element={<AccountsVisibility />} />
         <Route path="rules" element={<Rules />} />
@@ -84,7 +84,7 @@ export default function Settings() {
         <Route path="banks" element={<Banks />} />
         <Route path="ai" element={<AISettings />} />
         <Route path="security" element={<Security />} />
-        <Route path="data" element={<Data />} />
+        <Route path="data" element={<Data top={<ShareForAI />} />} />
         <Route path="usage" element={<UsageView />} />
         <Route path="appearance" element={<Appearance />} />
         <Route path="*" element={<UnknownSection />} />

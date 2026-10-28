@@ -179,9 +179,21 @@ type Summary struct {
 	Names       map[string]string `json:"names"` // display name of every path above (one source of truth)
 }
 
+// Pages that moved (v2.50): views recorded under the old path count for
+// the page where it lives now, so it isn't reported as never used.
+var movedPages = map[string]string{"/insights/recurring": "/plan/recurring", "/insights/fi": "/wealth/fi", "/insights/tax": "/wealth/tax"}
+
+func current(p string) string {
+	if to, ok := movedPages[p]; ok {
+		return to
+	}
+	return p
+}
+
 // Pages the app has, for "never used" detection.
-var KnownPages = []string{"/", "/ledger", "/ledger/inbox", "/ledger/tidy", "/plan", "/plan/trips", "/plan/settings", "/wealth", "/wealth/investments",
-	"/wealth/loans", "/wealth/history", "/insights", "/insights/spending", "/insights/trends", "/insights/recurring", "/insights/review", "/insights/fi",
+var KnownPages = []string{"/", "/ledger", "/ledger/inbox", "/ledger/tidy", "/plan", "/plan/recurring", "/plan/forecast", "/plan/wishlist", "/plan/trips", "/plan/settings",
+	"/wealth", "/wealth/investments", "/wealth/loans", "/wealth/tax", "/wealth/fi", "/wealth/history",
+	"/insights", "/insights/review", "/insights/cashflow", "/insights/spending", "/insights/trends", "/insights/fun",
 	"/ai", "/settings/categories", "/settings/accounts", "/settings/rules", "/settings/tags", "/settings/banks", "/settings/ai", "/settings/security",
 	"/settings/data", "/settings/appearance"}
 
@@ -203,6 +215,7 @@ func Summarise(d *sql.DB, days int, now time.Time) (*Summary, error) {
 	for rows.Next() {
 		var e Event
 		rows.Scan(&e.At, &e.Kind, &e.Path, &e.From, &e.Label, &e.DwellMS)
+		e.Path, e.From = current(e.Path), current(e.From)
 		evs = append(evs, e)
 	}
 	rows.Close()
@@ -393,9 +406,10 @@ func suggest(s *Summary) []string {
 // Label names a route the way the app does.
 func Label(p string) string {
 	names := map[string]string{"/": "Home", "/ledger": "Ledger", "/ledger/inbox": "Bank inbox", "/ledger/tidy": "Tidy up", "/plan": "Plan", "/plan/trips": "Trips",
-		"/plan/settings": "Income & goals", "/wealth": "Net worth", "/wealth/investments": "Investments", "/wealth/loans": "Loans", "/wealth/history": "Balance history",
-		"/insights": "Cash flow", "/insights/spending": "Spending", "/insights/trends": "Trends", "/insights/recurring": "Recurring", "/insights/review": "Review",
-		"/insights/fi": "Independence", "/ai": "Ask CFO"}
+		"/plan/settings": "Income & goals", "/plan/recurring": "Recurring", "/plan/forecast": "Forecast", "/plan/wishlist": "Wish list",
+		"/wealth": "Net worth", "/wealth/investments": "Investments", "/wealth/loans": "Loans", "/wealth/tax": "Taxes", "/wealth/fi": "Independence", "/wealth/history": "Balance history",
+		"/insights": "Insights summary", "/insights/summary": "Insights summary", "/insights/review": "Review", "/insights/cashflow": "Cash flow", "/insights/spending": "Spending",
+		"/insights/trends": "Trends", "/insights/fun": "Fun facts", "/ai": "Ask CFO"}
 	if n, ok := names[p]; ok {
 		return n
 	}

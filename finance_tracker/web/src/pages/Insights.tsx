@@ -1,18 +1,17 @@
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AskCFO, PageHeader, Tabs } from '../components/ui'
 import { CashFlow } from './insights/CashFlow'
 import { Spending } from './insights/Spending'
 import { Trends } from './insights/Trends'
-import { RecurringView } from './insights/Recurring'
-import { FI } from './insights/FI'
 import { ReviewTabs } from './insights/MonthReview'
 import { SummaryView } from './insights/Summary'
-import { TaxView } from './insights/Tax'
 import { FunView } from './insights/Fun'
 
+// Looking back. Recurring bills live in Plan (they are what's coming);
+// taxes and independence in Wealth (where the money ends up).
 const TABS = [
-  { value: 'summary', label: 'Summary' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'spending', label: 'Spending' }, { value: 'trends', label: 'Trends' },
-  { value: 'recurring', label: 'Recurring' }, { value: 'review', label: 'Review' }, { value: 'tax', label: 'Taxes' }, { value: 'fi', label: 'Independence' }, { value: 'fun', label: 'Fun facts' },
+  { value: 'summary', label: 'Summary' }, { value: 'review', label: 'Review' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'spending', label: 'Spending' },
+  { value: 'trends', label: 'Trends' }, { value: 'fun', label: 'Fun facts' },
 ]
 export default function Insights() {
   const loc = useLocation()
@@ -31,10 +30,11 @@ export default function Insights() {
         <Route path="/cashflow" element={<CashFlow />} />
         <Route path="/spending" element={<Spending />} />
         <Route path="/trends" element={<Trends />} />
-        <Route path="/recurring" element={<RecurringView />} />
-        <Route path="/fi" element={<FI />} />
         <Route path="/review" element={<ReviewTabs />} />
-        <Route path="/tax" element={<TaxView />} />
+        {/* moved: old links and saved notifications */}
+        <Route path="/recurring" element={<Navigate to="/plan/recurring" replace />} />
+        <Route path="/fi" element={<Navigate to="/wealth/fi" replace />} />
+        <Route path="/tax" element={<Navigate to="/wealth/tax" replace />} />
         <Route path="/fun" element={<FunView />} />
       </Routes>
     </div>

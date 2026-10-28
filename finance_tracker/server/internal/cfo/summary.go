@@ -336,7 +336,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 		}
 		if total > 0 {
 			sort.SliceStable(bills, func(i, j int) bool { return bills[i].Amount > bills[j].Amount })
-			s.Findings = append(s.Findings, Finding{Key: "bills", Tone: "info", Amount: total, Link: "/insights/recurring", Items: bills[:min(6, len(bills))],
+			s.Findings = append(s.Findings, Finding{Key: "bills", Tone: "info", Amount: total, Link: "/plan/recurring", Items: bills[:min(6, len(bills))],
 				Title:  fmt.Sprintf("Bills and subscriptions: %s a month across %d", eurN(total), len(bills)),
 				Detail: fmt.Sprintf("That is %.0f%% of income before anything else is spent. Review the small ones once a year — they rarely get cancelled on their own.", 100*float64(total)/float64(max(f.Income, 1)))})
 		}
@@ -346,7 +346,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	if book, err := wealth.LoadBook(d); err == nil {
 		e := insights.ComputeFI(txs, cats, book, settings, now).Emergency
 		if e.MonthlyEssential > 0 {
-			fd := Finding{Key: "emergency", Amount: e.Cash, Link: "/wealth",
+			fd := Finding{Key: "emergency", Amount: e.Cash, Link: "/wealth/fi",
 				Title:  fmt.Sprintf("Cash covers %.1f months of essentials", e.Months),
 				Detail: fmt.Sprintf("Essentials run %s a month; the target is %.0f months (%s).", eurN(e.MonthlyEssential), e.TargetMonths, eurN(e.Target))}
 			fd.Tone = "good"
