@@ -5,7 +5,7 @@ import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { eur, shortDate } from '../../lib/format'
 import type { CategoryUse } from '../../lib/types'
-import { Card, ErrorBox, Field, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
+import { ErrorBox, Field, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
 // ── categories ──────────────────────────────────────────────────────
@@ -15,6 +15,8 @@ export function Categories() {
   const qc = useQueryClient()
   const toast = useToast()
   const [edit, setEdit] = useState<any>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setOpen((o) => { const n = new Set(o); n.has(id) ? n.delete(id) : n.add(id); return n })
   const { data: usage } = useQuery({ queryKey: ['category-usage'], queryFn: () => api.get<Record<string, CategoryUse>>('/categories/usage') })
   const use = (id: string) => usage?.[id]
   // A parent's figures include its subcategories.
@@ -32,20 +34,45 @@ export function Categories() {
           <b>{unused.length}</b> subcategories have never been used: {unused.map((c) => c.name).join(', ')}. Archive the ones you won't need to keep pickers short.
         </div>
       )}
-      {cats.tree.map((p) => (
-        <Card key={p.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(p.id) }} />{p.name}<span className="text-[10px] uppercase tracking-wide text-muted">{p.kind}{p.essential ? ' · essential' : ''}</span>
-          {usage && <span className="text-xs font-normal text-muted tnum">{family(p.id).reduce((a, u) => a + u.count, 0)} rows · {eur(family(p.id).reduce((a, u) => a + u.year, 0))} 12 mo</span>}</span>}
-          action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ parent: p.id, name: '' })}><Icon name="plus" size={14} />Sub</button>}>
-          <div className="flex flex-wrap gap-1.5 px-4 pb-4">
-            <button className="chip hover:bg-sunken" onClick={() => setEdit(p)}><Icon name="edit" size={12} />Edit</button>
-            {p.children.map((c) => (
-              <button key={c.id} className={clsx('chip hover:bg-sunken', c.archived && 'line-through opacity-50', usage && !use(c.id)?.count && !c.archived && 'border-dashed text-muted')} onClick={() => setEdit(c)}>
-                {c.name}{c.essential && ' ·e'}{usage && <span className="text-muted tnum">{use(c.id)?.count ?? 0}</span>}
-              </button>
-            ))}
-          </div>
-        </Card>
-      ))}
+      {/* One line per category, folded: open one to see and edit its subcategories. */}
+      {(['income', 'expense', 'transfer', 'other'] as const).map((kind) => {
+        const list = cats.tree.filter((p) => kind === 'other' ? !['income', 'expense', 'transfer'].includes(p.kind) : p.kind === kind)
+        if (!list.length) return null
+        return (
+          <section key={kind} className="card overflow-hidden">
+            <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{{ income: 'Income', expense: 'Spending', transfer: 'Transfers', other: 'Other' }[kind]}</div>
+            <div className="divide-y divide-line">
+              {list.map((p) => {
+                const fam = family(p.id)
+                const isOpen = open.has(p.id)
+                return (
+                  <div key={p.id}>
+                    <button type="button" aria-expanded={isOpen} onClick={() => toggle(p.id)} className="flex min-h-11 w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-sunken/40">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: catColor(p.id) }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="text-sm font-medium">{p.name}</span>{p.essential && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-muted">essential</span>}
+                        <span className="block text-xs text-muted">{(() => { const n = p.children.filter((c) => !c.archived).length; return n ? `${n} ${n === 1 ? 'subcategory' : 'subcategories'}` : 'no subcategories' })()}{usage && <span className="tnum"> · {fam.reduce((a, u) => a + u.count, 0)} rows · {eur(fam.reduce((a, u) => a + u.year, 0))} 12 mo</span>}</span>
+                      </span>
+                      <Icon name="chevronD" size={16} className={clsx('shrink-0 text-muted transition', isOpen && 'rotate-180')} />
+                    </button>
+                    {isOpen && (
+                      <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+                        <button className="chip hover:bg-sunken" onClick={() => setEdit(p)}><Icon name="edit" size={12} />Edit</button>
+                        {p.children.map((c) => (
+                          <button key={c.id} className={clsx('chip hover:bg-sunken', c.archived && 'line-through opacity-50', usage && !use(c.id)?.count && !c.archived && 'border-dashed text-muted')} onClick={() => setEdit(c)}>
+                            {c.name}{c.essential && ' ·e'}{usage && <span className="text-muted tnum">{use(c.id)?.count ?? 0}</span>}
+                          </button>
+                        ))}
+                        <button className="chip text-accent hover:bg-sunken" onClick={() => setEdit({ parent: p.id, name: '' })}><Icon name="plus" size={12} />Sub</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
       <button className="btn-outline" onClick={() => setEdit({ name: '', kind: 'expense' })}><Icon name="plus" size={16} />Top-level category</button>
       {edit && (
         <Sheet open onClose={() => setEdit(null)} title={edit.id ? `Edit ${edit.name}` : 'New category'} footer={<button className="btn-primary" onClick={() => save.mutate(edit)}>Save</button>}>

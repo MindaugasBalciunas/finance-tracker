@@ -100,7 +100,16 @@ function FindingCard({ f }: { f: Finding }) {
         </div>
       </div>
       {f.detail && <p className="mt-2 text-sm text-ink2">{f.detail}</p>}
-      {items.length > 0 && (
+      {/* Month by month against the plan: a strip of chips, not six rows (Plan has the full card). */}
+      {f.key === 'plan_fit' && items.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {items.map((it, i) => (
+            <span key={i} title={it.sub} className={clsx('rounded px-1.5 py-0.5 text-[11px] tnum', it.tone === 'bad' ? 'bg-bad/15 text-bad' : 'bg-good/15 text-good')}>
+              {it.label.split(' ')[0]} {it.amount < 0 ? '−' : '+'}{eur(Math.round(Math.abs(it.amount)))}<span className="sr-only"> {it.amount < 0 ? 'over' : 'left'}</span>
+            </span>
+          ))}
+        </div>
+      ) : items.length > 0 && (
         <div className="mt-3 divide-y divide-line border-y border-line">
           {items.map((it, i) => (
             <div key={i} className="flex items-baseline gap-2 py-1.5 text-sm">

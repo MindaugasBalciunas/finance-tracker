@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -57,8 +57,16 @@ function Month() {
     },
     onSuccess: (_, ls) => { refresh(); toast(`${ls.length} budgets updated`, 'good') },
   })
+  const { data: o } = useOverview()
   if (isLoading) return <Loading />
   if (error || !r) return <ErrorBox error={error} />
+  const rebalance = needsRebalance(o?.plan.track ?? [])
+  // The "set lines to what is real" list: inside the rebalance card when the
+  // plan keeps missing, a card of its own otherwise.
+  const suggestions = (bare: boolean) => (
+    <Suggestions bare={bare} lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
+      onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
+  )
   const groups: { kind: string; title: string; hint: string }[] = [
     { kind: 'fixed', title: 'Fixed obligations', hint: 'Committed every month — never counted against spending budgets' },
     { kind: 'saving', title: 'Saving & investing', hint: 'Transfers into investments, pension and debt principal' },
@@ -74,9 +82,11 @@ function Month() {
       </div>
       {/* The month's number first, then why and what to change, then the lines; the slower views close the page. */}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
-      {current && <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })} />}
-      <Suggestions lines={r.lines.filter((l) => l.suggestion && l.kind !== 'saving')} unallocated={r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned} busy={applySuggestion.isPending || applyAll.isPending}
-        onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
+      {current && rebalance ? (
+        <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
+          {suggestions(true)}
+        </Rebalance>
+      ) : suggestions(false)}
       {groups.map((g) => {
         const lines = r.lines.filter((l) => l.kind === g.kind)
         return (
@@ -124,17 +134,22 @@ function Month() {
  *  close it — each with its amount and one tap to act. Budget lines don't
  *  change left to spend on their own (it is income − obligations − saving −
  *  funds − what is spent), so the saving target and funds are named too. */
-function Rebalance({ r, onAddLine }: { r: PlanReport; onAddLine: (u: PlanReport['unbudgeted'][number]) => void }) {
+function needsRebalance(t: { left: number }[]) {
+  return t.length >= 3 && t.filter((m) => m.left < 0).length >= 2
+}
+
+function Rebalance({ r, onAddLine, children }: { r: PlanReport; onAddLine: (u: PlanReport['unbudgeted'][number]) => void; children?: ReactNode }) {
   const { data: o } = useOverview()
   const cats = useCats()
   const t = o?.plan.track ?? []
   const overs = t.filter((m) => m.left < 0).length
-  if (t.length < 3 || overs < 2) return null
+  if (!needsRebalance(t)) return null
   const s = [...t.map((m) => m.spent)].sort((a, b) => a - b)
   const usualSpent = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
   const free = o?.plan.free_planned ?? 0
   const gap = usualSpent - free
-  const off = r.lines.filter((l) => l.suggestion && l.kind === 'spending')
+  // The same lines the suggestions list shows, so the two never disagree.
+  const off = r.lines.filter((l) => l.suggestion && l.kind !== 'saving')
   const unb = r.unbudgeted.filter((u) => u.suggestion).sort((a, b) => b.suggestion!.amount - a.suggestion!.amount)
   const unbTotal = unb.reduce((a, u) => a + u.suggestion!.amount, 0)
   const saving = r.lines.filter((l) => l.kind === 'saving')
@@ -165,12 +180,10 @@ function Rebalance({ r, onAddLine }: { r: PlanReport; onAddLine: (u: PlanReport[
           </span>
           {unb[0] && <button className="chip shrink-0 hover:bg-sunken" onClick={() => onAddLine(unb[0])}>+ {cats.name(unb[0].category)} {eur(unb[0].suggestion!.amount)}{unb[0].suggestion!.lumpy ? ' fund' : ''}</button>}
         </div>
-        <div className="flex items-center gap-3 py-2.5">
-          <span className="min-w-0 flex-1">
-            <b>2. Set lines to what is real</b>
-            <span className="block text-xs text-muted">{off.length ? `${off.length} ${off.length === 1 ? 'line differs' : 'lines differ'} from the last 12 months — realistic lines make the plan's warnings mean something.` : 'Every line matches the last 12 months.'}</span>
-          </span>
-          {off.length > 0 && <button className="chip shrink-0 hover:bg-sunken" onClick={() => scrollTo('plan-suggestions')}>Review {off.length}</button>}
+        <div className="py-2.5">
+          <b>2. Set lines to what is real</b>
+          {!off.length && <span className="block text-xs text-muted">Every line matches the last 12 months.</span>}
+          {children}
         </div>
         <div className="flex items-center gap-3 py-2.5">
           <span className="min-w-0 flex-1">
@@ -223,17 +236,17 @@ function OnceAYear({ r, onEdit, month }: { r: PlanReport; onEdit: (b: Partial<Bu
   )
 }
 
-/** Every "the last 12 months disagree with this budget" in one place, instead
- *  of a box under each line. */
-function Suggestions({ lines, unallocated, busy, onApply, onApplyAll }: { lines: PlanLine[]; unallocated: number; busy: boolean; onApply: (l: PlanLine, fund?: boolean) => void; onApplyAll: (ls: PlanLine[]) => void }) {
+/** Lines that differ from what the last 12 months suggest, one tap each or
+ *  all at once. `bare`: drawn inside the rebalance card, without its own frame. */
+function Suggestions({ lines, unallocated, busy, onApply, onApplyAll, bare = false }: { lines: PlanLine[]; unallocated: number; busy: boolean; onApply: (l: PlanLine, fund?: boolean) => void; onApplyAll: (ls: PlanLine[]) => void; bare?: boolean }) {
   const [open, setOpen] = useState(false)
   if (lines.length === 0) return null
   const delta = lines.reduce((a, l) => a + l.suggestion!.amount - l.monthly_share, 0)
   return (
-    <section id="plan-suggestions" className="card scroll-mt-16 p-4">
+    <section id="plan-suggestions" className={clsx('scroll-mt-16', bare ? 'mt-1' : 'card p-4')}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
-        <div className="min-w-0 flex-1 text-sm">
+        {!bare && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>}
+        <div className={clsx('min-w-0 flex-1', bare ? 'text-xs text-muted' : 'text-sm')}>
           <b>{lines.length} {lines.length === 1 ? 'budget differs' : 'budgets differ'}</b> from what the last 12 months suggest
           <div className="text-xs text-muted">Applying {lines.length === 1 ? 'it' : 'all'} changes budgets by <span className="whitespace-nowrap tnum">{delta >= 0 ? '+' : '−'}{eur(Math.abs(delta))}/mo</span>
             {unallocated - delta < 0 && <span className="text-warn"> — the plan would then exceed the income base by <span className="whitespace-nowrap tnum">{eur(delta - unallocated)}</span></span>}</div>

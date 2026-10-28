@@ -8,7 +8,7 @@ import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceDot, Refe
 import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
-import { AskCFO, Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
+import { Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
 import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
@@ -122,16 +122,7 @@ export default function Home() {
 
       {o.cash && <UntilPayday c={o.cash} />}
 
-      {/* Progress: the slow numbers that say whether wealth is being built */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={pct(o.usual_rate ?? avg.savings_rate)}
-          sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
-          tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={eurk(avg.invested * 12)} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
-      </div>
-
+      {/* Today's entries before the slow numbers: adding and checking transactions is the daily use. */}
       <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
         <div className="flex gap-1">
           <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
@@ -142,6 +133,16 @@ export default function Home() {
         </div>
         <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
       </Card>
+
+      {/* Progress: the slow numbers that say whether wealth is being built */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={pct(o.usual_rate ?? avg.savings_rate)}
+          sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
+        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={`${o.emergency.months.toFixed(1)} mo`} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
+          tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
+        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={pct(o.fi_progress, 1)} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
+        <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={eurk(avg.invested * 12)} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
+      </div>
 
       <FunTeaser />
     </div>
@@ -463,16 +464,12 @@ function TrackRecord({ p }: { p: Overview['plan'] }) {
           )
         })}
       </div>
+      {/* One line here; the full case and the levers are on Plan. */}
       {!fits && planned > 0 && (
-        <>
-          <p className="mt-2 text-xs text-muted">
-            Day-to-day spending runs about <b className="tnum text-ink">{eur(spent)}</b> a month; the plan leaves <b className="tnum text-ink">{eur(planned)}</b>. The lines are too tight, or saving is set higher than the month can fund.
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Link to="/plan" className="rounded-lg bg-accent/10 px-2.5 py-1.5 text-xs font-medium text-accent hover:bg-accent/15">Rebalance the plan</Link>
-            <AskCFO q={`My plan has ended over in ${overs.length} of the last ${t.length} months: day-to-day spending runs about ${eur(spent)} a month and the plan leaves ${eur(planned)}. Which lines should change, and is my saving target realistic?`} label="Ask CFO why" />
-          </div>
-        </>
+        <Link to="/plan" className="mt-2 flex items-center gap-1 text-xs text-muted hover:text-ink">
+          <span className="min-w-0 flex-1">Usually <b className="tnum text-ink">{eur(spent)}</b> spent vs <b className="tnum text-ink">{eur(planned)}</b> planned</span>
+          <span className="inline-flex shrink-0 items-center text-accent">Rebalance<Icon name="chevronR" size={14} /></span>
+        </Link>
       )}
     </div>
   )
