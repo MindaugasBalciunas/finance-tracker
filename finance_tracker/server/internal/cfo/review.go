@@ -209,7 +209,7 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	if rep, err := BudgetReport(d, month, now); err == nil && len(rep.Lines) > 0 {
 		b := &BudgetBrief{SafeToSpend: rep.SafeToSpend}
 		for _, l := range rep.Lines {
-			if l.Kind != "spending" || l.Period != "monthly" || l.Fund {
+			if l.Kind != "spending" || l.Period != "monthly" || l.FundState != nil {
 				continue
 			}
 			lb := LineBrief{Name: l.Name, Spent: l.Spent, Budgeted: l.Budgeted, Remaining: l.Remaining}

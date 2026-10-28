@@ -287,7 +287,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 					continue
 				}
 				covered = true
-				if b.Fund {
+				if b.FundIn(m) {
 					fundTx = true
 					if m == month {
 						fundDays[j] = append(fundDays[j], dayAmount{dayOf(t.Date), t.Amount})
@@ -345,7 +345,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		l.Amount = amount
 		var fundEnd map[string]money.Cents
 		switch {
-		case b.Fund:
+		case b.FundIn(month):
 			start := b.StartMonth
 			if start == "" {
 				start = month

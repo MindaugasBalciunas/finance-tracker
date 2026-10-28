@@ -425,7 +425,7 @@ func countUnreviewed(d *sql.DB, r *plan.Report, month, today string) (money.Cent
 		}
 		planned := false
 		for _, l := range r.Lines {
-			if (l.Kind == "fixed" || l.Fund) && t.Category != "" && l.Matches(&t) {
+			if (l.Kind == "fixed" || l.FundState != nil) && t.Category != "" && l.Matches(&t) {
 				planned = true
 				break
 			}

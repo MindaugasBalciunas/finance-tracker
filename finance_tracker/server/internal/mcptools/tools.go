@@ -126,7 +126,7 @@ type budgetArgs struct {
 	Fund       *bool     `json:"fund,omitempty" jsonschema:"spending lines: carry unspent money over (sinking fund)"`
 	FromMonth  string    `json:"from_month,omitempty" jsonschema:"YYYY-MM the new amount starts (default: this month)"`
 	AllMonths  bool      `json:"all_months,omitempty" jsonschema:"rewrite the amount for every month"`
-	StartMonth *string   `json:"start_month,omitempty" jsonschema:"YYYY-MM the line starts"`
+	StartMonth *string   `json:"start_month,omitempty" jsonschema:"YYYY-MM the line starts; a fund sets money aside from this month, before it the line is a plain monthly envelope"`
 	Archived   *bool     `json:"archived,omitempty" jsonschema:"retire the line, keeping its history"`
 }
 

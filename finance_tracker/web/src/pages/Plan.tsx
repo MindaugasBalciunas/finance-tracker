@@ -329,7 +329,7 @@ function YearGrid({ r }: { r: PlanReport }) {
                 <tr key={l.id}>
                   <td className="max-w-[8rem] truncate py-0.5 pr-2">{l.name}</td>
                   {l.history.map((h) => {
-                    const c = cell(h.spent, h.budget, l.fund)
+                    const c = cell(h.spent, h.budget, l.fund && (!l.start_month || h.month >= l.start_month))
                     return <td key={h.month} className="p-0.5"><div title={`${monthLabel(h.month, true)}: ${eur(h.spent)} of ${eur(h.budget)}`} className="h-6 min-w-6 rounded" style={{ background: c.bg }} /></td>
                   })}
                 </tr>
@@ -356,20 +356,20 @@ function LineRow({ l, onEdit, monthPace }: { l: PlanLine; onEdit: () => void; mo
   const what = l.tag ? `#${l.tag}` : l.categories.map((c) => cats.name(c)).join(', ')
   // The tick shows where spending would be today at an even pace: the year
   // for yearly lines, the month for monthly spending (funds are lumpy by design).
-  const pace = l.year ? l.year.elapsed : l.kind === 'spending' && !l.fund && l.period === 'monthly' ? monthPace : undefined
+  const pace = l.year ? l.year.elapsed : l.kind === 'spending' && !l.fund_state && l.period === 'monthly' ? monthPace : undefined
   return (
     <div className="px-4 py-3">
       <button className="w-full text-left" onClick={() => setOpen(!open)}>
         <div className="flex items-baseline justify-between gap-2">
           <div className="min-w-0">
             <span className="text-sm font-medium">{l.name}</span>
-            {l.fund && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">fund</span>}
+            {l.fund && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{l.fund_state ? 'fund' : `fund from ${monthLabel(l.start_month)}`}</span>}
             {l.period === 'yearly' && <span className="ml-1.5 rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-ink2">yearly</span>}
             <div className="truncate text-xs text-muted">{what}</div>
           </div>
           <div className="shrink-0 text-right">
             <div className="tnum text-sm"><b>{eur(l.spent)}</b> <span className="text-muted">/ {eur(l.budgeted)}</span></div>
-            <div className={clsx('tnum text-xs', over && l.kind !== 'saving' ? 'text-bad' : 'text-muted')}>{l.kind === 'saving' ? (l.remaining <= 0 ? 'target reached' : `${eur(l.remaining)} to go`) : over ? `${eur(-l.remaining)} over` : `${eur(l.remaining)} ${l.fund ? 'in fund' : 'left'}`}</div>
+            <div className={clsx('tnum text-xs', over && l.kind !== 'saving' ? 'text-bad' : 'text-muted')}>{l.kind === 'saving' ? (l.remaining <= 0 ? 'target reached' : `${eur(l.remaining)} to go`) : over ? `${eur(-l.remaining)} over` : `${eur(l.remaining)} ${l.fund_state ? 'in fund' : 'left'}`}</div>
           </div>
         </div>
         <Meter className="mt-2" value={l.spent} max={l.budgeted} pace={pace} goal={l.kind === 'saving'} />

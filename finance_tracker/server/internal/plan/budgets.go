@@ -75,6 +75,14 @@ func containsTag(tags []string, t string) bool {
 	return false
 }
 
+// FundIn reports whether the line works as a fund in month ym. Before its
+// start month a fund has set nothing aside, so it is a plain monthly line:
+// a €901 October car repair under a fund starting in November must still
+// come out of October's left to spend, not vanish into a fund that is empty.
+func (b Budget) FundIn(ym string) bool {
+	return b.Fund && (b.StartMonth == "" || ym >= b.StartMonth)
+}
+
 // AmountFor resolves the line's amount in a month from its steps.
 func (b Budget) AmountFor(ym string) money.Cents {
 	if len(b.Steps) == 0 {

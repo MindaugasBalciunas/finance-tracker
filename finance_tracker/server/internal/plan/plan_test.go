@@ -125,6 +125,34 @@ func TestComputeFundCarriesOver(t *testing.T) {
 	}
 }
 
+// A fund that starts next month holds nothing yet: this month it is a plain
+// monthly line, so a €901 car bill in October counts against October's left
+// to spend instead of vanishing into a November fund (prod, October 2026).
+func TestComputeFundBeforeStart(t *testing.T) {
+	now := time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	car := line(1, "Transport", "spending", []string{"transport"}, 80)
+	car.Fund, car.StartMonth = true, "2026-11"
+	txs := []ledger.Tx{tx("2026-09-12", "transport.car", 600), tx("2026-10-14", "transport.car", 901.37)}
+	r := plan.Compute([]plan.Budget{car}, txs, "2026-10", now, set)
+	l := find(r, "Transport")
+	if l.FundState != nil || l.Budgeted != E(80) || l.Spent != E(901.37) || l.Remaining != E(80-901.37) {
+		t.Fatalf("line %+v", l)
+	}
+	if r.FundContributions != 0 || r.FundSpent != 0 || r.SafeToSpend != E(5000-901.37) {
+		t.Fatalf("funds %v/%v, safe %v", r.FundContributions, r.FundSpent, r.SafeToSpend)
+	}
+	// Earlier months' free spending (the month track) keeps it too.
+	if r.FreeSpentByMonth["2026-09"] != E(600) || r.FreeSpentByDay["2026-10"][14] != E(901.37) {
+		t.Fatalf("free by month %v", r.FreeSpentByMonth)
+	}
+	// From November it is a fund: €80 set aside, its spending covered.
+	r = plan.Compute([]plan.Budget{car}, append(txs, tx("2026-11-05", "transport.fuel", 50)), "2026-11", now, set)
+	if l := find(r, "Transport"); l.FundState == nil || r.FundSpent != E(50) || r.SafeToSpend != E(5000-80) {
+		t.Fatalf("november: fund %+v, safe %v", l.FundState, r.SafeToSpend)
+	}
+}
+
 // A fund pays only what it holds: the rest of a big bill (a €769 car
 // service from a transport fund opened this month with €80) comes out of
 // this month's free money. An overdraft carried in from earlier months
