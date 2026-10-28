@@ -400,3 +400,35 @@ func TestSuggestNotesFromEarlierEntries(t *testing.T) {
 		t.Fatalf("what is already typed is not suggested back: %+v", got)
 	}
 }
+
+// Totals need to know which way wealth moves: a 3rd-pillar payout into the
+// bank is not investing, and a broker-to-pension move is neither.
+func TestWealthDirection(t *testing.T) {
+	d := DB(t)
+	for _, x := range []ledger.Tx{
+		{Date: "2026-09-01", Kind: "transfer", Amount: E(1000), Category: "transfer.invest", AccountID: "swed", ToAccountID: "ibkr"},
+		{Date: "2026-09-02", Kind: "transfer", Amount: E(17197.92), Category: "transfer.pension", AccountID: "artea", ToAccountID: "swed"},
+		{Date: "2026-09-03", Kind: "transfer", Amount: E(500), Category: "transfer.pension", AccountID: "ibkr", ToAccountID: "artea"},
+		{Date: "2026-09-04", Kind: "transfer", Amount: E(450), Category: "transfer.debt", AccountID: "swed", ToAccountID: "mortgage"},
+		{Date: "2026-09-05", Kind: "transfer", Amount: E(300), Category: "transfer.internal", AccountID: "swed", ToAccountID: "seb"},
+		{Date: "2026-09-06", Kind: "transfer", Amount: E(200), Category: "transfer.invest", AccountID: "ibkr"},
+		{Date: "2026-09-07", Kind: "transfer", Amount: E(900), Category: "transfer.pension", ToAccountID: "swed"}, // a bank row: payout arriving
+		{Date: "2026-09-08", Kind: "transfer", Amount: E(120), Category: "transfer.pension", ToAccountID: "artea"}, // payroll pension
+	} {
+		Tx(t, d, x)
+	}
+	txs, err := ledger.All(d, ledger.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int{1, -1, 0, 1, 0, -1, -1, 1}
+	for i, x := range txs {
+		if got := x.WealthDirection(); got != want[i] {
+			t.Errorf("%s %s→%s (%s→%s): %d, want %d", x.Category, x.AccountID, x.ToAccountID, x.FromKind, x.ToKind, got, want[i])
+		}
+	}
+	// Rows built without accounts (older callers, tests) still count as investing.
+	if (ledger.Tx{Kind: "transfer", Category: "transfer.invest"}).WealthDirection() != 1 {
+		t.Error("unknown accounts")
+	}
+}

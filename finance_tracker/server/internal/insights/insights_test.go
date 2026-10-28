@@ -71,6 +71,21 @@ func TestCashFlowDefinitions(t *testing.T) {
 	}
 }
 
+// A payout from a pension back to the bank takes from invested; a move
+// between two wealth accounts is not new investing.
+func TestCashFlowWealthOut(t *testing.T) {
+	in := tx("2025-12-01", "transfer", "transfer.pension", 200, "swed", "artea")
+	in.FromKind, in.ToKind = "checking", "pension"
+	out := tx("2025-12-02", "transfer", "transfer.pension", 17197.92, "artea", "swed")
+	out.FromKind, out.ToKind = "pension", "checking"
+	move := tx("2025-12-03", "transfer", "transfer.invest", 3000, "ibkr", "btc_m")
+	move.FromKind, move.ToKind = "brokerage", "crypto"
+	f := insights.CashFlow([]ledger.Tx{in, out, move}, cats(t), "month", plan.DefaultSalaryRules)
+	if f[0].Invested != E(200-17197.92) {
+		t.Errorf("invested %v", f[0].Invested)
+	}
+}
+
 func TestBreakdownComparesWithPreviousWindow(t *testing.T) {
 	txs := []ledger.Tx{
 		tx("2026-08-10", "expense", "food.groceries", 100),

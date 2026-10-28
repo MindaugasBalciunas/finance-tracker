@@ -52,8 +52,8 @@ export function CashFlow() {
                   ...(refunds ? [{ label: <span className="pl-3 text-muted">gross, before refunds</span>, value: <span className="text-muted">{eurc(f.spending + refunds)}</span> },
                     { label: <span className="pl-3 text-muted">refunds &amp; gifts deducted</span>, value: <span className="text-muted">−{eurc(refunds)}</span> }] : []),
                   { label: 'Essential', value: eurc(f.essential) }, { label: 'Saved', value: eurc(f.saved), bold: true },
-                  { label: 'Savings rate', value: pct(f.savings_rate) }, { label: 'Invested (incl. loan principal)', value: eurc(f.invested) },
-                  { label: 'Total out', value: eurc(f.spending + refunds + f.invested), bold: true }]} />
+                  { label: 'Savings rate', value: pct(f.savings_rate) }, { label: 'Invested, net (incl. loan principal)', value: eurc(f.invested) },
+                  { label: 'Total out', value: eurc(f.spending + refunds + Math.max(0, f.invested)), bold: true }]} />
               })() : null} />
               {/* The month in progress is drawn lighter: it is not comparable yet. */}
               <Bar dataKey="income" name="Income" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false}>

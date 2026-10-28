@@ -111,13 +111,16 @@ func CashFlow(txs []ledger.Tx, cats map[string]ledger.Category, granularity stri
 				f.Discretionary += t.Amount
 			}
 		case IsInvesting(t):
-			if t.AccountID == "" && t.Category == "transfer.pension" {
+			if t.AccountID == "" && t.Category == "transfer.pension" && (t.ToKind == "" || t.ToKind == "pension") {
 				f.PayrollPension += t.Amount
 				continue
 			}
-			f.Invested += t.Amount
+			// A payout back to cash undoes investing; a move between
+			// wealth accounts is neither.
+			amt := money.Cents(t.WealthDirection()) * t.Amount
+			f.Invested += amt
 			if t.Category == "transfer.debt" {
-				f.Principal += t.Amount
+				f.Principal += amt
 			}
 		}
 	}

@@ -263,7 +263,7 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
  *  typical month's pace. */
 function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number; warn: boolean }) {
   const fixedPaid = Math.min(p.fixed_spent, p.fixed_planned)
-  const savedDone = Math.min(p.saved_actual, p.saving_planned)
+  const savedDone = Math.max(0, Math.min(p.saved_actual, p.saving_planned)) // a payout month nets below zero
   const segs = [
     // Commitments are decided already: one quiet colour, striped while still to go.
     { key: 'fixed-paid', label: 'Fixed paid', v: fixedPaid, color: 'var(--s-other)', faded: false },

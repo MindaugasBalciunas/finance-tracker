@@ -75,3 +75,26 @@ func TestTaxYear(t *testing.T) {
 		t.Error("the 2026 tax isn't in May 2027")
 	}
 }
+
+// The 3rd-pillar refund is on what was paid in; a payout the same year
+// doesn't cancel it.
+func TestTaxPillarIgnoresPayout(t *testing.T) {
+	d := DB(t)
+	year := time.Now().Year() - 1
+	day := func(m int) string { return time.Date(year, time.Month(m), 10, 0, 0, 0, 0, time.UTC).Format("2006-01-02") }
+	Tx(t, d, ledger.Tx{Date: day(3), Kind: "transfer", Amount: E(1500), Category: "transfer.pension", AccountID: "swed", ToAccountID: "artea"})
+	Tx(t, d, ledger.Tx{Date: day(12), Kind: "transfer", Amount: E(17197.92), Category: "transfer.pension", AccountID: "artea", ToAccountID: "swed"})
+	r, err := cfo.Tax(d, year, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range r.Items {
+		if it.Key == "pillar3" {
+			if it.Amount <= 0 {
+				t.Fatalf("pillar3 refund %v", it.Amount)
+			}
+			return
+		}
+	}
+	t.Fatalf("no 3rd-pillar item: %+v", r.Items)
+}

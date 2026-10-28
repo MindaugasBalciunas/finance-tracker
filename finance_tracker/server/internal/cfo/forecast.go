@@ -287,7 +287,7 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 			// Income already received this month is in today's cash.
 			fm.Income = max(0, in.Income-cur.IncomeActual)
 			fm.Fixed = max(0, in.Fixed-cur.FixedSpent)
-			fm.Saving = max(0, in.Saving-cur.SavedActual)
+			fm.Saving = max(0, in.Saving-max(0, cur.SavedActual)) // a pension payout is not saving done
 			fm.Everyday = money.FromFloat(in.Everyday.Float() * restShare)
 			fm.OneOffs = money.FromFloat(in.OneOffs.Float() * restShare)
 		}

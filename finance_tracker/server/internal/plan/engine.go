@@ -260,9 +260,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 			income[m] += t.Amount
 			continue
 		}
-		if t.Kind == "transfer" && (ledger.Top(t.Category) == "transfer") && t.Category != "transfer.internal" {
-			saved[m] += t.Amount
-		}
+		// Money back out of a pension or broker counts against saving.
+		dir := money.Cents(t.WealthDirection())
+		saved[m] += dir * t.Amount
 		isFixed := false
 		for _, b := range fixed {
 			if b.Matches(t) {
@@ -293,6 +293,10 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 						fundDays[j] = append(fundDays[j], dayAmount{dayOf(t.Date), t.Amount})
 					}
 				}
+			}
+			if b.Kind == "saving" && t.Category != "transfer.internal" {
+				spent[j][m] += dir * t.Amount
+				continue
 			}
 			spent[j][m] += t.Amount
 		}

@@ -40,7 +40,7 @@ func vals(kv ...string) url.Values {
 	return v
 }
 
-const model = " Amounts are EUR. Transactions are income | expense | transfer; categories are two-level ids (food.groceries); transfer.invest/pension/debt/asset build wealth, transfer.internal moves cash between own accounts; mortgage principal is transfer.debt, interest is housing.mortgage_interest. Tags are people (kids, evelina, kristina), properties and trips (trip:…)."
+const model = " Amounts are EUR. Transactions are income | expense | transfer; categories are two-level ids (food.groceries); transfer.invest/pension/debt/asset build wealth (a payout back to cash counts against invested), transfer.internal moves cash between own accounts; mortgage principal is transfer.debt, interest is housing.mortgage_interest. Tags are people (kids, evelina, kristina), properties and trips (trip:…)."
 
 type none struct{}
 

@@ -673,8 +673,8 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 		if t.Kind == "income" && ledger.Top(t.Category) == "refunds" && !people[placeKey(t.Merchant)] && (refund == nil || t.Amount > refund.Amount) {
 			refund = t
 		}
-		if t.Kind == "transfer" && (t.Category == "transfer.invest" || t.Category == "transfer.pension" || t.Category == "transfer.debt") {
-			invested += t.Amount
+		if t.Category == "transfer.invest" || t.Category == "transfer.pension" || t.Category == "transfer.debt" {
+			invested += money.Cents(t.WealthDirection()) * t.Amount
 		}
 	}
 	if refund != nil && refund.Amount >= money.FromFloat(20) {

@@ -202,3 +202,20 @@ func TestUnreviewedSpendingCountsToday(t *testing.T) {
 		t.Errorf("plan %v / unreviewed %v vs home %v", r.SafeToSpend, r.Unreviewed, p.SafeToSpend)
 	}
 }
+
+// The year so far carries mortgage principal and refunds like each month
+// does (it used to report €0 principal to the assistants all year).
+func TestOverviewYearPrincipal(t *testing.T) {
+	d := DB(t)
+	now := time.Now()
+	ds := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	Tx(t, d, ledger.Tx{Date: ds, Kind: "transfer", Amount: E(450), Category: "transfer.debt", AccountID: "swed", ToAccountID: "mortgage"})
+	Tx(t, d, ledger.Tx{Date: ds, Amount: E(30), Category: "refunds", AccountID: "swed"})
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Year.Principal != E(450) || o.Year.Refunds != E(30) || o.Year.Invested != E(450) {
+		t.Errorf("year %+v", o.Year)
+	}
+}

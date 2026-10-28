@@ -309,7 +309,7 @@ const exportGuide = `- transactions.csv — every transaction since {first}. kin
   +income / −expense / 0 transfer. category is a two-level id (food.groceries). Transfers with category transfer.invest / pension /
   debt (mortgage principal) / asset build wealth; transfer.internal just moves cash between own accounts. tags = people (kids,
   evelina, kristina), properties (house, apartment), trips (trip:…).
-- cashflow_monthly.csv — income, spending (expenses − refunds), essential vs discretionary, saved, savings rate, invested.
+- cashflow_monthly.csv — income, spending (expenses − refunds), essential vs discretionary, saved, savings rate, invested (net: payouts back to cash count against it).
 - networth_monthly.csv — month-end net worth by group, including house, car and the mortgage (negative). Mortgage balances before
   2026 are reconstructed from payments (source=computed in balances.csv).
 - balances.csv — every recorded account value.

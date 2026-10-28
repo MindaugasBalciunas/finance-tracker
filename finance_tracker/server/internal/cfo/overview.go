@@ -248,6 +248,8 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			avg.Saved += f.Saved
 			avg.Invested += f.Invested
 			avg.Principal += f.Principal
+			avg.Refunds += f.Refunds
+			avg.PayrollPension += f.PayrollPension
 			n++
 			savedM = append(savedM, f.Saved)
 			if f.Income > 0 {
@@ -261,12 +263,16 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			o.Year.Invested += f.Invested
 			o.Year.Essential += f.Essential
 			o.Year.Discretionary += f.Discretionary
+			o.Year.Principal += f.Principal
+			o.Year.Refunds += f.Refunds
+			o.Year.PayrollPension += f.PayrollPension
 		}
 	}
 	if n > 0 {
 		div := money.Cents(n)
 		avg.Income, avg.Spending, avg.Essential, avg.Discretionary = avg.Income/div, avg.Spending/div, avg.Essential/div, avg.Discretionary/div
 		avg.Saved, avg.Invested, avg.Principal = avg.Saved/div, avg.Invested/div, avg.Principal/div
+		avg.Refunds, avg.PayrollPension = avg.Refunds/div, avg.PayrollPension/div
 		if avg.Income > 0 {
 			avg.SavingsRate = float64(avg.Saved) / float64(avg.Income)
 		}

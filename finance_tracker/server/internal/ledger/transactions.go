@@ -27,6 +27,32 @@ type Tx struct {
 	Source      string      `json:"source"`
 	Pending     bool        `json:"pending,omitempty"` // a card reservation the bank hasn't booked yet
 	CreatedAt   string      `json:"created_at,omitempty"`
+	// Kinds of the two accounts (filled by the queries here), so totals can
+	// tell money going into wealth from money coming back out of it.
+	FromKind string `json:"-"`
+	ToKind   string `json:"-"`
+}
+
+// WealthDirection says which way a wealth transfer (invest, pension, debt,
+// asset) moves money: +1 into wealth, −1 back out to cash (a €17,198
+// 3rd-pillar payout into Swedbank is not €17,198 invested), 0 when it only
+// moves between wealth accounts or isn't a wealth transfer. Rows whose
+// accounts aren't known count as going in, as they always did.
+func (t Tx) WealthDirection() int {
+	if t.Kind != "transfer" || Top(t.Category) != "transfer" || t.Category == "transfer.internal" {
+		return 0
+	}
+	from := t.FromKind == "brokerage" || t.FromKind == "pension" || t.FromKind == "crypto"
+	toCash := t.ToKind == "checking" || t.ToKind == "savings" || t.ToKind == "cash"
+	switch {
+	case t.AccountID == "" && toCash:
+		return -1 // a bank row for money arriving from outside, e.g. a pension payout
+	case !from:
+		return 1
+	case t.ToKind == "brokerage" || t.ToKind == "pension" || t.ToKind == "crypto" || t.ToKind == "loan" || t.ToKind == "property" || t.ToKind == "vehicle":
+		return 0
+	}
+	return -1
 }
 
 // Signed is the amount as it affects the owner's net cash: income +,
@@ -41,12 +67,13 @@ func (t Tx) Signed() money.Cents {
 	return 0
 }
 
-const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at`
+const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at,
+	COALESCE((SELECT kind FROM accounts WHERE id=transactions.account_id),''),COALESCE((SELECT kind FROM accounts WHERE id=transactions.to_account_id),'')`
 
 func scanTx(s interface{ Scan(...any) error }) (Tx, error) {
 	var t Tx
 	var tags string
-	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt)
+	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt, &t.FromKind, &t.ToKind)
 	t.Tags = SplitTags(tags)
 	if t.Tags == nil {
 		t.Tags = []string{}

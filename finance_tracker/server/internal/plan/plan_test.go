@@ -153,6 +153,20 @@ func TestComputeFundBeforeStart(t *testing.T) {
 	}
 }
 
+// A pension payout is not saving: the line and saved go down, not up.
+func TestComputeSavingWithdrawal(t *testing.T) {
+	now := time.Date(2025, 12, 20, 0, 0, 0, 0, time.UTC)
+	p := line(1, "Pension", "saving", []string{"transfer.pension"}, 200)
+	in := tx("2025-12-01", "transfer.pension", 200)
+	in.FromKind, in.ToKind = "checking", "pension"
+	out := tx("2025-12-02", "transfer.pension", 17197.92)
+	out.FromKind, out.ToKind = "pension", "checking"
+	r := plan.Compute([]plan.Budget{p}, []ledger.Tx{in, out}, "2025-12", now, plan.Settings{IncomeMode: "manual", ManualIncome: 5000})
+	if l := find(r, "Pension"); l.Spent != E(200-17197.92) || r.SavedActual != E(200-17197.92) {
+		t.Fatalf("line %v, saved %v", l.Spent, r.SavedActual)
+	}
+}
+
 // A fund pays only what it holds: the rest of a big bill (a €769 car
 // service from a transport fund opened this month with €80) comes out of
 // this month's free money. An overdraft carried in from earlier months

@@ -144,7 +144,9 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 	// 3rd pillar: the refund survives only for contracts signed before 2025.
 	var pillar money.Cents
 	for i := range txs {
-		if txs[i].Kind == "transfer" && txs[i].Category == "transfer.pension" {
+		// The refund is on money paid in; a payout is its own tax event,
+		// not a negative contribution.
+		if txs[i].Category == "transfer.pension" && txs[i].WealthDirection() > 0 {
 			pillar += txs[i].Amount
 		}
 	}
