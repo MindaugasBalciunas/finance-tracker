@@ -381,8 +381,8 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		sort.Slice(ts, func(i, j int) bool { return trips[ts[i]] > trips[ts[j]] })
 		f := Fact{Key: "trips", Icon: "plane", Title: "Trips", Value: fmt.Sprintf("%d tagged", len(ts)), Detail: "The priciest ones:", Link: "/plan/trips"}
 		for _, k := range ts[:min(4, len(ts))] {
-			// The whole trip: bookings made before the window belong to it too.
-			f.Items = append(f.Items, FactItem{Label: tripName(k), Value: eur(trips[k]), Sub: year(tripDays[k][1]), N: trips[k].Float(), Link: ledger.Link("tag", k)}) // when it happened, not when booked
+			// The trip's spending in the period shown — the figure on the row.
+			f.Items = append(f.Items, FactItem{Label: tripName(k), Value: eur(trips[k]), Sub: year(tripDays[k][1]), N: trips[k].Float(), Link: win("kind", "expense", "tag", k)}) // when it happened, not when booked
 		}
 		out = append(out, f)
 	}

@@ -198,6 +198,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
                     <span className="min-w-0 truncate font-medium">{it.label}</span>
                     <span className="shrink-0 text-muted tnum">{runs(it.years ?? [Number(it.from)]).map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(', ')}</span>
                     <span className="ml-auto shrink-0 font-semibold tnum">{it.value}</span>
+                    {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
                   </div>
                   <div className="relative mt-1 h-2.5 rounded-full bg-sunken">
                     {ticks.slice(1).map((y) => <span key={y} className="absolute inset-y-0 w-px bg-line" style={{ left: pos(y) }} />)}
@@ -229,6 +230,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
                   <span className="min-w-0 flex-1 truncate">{f.key === 'trips' && <Icon name="plane" size={12} className="mr-1 inline text-muted" />}{it.label}</span>
                   <span className="text-xs text-muted">{it.sub}</span>
                   <span className="font-semibold tnum">{it.value}</span>
+                  {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
                 </div>
               </Linked>
             ))}
@@ -242,7 +244,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
             {items.map((it, i) => (
               <Linked key={it.label} to={it.link} className="rounded-xl bg-raised/60 p-2.5">
                 <div className="text-2xl font-bold tracking-tight tnum" style={{ color: S[(i + 2) % S.length] }}>{it.value}</div>
-                <div className="text-xs font-medium">{it.label}</div>
+                <div className="flex items-center gap-0.5 text-xs font-medium">{it.label}{it.link && <Icon name="chevronR" size={12} className="text-muted" />}</div>
                 <div className="mt-0.5 text-[11px] leading-snug text-muted">{it.sub}</div>
               </Linked>
             ))}
@@ -266,6 +268,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
           <div className="mt-1 flex gap-1">
             {items.map((it, i) => <span key={it.label} className="min-w-0 flex-1 text-center text-[10px] text-muted">{!many || i % (f.key === 'months' ? 2 : 3) === 0 || it.top ? (many && f.key === 'years' ? `’${it.label.slice(2)}` : it.label) : ''}</span>)}
           </div>
+          {items.some((it) => it.link) && <div className="mt-1 text-[11px] text-muted">Tap a bar for its transactions</div>}
         </Shell>
       )
     }

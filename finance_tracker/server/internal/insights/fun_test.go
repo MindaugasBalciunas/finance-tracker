@@ -67,7 +67,7 @@ func TestFunFacts(t *testing.T) {
 		t.Errorf("trips %+v", f)
 	}
 	// Every figure opens the transactions behind it.
-	if l := by["trips"].Items[0].Link; l != "/ledger?period=all&tag=trip%3Arome" {
+	if l := by["trips"].Items[0].Link; l != "/ledger?kind=expense&period=all&tag=trip%3Arome" {
 		t.Errorf("trip link %q", l)
 	}
 	if l := by["employers"].Items[0].Link; l != "/ledger?category=salary&kind=income&merchant=Big+Co&period=all" {
