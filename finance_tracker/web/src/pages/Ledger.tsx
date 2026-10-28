@@ -38,7 +38,7 @@ function Transactions() {
   const [sp, setSp] = useSearchParams()
   const editor = useTxEditor()
   const cats = useCats()
-  const period = sp.get('period') || (sp.get('from') ? 'custom' : 'month')
+  const period = sp.get('period') || (sp.get('from') || sp.get('to') ? 'custom' : 'month')
   const [q, setQ] = useState(sp.get('q') || '')
   const [limit, setLimit] = useState(100)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -50,6 +50,7 @@ function Transactions() {
     return {
       ...r, q: sp.get('q') || undefined, kind: sp.get('kind') || undefined, category: sp.getAll('category'), account: sp.getAll('account'),
       tag: sp.getAll('tag'), merchant: sp.get('merchant') || undefined, sort: sp.get('sort') || undefined, limit,
+      choices: sp.get('choices') || undefined, salary: sp.get('salary') || undefined,
     }
   }, [sp, period, limit])
   const { data, isLoading, isFetching, error } = useTransactions(filter)
@@ -99,6 +100,8 @@ function Transactions() {
     ...(filter.account ?? []).map((a) => ({ k: 'account', v: a, label: a })),
     ...(filter.tag ?? []).map((t) => ({ k: 'tag', v: t, label: '#' + t })),
     ...(filter.merchant ? [{ k: 'merchant', label: filter.merchant }] : []),
+    ...(filter.choices ? [{ k: 'choices', label: 'obligations left out' }] : []),
+    ...(filter.salary ? [{ k: 'salary', label: 'salary in the month it pays for' }] : []),
   ]
   const removeFilter = (f: { k: string; v?: string }) => {
     if (!f.v) return set(f.k, null)
@@ -120,7 +123,7 @@ function Transactions() {
         {PERIODS.map((p) => (
           <button key={p.value} className={period === p.value ? 'chip-on' : 'chip'} onClick={() => { const n = new URLSearchParams(sp); n.delete('from'); n.delete('to'); n.set('period', p.value); setSp(n, { replace: true }) }}>{p.label}</button>
         ))}
-        {period === 'custom' && <span className="chip-on">{filter.from} → {filter.to}</span>}
+        {period === 'custom' && <span className="chip-on">{filter.from ?? '…'} → {filter.to ?? '…'}</span>}
       </div>
       {activeFilters.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">

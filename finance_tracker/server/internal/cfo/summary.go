@@ -52,6 +52,7 @@ type FindingItem struct {
 	Sub    string      `json:"sub,omitempty"`
 	Amount money.Cents `json:"amount"`
 	Tone   string      `json:"tone,omitempty"` // bad | good when the sign carries meaning
+	Link   string      `json:"link,omitempty"` // the transactions behind it
 }
 
 var toneRank = map[string]int{"bad": 0, "warn": 1, "info": 2, "good": 3}
@@ -113,7 +114,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 		f.Invested += fl.Invested
 		savedByMonth = append(savedByMonth, fl.Saved)
 		if fl.Saved < 0 {
-			shortMonths = append(shortMonths, FindingItem{Label: monthName(fl.Period), Sub: "spent more than came in", Amount: fl.Saved, Tone: "bad"})
+			shortMonths = append(shortMonths, FindingItem{Label: monthName(fl.Period), Sub: "spent more than came in", Amount: fl.Saved, Tone: "bad", Link: ledger.MonthLink(fl.Period, "salary", "month")})
 		}
 	}
 	s.Months = int(n)
@@ -163,7 +164,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 		}
 		sp := r.FreeSpentByMonth[m] + r.FundOverdrawn
 		trackSpent = append(trackSpent, sp)
-		it := FindingItem{Label: monthName(m), Sub: "left over", Amount: r.SafeToSpend, Tone: "good"}
+		it := FindingItem{Label: monthName(m), Sub: "left over", Amount: r.SafeToSpend, Tone: "good", Link: ledger.MonthLink(m, "kind", "expense")}
 		if r.SafeToSpend < 0 {
 			overs++
 			it.Sub, it.Tone = "over plan", "bad"
@@ -200,7 +201,8 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 			fd.Detail += fmt.Sprintf("That is a regular cost, not a surprise: a fund of about %s a month (or yearly lines for the known ones) keeps them from tipping single months.", eurN(f.OneOffs))
 		}
 		for _, t := range oneOffs[:min(6, len(oneOffs))] {
-			fd.Items = append(fd.Items, FindingItem{Label: txLabel(t), Sub: t.Date + " · " + catName(cats, t.Category), Amount: t.Amount})
+			fd.Items = append(fd.Items, FindingItem{Label: txLabel(t), Sub: t.Date + " · " + catName(cats, t.Category), Amount: t.Amount,
+				Link: ledger.Link("from", t.Date, "to", t.Date, "category", t.Category)})
 		}
 		s.Findings = append(s.Findings, fd)
 	}
@@ -228,7 +230,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 			}
 		}
 		if avg := sum / money.Cents(max(len(complete), 1)); avg >= money.FromFloat(20) {
-			unb = append(unb, FindingItem{Label: catName(cats, u.Category), Sub: "no budget line", Amount: avg})
+			unb = append(unb, FindingItem{Label: catName(cats, u.Category), Sub: "no budget line", Amount: avg, Link: ledger.Link("from", from+"-01", "to", toDay, "category", u.Category)})
 			unbTotal += avg
 		}
 	}
@@ -259,7 +261,11 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 		usual, budget := medianCents(hist), l.MonthlyShare
 		diff := usual - budget
 		if diff.Abs() >= money.FromFloat(40) && (budget == 0 || float64(diff.Abs())/float64(budget) >= 0.25) {
-			it := FindingItem{Label: l.Name, Sub: fmt.Sprintf("budget %s · usually %s", eurN(budget), eurN(usual)), Amount: diff, Tone: "bad"}
+			kv := []string{"from", from + "-01", "to", toDay, "kind", "expense", "tag", l.Tag}
+			for _, c := range l.Categories {
+				kv = append(kv, "category", c)
+			}
+			it := FindingItem{Label: l.Name, Sub: fmt.Sprintf("budget %s · usually %s", eurN(budget), eurN(usual)), Amount: diff, Tone: "bad", Link: ledger.Link(kv...)}
 			if diff < 0 {
 				it.Sub, it.Tone = fmt.Sprintf("budget %s · usually %s", eurN(budget), eurN(usual)), "good"
 			}
@@ -312,7 +318,8 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	for _, c := range insights.Breakdown(txs, from3, toDay) {
 		delta := (c.Total - c.Previous) / 3
 		if c.Previous > 0 && c.Change >= 0.25 && delta >= money.FromFloat(50) {
-			rising = append(rising, FindingItem{Label: catName(cats, c.Category), Sub: fmt.Sprintf("+%.0f%% · %s/mo vs %s", c.Change*100, eurN(c.Total/3), eurN(c.Previous/3)), Amount: delta, Tone: "bad"})
+			rising = append(rising, FindingItem{Label: catName(cats, c.Category), Sub: fmt.Sprintf("+%.0f%% · %s/mo vs %s", c.Change*100, eurN(c.Total/3), eurN(c.Previous/3)), Amount: delta, Tone: "bad",
+				Link: ledger.Link("from", from3, "to", toDay, "category", c.Category)})
 			risingTotal += delta
 		}
 	}
@@ -333,7 +340,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 				continue
 			}
 			total += r.Monthly
-			bills = append(bills, FindingItem{Label: r.Merchant, Sub: r.Cadence + " · next " + r.Next, Amount: r.Monthly})
+			bills = append(bills, FindingItem{Label: r.Merchant, Sub: r.Cadence + " · next " + r.Next, Amount: r.Monthly, Link: ledger.Link("merchant", r.Merchant)})
 		}
 		if total > 0 {
 			sort.SliceStable(bills, func(i, j int) bool { return bills[i].Amount > bills[j].Amount })

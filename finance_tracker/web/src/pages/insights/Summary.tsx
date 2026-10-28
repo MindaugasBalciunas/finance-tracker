@@ -6,7 +6,7 @@ import { eur, monthLabel } from '../../lib/format'
 import { AskCFO, Card, ErrorBox, Loading } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
 
-type Item = { label: string; sub?: string; amount: number; tone?: 'bad' | 'good' }
+type Item = { label: string; sub?: string; amount: number; tone?: 'bad' | 'good'; link?: string }
 type Finding = { key: string; tone: 'bad' | 'warn' | 'info' | 'good'; title: string; detail: string; amount: number; link?: string; items?: Item[] }
 type Summary = {
   from: string; to: string; months: number
@@ -87,6 +87,11 @@ function TypicalMonth({ f }: { f: Summary['flow'] }) {
   )
 }
 
+/** A link when there is somewhere to go, plain text otherwise. */
+function Chip({ to, ...p }: { to?: string; title?: string; className?: string; children: React.ReactNode }) {
+  return to ? <Link to={to} {...p} /> : <span {...p} />
+}
+
 function FindingCard({ f }: { f: Finding }) {
   const t = TONE[f.tone]
   const items = f.items ?? []
@@ -104,15 +109,16 @@ function FindingCard({ f }: { f: Finding }) {
       {f.key === 'plan_fit' && items.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1">
           {items.map((it, i) => (
-            <span key={i} title={it.sub} className={clsx('rounded px-1.5 py-0.5 text-[11px] tnum', it.tone === 'bad' ? 'bg-bad/15 text-bad' : 'bg-good/15 text-good')}>
+            <Chip key={i} to={it.link} title={it.sub} className={clsx('rounded px-1.5 py-0.5 text-[11px] tnum', it.link && 'hover:brightness-95', it.tone === 'bad' ? 'bg-bad/15 text-bad' : 'bg-good/15 text-good')}>
               {it.label.split(' ')[0]} {it.amount < 0 ? '−' : '+'}{eur(Math.round(Math.abs(it.amount)))}<span className="sr-only"> {it.amount < 0 ? 'over' : 'left'}</span>
-            </span>
+            </Chip>
           ))}
         </div>
       ) : items.length > 0 && (
         <div className="mt-3 divide-y divide-line border-y border-line">
-          {items.map((it, i) => (
-            <div key={i} className="flex items-baseline gap-2 py-1.5 text-sm">
+          {items.map((it, i) => {
+            return (
+            <Chip key={i} to={it.link} className={clsx('flex items-baseline gap-2 py-1.5 text-sm', it.link && '-mx-1 rounded px-1 hover:bg-sunken/50')}>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{it.label}</span>
                 {it.sub && <span className="block truncate text-xs text-muted">{it.sub}</span>}
@@ -121,8 +127,10 @@ function FindingCard({ f }: { f: Finding }) {
               <span className={clsx('shrink-0 tnum', it.tone === 'bad' ? 'text-bad' : it.tone === 'good' ? 'text-good' : '')}>
                 {it.tone ? (it.amount < 0 ? '−' : '+') : ''}{eur(Math.round(Math.abs(it.amount)))}
               </span>
-            </div>
-          ))}
+              {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
+            </Chip>
+            )
+          })}
         </div>
       )}
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">

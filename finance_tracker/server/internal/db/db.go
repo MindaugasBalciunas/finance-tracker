@@ -5,6 +5,7 @@ package db
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	_ "embed"
 	"fmt"
 	"os"
@@ -13,8 +14,19 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+
+	"ft/internal/merchant"
 )
+
+// merchant_key(m) matches a place across spellings in SQL, the way the
+// insights group it (the Ledger's merchant filter uses it).
+func init() {
+	sqlite.MustRegisterDeterministicScalarFunction("merchant_key", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		s, _ := args[0].(string)
+		return merchant.Key(s), nil
+	})
+}
 
 //go:embed schema.sql
 var schemaV1 string

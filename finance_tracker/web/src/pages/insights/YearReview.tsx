@@ -6,7 +6,10 @@ import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { eur, eurk, monthLabel, pct, todayISO } from '../../lib/format'
 import type { Flow, Tx } from '../../lib/types'
+import { Link, useNavigate } from 'react-router-dom'
 import { Card, Loading, Stat } from '../../components/ui'
+import { Icon } from '../../components/Icon'
+import { incomeCategories, ledgerLink } from '../../lib/links'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 
@@ -18,6 +21,7 @@ export function Review() {
   const { data: r, isLoading } = useQuery({ queryKey: ['review', year], queryFn: () => api.get<any>('/insights/review', { year }) })
   const cats = useCats()
   const editor = useTxEditor()
+  const nav = useNavigate()
   if (isLoading || !r) return <Loading />
   const years = (r.years as Flow[]).filter((y) => y.income > 0).map((y) => y.period).reverse()
   const f = r.flow as Flow
@@ -30,8 +34,8 @@ export function Review() {
         <span className="text-sm text-muted">vs {Number(year) - 1}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Income" value={eur(f.income)} sub={p.income ? `${f.income >= p.income ? '+' : ''}${pct(f.income / p.income - 1)} vs last year` : ''} />
-        <Stat label="Spending" value={eur(f.spending)} sub={p.spending ? `${f.spending >= p.spending ? '+' : ''}${pct(f.spending / p.spending - 1)} vs last year` : ''} />
+        <Stat onClick={() => nav(ledgerLink({ kind: 'income', category: incomeCategories(cats.tree), year, salaryMonth: true }))} label="Income" value={eur(f.income)} sub={p.income ? `${f.income >= p.income ? '+' : ''}${pct(f.income / p.income - 1)} vs last year` : ''} />
+        <Stat onClick={() => nav(ledgerLink({ kind: 'expense', year }))} label="Spending" value={eur(f.spending)} sub={p.spending ? `${f.spending >= p.spending ? '+' : ''}${pct(f.spending / p.spending - 1)} vs last year` : ''} />
         <Stat label="Savings rate" value={pct(f.savings_rate)} sub={`last year ${pct(p.savings_rate)}`} tone={f.saved < 0 ? 'bad' : 'good'} />
         <Stat label="Net worth change" value={eur(nwChange)} sub={`${eur(r.net_worth_start)} → ${eur(r.net_worth_end)}`} tone={nwChange < 0 ? 'bad' : 'good'} />
       </div>
@@ -54,10 +58,11 @@ export function Review() {
         <Card pad={false} title="Where it went">
           <div className="divide-y divide-line border-t border-line">
             {r.categories.slice(0, 10).map((c: any) => (
-              <div key={c.category} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(c.category) }} />{cats.name(c.category)}</span>
+              <Link key={c.category} to={ledgerLink({ category: c.category, year })} className="flex items-center justify-between gap-2 px-4 py-2 text-sm hover:bg-sunken/50">
+                <span className="flex min-w-0 flex-1 items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(c.category) }} />{cats.name(c.category)}</span>
                 <span className="tnum">{eur(c.total)} <span className={clsx('text-xs', c.change > 0.1 ? 'text-bad' : c.change < -0.1 ? 'text-good' : 'text-muted')}>{c.previous ? `${c.change > 0 ? '+' : ''}${pct(c.change)}` : ''}</span></span>
-              </div>
+                <Icon name="chevronR" size={12} className="text-muted" />
+              </Link>
             ))}
           </div>
         </Card>

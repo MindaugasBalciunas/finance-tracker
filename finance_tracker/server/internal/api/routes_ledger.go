@@ -18,7 +18,8 @@ func filterFrom(r *http.Request) ledger.Filter {
 	q := r.URL.Query()
 	return ledger.Filter{From: q.Get("from"), To: q.Get("to"), Kind: q.Get("kind"), Categories: qlist(r, "category"), Accounts: qlist(r, "account"),
 		Tags: qlist(r, "tag"), TagsAll: q.Get("tags_all") == "1", Merchant: q.Get("merchant"), Query: q.Get("q"), Source: q.Get("source"),
-		Min: parseCents(q.Get("min")), Max: parseCents(q.Get("max")), Sort: q.Get("sort"), Limit: qint(r, "limit", 100), Offset: qint(r, "offset", 0)}
+		Min: parseCents(q.Get("min")), Max: parseCents(q.Get("max")), Sort: q.Get("sort"), Limit: qint(r, "limit", 100), Offset: qint(r, "offset", 0),
+		Choices: q.Get("choices") == "1"}
 }
 
 func parseCents(s string) money.Cents {
@@ -37,7 +38,14 @@ type txInput struct {
 
 func (s *Server) ledgerRoutes() {
 	s.handle("GET /api/transactions", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		return ledger.List(s.DB, filterFrom(r))
+		f := filterFrom(r)
+		// salary=month: a salary counts in the month it pays for, as in cash flow.
+		if r.URL.Query().Get("salary") == "month" {
+			for _, w := range plan.LoadSettings(s.DB).Salary() {
+				f.Salary = append(f.Salary, ledger.SalaryWindow{From: w.From, By: w.PaidByDay})
+			}
+		}
+		return ledger.List(s.DB, f)
 	})
 	// What a new expense most likely is: one tap and an amount.
 	s.handle("GET /api/transactions/quick", func(w http.ResponseWriter, r *http.Request) (any, error) {

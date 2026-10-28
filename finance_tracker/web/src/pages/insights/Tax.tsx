@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
+import { Link } from 'react-router-dom'
 import { api } from '../../lib/api'
 import { eur, shortDate } from '../../lib/format'
 import { AskCFO, Card, Loading, Segmented } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
-type Item = { key: string; kind: 'due' | 'refund' | 'exempt' | 'info'; title: string; detail: string; amount: number }
+type Item = { key: string; kind: 'due' | 'refund' | 'exempt' | 'info'; title: string; detail: string; amount: number; link?: string }
 type TaxYear = { year: number; opens: string; deadline: string; items: Item[]; due: number; refund: number; pillar3_before_2025: boolean | null }
 
 const KIND = {
@@ -56,6 +57,7 @@ export function TaxView() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{it.title}</div>
                   <div className="text-xs text-muted">{it.detail}</div>
+                  {it.link && <Link to={it.link} className="mt-1 inline-flex items-center gap-0.5 text-xs text-accent">Transactions<Icon name="chevronR" size={12} /></Link>}
                 </div>
                 {it.amount !== 0 && it.kind !== 'info' && (
                   <div className={clsx('shrink-0 text-right text-sm tnum', k.cls)}>{eur(Math.abs(it.amount))}<div className="text-[10px]">{k.label}</div></div>

@@ -9,8 +9,10 @@ import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
 import { AskCFO, Loading } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
-type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[] }
-export type Fact = { key: string; icon: string; title: string; value: string; detail?: string; items?: Item[] | null }
+type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; link?: string }
+export type Fact = { key: string; icon: string; title: string; value: string; detail?: string; items?: Item[] | null; link?: string }
+/** A "did you know?" line and the transactions behind it. */
+export type FunLine = { text: string; link?: string }
 
 const S = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)']
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -18,26 +20,41 @@ const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(pre
 export const useFunFacts = (from?: string, to?: string) =>
   useQuery({ queryKey: ['fun-facts', from ?? '', to ?? ''], queryFn: () => api.get<Fact[]>('/insights/fun', { from, to }), staleTime: 3_600_000, placeholderData: (prev) => prev })
 
-/** One-line "did you know?" stories from the facts — shared with Home. */
-export function funLines(facts: Fact[]): string[] {
+/** One-line "did you know?" stories from the facts — shared with Home —
+ *  each with the transactions behind it. */
+export function funLines(facts: Fact[]): FunLine[] {
   const by = Object.fromEntries(facts.map((f) => [f.key, f])) as Record<string, Fact>
-  const out: string[] = []
+  const out: FunLine[] = []
+  const add = (text: string | false | undefined, link?: string) => { if (text) out.push({ text: text.trim(), link }) }
   const habit = (label: string) => by.habits?.items?.find((i) => i.label === label)
-  if (by.employers?.items?.[0]) out.push(`${by.employers.value} paid you ${by.employers.items[0].value} — more than any other employer.`)
-  if (by.first_pay) out.push(`Your first pay cheque was ${by.first_pay.value}. ${by.first_pay.detail?.split('. ').slice(1).join('. ') ?? ''}`.trim())
-  if (by.visits?.items?.[0]) out.push(`You've ordered from ${by.visits.value} ${by.visits.items[0].value.replace('×', '')} times.`)
+  if (by.employers?.items?.[0]) add(`${by.employers.value} paid you ${by.employers.items[0].value} — more than any other employer.`, by.employers.items[0].link)
+  if (by.first_pay) add(`Your first pay cheque was ${by.first_pay.value}. ${by.first_pay.detail?.split('. ').slice(1).join('. ') ?? ''}`, by.first_pay.link)
+  if (by.visits?.items?.[0]) add(`You've ordered from ${by.visits.value} ${by.visits.items[0].value.replace('×', '')} times.`, by.visits.items[0].link)
   const ff = habit('Fast-food stops')
-  if (ff) out.push(`${ff.value} fast-food stops so far — ${ff.sub?.split(' · ')[0]} in all.`)
+  if (ff) add(`${ff.value} fast-food stops so far — ${ff.sub?.split(' · ')[0]} in all.`, ff.link)
   const fuel = habit('Fuel fill-ups')
-  if (fuel) out.push(`${fuel.value} trips to the pump, ${fuel.sub?.split(' · ')[0]} of fuel.`)
-  if (by.this_year) out.push(`${by.this_year.value} is this year's favourite: ${by.this_year.detail?.split(' — ')[1] ?? by.this_year.detail}`)
-  if (by.weekday) out.push(`${by.weekday.value} is your big spending day.`)
-  if (by.biggest) out.push(`The biggest single purchase: ${by.biggest.value} — ${by.biggest.detail?.split(' · ')[0]}.`)
-  if (by.signature) out.push(`${by.signature.value} is your signature price — ${by.signature.detail?.replace(/^Paid exactly that /, 'paid exactly that ')}`)
-  if (by.rhythm?.detail?.includes('Longest break')) out.push(`Longest break from spending: ${by.rhythm.detail.split('Longest break: ')[1]}`)
-  if (by.new_places) out.push(`${by.new_places.value.replace(" you'd never paid before", '')} new places — ${by.new_places.items?.slice(0, 2).map((i) => i.label).join(' and ')} among them.`)
-  if (by.vs_before) out.push(`${by.vs_before.value} spent than in the period before.`)
-  return out.filter(Boolean)
+  if (fuel) add(`${fuel.value} trips to the pump, ${fuel.sub?.split(' · ')[0]} of fuel.`, fuel.link)
+  if (by.this_year) add(`${by.this_year.value} is this year's favourite: ${by.this_year.detail?.split(' — ')[1] ?? by.this_year.detail}`, by.this_year.link)
+  if (by.weekday) add(`${by.weekday.value} is your big spending day.`)
+  if (by.biggest) add(`The biggest single purchase: ${by.biggest.value} — ${by.biggest.detail?.split(' · ')[0]}.`, by.biggest.link)
+  if (by.signature) add(`${by.signature.value} is your signature price — ${by.signature.detail?.replace(/^Paid exactly that /, 'paid exactly that ')}`)
+  if (by.rhythm?.detail?.includes('Longest break')) add(`Longest break from spending: ${by.rhythm.detail.split('Longest break: ')[1]}`)
+  if (by.new_places) add(`${by.new_places.value.replace(" you'd never paid before", '')} new places — ${by.new_places.items?.slice(0, 2).map((i) => i.label).join(' and ')} among them.`, by.new_places.items?.[0]?.link)
+  if (by.vs_before) add(`${by.vs_before.value} spent than in the period before.`)
+  if (by.trips?.items?.[0]) add(`${by.trips.items[0].label} was your priciest trip: ${by.trips.items[0].value}.`, by.trips.items[0].link)
+  return out
+}
+
+/** A line that opens its transactions when it has them. */
+export function FunLineText({ line }: { line: FunLine }) {
+  if (!line.link) return <>{line.text}</>
+  return <Link to={line.link} className="underline decoration-accent/40 underline-offset-2 hover:decoration-accent">{line.text}</Link>
+}
+
+/** A row or bar that opens its transactions (a plain block without a link). */
+function Linked({ to, className, title, children }: { to?: string; className?: string; title?: string; children: ReactNode }) {
+  if (!to) return <div className={className} title={title}>{children}</div>
+  return <Link to={to} className={clsx(className, 'block transition hover:brightness-95 focus-visible:outline-2')} title={title} aria-label={title}>{children}</Link>
 }
 
 function useCountUp(target: number, ms = 1100) {
@@ -92,7 +109,7 @@ export function FunView() {
   )
 }
 
-function Hero({ f, lines }: { f: Fact; lines: string[] }) {
+function Hero({ f, lines }: { f: Fact; lines: FunLine[] }) {
   const it = (k: string) => f.items?.find((x) => x.label === k)
   const [i, setI] = useState(0)
   useEffect(() => {
@@ -108,7 +125,9 @@ function Hero({ f, lines }: { f: Fact; lines: string[] }) {
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[['earned', 'earned', true], it('days') ? ['days', 'days', false] : ['years', 'years tracked', false], ['transactions', 'transactions', false]].map(([k, label, euro]) => (
           <div key={k as string} className={clsx('min-w-0', k === 'earned' && 'col-span-2 sm:order-2 sm:col-span-1', (k === 'years' || k === 'days') && 'sm:order-1', k === 'transactions' && 'sm:order-3')}>
-            <div className="text-2xl font-bold tracking-tight tnum sm:text-4xl" style={gradText}><Count n={it(k as string)?.n ?? 0} euro={euro as boolean} /></div>
+            <div className="text-2xl font-bold tracking-tight tnum sm:text-4xl" style={gradText}>
+              {k === 'earned' && f.link ? <Link to={f.link} aria-label="Everything earned — the transactions"><Count n={it(k as string)?.n ?? 0} euro={euro as boolean} /></Link> : <Count n={it(k as string)?.n ?? 0} euro={euro as boolean} />}
+            </div>
             <div className="text-xs text-muted sm:text-sm">{label as string}</div>
           </div>
         ))}
@@ -116,7 +135,7 @@ function Hero({ f, lines }: { f: Fact; lines: string[] }) {
       {lines.length > 0 && (
         <div className="mt-5 flex items-center gap-3 rounded-xl bg-raised/70 px-3 py-2.5 backdrop-blur">
           <Icon name="spark" size={18} className="shrink-0 text-accent" />
-          <div className="min-w-0 flex-1 text-sm"><span className="text-muted">Did you know? </span><span key={i} className="animate-[fadein_.5s_ease]">{lines[i]}</span></div>
+          <div className="min-w-0 flex-1 text-sm"><span className="text-muted">Did you know? </span><span key={i} className="animate-[fadein_.5s_ease]"><FunLineText line={lines[i % lines.length]} /></span></div>
           {lines.length > 1 && <button className="btn-ghost h-8 w-8 shrink-0 px-0" aria-label="Next fact" onClick={() => setI((x) => (x + 1) % lines.length)}><Icon name="chevronR" size={16} /></button>}
         </div>
       )}
@@ -131,7 +150,9 @@ function Shell({ f, color, children, big }: { f: Fact; color: string; children?:
         <span className="grid h-7 w-7 place-items-center rounded-lg" style={{ background: `color-mix(in oklab, ${color} 20%, transparent)` }}><Icon name={f.icon} size={15} /></span>
         {f.title}
       </div>
-      <div className={clsx('mt-2 font-bold tracking-tight', big ? 'text-4xl' : 'text-2xl')}>{f.value}</div>
+      <div className={clsx('mt-2 font-bold tracking-tight', big ? 'text-4xl' : 'text-2xl')}>
+        {f.link ? <Link to={f.link} className="inline-flex items-center gap-1 hover:text-accent">{f.value}<Icon name="chevronR" size={18} className="text-muted" /></Link> : f.value}
+      </div>
       {f.detail && <p className="mt-1 text-sm text-ink2">{f.detail}</p>}
       {children}
     </section>
@@ -172,7 +193,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
             </div>
             <div className="space-y-2.5">
               {items.map((it, i) => (
-                <div key={it.label}>
+                <Linked key={it.label} to={it.link} className="rounded-md">
                   <div className="flex items-baseline gap-2 text-xs">
                     <span className="min-w-0 truncate font-medium">{it.label}</span>
                     <span className="shrink-0 text-muted tnum">{runs(it.years ?? [Number(it.from)]).map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(', ')}</span>
@@ -186,7 +207,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
                         style={{ left: pos(a), width: `calc(${pos(b + 1)} - ${pos(a)})`, background: S[i % S.length] }} />
                     ))}
                   </div>
-                </div>
+                </Linked>
               ))}
             </div>
             <div className="mt-2 text-[11px] text-muted">Each block is a year the employer paid you · ranked by total paid</div>
@@ -202,14 +223,14 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
         <Shell f={f} color={color}>
           <div className="mt-3 space-y-1.5">
             {items.map((it) => (
-              <div key={it.label} className="relative overflow-hidden rounded-lg px-2.5 py-1.5 text-sm">
+              <Linked key={it.label} to={it.link} className="relative overflow-hidden rounded-lg px-2.5 py-1.5 text-sm">
                 <div className="absolute inset-y-0 left-0 rounded-lg" style={{ width: `${((it.n ?? 0) / max) * 100}%`, background: `color-mix(in oklab, ${color} 22%, transparent)` }} />
                 <div className="relative flex items-baseline gap-2">
                   <span className="min-w-0 flex-1 truncate">{f.key === 'trips' && <Icon name="plane" size={12} className="mr-1 inline text-muted" />}{it.label}</span>
                   <span className="text-xs text-muted">{it.sub}</span>
                   <span className="font-semibold tnum">{it.value}</span>
                 </div>
-              </div>
+              </Linked>
             ))}
           </div>
         </Shell>
@@ -219,11 +240,11 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
         <Shell f={f} color={color}>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {items.map((it, i) => (
-              <div key={it.label} className="rounded-xl bg-raised/60 p-2.5">
+              <Linked key={it.label} to={it.link} className="rounded-xl bg-raised/60 p-2.5">
                 <div className="text-2xl font-bold tracking-tight tnum" style={{ color: S[(i + 2) % S.length] }}>{it.value}</div>
                 <div className="text-xs font-medium">{it.label}</div>
                 <div className="mt-0.5 text-[11px] leading-snug text-muted">{it.sub}</div>
-              </div>
+              </Linked>
             ))}
           </div>
         </Shell>
@@ -236,10 +257,10 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
         <Shell f={f} color={color}>
           <div className="mt-3 flex h-28 items-end gap-1">
             {items.map((it) => (
-              <div key={it.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${it.label}: ${it.value}`}>
+              <Linked key={it.label} to={it.link} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${it.label}: ${it.value}`}>
                 {it.top && <span className="text-[10px] font-semibold tnum" style={{ color }}>{it.value}</span>}
                 <div className="w-full rounded-t-md" style={{ height: `${Math.max(4, ((it.n ?? 0) / max) * (it.top ? 80 : 96))}%`, background: it.top ? color : `color-mix(in oklab, ${color} 35%, transparent)` }} />
-              </div>
+              </Linked>
             ))}
           </div>
           <div className="mt-1 flex gap-1">
@@ -265,7 +286,7 @@ export function FunTeaser() {
       <Icon name="spark" size={20} className="shrink-0 text-accent" />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-medium uppercase tracking-wide text-ink2">Did you know?</div>
-        <div className="text-sm">{lines[i % lines.length]}</div>
+        <div className="text-sm"><FunLineText line={lines[i % lines.length]} /></div>
       </div>
       <button className="btn-ghost h-8 w-8 shrink-0 px-0" aria-label="Another fact" onClick={() => setI((x) => x + 1)}><Icon name="refresh" size={15} /></button>
       <Link to="/insights/fun" className="shrink-0 text-xs font-medium text-accent">More</Link>

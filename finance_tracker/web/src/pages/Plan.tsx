@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { ledgerLink, monthEnd } from '../lib/links'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
@@ -95,7 +96,7 @@ function Month() {
             <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
             {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
               <div className="divide-y divide-line border-t border-line">
-                {lines.map((l) => <LineRow key={l.id} l={l} monthPace={current ? monthProgress() : undefined} onEdit={() => setEdit(l)} />)}
+                {lines.map((l) => <LineRow key={l.id} l={l} month={month} monthPace={current ? monthProgress() : undefined} onEdit={() => setEdit(l)} />)}
               </div>
             )}
           </Card></div>
@@ -107,10 +108,10 @@ function Month() {
           <div className="divide-y divide-line border-t border-line">
             {r.unbudgeted.map((u) => (
               <div key={u.category} className="flex items-center gap-3 px-4 py-2.5">
-                <div className="min-w-0 flex-1">
+                <Link to={ledgerLink({ category: u.category, month })} className="min-w-0 flex-1 hover:text-accent">
                   <div className="text-sm font-medium">{cats.name(u.category)}</div>
                   <div className="text-xs text-muted">{eur(u.spent)} this month · {eur(u.year_spent)} this year</div>
-                </div>
+                </Link>
                 {u.suggestion && (
                   <button className="chip hover:bg-sunken" onClick={() => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
                     + budget {eur(u.suggestion.amount)}{u.suggestion.lumpy ? ' fund' : ''}
@@ -366,8 +367,15 @@ function monthProgress() {
   return d.getDate() / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 }
 
-function LineRow({ l, onEdit, monthPace }: { l: PlanLine; onEdit: () => void; monthPace?: number }) {
+function LineRow({ l, month, onEdit, monthPace }: { l: PlanLine; month: string; onEdit: () => void; monthPace?: number }) {
   const cats = useCats()
+  const nav = useNavigate()
+  // The line's transactions, matched as the line matches them: its tag and
+  // categories, the kind its lines count (spending: expenses, saving:
+  // transfers), and for a yearly line the year so far.
+  const kind = l.kind === 'spending' ? 'expense' as const : l.kind === 'saving' ? 'transfer' as const : undefined
+  const txs = (m: string) => ledgerLink({ tag: l.tag || undefined, category: l.categories, kind,
+    ...(l.period === 'yearly' && m === month ? { from: `${m.slice(0, 4)}-01-01`, to: monthEnd(m) } : { month: m }) })
   const [open, setOpen] = useState(false)
   const over = l.remaining < 0
   const what = l.tag ? `#${l.tag}` : l.categories.map((c) => cats.name(c)).join(', ')
@@ -407,11 +415,15 @@ function LineRow({ l, onEdit, monthPace }: { l: PlanLine; onEdit: () => void; mo
                 <XAxis dataKey="month" tickFormatter={(m) => monthLabel(m).slice(0, 3)} tick={{ fill: 'var(--chart-text)', fontSize: 10 }} tickLine={false} axisLine={false} interval={1} />
                 <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? (
                   <TooltipBox title={monthLabel(payload[0].payload.month, true)} rows={[{ label: 'Spent', value: eurc(payload[0].payload.spent), bold: true }, { label: 'Budget', value: eurc(payload[0].payload.budget) }]} />) : null} />
-                <Bar dataKey="spent" name="Spent" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="spent" name="Spent" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer" onClick={(d: any) => d?.month && nav(txs(d.month))} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <button className="btn-outline h-8 text-xs" onClick={onEdit}><Icon name="edit" size={14} />Edit line</button>
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-outline h-8 text-xs" to={txs(month)}><Icon name="list" size={14} />{l.period === 'yearly' ? `${month.slice(0, 4)} so far` : monthLabel(month)} transactions</Link>
+            <button className="btn-outline h-8 text-xs" onClick={onEdit}><Icon name="edit" size={14} />Edit line</button>
+          </div>
+          <div className="text-[11px] text-muted">Tap a month's bar for its transactions.</div>
         </div>
       )}
     </div>

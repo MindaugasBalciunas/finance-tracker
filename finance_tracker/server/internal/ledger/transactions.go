@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"ft/internal/db"
+	"ft/internal/merchant"
 	"ft/internal/money"
 )
 
@@ -96,18 +98,74 @@ type Filter struct {
 	Limit      int
 	Offset     int
 	Sort       string // date | amount (desc); prefix '+' for ascending
+	// Choices: leave out obligations (Obligation) — what the insights call
+	// spending by choice.
+	Choices bool
+	// Salary: dates count a salary in the month it pays for under these
+	// rules (paid by day N of the next month), as cash flow does.
+	Salary []SalaryWindow
+}
+
+// SalaryWindow: from date From (YYYY-MM-DD, "" = always), a salary paid on
+// or before day By of a month counts for the month before.
+type SalaryWindow struct {
+	From string
+	By   int
+}
+
+// Obligation: money that isn't a choice — alimony, family support, the
+// mortgage, finance costs.
+func Obligation(cat string) bool {
+	return cat == "kids.alimony" || cat == "other.family" || strings.HasPrefix(cat, "housing.mortgage") || Top(cat) == "finance"
+}
+
+// PaysAPerson: an obligation paid to a person (an ex-partner, family, the
+// mortgage bank) — everything else paid to them isn't a choice either.
+func PaysAPerson(cat string) bool {
+	return cat == "kids.alimony" || cat == "other.family" || strings.HasPrefix(cat, "housing.mortgage")
+}
+
+const (
+	obligationSQL = `(category IN ('kids.alimony','other.family','finance') OR category LIKE 'housing.mortgage%' OR category LIKE 'finance.%')`
+	// Choices: no obligation, and no payee who is paid one.
+	choicesSQL = `NOT ` + obligationSQL + ` AND (merchant = '' OR merchant_key(merchant) NOT IN (SELECT merchant_key(merchant) FROM transactions
+		WHERE kind='expense' AND merchant <> '' AND (category IN ('kids.alimony','other.family') OR category LIKE 'housing.mortgage%')))`
+)
+
+// flowDate is the SQL for a row's date with salary moved to the month it
+// pays for (plan.FlowDate in SQL): the latest rule from on or before the
+// payment date decides the day.
+func (f Filter) flowDate() (string, []any) {
+	if len(f.Salary) == 0 {
+		return "date", nil
+	}
+	ws := append([]SalaryWindow(nil), f.Salary...)
+	sort.Slice(ws, func(i, j int) bool { return ws[i].From > ws[j].From })
+	by := "CASE"
+	var args []any
+	for _, w := range ws {
+		by += " WHEN date >= ? THEN ?"
+		args = append(args, w.From, w.By)
+	}
+	by += " ELSE 0 END"
+	return `(CASE WHEN kind='income' AND (category='salary' OR category LIKE 'salary.%') AND CAST(substr(date,9,2) AS INTEGER) <= (` + by + `)
+		THEN date(date,'start of month','-1 day') ELSE date END)`, args
 }
 
 func (f Filter) where() (string, []any) {
 	var conds []string
 	var args []any
+	day, dayArgs := f.flowDate()
 	if f.From != "" {
-		conds = append(conds, "date >= ?")
-		args = append(args, f.From)
+		conds = append(conds, day+" >= ?")
+		args = append(append(args, dayArgs...), f.From)
 	}
 	if f.To != "" {
-		conds = append(conds, "date <= ?")
-		args = append(args, f.To)
+		conds = append(conds, day+" <= ?")
+		args = append(append(args, dayArgs...), f.To)
+	}
+	if f.Choices {
+		conds = append(conds, choicesSQL)
 	}
 	if f.Kind != "" {
 		conds = append(conds, "kind = ?")
@@ -142,8 +200,9 @@ func (f Filter) where() (string, []any) {
 		conds = append(conds, "("+strings.Join(parts, joiner)+")")
 	}
 	if f.Merchant != "" {
-		conds = append(conds, "merchant = ?")
-		args = append(args, f.Merchant)
+		// One place across spellings: "NESTE" = "Neste", "Švyturys" = "SVYTURYS".
+		conds = append(conds, "merchant_key(merchant) = ?")
+		args = append(args, merchant.Key(f.Merchant))
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		conds = append(conds, "(merchant LIKE ? OR note LIKE ? OR tags LIKE ?)")

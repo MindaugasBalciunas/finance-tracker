@@ -412,7 +412,7 @@ func TestWealthDirection(t *testing.T) {
 		{Date: "2026-09-04", Kind: "transfer", Amount: E(450), Category: "transfer.debt", AccountID: "swed", ToAccountID: "mortgage"},
 		{Date: "2026-09-05", Kind: "transfer", Amount: E(300), Category: "transfer.internal", AccountID: "swed", ToAccountID: "seb"},
 		{Date: "2026-09-06", Kind: "transfer", Amount: E(200), Category: "transfer.invest", AccountID: "ibkr"},
-		{Date: "2026-09-07", Kind: "transfer", Amount: E(900), Category: "transfer.pension", ToAccountID: "swed"}, // a bank row: payout arriving
+		{Date: "2026-09-07", Kind: "transfer", Amount: E(900), Category: "transfer.pension", ToAccountID: "swed"},  // a bank row: payout arriving
 		{Date: "2026-09-08", Kind: "transfer", Amount: E(120), Category: "transfer.pension", ToAccountID: "artea"}, // payroll pension
 	} {
 		Tx(t, d, x)
@@ -430,5 +430,20 @@ func TestWealthDirection(t *testing.T) {
 	// Rows built without accounts (older callers, tests) still count as investing.
 	if (ledger.Tx{Kind: "transfer", Category: "transfer.invest"}).WealthDirection() != 1 {
 		t.Error("unknown accounts")
+	}
+}
+
+// A merchant filter matches whatever case the bank used, so a figure that
+// adds up "NESTE" and "Neste" lists both.
+func TestMerchantFilterIgnoresCase(t *testing.T) {
+	d := DB(t)
+	for _, m := range []string{"Neste", "NESTE", "Circle K"} {
+		Tx(t, d, ledger.Tx{Date: "2026-09-01", Kind: "expense", Amount: E(50), Category: "transport.fuel", Merchant: m, AccountID: "swed"})
+	}
+	if got, _ := ledger.All(d, ledger.Filter{Merchant: "neste"}); len(got) != 2 {
+		t.Errorf("merchant filter: %d rows", len(got))
+	}
+	if l := ledger.MonthLink("2026-09", "category", "food", "tag", ""); l != "/ledger?category=food&from=2026-09-01&to=2026-09-30" {
+		t.Errorf("month link %q", l)
 	}
 }

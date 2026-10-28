@@ -5,7 +5,9 @@ import { api } from '../../lib/api'
 import { usePeriod } from '../../lib/hooks'
 import { catColor, CORE, useCats } from '../../lib/categories'
 import { eur, eurk, monthLabel } from '../../lib/format'
+import { useNavigate } from 'react-router-dom'
 import { Card, Loading, Segmented } from '../../components/ui'
+import { ledgerLink } from '../../lib/links'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { SPANS, spanMonths } from './CashFlow'
 
@@ -38,6 +40,10 @@ export function Trends() {
     row.__other = series.other.reduce((a, k) => a + (r[k] ?? 0), 0)
     return row
   }), [data, series])
+  const nav = useNavigate()
+  // A tap on a bar segment lists that category's month; "Other" lists the
+  // categories folded into it.
+  const open = (k: string) => (d: any) => d?.month && nav(ledgerLink({ month: d.month, kind: 'expense', category: k === '__other' ? series.other : k }))
   if (isLoading) return <Loading />
   const all = [...series.keys, ...(series.other.length ? ['__other'] : [])]
   const label = (k: string) => (k === '__other' ? 'Other' : cats.name(k))
@@ -62,12 +68,13 @@ export function Trends() {
                 <TooltipBox title={monthLabel(l as string, true)} rows={[...payload].reverse().filter((p: any) => p.value).map((p: any) => ({ color: p.fill, label: label(p.dataKey), value: eur(p.value) }))}
                   footer={<div className="flex justify-between"><span>Total</span><span className="tnum text-ink">{eur(payload.reduce((a: number, p: any) => a + (p.value || 0), 0))}</span></div>} />) : null} />
               {all.map((k, i) => (
-                <Bar key={k} dataKey={k} stackId="s" fill={color(k)} stroke="var(--chart-surface)" strokeWidth={1} radius={i === all.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive={false} />
+                <Bar key={k} dataKey={k} stackId="s" fill={color(k)} stroke="var(--chart-surface)" strokeWidth={1} radius={i === all.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive={false} cursor="pointer" onClick={open(k)} />
               ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="mt-3"><Legend items={all.map((k) => ({ color: color(k), label: label(k) }))} /></div>
+        <div className="mt-1 text-xs text-muted">Tap a bar for its transactions.</div>
       </Card>
     </div>
   )

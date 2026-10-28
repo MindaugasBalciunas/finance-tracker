@@ -81,7 +81,9 @@ func TestTaxYear(t *testing.T) {
 func TestTaxPillarIgnoresPayout(t *testing.T) {
 	d := DB(t)
 	year := time.Now().Year() - 1
-	day := func(m int) string { return time.Date(year, time.Month(m), 10, 0, 0, 0, 0, time.UTC).Format("2006-01-02") }
+	day := func(m int) string {
+		return time.Date(year, time.Month(m), 10, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	}
 	Tx(t, d, ledger.Tx{Date: day(3), Kind: "transfer", Amount: E(1500), Category: "transfer.pension", AccountID: "swed", ToAccountID: "artea"})
 	Tx(t, d, ledger.Tx{Date: day(12), Kind: "transfer", Amount: E(17197.92), Category: "transfer.pension", AccountID: "artea", ToAccountID: "swed"})
 	r, err := cfo.Tax(d, year, time.Now())

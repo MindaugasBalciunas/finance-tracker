@@ -66,6 +66,21 @@ func TestFunFacts(t *testing.T) {
 	if f := by["trips"]; len(f.Items) != 1 || f.Items[0].Label != "Rome" {
 		t.Errorf("trips %+v", f)
 	}
+	// Every figure opens the transactions behind it.
+	if l := by["trips"].Items[0].Link; l != "/ledger?period=all&tag=trip%3Arome" {
+		t.Errorf("trip link %q", l)
+	}
+	if l := by["employers"].Items[0].Link; l != "/ledger?category=salary&kind=income&merchant=Big+Co&period=all" {
+		t.Errorf("employer link %q", l)
+	}
+	for _, it := range by["habits"].Items {
+		if it.Label == "Coffees" && it.Link != "/ledger?category=food.coffee&kind=expense&period=all" {
+			t.Errorf("habit link %q", it.Link)
+		}
+	}
+	if l := by["biggest"].Link; l != "/ledger?category=travel.lodging&from=2026-07-01&kind=expense&to=2026-07-01" {
+		t.Errorf("biggest link %q", l)
+	}
 }
 
 // With a period picked, only its transactions count; the lifetime-only

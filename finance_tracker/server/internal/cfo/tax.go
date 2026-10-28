@@ -35,6 +35,7 @@ type TaxItem struct {
 	Title  string      `json:"title"`
 	Detail string      `json:"detail"`
 	Amount money.Cents `json:"amount"`
+	Link   string      `json:"link,omitempty"` // the transactions it is based on
 }
 
 // Annual income where the 25% rate starts: 36 average wages (from 2026;
@@ -88,11 +89,11 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 		if annual > 0 {
 			if over := annual - limit; over > 0 {
 				due := money.FromFloat(over * 0.05)
-				t.add(TaxItem{Key: "bracket", Kind: "due", Amount: due, Title: "Salary above the 25% bracket",
+				t.add(TaxItem{Key: "bracket", Kind: "due", Amount: due, Title: "Salary above the 25% bracket", Link: ledger.Link("from", from, "to", to, "category", "salary"),
 					Detail: fmt.Sprintf("€%s of about €%s gross for the year (%s) is above €%s, taxed 25%% instead of 20%%. If your employers withheld 20%%, about %s is left to pay with the declaration.",
 						thousands(over), thousands(annual), basis, thousands(limit), eurS(due))})
 			} else {
-				t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Salary within the 20% bracket", Detail: fmt.Sprintf("€%s a year is under €%s.", thousands(annual), thousands(limit))})
+				t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Salary within the 20% bracket", Link: ledger.Link("from", from, "to", to, "category", "salary"), Detail: fmt.Sprintf("€%s a year is under €%s.", thousands(annual), thousands(limit))})
 			}
 		} else {
 			t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Gross salary not set", Detail: "Set your gross salary in Plan → Income & goals to estimate the 25% bracket."})
@@ -107,7 +108,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 		}
 	}
 	if interest > 0 {
-		it := TaxItem{Key: "interest", Kind: "exempt", Amount: interest, Title: "Interest",
+		it := TaxItem{Key: "interest", Kind: "exempt", Amount: interest, Title: "Interest", Link: ledger.Link("from", from, "to", to, "category", "investment_income"),
 			Detail: fmt.Sprintf("%s this year — tax-free up to €%d.", eurS(interest), exemptInt)}
 		if over := interest - money.FromFloat(exemptInt); over > 0 {
 			it.Kind, it.Amount = "due", money.FromFloat(over.Float()*gpmInvest)
@@ -156,7 +157,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 			base = min(base, money.FromFloat(annual*0.25))
 		}
 		refund := money.FromFloat(base.Float() * pillar3Refund)
-		it := TaxItem{Key: "pillar3", Title: "3rd-pillar pension contributions", Amount: refund}
+		it := TaxItem{Key: "pillar3", Title: "3rd-pillar pension contributions", Amount: refund, Link: ledger.Link("from", from, "to", to, "category", "transfer.pension")}
 		switch {
 		case ts.Pillar3Before2025 == nil:
 			it.Kind = "info"

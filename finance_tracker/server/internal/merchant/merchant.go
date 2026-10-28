@@ -114,6 +114,10 @@ func Fold(s string) string {
 	return strings.ToUpper(folder.Replace(s))
 }
 
+// Key is how one place is matched across spellings: folded, spaces ignored
+// ("Švyturys" = "SVYTURYS", "Circle K" = "CIRCLEK").
+func Key(s string) string { return strings.ReplaceAll(Fold(s), " ", "") }
+
 var folder = strings.NewReplacer(
 	"ą", "a", "č", "c", "ę", "e", "ė", "e", "į", "i", "š", "s", "ų", "u", "ū", "u", "ž", "z",
 	"Ą", "A", "Č", "C", "Ę", "E", "Ė", "E", "Į", "I", "Š", "S", "Ų", "U", "Ū", "U", "Ž", "Z",

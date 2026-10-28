@@ -4,7 +4,10 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 import { useCashflow, usePeriod } from '../../lib/hooks'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth, todayISO } from '../../lib/format'
 import type { Flow } from '../../lib/types'
+import { Link, useNavigate } from 'react-router-dom'
 import { Card, Loading, Segmented, Stat } from '../../components/ui'
+import { incomeCategories, ledgerLink } from '../../lib/links'
+import { useCats } from '../../lib/categories'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 
 
@@ -15,6 +18,11 @@ export const SPANS = [{ value: '3', label: '3M' }, { value: '6', label: '6M' }, 
 export const spanMonths = (v: string) => (v === 'ytd' ? new Date().getMonth() + 1 : Number(v))
 
 export function CashFlow() {
+  const nav = useNavigate()
+  const income = incomeCategories(useCats().tree)
+  // A tap on a month's bar lists that month's money in (or out).
+  // Money in counts a salary paid early next month for the month it pays for, as the bars do.
+  const openMonth = (kind: 'income' | 'expense') => (d: any) => d?.period && nav(ledgerLink(kind === 'income' ? { kind, category: income, month: d.period, salaryMonth: true } : { kind, month: d.period }))
   const [span, setSpan] = usePeriod('cashflow', '24', SPANS.map((s) => s.value))
   const from = addMonths(thisMonth(), -spanMonths(span) + 1) + '-01'
   const { data: months, isLoading } = useCashflow(from, todayISO(), 'month')
@@ -56,17 +64,17 @@ export function CashFlow() {
                   { label: 'Total out', value: eurc(f.spending + refunds + Math.max(0, f.invested)), bold: true }]} />
               })() : null} />
               {/* The month in progress is drawn lighter: it is not comparable yet. */}
-              <Bar dataKey="income" name="Income" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              <Bar dataKey="income" name="Income" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer" onClick={openMonth('income')}>
                 {rows.map((r) => <Cell key={r.period} fillOpacity={r.period === thisMonth() ? 0.4 : 1} />)}
               </Bar>
-              <Bar dataKey="spending" name="Spending" fill="var(--s2)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              <Bar dataKey="spending" name="Spending" fill="var(--s2)" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer" onClick={openMonth('expense')}>
                 {rows.map((r) => <Cell key={r.period} fillOpacity={r.period === thisMonth() ? 0.4 : 1} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><Legend items={[{ color: 'var(--s1)', label: 'Income' }, { color: 'var(--s2)', label: 'Spending' }]} />
-          <span className="text-xs text-muted">Lighter bars: {monthLabel(thisMonth())} so far</span></div>
+          <span className="text-xs text-muted">Lighter bars: {monthLabel(thisMonth())} so far · tap a bar for its transactions</span></div>
       </Card>
       <Card title="Savings rate by month">
         <div className="h-40">
@@ -97,11 +105,11 @@ export function CashFlow() {
               {[...(years ?? [])].reverse().filter((y) => y.income > 0 || y.spending > 1000).map((y) => (
                 <tr key={y.period}>
                   <td className="py-2 font-medium">{y.period}</td>
-                  <td className="py-2 text-right">{eur(y.income)}</td>
-                  <td className="py-2 text-right">{eur(y.spending)}</td>
+                  <td className="py-2 text-right"><Link className="hover:text-accent hover:underline" to={ledgerLink({ kind: 'income', category: income, year: y.period, salaryMonth: true })}>{eur(y.income)}</Link></td>
+                  <td className="py-2 text-right"><Link className="hover:text-accent hover:underline" to={ledgerLink({ kind: 'expense', year: y.period })}>{eur(y.spending)}</Link></td>
                   <td className={clsx('py-2 text-right', y.saved < 0 && 'text-bad')}>{eur(y.saved)}</td>
                   <td className="py-2 text-right">{y.income > 0 ? pct(y.savings_rate) : '—'}</td>
-                  <td className="py-2 text-right">{eur(y.invested)}</td>
+                  <td className="py-2 text-right"><Link className="hover:text-accent hover:underline" to={ledgerLink({ category: ['transfer.invest', 'transfer.pension', 'transfer.debt', 'transfer.asset'], year: y.period })}>{eur(y.invested)}</Link></td>
                 </tr>
               ))}
             </tbody>

@@ -1,3 +1,4 @@
+import { ledgerLink } from '../lib/links'
 import { clickLabel } from '../lib/usage'
 import { addMonths, eur, eurc, eurk, monthLabel, parseNum, pct, signed } from '../lib/format'
 import { qs } from '../lib/api'
@@ -76,5 +77,13 @@ describe('usage click labels', () => {
     const b = document.createElement('button')
     b.setAttribute('aria-label', 'Collapse menu')
     expect(clickLabel(b)).toBe('Collapse menu')
+  })
+})
+
+describe('ledgerLink', () => {
+  it('lists the transactions behind a figure', () => {
+    expect(ledgerLink({ tag: 'trip:egypt' })).toBe('/ledger?tag=trip%3Aegypt&period=all')
+    expect(ledgerLink({ category: ['food', 'kids'], month: '2026-02' })).toBe('/ledger?category=food&category=kids&from=2026-02-01&to=2026-02-28')
+    expect(ledgerLink({ kind: 'income', year: '2025' })).toBe('/ledger?kind=income&from=2025-01-01&to=2025-12-31')
   })
 })

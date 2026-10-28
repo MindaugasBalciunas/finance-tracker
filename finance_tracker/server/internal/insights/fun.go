@@ -22,6 +22,7 @@ type Fact struct {
 	Value  string     `json:"value"`
 	Detail string     `json:"detail,omitempty"`
 	Items  []FactItem `json:"items,omitempty"`
+	Link   string     `json:"link,omitempty"` // the transactions (or page) behind the headline
 }
 
 type FactItem struct {
@@ -33,13 +34,12 @@ type FactItem struct {
 	To    string  `json:"to,omitempty"`
 	Top   bool    `json:"top,omitempty"`   // the highlighted one
 	Years []int   `json:"years,omitempty"` // employers: each year they actually paid (gaps stay gaps)
+	Link  string  `json:"link,omitempty"`  // the transactions behind this row
 }
 
 // obligation: money that isn't a choice (alimony, the mortgage, family
 // support) — left out of the fun.
-func obligation(cat string) bool {
-	return cat == "kids.alimony" || cat == "other.family" || strings.HasPrefix(cat, "housing.mortgage") || ledger.Top(cat) == "finance"
-}
+func obligation(cat string) bool { return ledger.Obligation(cat) }
 
 // bill: things that arrive by themselves — not "visits".
 func bill(cat string) bool {
@@ -76,6 +76,21 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		return t.Format("2 Jan 2006")
 	}
 	year := func(d string) string { return d[:4] }
+	// The period the facts cover, as Ledger filters.
+	win := func(kv ...string) string { return ledger.Link(append([]string{"from", from, "to", to}, kv...)...) }
+	dayLink := func(d string, kv ...string) string {
+		return ledger.Link(append([]string{"from", d, "to", d}, kv...)...)
+	}
+	// Choices in a span, kept inside the window: obligations left out, as the figures do.
+	choices := func(a, b string) string {
+		if from > a {
+			a = from
+		}
+		if to != "" && to < b {
+			b = to
+		}
+		return ledger.Link("from", a, "to", b, "kind", "expense", "choices", "1")
+	}
 
 	// Who paid the most.
 	type payer struct {
@@ -133,6 +148,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		if year(ps[0].first) == year(ps[0].last) {
 			f.Detail = fmt.Sprintf("%s in %s, in %d payments.", eur(ps[0].total), year(ps[0].first), ps[0].n)
 		}
+		f.Link = win("kind", "income", "category", "salary", "merchant", ps[0].name)
 		for _, p := range ps[:min(6, len(ps))] {
 			span := year(p.first)
 			if year(p.last) != span {
@@ -143,7 +159,8 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 				ys = append(ys, y)
 			}
 			sort.Ints(ys)
-			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last), Years: ys})
+			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last), Years: ys,
+				Link: win("kind", "income", "category", "salary", "merchant", p.name)})
 		}
 		out = append(out, f)
 	}
@@ -159,14 +176,14 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			recent = months[now.AddDate(0, -i, 0).Format("2006-01")]
 		}
 		f := Fact{Key: "first_pay", Icon: "piggy", Title: "Your first pay cheque", Value: eur(firstPay.Amount),
-			Detail: fmt.Sprintf("From %s on %s.", firstPay.Merchant, day(firstPay.Date))}
+			Detail: fmt.Sprintf("From %s on %s.", firstPay.Merchant, day(firstPay.Date)), Link: dayLink(firstPay.Date, "kind", "income")}
 		if recent > 0 && firstPay.Amount > 0 {
 			f.Detail += fmt.Sprintf(" A month's salary is now %s — %.0f× that.", eur(recent), recent.Float()/firstPay.Amount.Float())
 		}
 		out = append(out, f)
 	}
 	if income > 0 && firstDate != "" {
-		f := Fact{Key: "lifetime", Icon: "trend", Title: "Earned since records began", Value: eur(income),
+		f := Fact{Key: "lifetime", Icon: "trend", Title: "Earned since records began", Value: eur(income), Link: win("kind", "income"),
 			Detail: fmt.Sprintf("Since %s, across %s transactions.", day(firstDate), thousandsInt(len(txs)))}
 		if windowed {
 			end := now.Format("2006-01-02")
@@ -210,16 +227,17 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 	tripDays := map[string][2]string{}
 	since := now.AddDate(-1, 0, 0).Format("2006-01-02")
 	// People paid obligations (an ex-partner, family) aren't shops.
+	// (Over the whole history, as the Ledger's "choices" filter has it.)
 	people := map[string]bool{}
-	for i := range txs {
-		if c := txs[i].Category; txs[i].Kind == "expense" && txs[i].Merchant != "" && (c == "kids.alimony" || c == "other.family" || strings.HasPrefix(c, "housing.mortgage")) {
-			people[merchant.Fold(txs[i].Merchant)] = true
+	for i := range all {
+		if all[i].Kind == "expense" && all[i].Merchant != "" && ledger.PaysAPerson(all[i].Category) {
+			people[merchant.Key(all[i].Merchant)] = true
 		}
 	}
 	for i := range txs {
 		t := &txs[i]
 		k := merchant.Fold(t.Merchant)
-		if t.Kind != "expense" || obligation(t.Category) || (t.Merchant != "" && people[k]) {
+		if t.Kind != "expense" || obligation(t.Category) || (t.Merchant != "" && people[merchant.Key(t.Merchant)]) {
 			continue
 		}
 		days[t.Date] += t.Amount
@@ -275,22 +293,25 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		sort.Slice(list, func(i, j int) bool {
 			return list[i].n > list[j].n || list[i].n == list[j].n && list[i].total > list[j].total
 		})
-		f := Fact{Key: "visits", Icon: "bag", Title: "Most visited", Value: list[0].name, Detail: fmt.Sprintf("%d times, %s in all.", list[0].n, eur(list[0].total))}
+		f := Fact{Key: "visits", Icon: "bag", Title: "Most visited", Value: list[0].name, Detail: fmt.Sprintf("%d times, %s in all.", list[0].n, eur(list[0].total)),
+			Link: win("kind", "expense", "merchant", list[0].name)}
 		for _, s := range list[:min(5, len(list))] {
-			f.Items = append(f.Items, FactItem{Label: s.name, Value: fmt.Sprintf("%d×", s.n), Sub: eur(s.total), N: float64(s.n)})
+			f.Items = append(f.Items, FactItem{Label: s.name, Value: fmt.Sprintf("%d×", s.n), Sub: eur(s.total), N: float64(s.n), Link: win("kind", "expense", "merchant", s.name)})
 		}
 		out = append(out, f)
 		sort.Slice(list, func(i, j int) bool { return list[i].total > list[j].total })
-		f = Fact{Key: "spent_most", Icon: "coins", Title: "Where the most money went", Value: list[0].name, Detail: fmt.Sprintf("%s over %d payments.", eur(list[0].total), list[0].n)}
+		f = Fact{Key: "spent_most", Icon: "coins", Title: "Where the most money went", Value: list[0].name, Detail: fmt.Sprintf("%s over %d payments.", eur(list[0].total), list[0].n),
+			Link: win("kind", "expense", "merchant", list[0].name)}
 		for _, s := range list[:min(5, len(list))] {
-			f.Items = append(f.Items, FactItem{Label: s.name, Value: eur(s.total), Sub: fmt.Sprintf("%d×", s.n), N: s.total.Float()})
+			f.Items = append(f.Items, FactItem{Label: s.name, Value: eur(s.total), Sub: fmt.Sprintf("%d×", s.n), N: s.total.Float(), Link: win("kind", "expense", "merchant", s.name)})
 		}
 		out = append(out, f)
 		// This year's favourite: most visits in the last 12 months.
 		sort.Slice(list, func(i, j int) bool { return list[i].recent > list[j].recent })
 		if list[0].recent >= 5 && !windowed {
 			out = append(out, Fact{Key: "this_year", Icon: "heart", Title: "This year's favourite", Value: list[0].name,
-				Detail: fmt.Sprintf("%d visits in the last 12 months — about one every %d days.", list[0].recent, max(1, 365/list[0].recent))})
+				Detail: fmt.Sprintf("%d visits in the last 12 months — about one every %d days.", list[0].recent, max(1, 365/list[0].recent)),
+				Link:   ledger.Link("from", since, "kind", "expense", "merchant", list[0].name)})
 		}
 	}
 
@@ -308,10 +329,10 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		if fav := topShop(byCat[h.cat]); fav != "" {
 			sub += " · mostly " + fav
 		}
-		habits = append(habits, FactItem{Label: h.label, Value: thousandsInt(n), Sub: sub, N: float64(n)})
+		habits = append(habits, FactItem{Label: h.label, Value: thousandsInt(n), Sub: sub, N: float64(n), Link: win("kind", "expense", "category", h.cat)})
 	}
 	if len(habits) > 0 {
-		out = append(out, Fact{Key: "habits", Icon: "utensils", Title: "Little habits, added up", Value: habits[0].Value + " " + strings.ToLower(habits[0].Label), Items: habits})
+		out = append(out, Fact{Key: "habits", Icon: "utensils", Title: "Little habits, added up", Value: habits[0].Value + " " + strings.ToLower(habits[0].Label), Items: habits, Link: habits[0].Link})
 	}
 
 	// Records.
@@ -321,7 +342,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			name = biggest.Note
 		}
 		out = append(out, Fact{Key: "biggest", Icon: "alert", Title: "Biggest single purchase", Value: eur(biggest.Amount),
-			Detail: fmt.Sprintf("%s · %s · %s.", name, catLabel(cats, biggest.Category), day(biggest.Date))})
+			Detail: fmt.Sprintf("%s · %s · %s.", name, catLabel(cats, biggest.Category), day(biggest.Date)), Link: dayLink(biggest.Date, "kind", "expense", "category", biggest.Category)})
 	}
 	if len(days) > 0 {
 		best, bestV := "", money.Cents(0)
@@ -332,7 +353,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		}
 		// The same day as the biggest purchase says nothing new.
 		if biggest == nil || best != biggest.Date {
-			out = append(out, Fact{Key: "big_day", Icon: "calendar", Title: "Most expensive day", Value: day(best), Detail: eur(bestV) + " out the door in one day."})
+			out = append(out, Fact{Key: "big_day", Icon: "calendar", Title: "Most expensive day", Value: day(best), Detail: eur(bestV) + " out the door in one day.", Link: dayLink(best, "kind", "expense", "choices", "1")})
 		}
 	}
 	if len(weekday) > 0 {
@@ -358,9 +379,10 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			ts = append(ts, k)
 		}
 		sort.Slice(ts, func(i, j int) bool { return trips[ts[i]] > trips[ts[j]] })
-		f := Fact{Key: "trips", Icon: "plane", Title: "Trips", Value: fmt.Sprintf("%d tagged", len(ts)), Detail: "The priciest ones:"}
+		f := Fact{Key: "trips", Icon: "plane", Title: "Trips", Value: fmt.Sprintf("%d tagged", len(ts)), Detail: "The priciest ones:", Link: "/plan/trips"}
 		for _, k := range ts[:min(4, len(ts))] {
-			f.Items = append(f.Items, FactItem{Label: tripName(k), Value: eur(trips[k]), Sub: year(tripDays[k][1]), N: trips[k].Float()}) // when it happened, not when booked
+			// The whole trip: bookings made before the window belong to it too.
+			f.Items = append(f.Items, FactItem{Label: tripName(k), Value: eur(trips[k]), Sub: year(tripDays[k][1]), N: trips[k].Float(), Link: ledger.Link("tag", k)}) // when it happened, not when booked
 		}
 		out = append(out, f)
 	}
@@ -386,10 +408,10 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 				hi = y
 			}
 		}
-		f := Fact{Key: "years", Icon: "chart", Title: "The biggest spending year", Value: hi,
+		f := Fact{Key: "years", Icon: "chart", Title: "The biggest spending year", Value: hi, Link: choices(hi+"-01-01", hi+"-12-31"),
 			Detail: fmt.Sprintf("%s, against %s in %s — choices only, obligations left out.", eur(yearly[hi]), eur(yearly[ys[0]]), ys[0])}
 		for _, y := range ys {
-			f.Items = append(f.Items, FactItem{Label: y, Value: eur(yearly[y]), N: yearly[y].Float(), Top: y == hi})
+			f.Items = append(f.Items, FactItem{Label: y, Value: eur(yearly[y]), N: yearly[y].Float(), Top: y == hi, Link: choices(y+"-01-01", y+"-12-31")})
 		}
 		out = append(out, f)
 	}
@@ -513,7 +535,7 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 	// People paid obligations are never shops, refunds or new places.
 	people := map[string]bool{}
 	for i := range all {
-		if c := all[i].Category; all[i].Kind == "expense" && all[i].Merchant != "" && (c == "kids.alimony" || c == "other.family" || strings.HasPrefix(c, "housing.mortgage")) {
+		if all[i].Kind == "expense" && all[i].Merchant != "" && ledger.PaysAPerson(all[i].Category) {
 			people[placeKey(all[i].Merchant)] = true
 		}
 	}
@@ -527,7 +549,7 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 	var tiny *ledger.Tx
 	for i := range txs {
 		t := &txs[i]
-		if !choice(t) {
+		if !choice(t) || (t.Merchant != "" && people[placeKey(t.Merchant)]) {
 			continue
 		}
 		days[t.Date] = true
@@ -588,11 +610,24 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 			}
 		}
 		mName := func(m string) string { t, _ := time.Parse("2006-01", m); return t.Format("January 2006") }
-		f := Fact{Key: "months", Icon: "chart", Title: "Big month, quiet month", Value: mName(hi),
+		inWin := func(m string) string { // the month's choices, inside the period
+			a, b := m+"-01", m+"-31"
+			if t, err := time.Parse("2006-01", m); err == nil {
+				b = t.AddDate(0, 1, -1).Format("2006-01-02")
+			}
+			if a < start {
+				a = start
+			}
+			if b > end {
+				b = end
+			}
+			return ledger.Link("from", a, "to", b, "kind", "expense", "choices", "1")
+		}
+		f := Fact{Key: "months", Icon: "chart", Title: "Big month, quiet month", Value: mName(hi), Link: inWin(hi),
 			Detail: fmt.Sprintf("%s on choices, against %s in %s.", eur(months[hi]), eur(months[lo]), mName(lo))}
 		for _, m := range ms {
 			t, _ := time.Parse("2006-01", m)
-			f.Items = append(f.Items, FactItem{Label: t.Format("Jan"), Sub: m, Value: eur(months[m]), N: months[m].Float(), Top: m == hi})
+			f.Items = append(f.Items, FactItem{Label: t.Format("Jan"), Sub: m, Value: eur(months[m]), N: months[m].Float(), Top: m == hi, Link: inWin(m)})
 		}
 		out = append(out, f)
 	}
@@ -628,7 +663,8 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 			})
 			f := Fact{Key: "new_places", Icon: "spark", Title: "New places", Value: fmt.Sprintf("%d you'd never paid before", len(fresh))}
 			for _, k := range fresh[:min(5, len(fresh))] {
-				f.Items = append(f.Items, FactItem{Label: name[k], Value: fmt.Sprintf("%d×", count[k]), Sub: "first on " + day(first[k]), N: float64(count[k])})
+				f.Items = append(f.Items, FactItem{Label: name[k], Value: fmt.Sprintf("%d×", count[k]), Sub: "first on " + day(first[k]), N: float64(count[k]),
+					Link: ledger.Link("from", start, "to", end, "kind", "expense", "merchant", name[k])})
 			}
 			out = append(out, f)
 		}
@@ -662,7 +698,7 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 	}
 	if tiny != nil && tiny.Amount < money.FromFloat(1) {
 		out = append(out, Fact{Key: "tiny", Icon: "coins", Title: "Smallest payment", Value: "€" + tiny.Amount.String(),
-			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(tiny.Merchant, tiny.Note, "a payment"), day(tiny.Date))})
+			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(tiny.Merchant, tiny.Note, "a payment"), day(tiny.Date)), Link: ledger.Link("from", tiny.Date, "to", tiny.Date, "kind", "expense")})
 	}
 
 	// The biggest money back, and what went into wealth.
@@ -679,11 +715,12 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 	}
 	if refund != nil && refund.Amount >= money.FromFloat(20) {
 		out = append(out, Fact{Key: "refund", Icon: "piggy", Title: "Biggest money back", Value: eur(refund.Amount),
-			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(refund.Merchant, refund.Note, "a refund"), day(refund.Date))})
+			Detail: fmt.Sprintf("%s, %s.", firstNonEmpty(refund.Merchant, refund.Note, "a refund"), day(refund.Date)), Link: ledger.Link("from", refund.Date, "to", refund.Date, "category", "refunds")})
 	}
 	if invested > 0 {
 		out = append(out, Fact{Key: "invested", Icon: "trend", Title: "Paid yourself first", Value: eur(invested),
-			Detail: fmt.Sprintf("Into investments, pension and loan principal — about %s a day.", eur(invested/money.Cents(span)))})
+			Detail: fmt.Sprintf("Into investments, pension and loan principal — about %s a day.", eur(invested/money.Cents(span))),
+			Link:   ledger.Link("from", start, "to", end, "category", "transfer.invest", "category", "transfer.pension", "category", "transfer.debt")})
 	}
 
 	// The period against the same length before it.
@@ -711,4 +748,4 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 }
 
 // placeKey folds a merchant name for matching, spaces ignored ("360 Arena" = "360arena").
-func placeKey(m string) string { return strings.ReplaceAll(merchant.Fold(m), " ", "") }
+func placeKey(m string) string { return merchant.Key(m) }
