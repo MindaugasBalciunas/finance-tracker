@@ -22,6 +22,8 @@
 }
 
 @layer base {
+  /* Phones: while typing, the tab bar would sit on the keyboard — it steps aside. */
+  html[data-typing] .tabbar { display: none; }
   *, ::after, ::before, ::backdrop { border-color: rgb(var(--line)); }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
   /* In the base layer so utilities (bg-raised, px-3, …) always win —

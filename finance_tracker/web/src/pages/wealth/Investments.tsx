@@ -12,6 +12,7 @@ import { IBKRPanel } from '../../components/IBKRPanel'
 import { Icon } from '../../components/Icon'
 import { brandColor } from '../../lib/brand'
 import { DateInput } from '../../components/DateInput'
+import { SuggestInput } from '../../components/pickers'
 
 // ── investments ─────────────────────────────────────────────────────
 
@@ -287,6 +288,9 @@ function PositionSheet({ h, onClose }: { h: any; onClose: () => void }) {
 
 function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
   const [t, setT] = useState(init)
+  // Tickers you traded before.
+  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<any[]>('/trades') })
+  const tickers = Object.entries((trades ?? []).reduce<Record<string, number>>((m, x) => ({ ...m, [x.ticker]: (m[x.ticker] ?? 0) + 1 }), {})).map(([value, count]) => ({ value, count }))
   const refresh = useRefresh()
   const toast = useToast()
   const save = useMutation({
@@ -303,7 +307,7 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
       <div className="space-y-4">
         <Segmented value={t.action} onChange={(a) => setT({ ...t, action: a })} options={[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell' }]} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Ticker"><input className="input uppercase" value={t.ticker ?? ''} onChange={(e) => setT({ ...t, ticker: e.target.value.toUpperCase() })} /></Field>
+          <Field label="Ticker"><SuggestInput className="input uppercase" upper value={t.ticker ?? ''} onChange={(x) => setT({ ...t, ticker: x })} options={tickers} /></Field>
           <Field label="Date"><DateInput value={t.date} onChange={(v) => setT({ ...t, date: v })} /></Field>
           <Field label="Shares"><NumberInput value={t.shares} onChange={(v) => setT({ ...t, shares: v })} /></Field>
           <Field label="Price per share"><NumberInput value={t.price} onChange={(v) => setT({ ...t, price: v })} /></Field>

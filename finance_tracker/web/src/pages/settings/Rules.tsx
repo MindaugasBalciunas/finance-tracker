@@ -7,7 +7,7 @@ import { useCats } from '../../lib/categories'
 import type { Rule, RuleReport, RuleStat } from '../../lib/types'
 import { Card, Field, Loading, NumberInput, Segmented, Sheet, Spinner, Stat, Toggle, useToast } from '../../components/ui'
 import { pct, shortDate } from '../../lib/format'
-import { CategoryPicker, TagInput } from '../../components/pickers'
+import { CategoryPicker, TagInput, MerchantInput } from '../../components/pickers'
 import { TxRow } from '../../components/TxEditor'
 import { Icon } from '../../components/Icon'
 
@@ -189,10 +189,10 @@ function RuleEditor({ rule, stat, onClose }: { rule: Partial<Rule>; stat?: RuleS
       })()}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-4">
-          <Field label="When merchant or note contains" hint="Case and accents ignored. Start with ^ to match only the beginning."><input className="input font-mono" value={r.pattern ?? ''} onChange={(e) => setR({ ...r, pattern: e.target.value })} /></Field>
+          <Field label="When merchant or note contains" hint="Case and accents ignored. Start with ^ to match only the beginning."><MerchantInput className="input font-mono" value={r.pattern ?? ''} onChange={(x) => setR({ ...r, pattern: x })} placeholder="e.g. Maxima" /></Field>
           <div><div className="label">…and the row is in (optional)</div><CategoryPicker value={r.when_category ?? ''} onChange={(id) => setR({ ...r, when_category: id })} placeholder="Any category" /></div>
           <div><div className="label">Set category</div><CategoryPicker value={r.set_category ?? ''} onChange={(id) => setR({ ...r, set_category: id })} placeholder="Leave as is" /></div>
-          <Field label="Set merchant"><input className="input" value={r.set_merchant ?? ''} onChange={(e) => setR({ ...r, set_merchant: e.target.value })} /></Field>
+          <Field label="Set merchant"><MerchantInput value={r.set_merchant ?? ''} onChange={(x) => setR({ ...r, set_merchant: x })} placeholder="leave as is" /></Field>
           <div><div className="label">Add tags</div><TagInput value={r.add_tags ?? []} onChange={(v) => setR({ ...r, add_tags: v })} /></div>
           <div className="flex items-center gap-4">
             <Toggle checked={r.enabled ?? true} onChange={(v) => setR({ ...r, enabled: v })} label="Enabled" />

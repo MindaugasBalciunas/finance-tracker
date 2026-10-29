@@ -212,7 +212,7 @@ function Shell() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur pb-safe sm:hidden">
+      <nav className="tabbar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur pb-safe sm:hidden">
         <div className="grid grid-cols-6">
           {NAV.flatMap((n, i) => [...(i === 2 ? [<QuickActionsButton key="quick" inboxOpen={inbox} />] : []), (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}

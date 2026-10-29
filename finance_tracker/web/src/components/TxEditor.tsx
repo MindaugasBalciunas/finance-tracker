@@ -2,11 +2,11 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useSt
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
-import { useDeleteTx, useMerchants, useSaveTx, useRefresh } from '../lib/hooks'
+import { useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
 import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
-import { AccountSelect, CategoryChips, CategoryPicker, NoteInput, SPEND_KINDS, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, type CatHint } from './pickers'
+import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
 import { Icon, IconTile } from './Icon'
@@ -80,7 +80,6 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   const del = useDeleteTx()
   const cats = useCats()
   const toast = useToast()
-  const { data: merchants } = useMerchants()
   const isNew = !t.id
   const set = (patch: Partial<Draft>) => setT((x) => ({ ...x, ...patch }))
   // A blank new entry starts from habit: the usual account, and the usual
@@ -230,8 +229,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
           <Field label="Date"><DateInput value={t.date ?? ""} onChange={(v) => set({ date: v })} /></Field>
         </div>
         <Field label={t.kind === 'income' ? 'From (payer)' : t.kind === 'transfer' ? 'Counterparty' : 'Merchant'}>
-          <input className="input" list="merchants" value={t.merchant ?? ''} onChange={(e) => set({ merchant: e.target.value })} placeholder="e.g. Maxima" />
-          <datalist id="merchants">{(merchants ?? []).slice(0, 300).map((m) => <option key={m.merchant} value={m.merchant} />)}</datalist>
+          <MerchantInput value={t.merchant ?? ''} onChange={(v) => set({ merchant: v })} />
         </Field>
         <Field label="Category">
           <CategoryPicker value={t.category ?? ''} kind={t.kind} suggest={catHints.filter((h) => h.id !== t.category || h.why)} badge={isNew && !!t.category && t.category === suggestedCat && !touchedCat ? 'suggested' : undefined}
@@ -306,6 +304,9 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
 
 function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDone: () => void }) {
   const [parts, setParts] = useState([{ amount: '', category: tx.category, note: '', owed_by: '' }])
+  // People who owed you before (owed:<name> tags).
+  const { data: tags } = useTags()
+  const owers = (tags ?? []).filter((x) => x.tag.startsWith('owed:')).map((x) => ({ value: x.tag.slice(5), count: x.count }))
   const refresh = useRefresh()
   const toast = useToast()
   const cats = useCats()
@@ -331,10 +332,10 @@ function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDo
           <div key={i} className="space-y-2 rounded-xl border border-line p-3">
             <div className="grid grid-cols-2 gap-2">
               <input className="input tnum" inputMode="decimal" placeholder="Amount €" value={p.amount} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
-              <input className="input" placeholder="Owed by (optional)" value={p.owed_by} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, owed_by: e.target.value } : x)))} />
+              <SuggestInput placeholder="Owed by (optional)" options={owers} value={p.owed_by} onChange={(v) => setParts(parts.map((x, j) => (j === i ? { ...x, owed_by: v } : x)))} />
             </div>
             <CategoryPicker value={p.category} kind={tx.kind} onChange={(id) => setParts(parts.map((x, j) => (j === i ? { ...x, category: id } : x)))} />
-            <input className="input" placeholder="Note" value={p.note} onChange={(e) => setParts(parts.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} />
+            <NoteInput placeholder="Note" merchant={tx.merchant ?? ''} value={p.note} onChange={(v) => setParts(parts.map((x, j) => (j === i ? { ...x, note: v } : x)))} />
           </div>
         ))}
         <button className="btn-outline" onClick={() => setParts([...parts, { amount: '', category: tx.category, note: '', owed_by: '' }])}><Icon name="plus" size={16} />Another part</button>

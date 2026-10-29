@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import clsx from 'clsx'
-import { useAccounts, useTags } from '../lib/hooks'
+import { useAccounts, useMerchants, useTags } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
 import { tagLabel, tagStyle, tint } from '../lib/tags'
 import { Icon, IconTile } from './Icon'
@@ -264,10 +264,12 @@ export function NoteInput({ value, onChange, merchant = '', placeholder = 'What 
     queryFn: () => api.get<{ note: string; count: number; same_merchant: boolean }[]>('/notes/suggest', { merchant: merchant.trim(), q: q.trim() }),
     enabled: focus && (!!q.trim() || !!merchant.trim()), staleTime: 60_000, placeholderData: (p) => p,
   })
-  const list = focus ? (data ?? []).filter((s) => s.note !== value) : []
+  const list = focus ? (data ?? []).filter((s) => s.note !== value).slice(0, 5) : []
   const take = (v: string) => { onChange(v); setHi(-1) }
+  const box = useRef<HTMLDivElement>(null)
+  useRevealOnce(box, list.length > 0)
   return (
-    <div className="relative">
+    <div className="relative scroll-mt-16" ref={box}>
       <input className="input" value={value} placeholder={placeholder} autoComplete="off"
         onChange={(e) => { onChange(e.target.value); setHi(-1) }}
         onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
@@ -278,10 +280,11 @@ export function NoteInput({ value, onChange, merchant = '', placeholder = 'What 
           else if (e.key === 'Enter' && hi >= 0) { e.preventDefault(); take(list[hi].note) }
           else if (e.key === 'Escape') setFocus(false)
         }} />
+      {/* In the page's flow, not an overlay: a pop-up under the field ends up behind the phone's keyboard. */}
       {list.length > 0 && (
-        <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-line bg-surface shadow-lg" role="listbox">
+        <div className="mt-1 overflow-hidden rounded-xl border border-line bg-surface shadow-sm" role="listbox">
           {list.map((s, i) => (
-            <button type="button" key={s.note} role="option" aria-selected={i === hi}
+            <button type="button" key={s.note} role="option" aria-selected={i === hi} tabIndex={-1}
               onMouseDown={(e) => { e.preventDefault(); take(s.note) }}
               className={clsx('flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-sunken', i === hi && 'bg-sunken')}>
               <span className="truncate">{s.note}</span>
@@ -292,4 +295,80 @@ export function NoteInput({ value, onChange, merchant = '', placeholder = 'What 
       )}
     </div>
   )
+}
+
+/** A text field that offers what you typed before: up to six matches as
+ *  one-tap chips right under it (starting with what you typed first, then
+ *  containing it, most used first). In the page's flow, so the phone
+ *  keyboard never covers them. Arrow keys and Enter pick one too. */
+export function SuggestInput({ value, onChange, options, placeholder, className = 'input', upper = false, max = 6 }: {
+  value: string; onChange: (v: string) => void; options: { value: string; count?: number; hint?: string }[]
+  placeholder?: string; className?: string; upper?: boolean; max?: number
+}) {
+  const [focus, setFocus] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const id = useId()
+  const t = value.trim().toLowerCase()
+  const list = useMemo(() => {
+    if (!focus) return []
+    return options
+      .filter((o) => o.value && o.value.toLowerCase() !== t && (!t || o.value.toLowerCase().includes(t)))
+      .sort((a, b) => Number(b.value.toLowerCase().startsWith(t)) - Number(a.value.toLowerCase().startsWith(t)) || (b.count ?? 0) - (a.count ?? 0))
+      .slice(0, max)
+  }, [options, t, focus, max])
+  const box = useRef<HTMLDivElement>(null)
+  useRevealOnce(box, focus && list.length > 0)
+  // The field keeps focus (chips prevent mousedown), so after a pick the
+  // list just re-filters — a correction shows suggestions again.
+  const take = (v: string) => { onChange(v); setHi(-1) }
+  return (
+    <div ref={box} className="scroll-mt-16">
+      <input className={className} value={value} placeholder={placeholder} autoComplete="off" spellCheck={false}
+        role="combobox" aria-expanded={list.length > 0} aria-controls={id} aria-autocomplete="list"
+        onChange={(e) => { onChange(upper ? e.target.value.toUpperCase() : e.target.value); setHi(-1) }}
+        onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); setHi(-1) }}
+        onKeyDown={(e) => {
+          if (!list.length) return
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHi((hi + 1) % list.length) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(hi <= 0 ? list.length - 1 : hi - 1) }
+          else if (e.key === 'Enter' && hi >= 0) { e.preventDefault(); take(list[hi].value) }
+          else if (e.key === 'Escape') setFocus(false)
+        }} />
+      {list.length > 0 && (
+        <div id={id} className="mt-1.5 flex flex-wrap gap-1.5" role="listbox">
+          {list.map((o, i) => (
+            <button type="button" key={o.value} role="option" aria-selected={i === hi} tabIndex={-1} title={o.hint}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => take(o.value)}
+              className={clsx('chip h-10 max-w-full hover:bg-sunken', i === hi && 'ring-1 ring-accent')}><span className="truncate">{o.value}</span>{o.hint && <span className="text-muted">· {o.hint}</span>}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The merchant field: merchants you paid before. */
+export function MerchantInput({ value, onChange, placeholder = 'e.g. Maxima', className }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
+  const { data } = useMerchants()
+  const options = useMemo(() => (data ?? []).map((m) => ({ value: m.merchant, count: m.count })), [data])
+  return <SuggestInput value={value} onChange={onChange} options={options} placeholder={placeholder} className={className} />
+}
+
+/** The first time suggestions open after a field gets focus, scroll so the
+ *  field and its suggestions are both in view (once: not on every keystroke). */
+function useRevealOnce(ref: React.RefObject<HTMLElement | null>, open: boolean) {
+  const done = useRef(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const reset = () => { done.current = false }
+    el.addEventListener('focusout', reset)
+    return () => el.removeEventListener('focusout', reset)
+  }, [ref])
+  useEffect(() => {
+    if (!open || done.current) return
+    done.current = true
+    const t = setTimeout(() => ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 120)
+    return () => clearTimeout(t)
+  }, [open, ref])
 }

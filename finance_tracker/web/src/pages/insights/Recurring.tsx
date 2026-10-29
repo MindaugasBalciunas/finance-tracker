@@ -7,7 +7,7 @@ import { catIcon, useCats } from '../../lib/categories'
 import { eur, eurc, parseNum, shortDate } from '../../lib/format'
 import type { Recurring } from '../../lib/types'
 import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, Stat, useToast } from '../../components/ui'
-import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../../components/pickers'
+import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, MerchantInput, NoteInput } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
 import { DateInput } from '../../components/DateInput'
@@ -177,7 +177,9 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
         {r?.source === 'detected' && <div className="rounded-xl bg-sunken p-3 text-xs text-ink2">Found in your transactions: {r.count} charges, last {shortDate(r.last)} ({eurc(r.last_amount)}). Saving keeps your values from now on.</div>}
         {!kindLocked && <Segmented value={v.kind} onChange={(k) => setV({ ...v, kind: k, category: '' })} options={[{ value: 'bill', label: 'Bill' }, { value: 'transfer', label: 'Transfer' }, { value: 'income', label: 'Income' }]} />}
         {v.kind === 'transfer' && <div className="rounded-xl bg-sunken p-3 text-xs text-ink2">A standing order, or a transfer you plan to make each month. It counts in <b>Cash until payday</b> and is ticked off when the real transfer appears — the app never moves money or creates transactions.</div>}
-        <Field label={isBill ? 'Merchant or payee' : 'Name'}><input className="input" value={v.merchant} disabled={!!r && r.source !== 'manual'} onChange={(e) => setV({ ...v, merchant: e.target.value })} placeholder={v.kind === 'transfer' ? 'e.g. IBKR monthly' : v.kind === 'income' ? 'e.g. Child benefit' : 'e.g. Landlord'} /></Field>
+        <Field label={isBill ? 'Merchant or payee' : 'Name'}>{!!r && r.source !== 'manual'
+          ? <input className="input" value={v.merchant} disabled />
+          : <MerchantInput value={v.merchant} onChange={(x) => setV({ ...v, merchant: x })} placeholder={v.kind === 'transfer' ? 'e.g. IBKR monthly' : v.kind === 'income' ? 'e.g. Child benefit' : 'e.g. Landlord'} />}</Field>
         {v.kind === 'transfer' ? (
           <div className="grid grid-cols-2 gap-3">
             <Field label="From"><AccountSelect value={v.from_account} onChange={(id) => setV({ ...v, from_account: id })} kinds={TRANSFER_FROM_KINDS} placeholder="Choose" /></Field>
@@ -205,7 +207,7 @@ function RecurringEditor({ r, prefill, onClose }: { r: Recurring | null; prefill
             ? <Field label="Next charge"><DateInput clearable value={v.next_date} onChange={(d) => setV({ ...v, next_date: d })} /></Field>
             : <Field label="Day of month"><input className="input w-24 tnum" inputMode="numeric" value={v.day} placeholder="e.g. 11" onChange={(e) => setV({ ...v, day: e.target.value })} /></Field>}
         </div>
-        <Field label="Note" hint="Two bills from one merchant? Give each a note (e.g. phone, internet) — payments are matched by the words in their note."><input className="input" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="optional, e.g. phone" /></Field>
+        <Field label="Note" hint="Two bills from one merchant? Give each a note (e.g. phone, internet) — payments are matched by the words in their note."><NoteInput value={v.note} onChange={(x) => setV({ ...v, note: x })} merchant={v.merchant} placeholder="optional, e.g. phone" /></Field>
         {r?.source === 'edited' && <button className="btn-ghost h-8 px-2 text-xs" onClick={() => remove.mutate()}><Icon name="refresh" size={14} />Reset to detected values</button>}
         {r && r.source !== 'manual' && <a className="block text-xs text-accent" href={`#/ledger?period=365&merchant=${encodeURIComponent(r.merchant)}`}>See its transactions →</a>}
         <ErrorBox error={err} />

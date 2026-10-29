@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
-import { useRefresh } from '../../lib/hooks'
+import { useRefresh, useTags } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { DateInput } from '../../components/DateInput'
+import { SuggestInput } from '../../components/pickers'
 
 type Goal = { id: number; name: string; target: number; priority: number; target_date: string; note: string; url: string; tag: string; spent?: number; status: 'active' | 'bought' | 'dropped'; done_on: string
   saved: number; remaining: number; eta?: string; per_month?: number; outlook?: { tone: 'good' | 'warn' | 'bad'; text: string; gap?: number } }
@@ -240,6 +241,9 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
   const save = useMutation({ mutationFn: (body: Partial<Goal>) => (g.id ? api.put(`/goals/${g.id}`, body) : api.post('/goals', body)), onError: fail })
   const put = useMutation({ mutationFn: (amount: number) => api.post(`/goals/${g.id}/moves`, { amount, note: why }), onSuccess: () => done('Saved'), onError: fail })
   const del = useMutation({ mutationFn: () => api.del(`/goals/${g.id}`), onSuccess: () => done('Removed'), onError: fail })
+  // Trip tags already in use, so a planned trip joins the one you're tagging.
+  const { data: tagList } = useTags()
+  const tripTags = (tagList ?? []).filter((x) => x.tag.startsWith('trip:')).map((x) => ({ value: x.tag, count: x.count }))
   const body = { name: v.name, target: v.target ?? 0, target_date: v.target_date ?? '', note: v.note ?? '', url: v.url ?? '', tag: !v.tag ? '' : v.tag.trim() === 'trip:' ? `trip:${v.name ?? ''}` : v.tag, status: v.status ?? 'active' }
   return (
     <Sheet open onClose={onClose} title={g.id ? g.name : g.tag ? 'Plan a trip' : 'New goal'} footer={<>
@@ -258,7 +262,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
           {!!v.tag && (
             <div className="mt-2">
               <Field label="Trip tag" hint="Tag its flights, hotel and spending with this — they count against what you saved, and it shows on the Trips tab.">
-                <input className="input" value={v.tag} onChange={(e) => setV({ ...v, tag: e.target.value })} placeholder="trip:rome-2027" />
+                <SuggestInput value={v.tag} onChange={(x) => setV({ ...v, tag: x })} placeholder="trip:rome-2027" options={tripTags} />
               </Field>
               {!!g.id && (g.spent ?? 0) > 0 && <div className="mt-1 text-xs text-muted">{eur(g.spent ?? 0)} spent under it so far</div>}
             </div>

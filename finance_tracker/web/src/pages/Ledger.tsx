@@ -8,9 +8,9 @@ import { useCats } from '../lib/categories'
 import { dayLabel, eur, eurc } from '../lib/format'
 import { PERIODS, periodRange } from '../lib/periods'
 import type { InboxRow, Tx } from '../lib/types'
-import { Empty, ErrorBox, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
+import { Empty, ErrorBox, Field, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
 import { TxRow, useTxEditor } from '../components/TxEditor'
-import { AccountSelect, CategoryPicker, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
+import { AccountSelect, CategoryPicker, MerchantInput, NoteInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
 import { Icon } from '../components/Icon'
 import { DateInput } from '../components/DateInput'
 
@@ -483,7 +483,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
           <label><span className="label">Amount €</span><NumberInput value={r.amount} onChange={(v) => setR({ ...r, amount: v as number })} /></label>
           <label><span className="label">Date</span><DateInput clearable value={r.date} onChange={(v) => setR({ ...r, date: v })} /></label>
         </div>
-        <label className="block"><span className="label">Merchant</span><input className="input" value={r.merchant} onChange={(e) => setR({ ...r, merchant: e.target.value })} /></label>
+        <Field label="Merchant"><MerchantInput value={r.merchant} onChange={(v) => setR({ ...r, merchant: v })} placeholder={r.raw_payee || 'e.g. Maxima'} /></Field>
         <div><span className="label">Category</span><CategoryPicker value={r.category} onChange={(id, kind) => setR({ ...r, category: id, kind })} /></div>
         {r.kind === 'transfer' && (
           <div className="grid grid-cols-2 gap-3">
@@ -491,7 +491,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
             <div><span className="label">To</span><AccountSelect value={r.to_account_id} onChange={(v) => setR({ ...r, to_account_id: v })} kinds={TRANSFER_TO_KINDS} placeholder="Outside" /></div>
           </div>
         )}
-        <label className="block"><span className="label">Note</span><input className="input" value={r.note} onChange={(e) => setR({ ...r, note: e.target.value })} /></label>
+        <Field label="Note"><NoteInput value={r.note} onChange={(v) => setR({ ...r, note: v })} merchant={r.merchant || r.raw_payee} /></Field>
         <div><span className="label">Tags</span><TagInput value={r.tags} onChange={(v) => setR({ ...r, tags: v })} /></div>
       </div>
     </Sheet>

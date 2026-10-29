@@ -15,6 +15,7 @@ import { Icon, IconTile } from '../../components/Icon'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
 import { DateInput } from '../../components/DateInput'
+import { SuggestInput } from '../../components/pickers'
 
 export function Overview() {
   const [range, setRange] = usePeriod('wealth', '3y', RANGES.map((r) => r.value))
@@ -474,6 +475,9 @@ const KINDS = ['checking', 'savings', 'cash', 'brokerage', 'pension', 'crypto', 
 function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
   const [v, setV] = useState<Partial<Account>>(a ?? { kind: 'checking', liquid: true, name: '', institution: '' })
   const [details, setDetails] = useState(JSON.stringify(a?.details ?? {}, null, 2))
+  // Banks and brokers you already have accounts with.
+  const { data: accts } = useAccounts()
+  const institutions = [...new Set((accts ?? []).map((x) => x.institution).filter(Boolean))].map((value) => ({ value }))
   const refresh = useRefresh()
   const toast = useToast()
   const save = useMutation({
@@ -496,7 +500,7 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
       <div className="space-y-4">
         <Field label="Name"><input className="input" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Institution"><input className="input" value={v.institution} onChange={(e) => setV({ ...v, institution: e.target.value })} /></Field>
+          <Field label="Institution"><SuggestInput value={v.institution ?? ''} onChange={(x) => setV({ ...v, institution: x })} options={institutions} placeholder="e.g. Swedbank" /></Field>
           <Field label="Kind"><select className="input select-pad" value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value })}>{KINDS.map((k) => <option key={k}>{k}</option>)}</select></Field>
         </div>
         <div className="flex flex-wrap gap-4">
