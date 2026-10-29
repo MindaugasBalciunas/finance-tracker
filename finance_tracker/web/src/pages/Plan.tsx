@@ -497,7 +497,24 @@ function Trips() {
   const [open, setOpen] = useState<number | null>(null)
   // Rows left out of a suggestion before tagging (unticked).
   const [skipped, setSkipped] = useState<Record<number, Set<number>>>({})
+  const [showHistory, setShowHistory] = useState(false)
+  const qc = useQueryClient()
+  const setDone = async (tag: string, done: boolean) => {
+    try {
+      await api.put('/trips/history', { tag, done })
+      toast(done ? 'Moved to history' : 'Back on the list', 'good')
+      qc.invalidateQueries({ queryKey: ['trips'] })
+    } catch (e) { toast((e as Error).message, 'bad') }
+  }
   if (isLoading) return <Loading />
+  // Over and done with: no more dates or mapping prompts, kept apart below.
+  const current = (data?.trips ?? []).filter((t: any) => !t.done)
+  const past = (data?.trips ?? []).filter((t: any) => t.done)
+  // Untagged travel from long ago isn't worth mapping any more either.
+  const old = (s: any) => s.to < addMonths(thisMonth(), -2) + '-01'
+  const suggestions = (data?.suggestions ?? []).map((s: any, i: number) => ({ s, i }))
+  const recentSugg = suggestions.filter((x: any) => !old(x.s))
+  const oldSugg = suggestions.filter((x: any) => old(x.s))
   const dates: Record<string, { tag: string; start: string; end: string }> = Object.fromEntries((data?.dates ?? []).map((d: any) => [d.tag, d]))
   const tag = async (i: number, ids: number[]) => {
     const name = names[i]
@@ -515,6 +532,29 @@ function Trips() {
     s.has(id) ? s.delete(id) : s.add(id)
     setSkipped({ ...skipped, [i]: s })
   }
+  const suggestionList = (list: any[]) => (
+          <div className="divide-y divide-line">
+            {list.map(({ s, i }: any) => {
+              const kept = s.tx_ids.length - (skipped[i]?.size ?? 0)
+              return (
+                <div key={i}>
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i}>
+                      <Icon name="chevronD" size={16} className={clsx('shrink-0 text-muted transition', open === i && 'rotate-180')} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{shortDate(s.from)} – {shortDate(s.to)} · {eur(s.total)}</span>
+                        <span className="block truncate text-xs text-muted">{open === i ? `${kept} of ${s.count} selected` : `${s.count} untagged travel rows · ${s.top?.join(', ')}`}</span>
+                      </span>
+                    </button>
+                    <input className="input h-8 w-36 text-xs" placeholder="trip name" value={names[i] ?? ''} onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
+                    <button className="btn-primary h-8 text-xs" onClick={() => tag(i, s.tx_ids)} disabled={!names[i] || kept === 0}>Tag{open === i ? ` ${kept}` : ''}</button>
+                  </div>
+                  {open === i && <SuggestionRows s={s} skipped={skipped[i] ?? new Set()} onToggle={(id) => toggleSkip(i, id)} />}
+                </div>
+              )
+            })}
+          </div>
+  )
   return (
     <div className="space-y-4">
       {/* Trips ahead are saved for on the wish list, funded with everything else. */}
@@ -539,34 +579,10 @@ function Trips() {
           </div>
         )}
       </Card>
-      {data?.suggestions?.length > 0 && (
-        <Card title="Looks like a trip" pad={false}>
-          <div className="divide-y divide-line">
-            {data.suggestions.map((s: any, i: number) => {
-              const kept = s.tx_ids.length - (skipped[i]?.size ?? 0)
-              return (
-                <div key={i}>
-                  <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-                    <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i}>
-                      <Icon name="chevronD" size={16} className={clsx('shrink-0 text-muted transition', open === i && 'rotate-180')} />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{shortDate(s.from)} – {shortDate(s.to)} · {eur(s.total)}</span>
-                        <span className="block truncate text-xs text-muted">{open === i ? `${kept} of ${s.count} selected` : `${s.count} untagged travel rows · ${s.top?.join(', ')}`}</span>
-                      </span>
-                    </button>
-                    <input className="input h-8 w-36 text-xs" placeholder="trip name" value={names[i] ?? ''} onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
-                    <button className="btn-primary h-8 text-xs" onClick={() => tag(i, s.tx_ids)} disabled={!names[i] || kept === 0}>Tag{open === i ? ` ${kept}` : ''}</button>
-                  </div>
-                  {open === i && <SuggestionRows s={s} skipped={skipped[i] ?? new Set()} onToggle={(id) => toggleSkip(i, id)} />}
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      )}
-      {!data?.trips?.length ? <Empty title="No trips yet" icon="plane">Tag travel transactions with trip:name to cost a trip as a whole.</Empty> : (
+      {recentSugg.length > 0 && <Card title="Looks like a trip" pad={false}>{suggestionList(recentSugg)}</Card>}
+      {!current.length ? (past.length ? <div className="text-sm text-muted">No trip on the list — past ones are in History below.</div> : <Empty title="No trips yet" icon="plane">Tag travel transactions with trip:name to cost a trip as a whole.</Empty>) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {data.trips.map((t: any) => (
+          {current.map((t: any) => (
             <div key={t.tag} className="card p-4">
               <a href={`#/ledger?period=all&tag=${encodeURIComponent(t.tag)}`} className="block hover:opacity-80">
                 <div className="flex items-baseline justify-between">
@@ -580,9 +596,36 @@ function Trips() {
                 {t.by_category.slice(0, 4).map((c: any) => <span key={c.name} className="chip">{cats.name(c.name)} {eur(c.amount)}</span>)}
               </div>
               <TripDatesRow tag={t.tag} dates={dates[t.tag]} guess={{ start: t.from, end: t.to }} />
+              <button className="btn-ghost mt-1 h-8 px-2 text-xs text-muted" onClick={() => setDone(t.tag, true)}><Icon name="check" size={14} />Trip's over — move to history</button>
             </div>
           ))}
         </div>
+      )}
+      {(past.length > 0 || oldSugg.length > 0) && (
+        <Card pad={false} icon="calendar" color="var(--s-other)" title={past.length ? `History · ${past.length} ${past.length === 1 ? 'trip' : 'trips'}` : 'History'}
+          action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHistory(!showHistory)} aria-expanded={showHistory}>{showHistory ? 'Hide' : 'Show'}</button>}>
+          <div className="-mt-1 px-4 pb-2 text-xs text-muted">Trips that are over — a month after they end, or moved here by hand. Their costs stay in the Ledger.</div>
+          {showHistory && (
+            <div className="divide-y divide-line border-t border-line">
+              {past.map((t: any) => (
+                <div key={t.tag} className="flex items-center gap-3 px-4 py-2.5">
+                  <Link to={ledgerLink({ tag: t.tag })} className="min-w-0 flex-1 hover:text-accent">
+                    <div className="truncate text-sm font-medium capitalize">{t.name.replace(/-/g, ' ')}</div>
+                    <div className="text-xs text-muted">{shortDate(dates[t.tag]?.start ?? t.from)} – {shortDate(dates[t.tag]?.end ?? t.to)} · {t.count} rows</div>
+                  </Link>
+                  <span className="tnum text-sm font-semibold">{eur(t.total)}</span>
+                  <button className="btn-ghost h-8 px-2 text-xs text-muted" onClick={() => setDone(t.tag, false)}>Bring back</button>
+                </div>
+              ))}
+              {oldSugg.length > 0 && (
+                <div>
+                  <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">Older untagged travel</div>
+                  {suggestionList(oldSugg)}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
       )}
     </div>
   )

@@ -101,6 +101,11 @@ func SaveTripDates(e execer, t TripDates) error {
 	if b.Sub(a) > 120*24*time.Hour {
 		return errors.New("a trip is at most 120 days")
 	}
+	// Dates set: a trip kept on the list by hand goes back to the automatic
+	// rule, so it moves to history a month after these dates.
+	if _, err := e.Exec(`DELETE FROM trip_history WHERE tag=? AND state='active'`, tripKey(t.Tag)); err != nil {
+		return err
+	}
 	_, err := e.Exec(`INSERT INTO trip_dates(tag,start_date,end_date,created_at,updated_at) VALUES(?,?,?,?,?)
 		ON CONFLICT(tag) DO UPDATE SET start_date=excluded.start_date, end_date=excluded.end_date, updated_at=excluded.updated_at`,
 		t.Tag, t.Start, t.End, db.Now(), db.Now())
@@ -291,4 +296,56 @@ func TripUntagged(q querier, tag string) (likely, maybe, bookings []Tx, err erro
 		}
 	}
 	return likely, maybe, bookings, nil
+}
+
+// TripStates: trips the owner moved to history ("done") or kept on the list
+// ("active") by hand. A trip with neither goes to history by itself a month
+// after it ends (see TripDone).
+func TripStates(q querier) (map[string]string, error) {
+	rows, err := q.Query(`SELECT tag, state FROM trip_history`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var t, s string
+		if err := rows.Scan(&t, &s); err != nil {
+			return nil, err
+		}
+		out[t] = s
+	}
+	return out, rows.Err()
+}
+
+// SetTripState moves a trip to history (done) or back onto the list.
+func SetTripState(e execer, tag string, done bool) error {
+	tag = tripKey(tag)
+	if !TripTag(tag) || len(tag) <= len("trip:") {
+		return errors.New("a trip tag is trip:<name>")
+	}
+	state := "active"
+	if done {
+		state = "done"
+	}
+	_, err := e.Exec(`INSERT INTO trip_history(tag,state,updated_at) VALUES(?,?,?)
+		ON CONFLICT(tag) DO UPDATE SET state=excluded.state, updated_at=excluded.updated_at`, tag, state, db.Now())
+	return err
+}
+
+// TripDone: in history — moved there by hand, or over: 30 days past its
+// set end date, or (no dates set) 90 days since its last tagged row — a trip
+// booked months ahead has only its old prepayment tagged, and isn't over.
+func TripDone(state, end string, dated bool, now time.Time) bool {
+	switch state {
+	case "done":
+		return true
+	case "active":
+		return false
+	}
+	days := -90
+	if dated {
+		days = -30
+	}
+	return end != "" && end < now.AddDate(0, 0, days).Format("2006-01-02")
 }

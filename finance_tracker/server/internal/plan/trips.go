@@ -30,6 +30,8 @@ type Trip struct {
 	PerDay     money.Cents   `json:"per_day"`
 	ByCategory []NamedAmount `json:"by_category"`
 	Budget     *money.Cents  `json:"budget,omitempty"`
+	// Done: in history — over, no more mapping prompts (see ledger.TripDone).
+	Done bool `json:"done"`
 }
 
 type TripSuggestion struct {
@@ -214,4 +216,24 @@ func firstNonEmpty(v ...string) string {
 		}
 	}
 	return ""
+}
+
+// MarkDone flags the trips that are over (see ledger.TripDone): by hand, or
+// past their set end date / last row — never a trip still being saved for.
+func MarkDone(trips []Trip, dates []ledger.TripDates, states map[string]string, saving map[string]bool, now time.Time) {
+	end := map[string]string{}
+	for _, d := range dates {
+		end[d.Tag] = d.End
+	}
+	for i := range trips {
+		e, dated := end[trips[i].Tag], end[trips[i].Tag] != ""
+		if !dated {
+			e = trips[i].To
+		}
+		st := states[trips[i].Tag]
+		if st == "" && saving[trips[i].Tag] {
+			st = "active"
+		}
+		trips[i].Done = ledger.TripDone(st, e, dated, now)
+	}
 }

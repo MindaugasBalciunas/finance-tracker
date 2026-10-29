@@ -170,6 +170,16 @@ CREATE TABLE IF NOT EXISTS oauth_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_access ON oauth_grants(access_hash);
 CREATE INDEX IF NOT EXISTS idx_oauth_refresh ON oauth_grants(refresh_hash);`,
+	// 17: wish-list money set aside in a savings account (a goal held there,
+	// so the account's balance shows what is spoken for), and trips moved to
+	// history once they are over (no more mapping prompts for them).
+	// Existing moves aren't tied to an account; every trip stays as it was.
+	`ALTER TABLE goal_moves ADD COLUMN account_id TEXT NOT NULL DEFAULT '';  -- '' = not tied to an account
+CREATE TABLE IF NOT EXISTS trip_history (
+    tag        TEXT PRIMARY KEY,      -- trip:italy-spring-2026
+    state      TEXT NOT NULL CHECK (state IN ('done','active')),  -- done = in history; active = kept on the list
+    updated_at TEXT NOT NULL
+);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"ft/internal/db"
@@ -17,6 +18,7 @@ import (
 	"ft/internal/ledger"
 	"ft/internal/money"
 	"ft/internal/plan"
+	"ft/internal/wealth"
 )
 
 type Goal struct {
@@ -44,6 +46,24 @@ type Goal struct {
 	// late (when instead, and what a month it would take), or not funding
 	// at all — counting every goal ahead of it in priority.
 	Outlook *Outlook `json:"outlook,omitempty"`
+	// Held: where the saved money sits — set aside in savings accounts.
+	Held []Held `json:"held,omitempty"`
+}
+
+// Held is part of a goal's money set aside in one account.
+type Held struct {
+	AccountID string      `json:"account_id"`
+	Name      string      `json:"name"`
+	Amount    money.Cents `json:"amount"`
+}
+
+// Pot is a savings account with what the wish list has set aside in it.
+type Pot struct {
+	AccountID string      `json:"account_id"`
+	Name      string      `json:"name"`
+	Balance   money.Cents `json:"balance"`
+	SetAside  money.Cents `json:"set_aside"` // held for active goals
+	Free      money.Cents `json:"free"`      // balance not spoken for
 }
 
 type Outlook struct {
@@ -59,6 +79,7 @@ type Move struct {
 	Amount    money.Cents `json:"amount"`
 	Kind      string      `json:"kind"`
 	Note      string      `json:"note"`
+	AccountID string      `json:"account_id"` // the account it is set aside in ("" = not tied to one)
 	CreatedAt string      `json:"created_at"`
 }
 
@@ -82,6 +103,13 @@ func List(d *sql.DB) ([]Goal, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	held, err := heldBy(d)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Held = held[out[i].ID]
 	}
 	// Trips: what has been spent under the tag so far (expenses − refunds).
 	for i := range out {
@@ -234,11 +262,52 @@ func AddMove(d *sql.DB, m *Move) error {
 	if err != nil {
 		return err
 	}
+	// One move at a time: two quick taps must not both pass the free check.
+	moveMu.Lock()
+	defer moveMu.Unlock()
+	g, err = Get(d, m.GoalID)
+	if err != nil {
+		return err
+	}
 	if g.Saved+m.Amount < 0 {
 		return errors.New("a goal can't hold less than €0")
 	}
+	var inAccounts money.Cents
+	for _, h := range g.Held {
+		inAccounts += h.Amount
+	}
+	if m.AccountID == "" && m.Amount < 0 && g.Saved-inAccounts+m.Amount < 0 {
+		return fmt.Errorf("only %s of this goal isn't set aside in an account — release it from the account instead", eurS(g.Saved-inAccounts))
+	}
+	if m.AccountID != "" {
+		a, err := ledger.GetAccount(d, m.AccountID)
+		if err != nil || !potKind(a.Kind) || (a.Archived && m.Amount > 0) {
+			return errors.New("set money aside in a savings, current or cash account you still use")
+		}
+		in := money.Cents(0)
+		for _, h := range g.Held {
+			if h.AccountID == m.AccountID {
+				in = h.Amount
+			}
+		}
+		switch {
+		case m.Amount < 0 && in+m.Amount < 0:
+			return fmt.Errorf("%s holds only %s for this goal", a.Name, eurS(in))
+		case m.Amount > 0:
+			if g.Status != "active" {
+				return errors.New("set money aside for an active goal")
+			}
+			free, err := freeIn(d, a.ID, time.Now())
+			if err != nil {
+				return err
+			}
+			if m.Amount > free {
+				return fmt.Errorf("%s has %s not set aside yet — less than %s", a.Name, eurS(free), eurS(m.Amount))
+			}
+		}
+	}
 	m.CreatedAt = db.Now()
-	res, err := d.Exec(`INSERT INTO goal_moves(goal_id,month,amount,kind,note,created_at) VALUES(?,?,?,?,?,?)`, m.GoalID, m.Month, m.Amount, m.Kind, strings.TrimSpace(m.Note), m.CreatedAt)
+	res, err := d.Exec(`INSERT INTO goal_moves(goal_id,month,amount,kind,note,account_id,created_at) VALUES(?,?,?,?,?,?,?)`, m.GoalID, m.Month, m.Amount, m.Kind, strings.TrimSpace(m.Note), m.AccountID, m.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -247,7 +316,7 @@ func AddMove(d *sql.DB, m *Move) error {
 }
 
 func Moves(d *sql.DB, goalID int64) ([]Move, error) {
-	rows, err := d.Query(`SELECT id,goal_id,month,amount,kind,note,created_at FROM goal_moves WHERE goal_id=? ORDER BY month DESC, id DESC`, goalID)
+	rows, err := d.Query(`SELECT id,goal_id,month,amount,kind,note,account_id,created_at FROM goal_moves WHERE goal_id=? ORDER BY month DESC, id DESC`, goalID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +324,7 @@ func Moves(d *sql.DB, goalID int64) ([]Move, error) {
 	out := []Move{}
 	for rows.Next() {
 		var m Move
-		rows.Scan(&m.ID, &m.GoalID, &m.Month, &m.Amount, &m.Kind, &m.Note, &m.CreatedAt)
+		rows.Scan(&m.ID, &m.GoalID, &m.Month, &m.Amount, &m.Kind, &m.Note, &m.AccountID, &m.CreatedAt)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -292,6 +361,8 @@ type Plan struct {
 	AvgLeftOver money.Cents `json:"avg_left_over"`
 	TotalSaved  money.Cents `json:"total_saved"`
 	TotalNeeded money.Cents `json:"total_needed"`
+	// Pots: savings accounts and what of each is set aside for goals.
+	Pots []Pot `json:"pots"`
 }
 
 // Build computes the wish list for funding month ym ("" = last complete month).
@@ -340,6 +411,9 @@ func Build(d *sql.DB, ym string, now time.Time) (*Plan, error) {
 		return x
 	}
 	p := &Plan{Goals: gs, Funding: month(ym), Proposal: []Allocation{}, History: []Month{}}
+	if p.Pots, err = Pots(d, now); err != nil {
+		return nil, err
+	}
 	var sum money.Cents
 	for i := 6; i >= 1; i-- {
 		m := month(time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.Local).Format("2006-01"))
@@ -469,3 +543,98 @@ func eurS(c money.Cents) string {
 	}
 	return "€" + s
 }
+
+// potKind: accounts money can be set aside in — cash you can reach.
+func potKind(k string) bool { return k == "savings" || k == "checking" || k == "cash" }
+
+// heldBy is each goal's money by the account it is set aside in.
+func heldBy(d *sql.DB) (map[int64][]Held, error) {
+	rows, err := d.Query(`SELECT m.goal_id, m.account_id, COALESCE(a.name, m.account_id), SUM(m.amount)
+		FROM goal_moves m LEFT JOIN accounts a ON a.id = m.account_id JOIN goals g ON g.id = m.goal_id
+		WHERE m.account_id <> '' AND g.status = 'active' GROUP BY m.goal_id, m.account_id HAVING SUM(m.amount) <> 0 ORDER BY 4 DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]Held{}
+	for rows.Next() {
+		var id int64
+		var h Held
+		if err := rows.Scan(&id, &h.AccountID, &h.Name, &h.Amount); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], h)
+	}
+	return out, rows.Err()
+}
+
+// Pots are the savings accounts (and any other account money is set aside
+// in) with today's balance, what active goals hold there and what is free.
+// A goal that is bought or dropped holds nothing any more.
+func Pots(d *sql.DB, now time.Time) ([]Pot, error) {
+	accts, err := ledger.ListAccounts(d)
+	if err != nil {
+		return nil, err
+	}
+	book, err := wealth.LoadBook(d)
+	if err != nil {
+		return nil, err
+	}
+	aside, err := setAside(d)
+	if err != nil {
+		return nil, err
+	}
+	today := now.Format("2006-01-02")
+	out := []Pot{}
+	for _, a := range accts {
+		if !potKind(a.Kind) || (a.Archived && aside[a.ID] == 0) || (a.Kind != "savings" && aside[a.ID] == 0) {
+			continue
+		}
+		p := Pot{AccountID: a.ID, Name: a.Name, SetAside: aside[a.ID]}
+		if pt, ok := book.At(a.ID, today); ok {
+			p.Balance = pt.Value
+		}
+		p.Free = max(0, p.Balance-p.SetAside)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// setAside: what active goals hold in each account.
+func setAside(d *sql.DB) (map[string]money.Cents, error) {
+	rows, err := d.Query(`SELECT m.account_id, SUM(m.amount) FROM goal_moves m JOIN goals g ON g.id = m.goal_id
+		WHERE m.account_id <> '' AND g.status = 'active' GROUP BY m.account_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]money.Cents{}
+	for rows.Next() {
+		var id string
+		var v money.Cents
+		if err := rows.Scan(&id, &v); err != nil {
+			return nil, err
+		}
+		out[id] = v
+	}
+	return out, rows.Err()
+}
+
+// freeIn: an account's balance today not yet set aside for active goals.
+func freeIn(d *sql.DB, account string, now time.Time) (money.Cents, error) {
+	book, err := wealth.LoadBook(d)
+	if err != nil {
+		return 0, err
+	}
+	aside, err := setAside(d)
+	if err != nil {
+		return 0, err
+	}
+	var bal money.Cents
+	if p, ok := book.At(account, now.Format("2006-01-02")); ok {
+		bal = p.Value
+	}
+	return max(0, bal-aside[account]), nil
+}
+
+var moveMu sync.Mutex

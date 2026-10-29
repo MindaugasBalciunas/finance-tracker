@@ -70,7 +70,7 @@ func toolDefs() []tool {
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
 		{Name: "get_quote", Description: "Live quote, 52-week range and analyst targets for a ticker.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
 		{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified.", InputSchema: obj(map[string]any{"ticker": str("ticker symbol")}, "ticker")},
-		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split; their real dates where set (spending inside them gets the trip tag by itself); untagged travel spending that looks like a trip; planned trips being saved for on the wish list.", InputSchema: obj(map[string]any{})},
+		{Name: "get_trips", Description: "Trips (trip:* tags) with totals, per day and category split; their real dates where set (spending inside them gets the trip tag by itself); untagged travel spending that looks like a trip; planned trips being saved for on the wish list. done = the trip is over (in history: by hand, 30 days after its dates or 90 days after its last row).", InputSchema: obj(map[string]any{})},
 		{Name: "get_reconciliation", Description: "Checks each cash, savings and loan account: its recorded balances (bank-synced or entered) vs the transactions dated between them, since a date (default 30 days ago). Per account: reconciles (true = matches, or only a late_booking — a payment the bank booked a few days off its date), the unexplained total, and gaps — timing ones (undone within days: booking date ≠ transaction date) vs lasting ones (a missing, duplicated or mis-assigned transaction). Use it to answer whether the ledger matches the banks.",
 			InputSchema: obj(map[string]any{"from": str("YYYY-MM-DD, default 30 days ago")})},
 		{Name: "get_reference", Description: "Reference data: categories, accounts, tags, rules or merchants.", InputSchema: obj(map[string]any{"what": str("categories | accounts | tags | rules | merchants")}, "what")},
@@ -114,7 +114,7 @@ func toolDefs() []tool {
 				"emergency_months": num("months of spending"), "target_age": num("FI age"), "birth_year": num("year"), "fi_monthly_spend": num("EUR"), "withdrawal_rate": num("%"), "expected_return": num("% real")})},
 		{Name: "tag_trip", Description: "Put transactions under one trip (tag trip:<name>), replacing other trip tags on them — use get_trips suggestions for the ids. ONLY after approval.",
 			InputSchema: obj(map[string]any{"name": str("trip name, e.g. rome-2026"), "ids": map[string]any{"type": "array", "items": map[string]any{"type": "number"}}}, "name", "ids")},
-		{Name: "get_goals", Description: "The wish list: goals (things saved up for) in priority order with price, saved, remaining, ETA at the average left over and per-month need for a target date; plus the funding month — income, paid-yourself-first (invested), spending, left over, already funded, available — and the suggested split by priority, and the last six months' left over.",
+		{Name: "get_goals", Description: "The wish list: goals (things saved up for) in priority order with price, saved, remaining, ETA at the average left over and per-month need for a target date; plus the funding month — income, paid-yourself-first (invested), spending, left over, already funded, available — and the suggested split by priority, and the last six months' left over. Each goal's held is the money set aside for it in a savings account; pots are those accounts with balance, set aside and free.",
 			InputSchema: obj(map[string]any{"month": str("YYYY-MM to fund; default the last finished month")})},
 		{Name: "save_goal", Description: "Add a wish-list goal (no id; it goes last in priority) or change one: name, price (target), target_date, note, link, status (active | bought | dropped). A planned trip is a goal with tag trip:<name> — its tagged spending counts as spent against it. priority_ids reorders the whole list. ONLY after approval.",
 			InputSchema: obj(map[string]any{"id": num("goal id; omit to add"), "name": str("e.g. Bambu Lab X2D"), "target": num("price in EUR"), "target_date": str("YYYY-MM-DD, optional"),
@@ -415,14 +415,18 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		budgets, _ := plan.List(a.DB, false)
 		trips, sugg := plan.Trips(txs, budgets)
 		var planned []goals.Goal // trips being saved for on the wish list
+		saving := map[string]bool{}
 		if all, err := goals.List(a.DB); err == nil {
 			for _, g := range all {
 				if g.Tag != "" && g.Status == "active" {
 					planned = append(planned, g)
+					saving[g.Tag] = true
 				}
 			}
 		}
 		dates, _ := ledger.ListTripDates(a.DB)
+		states, _ := ledger.TripStates(a.DB)
+		plan.MarkDone(trips, dates, states, saving, time.Now())
 		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg, "planned": planned, "dates": dates})
 	case "get_reference":
 		switch args.s("what") {

@@ -470,7 +470,7 @@ func New(call Caller) *mcp.Server {
 		func(ctx context.Context, r *mcp.CallToolRequest, a recurringArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("DELETE", fmt.Sprintf("/recurring/%d", a.ID), nil, nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_goals", Description: "The wish list: goals in priority order (price, saved, remaining, ETA, per-month need for a target date) and the funding month — income, paid yourself first, spending, left over, available — with the suggested split."},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_goals", Description: "The wish list: goals in priority order (price, saved, remaining, ETA, per-month need for a target date) and the funding month — income, paid yourself first, spending, left over, available — with the suggested split. Each goal's held is the money set aside for it in a savings account; pots are those accounts with balance, set aside and free."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/goals", vals("month", a.Month), nil))
 		})

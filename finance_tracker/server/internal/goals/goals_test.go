@@ -202,3 +202,68 @@ func TestGoalOutlook(t *testing.T) {
 		t.Errorf("licence %+v", o)
 	}
 }
+
+// A goal without a date can just hold money set aside in a savings account:
+// never more than the account has free, the account shows what is spoken
+// for, and a bought goal stops holding it.
+func TestMoneySetAsideInSavings(t *testing.T) {
+	d := DB(t)
+	if _, err := ledger.SaveAccount(d, ledger.Account{ID: "swed_sav", Name: "Swedbank savings", Kind: "savings", Liquid: true}); err != nil {
+		t.Fatal(err)
+	}
+	Bal(t, d, "swed_sav", "2026-10-01", 3500)
+	sauna := goals.Goal{Name: "Sauna", Target: E(6000)} // no date
+	bike := goals.Goal{Name: "Bike", Target: E(900)}
+	for _, g := range []*goals.Goal{&sauna, &bike} {
+		if err := goals.Save(d, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put := func(g int64, eur float64, acct string) error {
+		return goals.AddMove(d, &goals.Move{GoalID: g, Month: "2026-10", Amount: E(eur), AccountID: acct})
+	}
+	if err := put(sauna.ID, 3000, "swed_sav"); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(bike.ID, 600, "swed_sav"); err == nil {
+		t.Error("only €500 of the account is free")
+	}
+	if err := put(bike.ID, 500, "swed_sav"); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(bike.ID, 100, "ibkr"); err == nil {
+		t.Error("a broker isn't where wish-list money is set aside")
+	}
+	if err := put(sauna.ID, -3500, "swed_sav"); err == nil {
+		t.Error("can't take out more than the goal holds there")
+	}
+	// A current account with nothing set aside yet is still limited to its balance.
+	Bal(t, d, "seb", "2026-10-01", 100)
+	if err := put(bike.ID, 500, "seb"); err == nil {
+		t.Error("SEB holds €100")
+	}
+	// Taking out without naming an account can't drain money set aside in one.
+	if err := put(sauna.ID, -100, ""); err == nil {
+		t.Error("all of the sauna's money is in Swedbank savings — release it there")
+	}
+	p, err := goals.Build(d, "", time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Pots) != 1 || p.Pots[0].SetAside != E(3500) || p.Pots[0].Free != 0 {
+		t.Errorf("pots %+v", p.Pots)
+	}
+	g, _ := goals.Get(d, sauna.ID)
+	if g.Saved != E(3000) || len(g.Held) != 1 || g.Held[0].Name != "Swedbank savings" || g.Held[0].Amount != E(3000) {
+		t.Errorf("sauna %+v", g)
+	}
+	// Bought: its money is spent, the account is free again.
+	bike.Status = "bought"
+	if err := goals.Save(d, &bike); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = goals.Build(d, "", time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local))
+	if p.Pots[0].SetAside != E(3000) || p.Pots[0].Free != E(500) {
+		t.Errorf("after buying %+v", p.Pots)
+	}
+}

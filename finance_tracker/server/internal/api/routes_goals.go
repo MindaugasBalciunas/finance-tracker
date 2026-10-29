@@ -74,6 +74,8 @@ func (s *Server) goalRoutes() {
 			Amount money.Cents `json:"amount"`
 			Month  string      `json:"month"`
 			Note   string      `json:"note"`
+			// AccountID: the savings account the money is set aside in (or taken from).
+			AccountID string `json:"account_id"`
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
@@ -81,7 +83,7 @@ func (s *Server) goalRoutes() {
 		if in.Month == "" {
 			in.Month = time.Now().Format("2006-01")
 		}
-		m := goals.Move{GoalID: id, Month: in.Month, Amount: in.Amount, Note: in.Note}
+		m := goals.Move{GoalID: id, Month: in.Month, Amount: in.Amount, Note: in.Note, AccountID: in.AccountID}
 		if err := goals.AddMove(s.DB, &m); err != nil {
 			return nil, bad(err.Error())
 		}

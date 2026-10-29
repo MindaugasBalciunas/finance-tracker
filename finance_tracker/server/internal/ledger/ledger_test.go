@@ -447,3 +447,38 @@ func TestMerchantFilterIgnoresCase(t *testing.T) {
 		t.Errorf("month link %q", l)
 	}
 }
+
+// A trip goes to history by hand, or by itself a month after it ends —
+// unless it is kept on the list.
+func TestTripHistory(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	// With dates: 30 days after the end. Without: 90 days after the last row
+	// (a trip booked ahead has only its old prepayment tagged).
+	if !ledger.TripDone("", "2026-09-01", true, now) || ledger.TripDone("", "2026-10-15", true, now) || ledger.TripDone("", "", true, now) {
+		t.Error("automatic with dates: ended over 30 days ago")
+	}
+	if ledger.TripDone("", "2026-09-01", false, now) || !ledger.TripDone("", "2026-07-01", false, now) {
+		t.Error("automatic without dates: last row over 90 days ago")
+	}
+	if err := ledger.SetTripState(d, "trip:egypt", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.SetTripState(d, "Trip:Rome", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.SetTripState(d, "egypt", true); err == nil {
+		t.Error("a trip tag is trip:<name>")
+	}
+	st, _ := ledger.TripStates(d)
+	if !ledger.TripDone(st["trip:egypt"], "2026-10-20", true, now) || ledger.TripDone(st["trip:rome"], "2025-01-01", true, now) {
+		t.Errorf("by hand: %v", st)
+	}
+	// Brought back, then given its real dates: the automatic rule applies again.
+	if err := ledger.SaveTripDates(d, ledger.TripDates{Tag: "trip:rome", Start: "2026-08-01", End: "2026-08-10"}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ = ledger.TripStates(d); st["trip:rome"] != "" || st["trip:egypt"] != "done" {
+		t.Errorf("after dates: %v", st)
+	}
+}

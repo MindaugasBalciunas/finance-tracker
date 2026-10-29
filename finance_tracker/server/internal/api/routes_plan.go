@@ -169,7 +169,15 @@ func (s *Server) planRoutes() {
 			sugg = []plan.TripSuggestion{}
 		}
 		dates, _ := ledger.ListTripDates(s.DB)
-		return map[string]any{"trips": trips, "suggestions": sugg, "planned": plannedTrips(s), "dates": dates}, nil
+		// Over and done with: in history, by hand or a month after the trip.
+		states, _ := ledger.TripStates(s.DB)
+		planned := plannedTrips(s)
+		saving := map[string]bool{}
+		for _, g := range planned {
+			saving[g.Tag] = true
+		}
+		plan.MarkDone(trips, dates, states, saving, time.Now())
+		return map[string]any{"trips": trips, "suggestions": sugg, "planned": planned, "dates": dates}, nil
 	})
 	// A trip's real dates: set, clear, and what they show it missed.
 	s.handle("PUT /api/trips/dates", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -187,6 +195,20 @@ func (s *Server) planRoutes() {
 			return nil, err
 		}
 		return ledger.ListTripDates(s.DB)
+	})
+	// A trip to history (done) or back onto the list.
+	s.handle("PUT /api/trips/history", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Tag  string `json:"tag"`
+			Done bool   `json:"done"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := ledger.SetTripState(s.DB, in.Tag, in.Done); err != nil {
+			return nil, bad(err.Error())
+		}
+		return map[string]bool{"done": in.Done}, nil
 	})
 	s.handle("GET /api/trips/untagged", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		likely, maybe, book, err := ledger.TripUntagged(s.DB, r.URL.Query().Get("tag"))

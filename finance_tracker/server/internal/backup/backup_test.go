@@ -29,6 +29,10 @@ func seed(t *testing.T, d *sql.DB) {
 	d.Exec(`INSERT INTO settings(key,value) VALUES('ai_context','"brief"')`)
 	d.Exec(`INSERT INTO webauthn_credentials(name,credential,created_at) VALUES('iPhone',X'00FF10','2026-01-01')`)
 	d.Exec(`INSERT INTO trades(date,action,ticker,shares,price,currency,created_at) VALUES('2026-01-01','buy','VWCE',1.5,120.25,'EUR','x')`)
+	// The wish list holding money in an account, and a trip in history.
+	d.Exec(`INSERT INTO goals(id,name,target,created_at,updated_at) VALUES(1,'Sauna',600000,'x','x')`)
+	d.Exec(`INSERT INTO goal_moves(goal_id,month,amount,kind,account_id,created_at) VALUES(1,'2026-09',150000,'manual','swed','x')`)
+	d.Exec(`INSERT INTO trip_history(tag,state,updated_at) VALUES('trip:egypt','done','x')`)
 }
 
 // dump renders every table for comparison.

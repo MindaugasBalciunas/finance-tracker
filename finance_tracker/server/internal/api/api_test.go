@@ -150,6 +150,7 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw sets trip dates", tokRW, "PUT", "/trips/dates", map[string]any{"tag": "trip:x", "start": "2026-06-01", "end": "2026-06-05"}, 200},
 		{"rw clears trip dates", tokRW, "DELETE", "/trips/dates?tag=trip:x", nil, 200},
 		{"rw cannot change a trip's dates by another path", tokRW, "PUT", "/trips/dates/x", map[string]any{}, 403},
+		{"rw cannot move a trip to history", tokRW, "PUT", "/trips/history", map[string]any{"tag": "trip:x", "done": true}, 403},
 		{"ro cannot read the IBKR connection", tokRO, "GET", "/ibkr", nil, 403},
 		{"rw cannot sync IBKR", tokRW, "POST", "/ibkr/sync", nil, 403},
 		// Connected AI apps are managed in the app only.

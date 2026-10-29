@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
-import { useRefresh, useTags } from '../../lib/hooks'
+import { useAccounts, useRefresh, useTags } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
 import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
@@ -11,10 +11,13 @@ import { DateInput } from '../../components/DateInput'
 import { SuggestInput } from '../../components/pickers'
 
 type Goal = { id: number; name: string; target: number; priority: number; target_date: string; note: string; url: string; tag: string; spent?: number; status: 'active' | 'bought' | 'dropped'; done_on: string
-  saved: number; remaining: number; eta?: string; per_month?: number; outlook?: { tone: 'good' | 'warn' | 'bad'; text: string; gap?: number } }
+  saved: number; remaining: number; eta?: string; per_month?: number; outlook?: { tone: 'good' | 'warn' | 'bad'; text: string; gap?: number }
+  held?: { account_id: string; name: string; amount: number }[] | null }
+/** A savings account and what the wish list has set aside in it. */
+type Pot = { account_id: string; name: string; balance: number; set_aside: number; free: number }
 type MonthFlow = { month: string; income: number; invested: number; spending: number; left_over: number; funded: number; available: number; complete: boolean }
 type Alloc = { goal_id: number; name?: string; amount: number }
-type WishPlan = { goals: Goal[]; funding: MonthFlow; proposal: Alloc[]; history: MonthFlow[]; avg_left_over: number; total_saved: number; total_needed: number }
+type WishPlan = { goals: Goal[]; funding: MonthFlow; proposal: Alloc[]; history: MonthFlow[]; avg_left_over: number; total_saved: number; total_needed: number; pots?: Pot[] | null }
 
 const lastDone = () => addMonths(thisMonth(), -1)
 
@@ -49,6 +52,7 @@ export function Wishlist() {
   return (
     <div className="space-y-4">
       <LeftOver p={p} month={month} setMonth={setMonth} onFund={() => setFund(true)} />
+      <Pots pots={p.pots ?? []} />
 
       <div className="flex items-center justify-between gap-2">
         <div>
@@ -86,7 +90,7 @@ export function Wishlist() {
           </div>
         </Card>
       )}
-      {edit && <GoalSheet g={edit} onClose={() => setEdit(null)} />}
+      {edit && <GoalSheet g={edit} pots={p.pots ?? []} onClose={() => setEdit(null)} />}
       {fund && <FundSheet p={p} onClose={() => setFund(false)} />}
     </div>
   )
@@ -150,6 +154,28 @@ function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; 
   )
 }
 
+/** Savings accounts and what of each is set aside for the wish list — the
+ *  rest of the balance is free to set aside or spend. */
+function Pots({ pots }: { pots: Pot[] }) {
+  if (!pots.length) return null
+  return (
+    <Card pad={false} icon="piggy" color="var(--s6)" title="Savings set aside">
+      <div className="divide-y divide-line border-t border-line">
+        {pots.map((x) => (
+          <div key={x.account_id} className="px-4 py-2.5">
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="truncate font-medium">{x.name}</span>
+              <span className="tnum text-ink2">{eur(x.set_aside)} <span className="text-muted">of {eur(x.balance)}</span></span>
+            </div>
+            <Meter value={x.set_aside} max={Math.max(x.balance, x.set_aside, 1)} goal className="mt-1.5" />
+            <div className="mt-1 text-xs text-muted tnum">{x.set_aside > x.balance ? <span className="text-bad">{eur(x.set_aside - x.balance)} more set aside than the account holds</span> : `${eur(x.free)} free`}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; rank: number; first: boolean; last: boolean; onUp: () => void; onDown: () => void; onOpen: () => void }) {
   const priced = g.target > 0
   const full = priced && g.remaining <= 0
@@ -176,6 +202,9 @@ function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; ran
           </span>
         </div>
         </>)}
+        {!!g.held?.length && (
+          <div className="mt-0.5 text-[11px] text-muted"><Icon name="piggy" size={11} className="mr-0.5 inline" />{g.held.map((h) => `${eur(h.amount)} in ${h.name}`).join(' · ')}</div>
+        )}
         {g.tag && (g.spent ?? 0) !== 0 && (
           <div className="mt-0.5 text-[11px] text-muted">spent so far <b className="tnum text-ink2">{eur(g.spent ?? 0)}</b> · {g.saved >= (g.spent ?? 0) ? `${eur(g.saved - (g.spent ?? 0))} of the savings left` : `${eur((g.spent ?? 0) - g.saved)} more than saved`}</div>
         )}
@@ -228,10 +257,17 @@ function FundSheet({ p, onClose }: { p: WishPlan; onClose: () => void }) {
   )
 }
 
-function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
+function GoalSheet({ g, pots, onClose }: { g: Partial<Goal>; pots: Pot[]; onClose: () => void }) {
   const [v, setV] = useState<Partial<Goal>>(g)
   const [delta, setDelta] = useState<number | undefined>()
   const [why, setWhy] = useState('')
+  // Where the money is set aside: the account it already sits in, else none
+  // (plain saving) — pick a savings account to set its money aside there.
+  const [acct, setAcct] = useState(() => g.held?.[0]?.account_id ?? '')
+  const { data: accounts } = useAccounts()
+  const acctName = (id: string) => accounts?.find((a) => a.id === id)?.name ?? id
+  const pot = pots.find((x) => x.account_id === acct)
+  const inAcct = acct ? (g.held ?? []).find((h) => h.account_id === acct)?.amount ?? 0 : (g.saved ?? 0) - (g.held ?? []).reduce((t, h) => t + h.amount, 0)
   const refresh = useRefresh()
   const toast = useToast()
   const { data: moves } = useQuery({ queryKey: ['goal-moves', g.id], queryFn: () => api.get<any[]>(`/goals/${g.id}/moves`), enabled: !!g.id })
@@ -239,7 +275,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
   const done = (msg: string) => { refresh(); toast(msg, 'good'); onClose() }
   const fail = (e: unknown) => toast((e as Error).message, 'bad')
   const save = useMutation({ mutationFn: (body: Partial<Goal>) => (g.id ? api.put(`/goals/${g.id}`, body) : api.post('/goals', body)), onError: fail })
-  const put = useMutation({ mutationFn: (amount: number) => api.post(`/goals/${g.id}/moves`, { amount, note: why }), onSuccess: () => done('Saved'), onError: fail })
+  const put = useMutation({ mutationFn: (amount: number) => api.post(`/goals/${g.id}/moves`, { amount, note: why, account_id: acct }), onSuccess: () => done('Saved'), onError: fail })
   const del = useMutation({ mutationFn: () => api.del(`/goals/${g.id}`), onSuccess: () => done('Removed'), onError: fail })
   // Trip tags already in use, so a planned trip joins the one you're tagging.
   const { data: tagList } = useTags()
@@ -273,13 +309,21 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
         {g.id && g.status === 'active' && (
           <div className="rounded-xl border border-line p-3">
             <div className="text-sm font-medium">Saved <span className="tnum">{eur(g.saved ?? 0)}</span> of <span className="tnum">{eur(g.target ?? 0)}</span></div>
+            {!!g.held?.length && <div className="mt-0.5 text-xs text-muted">{g.held.map((h) => `${eur(h.amount)} in ${h.name}`).join(' · ')}</div>}
+            <Field label="Set aside in">
+              <select className="input" value={acct} onChange={(e) => setAcct(e.target.value)}>
+                <option value="">Not in a particular account</option>
+                {pots.map((x) => <option key={x.account_id} value={x.account_id}>{x.name} · {eur(x.free)} free</option>)}
+              </select>
+            </Field>
             <div className="mt-2 grid grid-cols-[7rem_1fr] gap-2">
               <NumberInput value={delta} onChange={setDelta} placeholder="€" className="input tnum" />
               <input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="why (a bonus, a repair…)" />
             </div>
+            {pot && <div className="mt-1 text-xs text-muted">{pot.name}: {eur(pot.balance)}, {eur(pot.set_aside)} already set aside{inAcct > 0 && ` (${eur(inAcct)} for this)`}</div>}
             <div className="mt-2 flex flex-wrap gap-2">
-              <button className="btn-outline h-8 text-xs" disabled={!delta || delta <= 0} onClick={() => put.mutate(delta!)}>Put in</button>
-              <button className="btn-outline h-8 text-xs" disabled={!delta || delta <= 0 || delta > (g.saved ?? 0)} onClick={() => put.mutate(-delta!)}>Take out</button>
+              <button className="btn-outline h-8 text-xs" disabled={put.isPending || !delta || delta <= 0 || (!!pot && delta > pot.free)} onClick={() => put.mutate(delta!)}>{pot ? `Set aside${delta && delta > pot.free ? ` — only ${eur(pot.free)} free` : ''}` : 'Put in'}</button>
+              <button className="btn-outline h-8 text-xs" disabled={put.isPending || !delta || delta <= 0 || delta > inAcct} onClick={() => put.mutate(-delta!)}>{pot ? 'Release' : 'Take out'}</button>
               <button className="btn-outline ml-auto h-8 text-xs text-good" onClick={() => save.mutate({ ...body, status: 'bought' }, { onSuccess: () => done(g.tag ? `${g.name} — done 🎉` : `${g.name} bought 🎉`) })}><Icon name="check" size={14} />{g.tag ? 'Travelled' : 'Bought'}</button>
               <button className="btn-ghost h-8 text-xs" onClick={() => save.mutate({ ...body, status: 'dropped' }, { onSuccess: () => done('Dropped — its money is free again') })}>Drop</button>
             </div>
@@ -294,7 +338,7 @@ function GoalSheet({ g, onClose }: { g: Partial<Goal>; onClose: () => void }) {
             <div className="divide-y divide-line text-xs">
               {moves.map((m) => (
                 <div key={m.id} className="flex justify-between gap-2 py-1.5">
-                  <span className="text-ink2">{monthLabel(m.month)} · {m.kind === 'funding' ? 'month-end funding' : m.note || 'by hand'}</span>
+                  <span className="text-ink2">{monthLabel(m.month)} · {m.kind === 'funding' ? 'month-end funding' : m.note || 'by hand'}{m.account_id && <span className="text-muted"> · {acctName(m.account_id)}</span>}</span>
                   <span className={clsx('tnum', m.amount < 0 ? 'text-bad' : 'text-good')}>{m.amount < 0 ? '−' : '+'}{eur(Math.abs(m.amount))}</span>
                 </div>
               ))}
