@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"ft/internal/cfo"
+	"ft/internal/decisions"
 	"sort"
 	"strings"
 	"time"
@@ -36,7 +37,8 @@ func arr(d string) map[string]any {
 
 // writeTools change data; the system prompt requires explicit confirmation.
 var writeTools = map[string]bool{"remember": true, "create_transaction": true, "update_transaction": true, "add_rule": true, "delete_rule": true,
-	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true, "save_goal": true, "fund_goals": true, "set_trip_dates": true}
+	"rename_tag": true, "update_inbox_row": true, "add_recurring": true, "save_budget": true, "delete_budget": true, "update_plan_settings": true, "tag_trip": true, "save_goal": true, "fund_goals": true, "set_trip_dates": true,
+	"log_decision": true}
 
 func toolDefs() []tool {
 	date := "YYYY-MM-DD"
@@ -65,6 +67,14 @@ func toolDefs() []tool {
 		{Name: "get_fun_facts", Description: "Fun statistics from the whole history: employers ranked by what they paid, the first pay cheque, lifetime income, most visited shops and where the most money went, little habits added up (coffees, fast food, fuel…), the biggest purchase and day, the big spending weekday, the priciest trips, the biggest spending year. Obligations are left out. Optional from/to limit it to a period.", InputSchema: obj(map[string]any{"from": str("YYYY-MM-DD, optional"), "to": str("YYYY-MM-DD, optional")})},
 		{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts.",
 			InputSchema: obj(map[string]any{"year": num("tax year, default this year")})},
+		{Name: "get_payday_runbook", Description: "Pay yourself first, as a checklist for the latest salary: each saving line's amount with the account it usually leaves from and goes to, the wish list's share of last month's leftovers, and bill top-ups due this week. Each step says done / partial / todo from the transfers the bank shows since payday. Read-only — it moves nothing.", InputSchema: obj(map[string]any{})},
+		{Name: "get_next_euro", Description: "Where the next sum (default €500) is best put, ranked in the owner's numbers: the emergency buffer while short, the 3rd pillar while this year's 20% refund has room (pre-2025 contracts), a wish-list goal about to miss its date, then extra loan principal at the loan's rate vs investing at the expected return minus 2 points for uncertainty; the sum split down that list. Use it instead of reasoning out returns yourself.", InputSchema: obj(map[string]any{"amount": num("euros to place, default 500")})},
+		{Name: "get_lifestyle_creep", Description: "Lifestyle creep: the last 12 complete months against the same 12 months up to three years earlier — income, spending and essential growth in %, the gap in points, the categories that grew most, and regular bills that started since.", InputSchema: obj(map[string]any{})},
+		{Name: "get_price_creep", Description: "Price creep on regular bills: each bill's latest charge against the one about a year earlier (% and € a year), renewals in the next 45 days (yearly ones found over two years), the personal inflation rate (those bills' price change weighted by annual cost) and Lithuania's official HICP rate when available.", InputSchema: obj(map[string]any{})},
+		{Name: "get_decisions", Description: "The decision journal: purchases being considered (with cooling-off date), bought or skipped, and how bought ones were rated (worth it yes/meh/no); plus the record — money kept by skipping, money regretted, worth-it rate by category.", InputSchema: obj(map[string]any{})},
+		{Name: "get_decision_impact", Description: "What a purchase of a given amount would do, as plain sentences: share of this month's left to spend, days of usual spending, buffer months after paying from cash, how far the wish list slips, how much later financial independence comes.", InputSchema: obj(map[string]any{"amount": num("price in euros")}, "amount")},
+		{Name: "log_decision", Description: "Writes a purchase being considered into the decision journal (title, amount in euros, optional category id and note); it starts 'thinking' with a cooling-off date by size. It never decides, rates or deletes. Confirm first.", InputSchema: obj(map[string]any{"title": str("what is being considered"), "amount": num("price in euros"), "category": str("category id, e.g. shopping.electronics"), "note": str("why")}, "title", "amount")},
+		{Name: "get_ownership_costs", Description: "True cost of owning each property and vehicle over the last 12 months: running costs (spending tagged with it, by category), loan interest, value lost or gained, and what the owner's equity would earn invested (an estimate); a year and a month; per km for vehicles and a verdict against the owner's alternative (taxi/rental per km, or rent) when set.", InputSchema: obj(map[string]any{})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
 		{Name: "get_loans", Description: "Loans (mortgage): balance, rate, next payment split, payoff date, equity and LTV, principal/interest paid in the last 12 months.", InputSchema: obj(map[string]any{})},
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
@@ -199,6 +209,30 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		}
 		cats, _ := ledger.CategoryMap(a.DB)
 		return jsonOut(insights.FunFacts(txs, cats, now, args.s("from"), args.s("to")))
+	case "get_payday_runbook":
+		return jsonOut2(cfo.BuildRunbook(a.DB, now))
+	case "get_next_euro":
+		return jsonOut2(cfo.NextEuroFor(a.DB, money.FromFloat(args.f("amount")), now))
+	case "get_lifestyle_creep":
+		return jsonOut2(insights.LifestyleCreep(a.DB, now))
+	case "get_price_creep":
+		return jsonOut2(cfo.Prices(a.DB, now))
+	case "get_decisions":
+		all, err := decisions.List(a.DB)
+		if err != nil {
+			return "", err
+		}
+		return jsonOut(map[string]any{"items": all, "record": decisions.Summarise(all)})
+	case "get_decision_impact":
+		return jsonOut2(cfo.DecisionImpact(a.DB, money.FromFloat(args.f("amount")), now))
+	case "log_decision":
+		x := decisions.Decision{Title: args.s("title"), Amount: money.FromFloat(args.f("amount")), Category: args.s("category"), Note: args.s("note")}
+		if err := decisions.Create(a.DB, &x, now); err != nil {
+			return "", err
+		}
+		return jsonOut(x)
+	case "get_ownership_costs":
+		return jsonOut2(cfo.Ownership(a.DB, now))
 	case "get_tax":
 		var in struct {
 			Year int `json:"year"`

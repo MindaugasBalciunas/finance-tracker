@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -90,6 +91,7 @@ func (c *client) ok(method, path string, body any, into any) {
 }
 
 func TestAuthBoundaries(t *testing.T) {
+	market.HICPFetch = func() ([]byte, error) { return nil, errors.New("offline in tests") }
 	s, c := newServer(t)
 	a := &auth.Service{DB: s.DB}
 	a.SetupPin("", "1234")
@@ -170,6 +172,26 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw patches plan settings", tokRW, "PATCH", "/plan/settings", map[string]any{"emergency_months": 4}, 200},
 		{"rw remembers", tokRW, "POST", "/ai/remember", map[string]any{"note": "Keeps VWCE as core"}, 200},
 		{"rw cannot replace plan settings", tokRW, "PUT", "/plan/settings", map[string]any{}, 403},
+		// Planning tools (2.58): reads for every token; of the writes only
+		// logging a decision is open, to read-write tokens.
+		{"ro reads the payday runbook", tokRO, "GET", "/plan/payday", nil, 200},
+		{"ro reads where the next euro goes", tokRO, "GET", "/plan/next-euro?amount=750", nil, 200},
+		{"next euro rejects a negative sum", tokRO, "GET", "/plan/next-euro?amount=-5", nil, 400},
+		{"ro reads lifestyle creep", tokRO, "GET", "/insights/creep", nil, 200},
+		{"ro reads price creep", tokRO, "GET", "/insights/prices", nil, 200},
+		{"ro reads the decision journal", tokRO, "GET", "/plan/decisions", nil, 200},
+		{"ro reads a purchase's impact", tokRO, "GET", "/plan/decisions/impact?amount=300", nil, 200},
+		{"impact needs a price", tokRO, "GET", "/plan/decisions/impact?amount=0", nil, 400},
+		{"ro cannot log a decision", tokRO, "POST", "/plan/decisions", map[string]any{"title": "Bike", "amount": 400}, 403},
+		{"rw logs a decision", tokRW, "POST", "/plan/decisions", map[string]any{"title": "Bike", "amount": 400}, 200},
+		{"rw cannot decide for the owner", tokRW, "PUT", "/plan/decisions/1", map[string]any{"title": "Bike", "amount": 400, "status": "bought"}, 403},
+		{"rw cannot delete a decision", tokRW, "DELETE", "/plan/decisions/1", nil, 403},
+		{"rw cannot log by another path", tokRW, "POST", "/plan/decisions/1", map[string]any{}, 403},
+		{"ro reads ownership costs", tokRO, "GET", "/wealth/ownership", nil, 200},
+		{"rw cannot change ownership figures", tokRW, "PUT", "/wealth/ownership/house", map[string]any{"rent": 900}, 403},
+		{"session decides", c, "PUT", "/plan/decisions/1", map[string]any{"title": "Bike", "amount": 400, "status": "bought"}, 200},
+		{"session sets ownership figures", c, "PUT", "/wealth/ownership/house", map[string]any{"rent": 900}, 200},
+		{"ownership only for property and vehicles", c, "PUT", "/wealth/ownership/swed", map[string]any{"rent": 900}, 400},
 		{"rw cannot replace a budget line", tokRW, "POST", "/budgets", map[string]any{"name": "x"}, 403},
 		{"rw cannot replace the memory", tokRW, "PUT", "/ai/notes", map[string]any{"content": ""}, 403},
 		{"ro cannot patch budgets", tokRO, "PATCH", "/budgets", map[string]any{"name": "x"}, 403},

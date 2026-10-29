@@ -396,7 +396,7 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			}
 		}
 	}
-	defer func() { o.Actions = buildActions(o, budgetDiffs, plannedLate, now) }()
+	defer func() { o.Actions = buildActions(o, budgetDiffs, plannedLate, now, moreActions(d, now)...) }()
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")

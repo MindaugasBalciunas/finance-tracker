@@ -7,6 +7,7 @@ import (
 
 	"ft/internal/cfo"
 	"ft/internal/db"
+	"ft/internal/decisions"
 	"ft/internal/demo"
 	"ft/internal/ledger"
 	"ft/internal/wealth"
@@ -41,6 +42,9 @@ func TestSeedBuildsAUsableDemo(t *testing.T) {
 		t.Fatalf("overview %v %+v", err, o)
 	}
 	loans := wealth.Loans(book, txs, now)
+	if all, _ := decisions.List(d); len(all) != 3 {
+		t.Errorf("demo decisions %d", len(all))
+	}
 	if len(loans) != 1 || loans[0].Repaid <= 0 || loans[0].Equity <= 0 {
 		t.Fatalf("loan %+v", loans)
 	}

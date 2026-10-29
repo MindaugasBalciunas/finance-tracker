@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"ft/internal/decisions"
 	"math"
 	"math/rand"
 	"time"
@@ -260,7 +261,38 @@ func Seed(d *sql.DB, now time.Time) error {
 			return fmt.Errorf("budget %s: %w", b.Name, err)
 		}
 	}
-	return nil
+	// The decision journal: one purchase being slept on, one bought and
+	// rated, one let go; and the car's figures for its cost of ownership.
+	for _, x := range []struct {
+		decisions.Decision
+		days   int
+		status string
+		worth  string
+	}{
+		{decisions.Decision{Title: "Robot vacuum", Amount: money.FromFloat(549), Category: "housing.furnishing", Note: "saves an hour a week"}, -3, "thinking", ""},
+		{decisions.Decision{Title: "Road bike", Amount: money.FromFloat(1290), Category: "leisure.hobbies", Note: "commute in summer"}, -95, "bought", "yes"},
+		{decisions.Decision{Title: "New TV", Amount: money.FromFloat(1100), Category: "shopping.electronics"}, -40, "skipped", ""},
+	} {
+		x := x
+		at := now.AddDate(0, 0, x.days)
+		if err := decisions.Create(d, &x.Decision, at); err != nil {
+			return fmt.Errorf("decision %s: %w", x.Title, err)
+		}
+		if x.status == "thinking" {
+			continue
+		}
+		x.Status = x.status
+		if err := decisions.Update(d, &x.Decision, at.AddDate(0, 0, 8)); err != nil {
+			return err
+		}
+		if x.worth != "" {
+			x.Worth = x.worth
+			if err := decisions.Update(d, &x.Decision, now); err != nil {
+				return err
+			}
+		}
+	}
+	return wealth.SaveOwnSettings(d, "car", wealth.OwnSettings{Tag: "car", KmYear: 14000, AltPerKm: 0.32})
 }
 
 func js(v any) json.RawMessage { b, _ := json.Marshal(v); return b }

@@ -7,7 +7,8 @@ import type { Action } from '../lib/types'
 import { Sheet } from './ui'
 import { Icon } from './Icon'
 
-const ICON: Record<string, string> = { move: 'swap', short: 'alert', planned: 'calendar', inbox: 'inbox', review: 'chart', check: 'refresh', budgets: 'target' }
+const ICON: Record<string, string> = { move: 'swap', short: 'alert', planned: 'calendar', inbox: 'inbox', review: 'chart', check: 'refresh', budgets: 'target',
+  payday: 'send', decide: 'bag', worth: 'check', renewal: 'repeat' }
 const KEY = 'ft-seen-notifications'
 const keyOf = (a: Action) => `${a.kind}|${a.text}`
 

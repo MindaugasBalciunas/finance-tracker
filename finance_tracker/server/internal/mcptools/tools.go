@@ -220,6 +220,17 @@ type forecastArgs struct {
 	SkipGoals []int64 `json:"skip_goals,omitempty" jsonschema:"wish-list goal ids to leave out"`
 }
 
+type amountArgs struct {
+	Amount float64 `json:"amount,omitempty" jsonschema:"euros"`
+}
+
+type decisionArgs struct {
+	Title    string  `json:"title" jsonschema:"what is being considered"`
+	Amount   float64 `json:"amount" jsonschema:"price in euros"`
+	Category string  `json:"category,omitempty" jsonschema:"category id, e.g. shopping.electronics"`
+	Note     string  `json:"note,omitempty" jsonschema:"why"`
+}
+
 type yearArgs struct {
 	Year int `json:"year,omitempty" jsonschema:"default this year"`
 }
@@ -266,7 +277,7 @@ func getTx(call Caller, id int64) (map[string]any, error) {
 // WriteTools change data (their descriptions start with WRITES). A
 // read-only connection isn't offered them at all.
 var WriteTools = []string{"create_transaction", "update_transaction", "save_rule", "delete_rule", "rename_tag", "update_inbox_row", "save_budget", "delete_budget",
-	"update_plan_settings", "tag_trip", "save_recurring", "delete_recurring", "save_goal", "fund_goals", "remember", "set_trip_dates"}
+	"update_plan_settings", "tag_trip", "save_recurring", "delete_recurring", "save_goal", "fund_goals", "remember", "set_trip_dates", "log_decision"}
 
 // New is every tool, the shared instructions and the ready-made analyses
 // (prompts) over call. The stdio server passes an HTTP client of the API;
@@ -532,6 +543,42 @@ func New(call Caller) *mcp.Server {
 			}
 			b, _ := json.Marshal(a)
 			return text(call("GET", "/forecast", vals("scenario", string(b)), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_payday_runbook", Description: "Pay yourself first, as a checklist for the latest salary: each saving line's amount with the account it usually leaves from and goes to, the wish list's share of last month's leftovers, and bill top-ups due this week. Each step says done / partial / todo from the transfers the bank shows since payday. Read-only — it moves nothing."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/plan/payday", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_next_euro", Description: "Where the next sum (default €500) is best put, ranked in the owner's numbers: the emergency buffer while short, the 3rd pillar while this year's 20% refund has room (pre-2025 contracts), a wish-list goal about to miss its date, then extra loan principal at the loan's rate vs investing at the expected return minus 2 points for uncertainty; the sum split down that list. Use it instead of reasoning out returns yourself."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a amountArgs) (*mcp.CallToolResult, any, error) {
+			q := url.Values{}
+			if a.Amount > 0 {
+				q.Set("amount", fmt.Sprint(a.Amount))
+			}
+			return text(call("GET", "/plan/next-euro", q, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_lifestyle_creep", Description: "Lifestyle creep: the last 12 complete months against the same 12 months up to three years earlier — income, spending and essential growth in %, the gap in points, the categories that grew most, and regular bills that started since."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/insights/creep", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_price_creep", Description: "Price creep on regular bills: each bill's latest charge against the one about a year earlier (% and € a year), renewals in the next 45 days (yearly ones found over two years), the personal inflation rate (those bills' price change weighted by annual cost) and Lithuania's official HICP rate when available."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/insights/prices", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_decisions", Description: "The decision journal: purchases being considered (with cooling-off date), bought or skipped, and how bought ones were rated (worth it yes/meh/no); plus the record — money kept by skipping, money regretted, worth-it rate by category."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/plan/decisions", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_decision_impact", Description: "What a purchase of a given amount would do, as plain sentences: share of this month's left to spend, days of usual spending, buffer months after paying from cash, how far the wish list slips, how much later financial independence comes."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a amountArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/plan/decisions/impact", vals("amount", fmt.Sprint(a.Amount)), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "log_decision", Description: "WRITES — read-write token. Writes a purchase being considered into the decision journal (title, amount in euros, optional category id and note); it starts 'thinking' with a cooling-off date by size. It never decides, rates or deletes. Confirm first."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a decisionArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("POST", "/plan/decisions", nil, map[string]any{"title": a.Title, "amount": a.Amount, "category": a.Category, "note": a.Note}))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_ownership_costs", Description: "True cost of owning each property and vehicle over the last 12 months: running costs (spending tagged with it, by category), loan interest, value lost or gained, and what the owner's equity would earn invested (an estimate); a year and a month; per km for vehicles and a verdict against the owner's alternative (taxi/rental per km, or rent) when set."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/wealth/ownership", nil, nil))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_tax", Description: "Lithuanian income declaration (GPM311, due 1 May) estimate for a year: salary above the 25% bracket left to pay, interest and investment gains above their €500 exemptions, the 3rd-pillar refund (only contracts signed before 2025), dividends note; due and refund totals. Estimates from the ledger — say so; VMI's pre-filled declaration is what counts."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a yearArgs) (*mcp.CallToolResult, any, error) {

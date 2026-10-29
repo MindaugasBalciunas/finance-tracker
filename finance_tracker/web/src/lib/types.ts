@@ -124,3 +124,49 @@ export interface TagReport { tags: TagStat[]; tagged_share: number; year_spent: 
 export interface RuleStat { id: number; matches: number; recent: number; last: string; decides: number; overridden: number; shadowed: boolean; duplicate: number }
 export interface RuleReport { rules: RuleStat[]; coverage: number; unused: number; shadowed: number; duplicates: number; overrode: number; top: number[] | null }
 export interface CategoryUse { category: string; count: number; year: number; last: string; rules: number; budgeted: boolean }
+
+// ── planning tools: payday, next euro, decisions, drift, ownership ──
+
+export type RunStep = {
+  key: string; kind: 'saving' | 'wishlist' | 'move'; title: string; detail?: string
+  from?: string; from_name?: string; to?: string; to_name?: string
+  amount: number; done: number; status: 'done' | 'partial' | 'todo'; by?: string; link?: string
+}
+export type Runbook = { month: string; payday: string; expected: string; salary: number; steps: RunStep[]; total: number; done_total: number; open: number }
+
+export type EuroOption = { key: string; title: string; why: string; return: number; sure: boolean; room?: number; amount: number; to?: string; to_name?: string; link?: string }
+export type NextEuro = { sum: number; options: EuroOption[]; notes: string[] }
+
+export type Decision = {
+  id: number; title: string; amount: number; category: string; status: 'thinking' | 'bought' | 'skipped'
+  cool_until: string; decided_on: string; review_on: string; worth: '' | 'yes' | 'meh' | 'no'; note: string; created_at: string
+}
+export type DecisionRecord = {
+  skipped: number; skipped_sum: number; bought: number; yes: number; meh: number; no: number; regretted_sum: number
+  by_category: { category: string; rated: number; worth: number }[]
+}
+export type Impact = { amount: number; cooling_days: number; lines: { key: string; tone: 'good' | 'warn' | 'bad'; text: string }[] }
+
+export type CreepWindow = { from: string; to: string; income: number; spending: number; fixed: number }
+export type Creep = {
+  years: number; then: CreepWindow; now: CreepWindow; income_growth: number; spending_growth: number; fixed_growth: number; gap: number
+  tone: 'good' | 'warn' | 'bad'; text: string
+  drivers: { category: string; then: number; now: number; change: number }[]
+  new: { merchant: string; category: string; monthly: number; since: string }[]; new_monthly: number
+}
+export type PriceWatch = {
+  merchant: string; category: string; cadence: string; now: number; last_date: string; year_ago: number; year_ago_date?: string
+  change: number; yearly: number; extra: number; next?: string; renews_soon: boolean; advice?: string
+}
+export type Prices = {
+  items: PriceWatch[]; rising: number; extra: number; personal: number | null; basket: number; weight: number
+  official: { rate: number; month: string; source: string } | null
+}
+
+export type OwnLine = { key: string; label: string; amount: number; estimate?: boolean; link?: string }
+export type OwnSettings = { tag: string; km_year: number; alt_per_km: number; rent: number }
+export type OwnCost = {
+  account_id: string; name: string; kind: 'property' | 'vehicle'; settings: OwnSettings; value: number; equity: number
+  lines: OwnLine[]; running: OwnLine[]; year: number; month: number; per_km?: number; alt_year?: number
+  verdict?: string; tone?: 'good' | 'warn'; missing: string[]
+}

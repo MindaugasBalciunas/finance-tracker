@@ -180,6 +180,22 @@ CREATE TABLE IF NOT EXISTS trip_history (
     state      TEXT NOT NULL CHECK (state IN ('done','active')),  -- done = in history; active = kept on the list
     updated_at TEXT NOT NULL
 );`,
+	// Decision journal: a purchase considered before it is made, with a
+	// cooling-off date, what was decided, and whether it was worth it when
+	// looked back on. New table; nothing existing changes.
+	`CREATE TABLE IF NOT EXISTS decisions (
+    id         INTEGER PRIMARY KEY,
+    title      TEXT NOT NULL,
+    amount     INTEGER NOT NULL,                  -- cents
+    category   TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'thinking' CHECK (status IN ('thinking','bought','skipped')),
+    cool_until TEXT NOT NULL DEFAULT '',          -- YYYY-MM-DD: decide on or after this day
+    decided_on TEXT NOT NULL DEFAULT '',
+    review_on  TEXT NOT NULL DEFAULT '',          -- YYYY-MM-DD: ask whether it was worth it
+    worth      TEXT NOT NULL DEFAULT '' CHECK (worth IN ('','yes','meh','no')),
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

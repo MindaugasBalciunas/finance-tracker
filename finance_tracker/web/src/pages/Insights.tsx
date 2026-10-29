@@ -6,12 +6,13 @@ import { Trends } from './insights/Trends'
 import { ReviewTabs } from './insights/MonthReview'
 import { SummaryView } from './insights/Summary'
 import { FunView } from './insights/Fun'
+import { DriftView } from './insights/Drift'
 
 // Looking back. Recurring bills live in Plan (they are what's coming);
 // taxes and independence in Wealth (where the money ends up).
 const TABS = [
   { value: 'summary', label: 'Summary' }, { value: 'review', label: 'Review' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'spending', label: 'Spending' },
-  { value: 'trends', label: 'Trends' }, { value: 'fun', label: 'Fun facts' },
+  { value: 'trends', label: 'Trends' }, { value: 'drift', label: 'Drift' }, { value: 'fun', label: 'Fun facts' },
 ]
 export default function Insights() {
   const loc = useLocation()
@@ -35,6 +36,7 @@ export default function Insights() {
         <Route path="/recurring" element={<Navigate to="/plan/recurring" replace />} />
         <Route path="/fi" element={<Navigate to="/wealth/fi" replace />} />
         <Route path="/tax" element={<Navigate to="/wealth/tax" replace />} />
+        <Route path="/drift" element={<DriftView />} />
         <Route path="/fun" element={<FunView />} />
       </Routes>
     </div>

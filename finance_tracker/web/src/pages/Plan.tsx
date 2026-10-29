@@ -16,20 +16,24 @@ import { Icon } from '../components/Icon'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Wishlist } from './plan/Wishlist'
 import { ForecastView } from './plan/Forecast'
+import { PaydayView } from './plan/Payday'
+import { DecisionsView } from './plan/Decisions'
 import { RecurringView } from './insights/Recurring'
 import { DateInput } from '../components/DateInput'
 
 export default function Plan() {
   const loc = useLocation()
   const nav = useNavigate()
-  const tab = loc.pathname.includes('/recurring') ? 'recurring' : loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
+  const tab = loc.pathname.includes('/payday') ? 'payday' : loc.pathname.includes('/decisions') ? 'decisions' : loc.pathname.includes('/recurring') ? 'recurring' : loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
       <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
       <Tabs value={tab} onChange={(v) => nav(v === 'month' ? '/plan' : `/plan/${v}`)}
-        tabs={[{ value: 'month', label: 'Budget' }, { value: 'recurring', label: 'Recurring' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
+        tabs={[{ value: 'month', label: 'Budget' }, { value: 'payday', label: 'Payday' }, { value: 'recurring', label: 'Recurring' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'decisions', label: 'Decisions' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>
         <Route path="/" element={<Month />} />
+        <Route path="/payday" element={<PaydayView />} />
+        <Route path="/decisions" element={<DecisionsView />} />
         <Route path="/recurring" element={<RecurringView />} />
         <Route path="/forecast" element={<ForecastView />} />
         <Route path="/wishlist" element={<Wishlist />} />
