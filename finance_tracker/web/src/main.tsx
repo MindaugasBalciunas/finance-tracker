@@ -25,7 +25,8 @@ if (typeof window !== 'undefined' && window.visualViewport && window.matchMedia?
       document.documentElement.dataset.typing = '1'
       const el = document.activeElement as HTMLElement
       const r = el.getBoundingClientRect()
-      if (r.bottom > vv.height + vv.offsetTop - 16 || r.top < vv.offsetTop + 56) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      // Sheets place their own fields (see Sheet); the page's are centred.
+      if (!el.closest('[data-sheet]') && (r.bottom > vv.height + vv.offsetTop - 16 || r.top < vv.offsetTop + 56)) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     } else delete document.documentElement.dataset.typing
   }
   vv.addEventListener('resize', update)

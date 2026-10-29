@@ -368,6 +368,8 @@ function useRevealOnce(ref: React.RefObject<HTMLElement | null>, open: boolean) 
   useEffect(() => {
     if (!open || done.current) return
     done.current = true
+    // Inside a sheet on a phone the sheet already puts the field at the top.
+    if (ref.current?.closest('[data-sheet]') && window.matchMedia?.('(pointer: coarse)').matches) return
     const t = setTimeout(() => ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 120)
     return () => clearTimeout(t)
   }, [open, ref])

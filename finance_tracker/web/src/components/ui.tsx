@@ -152,7 +152,29 @@ export function Segmented<T extends string>({ value, options, onChange, size = '
 }
 
 /** Bottom sheet on phones, centred dialog on wider screens. */
+const isTextField = (el: EventTarget | null): el is HTMLElement =>
+  el instanceof HTMLElement && el.matches('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=date]):not([type=range]), textarea')
+const coarse = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+
 export function Sheet({ open, onClose, title, children, footer, wide = false, tall = false }: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean; tall?: boolean }) {
+  // Phones: the keyboard covers the lower half of a sheet without the
+  // browser saying so (Firefox doesn't resize the page). While a text field
+  // has focus the body gets room below its content and the field (with its
+  // label) scrolls to the top, so it and its suggestions stay above the keys.
+  const [typing, setTyping] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  const onFocus = (e: React.FocusEvent) => {
+    if (!coarse() || !isTextField(e.target)) return
+    setTyping(true)
+    const target = (e.target.closest('label') as HTMLElement | null) ?? e.target
+    setTimeout(() => {
+      const box = body.current
+      if (!box) return
+      const top = target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8
+      box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }, 60)
+  }
+  const onBlur = () => setTimeout(() => { if (!isTextField(document.activeElement) || !body.current?.contains(document.activeElement)) setTyping(false) }, 120)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -173,7 +195,10 @@ export function Sheet({ open, onClose, title, children, footer, wide = false, ta
           <div className="text-base font-semibold truncate">{title}</div>
           <button className="btn-ghost h-9 w-9 px-0" onClick={onClose} aria-label="Close"><Icon name="x" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div ref={body} data-sheet onFocusCapture={onFocus} onBlurCapture={onBlur} className="flex-1 overflow-y-auto px-4 py-4">
+          {children}
+          {typing && <div aria-hidden style={{ height: '55vh' }} />}
+        </div>
         {footer && <div className="shrink-0 border-t border-line px-4 pt-3 pb-safe-3 flex flex-wrap gap-2 justify-end">{footer}</div>}
       </div>
     </div>
