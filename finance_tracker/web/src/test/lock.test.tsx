@@ -28,3 +28,56 @@ describe('lock screen', () => {
     expect(onUnlock).not.toHaveBeenCalled()
   })
 })
+
+describe('fingerprint unlock', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  /** A browser with one passkey; `get` resolves when the "fingerprint" is read. */
+  const withPasskey = (get: (opts: any) => Promise<any>) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      new Response(JSON.stringify(url.includes('status') ? { passkeys: 1 } : { publicKey: { challenge: 'AA', allowCredentials: [] } }), { status: 200 })))
+    vi.stubGlobal('PublicKeyCredential', class {})
+    vi.stubGlobal('navigator', Object.create(navigator, { credentials: { value: { get: vi.fn(get) } } }))
+    return (navigator.credentials.get as any)
+  }
+  const assertion = {
+    id: 'a', rawId: new ArrayBuffer(1), type: 'public-key',
+    response: { authenticatorData: new ArrayBuffer(1), clientDataJSON: new ArrayBuffer(1), signature: new ArrayBuffer(1), userHandle: null },
+  }
+
+  it('asks for the fingerprint as the screen opens', async () => {
+    const get = withPasskey(async () => assertion)
+    const onUnlock = vi.fn()
+    render(<Lock onUnlock={onUnlock} />)
+    await waitFor(() => expect(onUnlock).toHaveBeenCalled())
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers another try after a cancelled prompt, without an error', async () => {
+    const get = withPasskey(async () => { throw new DOMException('cancelled', 'NotAllowedError') })
+    const onUnlock = vi.fn()
+    render(<Lock onUnlock={onUnlock} />)
+    expect(await screen.findByText(/tap to try again/i)).toBeInTheDocument()
+    expect(onUnlock).not.toHaveBeenCalled()
+    // The button still works, and each tap is one reading.
+    fireEvent.click(screen.getByText('Unlock with fingerprint'))
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+  })
+
+  it('ignores taps while the phone is already reading a fingerprint', async () => {
+    let release: (v: any) => void = () => {}
+    const get = withPasskey(() => new Promise((r) => { release = r }))
+    const onUnlock = vi.fn()
+    render(<Lock onUnlock={onUnlock} />)
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+    const button = await screen.findByText(/waiting for your fingerprint/i)
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(get).toHaveBeenCalledTimes(1)
+    release(assertion)
+    await waitFor(() => expect(onUnlock).toHaveBeenCalled())
+  })
+})

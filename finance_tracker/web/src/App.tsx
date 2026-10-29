@@ -9,6 +9,7 @@ import { useDemo, usePrefs } from './lib/hooks'
 import { useExitDemo } from './components/ExitDemo'
 import { NotificationsButton } from './components/Notifications'
 import { QuickActionsButton, useAutoSync } from './components/QuickActions'
+import { PullToRefresh } from './components/PullToRefresh'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
 import { Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
@@ -129,6 +130,7 @@ function Shell() {
   }, [nav])
   return (
     <div ref={shellRef} className={clsx('min-h-dvh transition-[padding]', collapsed ? 'sm:pl-16' : 'sm:pl-56')}>
+      <PullToRefresh />
       {/* Desktop sidebar — collapses to an icon rail */}
       <aside className={clsx('fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-line bg-surface transition-[width] sm:flex', collapsed ? 'w-16' : 'w-56')}>
         <div className={clsx('flex h-16 items-center', collapsed ? 'justify-center' : 'justify-between pl-4 pr-2')}>
@@ -233,21 +235,25 @@ function Shell() {
 
 function Gate() {
   const [locked, setLocked] = useState<boolean | null>(null)
-  // Opening the app (a new tab, a reopened phone app, a full refresh) asks for
-  // the fingerprint again: a session left from before this page load is ended.
-  // Moving between pages never asks.
-  const check = () =>
-    api.get<{ enabled: boolean; unlocked: boolean }>('/auth/status').then(async (s) => {
+  // Opening the app (a new tab, a reopened phone app) asks for the fingerprint
+  // again: a session left from before this page load is ended. Refreshing an
+  // unlocked page keeps it unlocked, and moving between pages never asks.
+  const check = () => {
+    if (!unlockedThisLoad && resumedUnlock()) unlockedThisLoad = true
+    return api.get<{ enabled: boolean; unlocked: boolean }>('/auth/status').then(async (s) => {
       if (s.enabled && s.unlocked && !unlockedThisLoad) {
         await api.post('/auth/logout').catch(() => {})
         return setLocked(true)
       }
       setLocked(s.enabled && !s.unlocked)
     }).catch(() => setLocked(false))
-  const lockNow = () => { unlockedThisLoad = false; api.post('/auth/logout').catch(() => {}); setLocked(true) }
+  }
+  const lockNow = () => { unlockedThisLoad = false; clearUnlockMark(); api.post('/auth/logout').catch(() => {}); setLocked(true) }
   useEffect(() => {
     check()
-    const on = () => setLocked(true)
+    // Anything that locks kills the mark: it is the one thing that can skip
+    // the fingerprint, so it must never outlive the unlocked state.
+    const on = () => { unlockedThisLoad = false; clearUnlockMark(); setLocked(true) }
     window.addEventListener('ft:locked', on)
     return () => window.removeEventListener('ft:locked', on)
   }, [])
@@ -257,7 +263,9 @@ function Gate() {
     if (locked !== false || !unlockedThisLoad) return
     let last = Date.now()
     const touch = () => { last = Date.now() }
-    const idle = () => { if (Date.now() - last > IDLE_MS) lockNow() }
+    // Keep the mark fresh while the app is in use, so a refresh minutes later
+    // is still inside the window the server allows.
+    const idle = () => { if (Date.now() - last > IDLE_MS) lockNow(); else markUnlocked() }
     const vis = () => { if (document.visibilityState === 'visible') idle() }
     const evs = ['pointerdown', 'keydown', 'scroll', 'wheel', 'touchstart']
     evs.forEach((e) => window.addEventListener(e, touch, { passive: true }))
@@ -266,7 +274,7 @@ function Gate() {
     return () => { evs.forEach((e) => window.removeEventListener(e, touch)); document.removeEventListener('visibilitychange', vis); window.clearInterval(t) }
   }, [locked])
   if (locked === null) return <Loading />
-  if (locked) return <Lock onUnlock={() => { unlockedThisLoad = true; setLocked(false); qc.invalidateQueries() }} />
+  if (locked) return <Lock onUnlock={() => { unlockedThisLoad = true; markUnlocked(); setLocked(false); qc.invalidateQueries() }} />
   return (
     <TxEditorProvider>
       <Shell />
@@ -274,9 +282,44 @@ function Gate() {
   )
 }
 
-// Unlocked since this page was loaded (memory only: a reload starts locked).
+// Unlocked since this page was loaded.
 let unlockedThisLoad = false
+// Keep equal to auth.IdleTimeout (server/internal/auth/auth.go): the server
+// ends the session at the same moment this screen locks.
 const IDLE_MS = 15 * 60_000
+
+// When the app was last unlocked, and when the page was last left. Both are
+// per-tab (sessionStorage) and only ever let a *reload* back in.
+const UNLOCK_MARK = 'ft-unlocked-at'
+const LEFT_MARK = 'ft-left-at'
+const stamp = (k: string) => { try { sessionStorage.setItem(k, String(Date.now())) } catch {} }
+const markUnlocked = () => stamp(UNLOCK_MARK)
+const clearUnlockMark = () => { try { sessionStorage.removeItem(UNLOCK_MARK) } catch {} }
+// A reload runs this on the way out and is back within a second; a phone that
+// parks the app and restores it later is not.
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => stamp(LEFT_MARK))
+const RELOAD_GAP_MS = 10_000
+
+/**
+ * Does a refresh of an unlocked page stay unlocked? Pulling to refresh (or F5)
+ * shouldn't cost a fingerprint, so all of this must hold: this tab was
+ * unlocked, inside the idle window the server honours anyway; the page load is
+ * a reload (not a fresh open, and not a restored tab, which arrives as
+ * back_forward with sessionStorage restored alongside it); and it followed
+ * immediately on leaving the last one.
+ */
+export function resumedUnlock() {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    if (nav?.type !== 'reload') return false
+    const at = Number(sessionStorage.getItem(UNLOCK_MARK) ?? 0)
+    if (!at || Date.now() - at > IDLE_MS) return false
+    const left = Number(sessionStorage.getItem(LEFT_MARK) ?? 0)
+    return !!left && Date.now() - left < RELOAD_GAP_MS
+  } catch {
+    return false
+  }
+}
 
 export default function App() {
   return (

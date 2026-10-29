@@ -8,17 +8,49 @@ const b64uToBuf = (s: string) => {
 }
 const bufToB64u = (b: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
+/** Can this browser read a passkey at all? */
+export function passkeySupported() {
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials?.get
+}
+
+/**
+ * The prompt closed without a fingerprint: dismissed, timed out, or replaced
+ * by a newer one. Not a failure to report — the screen just offers it again.
+ */
+export function passkeyCancelled(e: unknown) {
+  const name = (e as { name?: string } | null)?.name
+  return name === 'AbortError' || name === 'NotAllowedError'
+}
+
+// Android's credential manager (Samsung Pass) allows one open request at a
+// time: a second one while its sheet is up answers neither, which left the
+// lock screen doing nothing. Keep one ceremony and cancel it before the next.
+let live: AbortController | null = null
+
+export function cancelPasskeyLogin() {
+  live?.abort()
+  live = null
+}
+
 export async function passkeyLogin() {
-  const opts = await api.post<any>('/auth/passkey/login/begin')
-  const pk = opts.publicKey
-  pk.challenge = b64uToBuf(pk.challenge)
-  pk.allowCredentials = (pk.allowCredentials ?? []).map((c: any) => ({ ...c, id: b64uToBuf(c.id) }))
-  const cred = (await navigator.credentials.get({ publicKey: pk })) as PublicKeyCredential
-  const r = cred.response as AuthenticatorAssertionResponse
-  await api.post('/auth/passkey/login/finish', {
-    id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type,
-    response: { authenticatorData: bufToB64u(r.authenticatorData), clientDataJSON: bufToB64u(r.clientDataJSON), signature: bufToB64u(r.signature), userHandle: r.userHandle ? bufToB64u(r.userHandle) : null },
-  })
+  cancelPasskeyLogin()
+  const ctrl = new AbortController()
+  live = ctrl
+  try {
+    const opts = await api.post<any>('/auth/passkey/login/begin')
+    if (ctrl.signal.aborted) throw new DOMException('replaced', 'AbortError')
+    const pk = opts.publicKey
+    pk.challenge = b64uToBuf(pk.challenge)
+    pk.allowCredentials = (pk.allowCredentials ?? []).map((c: any) => ({ ...c, id: b64uToBuf(c.id) }))
+    const cred = (await navigator.credentials.get({ publicKey: pk, signal: ctrl.signal })) as PublicKeyCredential
+    const r = cred.response as AuthenticatorAssertionResponse
+    await api.post('/auth/passkey/login/finish', {
+      id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type,
+      response: { authenticatorData: bufToB64u(r.authenticatorData), clientDataJSON: bufToB64u(r.clientDataJSON), signature: bufToB64u(r.signature), userHandle: r.userHandle ? bufToB64u(r.userHandle) : null },
+    })
+  } finally {
+    if (live === ctrl) live = null
+  }
 }
 
 export async function passkeyRegister(name: string) {
