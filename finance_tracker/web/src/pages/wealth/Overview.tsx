@@ -110,14 +110,14 @@ export function Overview() {
           <button className="btn-primary h-9" onClick={() => setUpdateOpen(true)}><Icon name="refresh" size={16} />Update balances</button>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="columns-1 gap-3 lg:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
         {GROUPS.filter((g) => byGroup[g.id]?.length).map((g) => {
           const sum = byGroup[g.id].reduce((a, x) => a + (x.balance ?? 0), 0)
           // Shares of the same base as the chart: liquid money when "Liquid only" is on.
           const base = assetBase(byGroup, liquidOnly)
           const inBase = g.id !== 'debt' && (!liquidOnly || LIQUID_GROUPS.includes(g.id))
           return (
-            <Card key={g.id} pad={false} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
+            <Card key={g.id} pad={false} color={`var(--s${g.slot})`} title={<span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: `var(--s${g.slot})` }} />{g.name}</span>}
               action={<span className="flex items-baseline gap-2"><span className="tnum text-sm font-semibold">{eurc(sum)}</span>{inBase && base > 0 && sum > 0 && <span className="tnum text-xs text-muted">{pct(sum / base)}</span>}</span>}>
               <div className="divide-y divide-line border-t border-line">
                 {byGroup[g.id].map((a) => <AccountRow key={a.id} a={a} share={g.id === 'debt' ? (sum ? Math.abs(a.balance ?? 0) / Math.abs(sum) : 0) : sum > 0 ? Math.max(0, a.balance ?? 0) / sum : 0} color={g.id === 'debt' ? 'rgb(var(--bad))' : brandColor(a) ?? `var(--s${g.slot})`} onClick={() => setAcct(a)} />)}

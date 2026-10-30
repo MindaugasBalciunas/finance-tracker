@@ -1,15 +1,15 @@
 import { useState, type ReactNode } from 'react'
-import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ledgerLink, monthEnd } from '../lib/links'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { api } from '../lib/api'
-import { useOverview, usePlan, useRefresh } from '../lib/hooks'
+import { useOverview, usePlan, useRefresh, useWide } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { addMonths, eur, eurc, monthLabel, shortDate, thisMonth, todayISO } from '../lib/format'
-import type { Budget, PlanLine, PlanReport, Tx, TxList } from '../lib/types'
-import { AskCFO, Card, CountUp, Empty, ErrorBox, Field, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
+import type { Budget, PlanLine, PlanReport, Runbook, Tx, TxList } from '../lib/types'
+import { AskCFO, Card, CountUp, Empty, ErrorBox, Field, hue, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -22,7 +22,7 @@ import { DateInput } from '../components/DateInput'
 export default function Plan() {
   const loc = useLocation()
   const nav = useNavigate()
-  const tab = loc.pathname.includes('/recurring') ? 'recurring' : loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
+  const tab = loc.pathname.includes('/recurring') ? 'recurring' : loc.pathname.includes('/forecast') ? 'forecast' : loc.pathname.includes('/trips') ? 'trips' : loc.pathname.includes('/wishlist') || loc.pathname.includes('/decisions') ? 'wishlist' : loc.pathname.includes('/settings') ? 'settings' : 'month'
   return (
     <div>
       <PageHeader title="Plan" actions={<AskCFO q="Review my budget plan against the last 12 months: which lines are unrealistic, what should become a fund, and is the plan affordable on my income?" />} />
@@ -30,6 +30,10 @@ export default function Plan() {
         tabs={[{ value: 'month', label: 'Budget' }, { value: 'recurring', label: 'Recurring' }, { value: 'forecast', label: 'Forecast' }, { value: 'wishlist', label: 'Wish list' }, { value: 'trips', label: 'Trips' }, { value: 'settings', label: 'Income & goals' }]} />
       <Routes>
         <Route path="/" element={<Month />} />
+        {/* Payday's checklist now lives in the budget's saving and fixed lines. */}
+        <Route path="/payday" element={<Navigate to="/plan" replace />} />
+        {/* The decision journal lives on the wish list. */}
+        <Route path="/decisions" element={<Navigate to="/plan/wishlist" replace />} />
         <Route path="/recurring" element={<RecurringView />} />
         <Route path="/forecast" element={<ForecastView />} />
         <Route path="/wishlist" element={<Wishlist />} />
@@ -59,6 +63,11 @@ function Month() {
     onSuccess: (_, ls) => { refresh(); toast(`${ls.length} budgets updated`, 'good') },
   })
   const { data: o } = useOverview()
+  const current = month === thisMonth()
+  const wide = useWide()
+  // This month's payday checklist: where each saving line's money goes and
+  // whether the bank shows it moved (the same engine as Home's reminder).
+  const { data: rb } = useQuery({ queryKey: ['runbook'], queryFn: () => api.get<Runbook>('/plan/payday?moves=0'), enabled: current })
   if (isLoading) return <Loading />
   if (error || !r) return <ErrorBox error={error} />
   const rebalance = needsRebalance(o?.plan.track ?? [])
@@ -73,7 +82,71 @@ function Month() {
     { kind: 'saving', title: 'Saving & investing', hint: 'Transfers into investments, pension and debt principal' },
     { kind: 'spending', title: 'Spending', hint: 'Day-to-day choices' },
   ]
-  const current = month === thisMonth()
+  // What each line still needs this month, for the current month only.
+  const extra = (l: PlanLine): LineExtra | undefined => {
+    if (!current) return undefined
+    if (l.kind === 'saving') {
+      const st = rb?.steps.find((x) => x.key === `saving:${l.id}`)
+      if (!st) return undefined
+      const route = [st.from_name, st.to_name].filter(Boolean).join(' → ')
+      return { route, done: st.status === 'done' }
+    }
+    if (l.kind === 'fixed') {
+      const f = o?.plan.fixed?.find((x) => x.name === l.name)
+      if (!f) return undefined
+      if (f.spent >= f.budgeted && f.paid) return { note: `paid ${shortDate(f.paid)}`, done: true }
+      if (f.due) return { note: `due ${shortDate(f.due)}`, warn: f.due <= todayISO() }
+    }
+    return undefined
+  }
+  // Discretionary spending no line covers.
+  const notBudgeted = r.unbudgeted.length > 0 && (
+
+      <Card pad={false} title="Not budgeted">
+        <div className="px-4 pb-2 -mt-1 text-xs text-muted">Discretionary spending no line covers.</div>
+        <div className="divide-y divide-line border-t border-line">
+          {r.unbudgeted.map((u) => (
+            <div key={u.category} className="flex items-center gap-3 px-4 py-2.5">
+              <Link to={ledgerLink({ category: u.category, month })} className="min-w-0 flex-1 hover:text-accent">
+                <div className="text-sm font-medium">{cats.name(u.category)}</div>
+                <div className="text-xs text-muted">{eur(u.spent)} this month · {eur(u.year_spent)} this year</div>
+              </Link>
+              {u.suggestion && (
+                <button className="chip hover:bg-sunken" onClick={() => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
+                  + budget {eur(u.suggestion.amount)}{u.suggestion.lumpy ? ' fund' : ''}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+  )
+  // One card per kind of line: fixed, saving, spending.
+  const groupCard = (g: { kind: string; title: string; hint: string }) => {
+    const lines = r.lines.filter((l) => l.kind === g.kind)
+    return (
+      <div key={g.kind} id={`plan-${g.kind}`} className="scroll-mt-16"><Card pad={false} color={KIND_HUE[g.kind]} title={<span>{g.title} <span className="font-normal text-muted">{eur(lines.reduce((a, l) => a + l.monthly_share, 0))}/mo</span></span>}
+        action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ kind: g.kind as any, period: 'monthly', categories: [], tag: '', amount: 0 })}><Icon name="plus" size={14} />Line</button>}>
+        <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
+        {g.kind === 'saving' && current && rb && rb.steps.some((x) => x.kind === 'saving') && (() => {
+          const steps = rb.steps.filter((x) => x.kind === 'saving')
+          const left = steps.filter((x) => x.status !== 'done').length
+          return (
+            <div className={clsx('mx-4 mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs', left ? 'bg-sunken/60 text-ink2' : 'bg-good/10 text-good')}>
+              <Icon name={left ? 'send' : 'check'} size={14} className="shrink-0" />
+              <span>{rb.payday ? <>Salary in {shortDate(rb.payday)} · </> : <>Salary not in yet{rb.expected && <> — expected {shortDate(rb.expected)}</>} · </>}
+                {left ? `${steps.length - left} of ${steps.length} moved — the rest ticks off when the bank shows it` : 'all moved this month'}</span>
+            </div>
+          )
+        })()}
+        {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
+          <div className="divide-y divide-line border-t border-line">
+            {lines.map((l) => <LineRow key={l.id} l={l} month={month} monthPace={current ? monthProgress() : undefined} extra={extra(l)} onEdit={() => setEdit(l)} />)}
+          </div>
+        )}
+      </Card></div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -88,41 +161,19 @@ function Month() {
           {suggestions(true)}
         </Rebalance>
       ) : suggestions(false)}
-      {groups.map((g) => {
-        const lines = r.lines.filter((l) => l.kind === g.kind)
-        return (
-          <div key={g.kind} id={`plan-${g.kind}`} className="scroll-mt-16"><Card pad={false} title={<span>{g.title} <span className="font-normal text-muted">{eur(lines.reduce((a, l) => a + l.monthly_share, 0))}/mo</span></span>}
-            action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ kind: g.kind as any, period: 'monthly', categories: [], tag: '', amount: 0 })}><Icon name="plus" size={14} />Line</button>}>
-            <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
-            {lines.length === 0 ? <div className="px-4 pb-4 text-sm text-muted">No lines yet.</div> : (
-              <div className="divide-y divide-line border-t border-line">
-                {lines.map((l) => <LineRow key={l.id} l={l} month={month} monthPace={current ? monthProgress() : undefined} onEdit={() => setEdit(l)} />)}
-              </div>
-            )}
-          </Card></div>
-        )
-      })}
-      {r.unbudgeted.length > 0 && (
-        <Card pad={false} title="Not budgeted">
-          <div className="px-4 pb-2 -mt-1 text-xs text-muted">Discretionary spending no line covers.</div>
-          <div className="divide-y divide-line border-t border-line">
-            {r.unbudgeted.map((u) => (
-              <div key={u.category} className="flex items-center gap-3 px-4 py-2.5">
-                <Link to={ledgerLink({ category: u.category, month })} className="min-w-0 flex-1 hover:text-accent">
-                  <div className="text-sm font-medium">{cats.name(u.category)}</div>
-                  <div className="text-xs text-muted">{eur(u.spent)} this month · {eur(u.year_spent)} this year</div>
-                </Link>
-                {u.suggestion && (
-                  <button className="chip hover:bg-sunken" onClick={() => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
-                    + budget {eur(u.suggestion.amount)}{u.suggestion.lumpy ? ' fund' : ''}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-      {current && <OnceAYear r={r} onEdit={setEdit} month={month} />}
+      {/* Desktop: what goes out first (fixed, saving) and what no line covers on
+          the left; day-to-day spending and once-a-year costs on the right.
+          Phones keep the reading order. */}
+      {wide ? (
+        <div className="grid grid-cols-2 items-start gap-4">
+          <div className="space-y-4">{groups.filter((g) => g.kind !== 'spending').map(groupCard)}{notBudgeted}</div>
+          <div className="space-y-4">{groups.filter((g) => g.kind === 'spending').map(groupCard)}{current && <OnceAYear r={r} onEdit={setEdit} month={month} />}</div>
+        </div>
+      ) : <>
+        {groups.map(groupCard)}
+        {notBudgeted}
+        {current && <OnceAYear r={r} onEdit={setEdit} month={month} />}
+      </>}
       <YearGrid r={r} />
       {edit && <BudgetEditor b={edit} month={month} onClose={() => setEdit(null)} />}
     </div>
@@ -156,7 +207,7 @@ function Rebalance({ r, onAddLine, children }: { r: PlanReport; onAddLine: (u: P
   const saving = r.lines.filter((l) => l.kind === 'saving')
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   return (
-    <section className="card border-warn/40 p-4">
+    <section className="card p-4" style={hue('var(--hue-warn)')}>
       <div className="flex items-start gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn/15 text-warn"><Icon name="target" /></span>
         <div className="min-w-0 flex-1">
@@ -367,7 +418,12 @@ function monthProgress() {
   return d.getDate() / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 }
 
-function LineRow({ l, month, onEdit, monthPace }: { l: PlanLine; month: string; onEdit: () => void; monthPace?: number }) {
+// Budget groups by meaning: obligations, what you keep, what you spend.
+const KIND_HUE: Record<string, string> = { fixed: 'var(--hue-fixed)', saving: 'var(--hue-saving)', spending: 'var(--hue-spending)' }
+
+type LineExtra = { route?: string; note?: string; done?: boolean; warn?: boolean }
+
+export function LineRow({ l, month, onEdit, monthPace, extra }: { l: PlanLine; month: string; onEdit: () => void; monthPace?: number; extra?: LineExtra }) {
   const cats = useCats()
   const nav = useNavigate()
   // The line's transactions, matched as the line matches them: its tag and
@@ -391,13 +447,23 @@ function LineRow({ l, month, onEdit, monthPace }: { l: PlanLine; month: string; 
             {l.fund && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{l.fund_state ? 'fund' : `fund from ${monthLabel(l.start_month)}`}</span>}
             {l.period === 'yearly' && <span className="ml-1.5 rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-ink2">yearly</span>}
             <div className="truncate text-xs text-muted">{what}</div>
+            {extra && (extra.route || extra.note) && (
+              <div className={clsx('mt-0.5 flex items-center gap-1 text-xs', extra.done ? 'text-good' : extra.warn ? 'text-warn' : 'text-ink2')}>
+                {extra.done && <Icon name="check" size={12} className="shrink-0" />}
+                <span className="truncate">{[extra.route, extra.note].filter(Boolean).join(' · ')}</span>
+              </div>
+            )}
           </div>
           <div className="shrink-0 text-right">
             <div className="tnum text-sm"><b>{eur(l.spent)}</b> <span className="text-muted">/ {eur(l.budgeted)}</span></div>
-            <div className={clsx('tnum text-xs', over && l.kind !== 'saving' ? 'text-bad' : 'text-muted')}>{l.kind === 'saving' ? (l.remaining <= 0 ? 'target reached' : `${eur(l.remaining)} to go`) : over ? `${eur(-l.remaining)} over` : `${eur(l.remaining)} ${l.fund_state ? 'in fund' : 'left'}`}</div>
+            {/* A fixed line paid in full says so beside its name; "€0 left" would repeat it. */}
+            {!(l.kind === 'fixed' && extra?.done && l.remaining === 0) && (
+              <div className={clsx('tnum text-xs', over && l.kind !== 'saving' ? 'text-bad' : 'text-muted')}>{l.kind === 'saving' ? (l.remaining <= 0 ? 'target reached' : `${eur(l.remaining)} to go`) : over ? `${eur(-l.remaining)} over` : `${eur(l.remaining)} ${l.fund_state ? 'in fund' : 'left'}`}</div>
+            )}
           </div>
         </div>
-        <Meter className="mt-2" value={l.spent} max={l.budgeted} pace={pace} goal={l.kind === 'saving'} />
+        {/* An obligation paid in full is done, not a warning; paying more still shows red. */}
+        <Meter className="mt-2" value={l.spent} max={l.budgeted} pace={pace} goal={l.kind === 'saving' || (l.kind === 'fixed' && !over)} />
       </button>
       {open && (
         <div className="mt-3 space-y-2">

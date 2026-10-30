@@ -7,7 +7,7 @@ import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth } from '../../lib/format'
 import type { Flow, Tx } from '../../lib/types'
-import { CountUp, Card, Delta, Loading, Meter, Segmented, Stat } from '../../components/ui'
+import { Card, CountUp, Delta, hue, Loading, Meter, Segmented, Stat } from '../../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon } from '../../components/Icon'
@@ -35,7 +35,6 @@ function MonthReviewView() {
   const f = r.flow as Flow
   const avg = r.six_month_avg as Flow
   const prev = r.previous as Flow
-  const toneBorder = r.tone === 'good' ? 'border-l-good' : r.tone === 'bad' ? 'border-l-bad' : 'border-l-axis'
   const rate = Math.max(0, Math.min(1, f.savings_rate))
   const vs = (cur: number, ref: number, goodUp: boolean) => ref ? <Delta value={cur - ref} goodWhenUp={goodUp} /> : null
   const maxCat = Math.max(...r.categories.map((c: any) => Math.max(c.spent, c.average)), 1)
@@ -46,8 +45,10 @@ function MonthReviewView() {
         <div className="text-base font-semibold">{monthLabel(month, true)}{!r.complete && <span className="ml-2 text-xs font-normal text-muted">in progress</span>}</div>
         <button className="btn-ghost h-9 w-9 px-0" onClick={() => setMonth(addMonths(month, 1))} disabled={month >= thisMonth()} aria-label="Next month"><Icon name="chevronR" /></button>
       </div>
+      {/* Wide screens: closing the month beside how it went. */}
+      <div className={clsx('grid grid-cols-1 gap-4', r.complete && 'xl:grid-cols-2 xl:items-start')}>
       {r.complete && <MonthClose month={month} />}
-      <section className={clsx('card border-l-4 p-4', toneBorder)}>
+      <section className="card p-4" style={hue(r.tone === 'good' ? 'var(--hue-good)' : r.tone === 'bad' ? 'var(--hue-bad)' : undefined)}>
         <div className="section-title">The month in one line</div>
         <h2 className="mt-1 text-lg font-semibold">{r.verdict}</h2>
         {f.income > 0 && (
@@ -70,13 +71,14 @@ function MonthReviewView() {
           </ul>
         )}
       </section>
+      </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Income" value={<CountUp value={f.income} format={eur} />} sub={<>vs last month {vs(f.income, prev.income, true)}</>} />
         <Stat label="Spending" value={<CountUp value={f.spending} format={eur} />} sub={<>vs 6-mo avg {vs(f.spending, avg.spending, false)}</>} />
         <Stat label="Saved" value={<CountUp value={f.saved} format={eur} />} tone={f.saved < 0 ? 'bad' : undefined} sub={<>vs 6-mo avg {vs(f.saved, avg.saved, true)}</>} />
         <Stat label="Net worth" value={<CountUp value={r.net_worth.end} format={eur} />} sub={<Delta value={r.net_worth.change} />} />
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
         <Card title="Where it went" action={<span className="text-xs text-muted">tick = 6-month average</span>}>
           <div className="space-y-2.5">
             {r.categories.slice(0, 10).map((c: any) => (
@@ -106,7 +108,7 @@ function MonthReviewView() {
           {r.owed_to_you > 0 && <div className="mt-3 text-sm">Owed to you: <b className="tnum">{eurc(r.owed_to_you)}</b></div>}
         </Card>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
         <Card pad={false} title="Biggest expenses"><div className="divide-y divide-line border-t border-line">{r.top_expenses.map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}</div></Card>
         <Card pad={false} title="Money in"><div className="divide-y divide-line border-t border-line">{(r.top_income ?? []).map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}</div></Card>
       </div>

@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
-import { usePeriod, useRefresh } from '../../lib/hooks'
+import { usePeriod, useRefresh, useWide } from '../../lib/hooks'
 import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeLabel, rangeTick } from '../../lib/periods'
 import { Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, useToast } from '../../components/ui'
@@ -24,6 +24,7 @@ export function Investments() {
   const { data: perf, isLoading: perfLoading } = useQuery({ queryKey: ['portfolio-history', range], queryFn: () => api.get<any[]>('/portfolio/history', { range }), staleTime: 600_000 })
   const [sort, setSort] = usePeriod('stocks-sort', 'value', ['value', 'gain', 'day'])
   const [split, setSplit] = usePeriod('stocks-split', 'positions', ['positions', 'brokers', 'currency'])
+  const wide = useWide()
   const [pos, setPos] = useState<any>(null)
   const [trade, setTrade] = useState<any>(null)
   const [showTrades, setShowTrades] = useState(false)
@@ -58,6 +59,71 @@ export function Investments() {
   const gainPct = p.cost_eur ? p.gain_eur / p.cost_eur : 0
   const dayPct = p.value_eur - p.day_change_eur > 0 ? p.day_change_eur / (p.value_eur - p.day_change_eur) : 0
   const last = perf?.[perf.length - 1], first = perf?.[0]
+  const allocation = (
+    <Card icon="pie" color="var(--s1)" title="Allocation" action={<Segmented size="sm" value={split} onChange={setSplit} options={[{ value: 'positions', label: 'Positions' }, { value: 'brokers', label: 'Brokers' }, { value: 'currency', label: 'Currency' }]} />}>
+      <Donut slices={slices} center={eurk(p.value_eur)} sub="market value" height={180} stacked />
+    </Card>
+  )
+  const positions = (
+    <Card pad={false} icon="trend" color="var(--s7)" title="Positions" action={
+      <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => setTrade({ action: 'buy', date: todayISO(), currency: 'USD', account_id: 'ibkr' })}><Icon name="plus" size={14} />Trade</button>}>
+      <div className="flex items-center justify-between gap-2 px-4 pb-2.5">
+        <span className="text-xs text-muted">Sort by</span>
+        <Segmented size="sm" value={sort} onChange={setSort} options={[{ value: 'value', label: 'Value' }, { value: 'gain', label: 'Gain' }, { value: 'day', label: 'Today' }]} />
+      </div>
+      {!hs.length ? <Empty title="No open positions" /> : (
+        <div className="divide-y divide-line border-t border-line">
+          {sorted.map((h) => {
+            const g = gainEUR(h)
+            const up = upside[h.ticker]
+            return (
+              <button key={h.ticker} onClick={() => setPos(h)} className="block w-full px-4 py-3 text-left hover:bg-sunken/50">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[10px] font-bold tracking-tight"
+                    style={{ background: `color-mix(in oklab, ${color[h.ticker]} var(--tint), transparent)`, color: `color-mix(in oklab, ${color[h.ticker]} 80%, rgb(var(--ink)))` }}>{h.ticker.replace(/\..*$/, '').slice(0, 5)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-1.5"><span className="text-sm font-semibold">{h.ticker}</span><span className="truncate text-xs text-muted">{h.name ?? brokerName(h.account_id)}</span></div>
+                    {h.accounts?.length > 1 && (
+                      <div className="truncate text-[11px] text-ink2">
+                        {h.accounts.map((a: any, i: number) => <span key={i} className={clsx(!a.account_id && 'text-warn')}>{i > 0 && ' · '}{a.account_id ? brokerName(a.account_id) : 'no account'} {+a.shares.toFixed(4)}</span>)}
+                      </div>
+                    )}
+                    <div className="truncate text-xs text-muted tnum">{+h.shares.toFixed(4)} × {h.price != null ? h.price.toFixed(2) : '—'} {h.currency} · avg {h.avg_cost.toFixed(2)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="tnum text-sm font-semibold">{eur(val(h))}</div>
+                    <div className="flex items-center justify-end gap-1.5 text-xs tnum">
+                      {h.day_pct != null && <span className={h.day_pct >= 0 ? 'text-good' : 'text-bad'}>{h.day_pct >= 0 ? '▲' : '▼'}{pct(Math.abs(h.day_pct), 1)}</span>}
+                      {g != null ? <span className={clsx('rounded px-1', g >= 0 ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad')}>{g >= 0 ? '+' : '−'}{eurk(Math.abs(g))} · {pct(Math.abs(h.gain_pct ?? 0), 0)}</span> : <span className="text-muted">no quote</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 pl-12">
+                  <div className="h-1.5 rounded-full bg-sunken"><div className="h-full rounded-full" style={{ width: `${Math.max(2, h.weight * 100)}%`, background: color[h.ticker] }} /></div>
+                  <span className="w-24 text-right text-[11px] text-muted tnum">{pct(h.weight, 1)} of book</span>
+                  {h.week52_high > h.week52_low && h.price != null && <Range52 lo={h.week52_low} hi={h.week52_high} price={h.price} avg={h.avg_cost} />}
+                  {h.week52_high > h.week52_low && h.price != null && <span className="w-24 text-right text-[11px] text-muted">{up != null ? <span className={up >= 0 ? 'text-good' : 'text-bad'}>target {up >= 0 ? '+' : '−'}{pct(Math.abs(up), 0)}</span> : '52-week range'}</span>}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </Card>
+  )
+  const closed = p.closed?.length > 0 && (
+    <Card pad={false} icon="check" color="var(--s6)" title="Closed positions" action={<span className="text-xs text-muted">realised {eur(p.realized_eur)}</span>}>
+      <div className="divide-y divide-line border-t border-line">
+        {p.closed.map((h: any) => (
+          <div key={h.ticker} className="flex items-center justify-between px-4 py-2 text-sm">
+            <span><b>{h.ticker}</b> <span className="text-xs text-muted">{brokerName(h.account_id)} · first bought {shortDate(h.first_buy)}</span></span>
+            <span className={clsx('tnum', h.realized >= 0 ? 'text-good' : 'text-bad')}>{h.realized >= 0 ? '+' : '−'}{Math.abs(h.realized).toFixed(2)} {h.currency}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  
+  )
   return (
     <div className="space-y-4">
       <IBKRPanel />
@@ -120,72 +186,20 @@ export function Investments() {
 
       <QualityCard />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <Card icon="pie" color="var(--s1)" title="Allocation" action={<Segmented size="sm" value={split} onChange={setSplit} options={[{ value: 'positions', label: 'Positions' }, { value: 'brokers', label: 'Brokers' }, { value: 'currency', label: 'Currency' }]} />}>
-          <Donut slices={slices} center={eurk(p.value_eur)} sub="market value" height={180} stacked />
-        </Card>
-
-        <Card pad={false} icon="trend" color="var(--s7)" title="Positions" action={
-          <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => setTrade({ action: 'buy', date: todayISO(), currency: 'USD', account_id: 'ibkr' })}><Icon name="plus" size={14} />Trade</button>}>
-          <div className="flex items-center justify-between gap-2 px-4 pb-2.5">
-            <span className="text-xs text-muted">Sort by</span>
-            <Segmented size="sm" value={sort} onChange={setSort} options={[{ value: 'value', label: 'Value' }, { value: 'gain', label: 'Gain' }, { value: 'day', label: 'Today' }]} />
-          </div>
-          {!hs.length ? <Empty title="No open positions" /> : (
-            <div className="divide-y divide-line border-t border-line">
-              {sorted.map((h) => {
-                const g = gainEUR(h)
-                const up = upside[h.ticker]
-                return (
-                  <button key={h.ticker} onClick={() => setPos(h)} className="block w-full px-4 py-3 text-left hover:bg-sunken/50">
-                    <div className="flex items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[10px] font-bold tracking-tight"
-                        style={{ background: `color-mix(in oklab, ${color[h.ticker]} var(--tint), transparent)`, color: `color-mix(in oklab, ${color[h.ticker]} 80%, rgb(var(--ink)))` }}>{h.ticker.replace(/\..*$/, '').slice(0, 5)}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-1.5"><span className="text-sm font-semibold">{h.ticker}</span><span className="truncate text-xs text-muted">{h.name ?? brokerName(h.account_id)}</span></div>
-                        {h.accounts?.length > 1 && (
-                          <div className="truncate text-[11px] text-ink2">
-                            {h.accounts.map((a: any, i: number) => <span key={i} className={clsx(!a.account_id && 'text-warn')}>{i > 0 && ' · '}{a.account_id ? brokerName(a.account_id) : 'no account'} {+a.shares.toFixed(4)}</span>)}
-                          </div>
-                        )}
-                        <div className="truncate text-xs text-muted tnum">{+h.shares.toFixed(4)} × {h.price != null ? h.price.toFixed(2) : '—'} {h.currency} · avg {h.avg_cost.toFixed(2)}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="tnum text-sm font-semibold">{eur(val(h))}</div>
-                        <div className="flex items-center justify-end gap-1.5 text-xs tnum">
-                          {h.day_pct != null && <span className={h.day_pct >= 0 ? 'text-good' : 'text-bad'}>{h.day_pct >= 0 ? '▲' : '▼'}{pct(Math.abs(h.day_pct), 1)}</span>}
-                          {g != null ? <span className={clsx('rounded px-1', g >= 0 ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad')}>{g >= 0 ? '+' : '−'}{eurk(Math.abs(g))} · {pct(Math.abs(h.gain_pct ?? 0), 0)}</span> : <span className="text-muted">no quote</span>}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-2 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 pl-12">
-                      <div className="h-1.5 rounded-full bg-sunken"><div className="h-full rounded-full" style={{ width: `${Math.max(2, h.weight * 100)}%`, background: color[h.ticker] }} /></div>
-                      <span className="w-24 text-right text-[11px] text-muted tnum">{pct(h.weight, 1)} of book</span>
-                      {h.week52_high > h.week52_low && h.price != null && <Range52 lo={h.week52_low} hi={h.week52_high} price={h.price} avg={h.avg_cost} />}
-                      {h.week52_high > h.week52_low && h.price != null && <span className="w-24 text-right text-[11px] text-muted">{up != null ? <span className={up >= 0 ? 'text-good' : 'text-bad'}>target {up >= 0 ? '+' : '−'}{pct(Math.abs(up), 0)}</span> : '52-week range'}</span>}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
+      {/* Desktop: the short cards (allocation, closed positions) stack beside the
+          long positions list; phones keep the reading order. */}
+      {wide ? (
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] items-start gap-4">
+          <div className="space-y-4">{allocation}{closed}</div>
+          {positions}
+        </div>
+      ) : <>
+        {allocation}
+        {positions}
+      </>}
 
       <ScenarioCard />
-
-      {p.closed?.length > 0 && (
-        <Card pad={false} icon="check" color="var(--s6)" title="Closed positions" action={<span className="text-xs text-muted">realised {eur(p.realized_eur)}</span>}>
-          <div className="divide-y divide-line border-t border-line">
-            {p.closed.map((h: any) => (
-              <div key={h.ticker} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span><b>{h.ticker}</b> <span className="text-xs text-muted">{brokerName(h.account_id)} · first bought {shortDate(h.first_buy)}</span></span>
-                <span className={clsx('tnum', h.realized >= 0 ? 'text-good' : 'text-bad')}>{h.realized >= 0 ? '+' : '−'}{Math.abs(h.realized).toFixed(2)} {h.currency}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      {!wide && closed}
 
       <Card pad={false} icon="list" color="var(--s2)" title={`Trades (${trades?.length ?? 0})`} action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowTrades(!showTrades)}>{showTrades ? 'Hide' : 'Show all'}</button>}>
         <div className="divide-y divide-line border-t border-line">

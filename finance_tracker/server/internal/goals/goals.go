@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"ft/internal/db"
+	"ft/internal/decisions"
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
@@ -205,12 +206,16 @@ func Save(d *sql.DB, g *Goal) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errors.New("no goal with that id")
 	}
-	return nil
+	// A goal that came from the decision journal carries its status back:
+	// bought here asks "was it worth it?" there later.
+	return decisions.GoalChanged(d, g.ID, g.Status, g.DoneOn)
 }
 
 func Delete(d *sql.DB, id int64) error {
-	_, err := d.Exec(`DELETE FROM goals WHERE id=?`, id)
-	return err
+	if _, err := d.Exec(`DELETE FROM goals WHERE id=?`, id); err != nil {
+		return err
+	}
+	return decisions.GoalChanged(d, id, "", "")
 }
 
 // Reorder sets the priority: ids first to last; goals not named keep their
@@ -638,3 +643,25 @@ func freeIn(d *sql.DB, account string, now time.Time) (money.Cents, error) {
 }
 
 var moveMu sync.Mutex
+
+// FromDecision puts a purchase from the decision journal on the wish list:
+// a goal with its name, price and note, last in priority; the decision
+// then follows the goal (see decisions.GoalChanged).
+func FromDecision(d *sql.DB, decisionID int64, now time.Time) (Goal, error) {
+	x, err := decisions.Get(d, decisionID)
+	if err != nil {
+		return Goal{}, errors.New("no decision with that id")
+	}
+	if x.Status != "thinking" {
+		return Goal{}, errors.New("only a decision you're still thinking about can go on the wish list")
+	}
+	g := Goal{Name: x.Title, Target: x.Amount, Note: x.Note}
+	if err := Save(d, &g); err != nil {
+		return Goal{}, err
+	}
+	if err := decisions.Linked(d, x.ID, g.ID, now); err != nil {
+		d.Exec(`DELETE FROM goals WHERE id=?`, g.ID) // don't leave a goal nothing points to
+		return Goal{}, err
+	}
+	return g, nil
+}

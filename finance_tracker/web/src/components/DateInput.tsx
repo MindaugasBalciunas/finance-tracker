@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { createPortal } from 'react-dom'
 import { todayISO } from '../lib/format'
 import { Icon } from './Icon'
 
@@ -63,7 +64,9 @@ export function DateInput({ value, onChange, min, max, placeholder = 'Pick a dat
         <Icon name="calendar" size={15} className="shrink-0 text-muted" />
         <span className={clsx('min-w-0 flex-1 truncate', !value && 'text-muted')}>{label || placeholder}</span>
       </button>
-      {open && (
+      {/* On the page itself, not inside the field's card: a card may be a
+          containing block (transform, animation) that would trap a fixed panel. */}
+      {open && createPortal(
         <div ref={panel} role="dialog" aria-label="Choose a date" className="fixed z-[80] w-72 max-w-[calc(100vw-1rem)] rounded-2xl border border-line bg-raised p-3 shadow-xl"
           style={pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden' }}>
           <div className="mb-2 flex items-center justify-between">
@@ -95,7 +98,7 @@ export function DateInput({ value, onChange, min, max, placeholder = 'Pick a dat
             {clearable && value && <button type="button" className="text-muted" onClick={() => pick('')}>Clear</button>}
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   )
 }

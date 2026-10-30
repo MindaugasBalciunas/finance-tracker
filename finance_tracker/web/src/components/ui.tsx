@@ -1,15 +1,22 @@
 import { createContext, type CSSProperties, InputHTMLAttributes, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 import { eur, parseNum, signed } from '../lib/format'
 
 // Every card carries its colour: a soft glow from the top-left corner, the
 // icon on a tinted chip and the title in small capitals of that colour.
-const glow = (c: string, strength = 14): CSSProperties => ({ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${c} ${strength}%, transparent), transparent 62%)` })
+/** A card's colour: its meaning when given, else the page's section hue
+ *  (the card style reads --card-c; see index.css). */
+export const hue = (c?: string): CSSProperties | undefined => (c ? ({ '--card-c': c } as CSSProperties) : undefined)
+// The card's own colour, for its title and icon chip.
+const CARD = 'var(--c)'
 
 function Chip({ name, color, size = 28 }: { name: string; color: string; size?: number }) {
   return (
-    <span className="grid shrink-0 place-items-center rounded-lg" style={{ width: size, height: size, color, background: `color-mix(in oklab, ${color} 20%, transparent)` }}>
+    // The icon tile glows faintly in its colour, like the card's rim.
+    <span className="grid shrink-0 place-items-center rounded-lg" style={{ width: size, height: size, color, background: `color-mix(in oklab, ${color} 18%, transparent)`,
+      boxShadow: `0 0 0 1px color-mix(in oklab, ${color} 22%, transparent), 0 4px 14px -4px color-mix(in oklab, ${color} 45%, transparent)` }}>
       <Icon name={name} size={Math.round(size * 0.55)} />
     </span>
   )
@@ -17,15 +24,15 @@ function Chip({ name, color, size = 28 }: { name: string; color: string; size?: 
 
 // The header wraps: the title keeps its line and a long action drops
 // underneath on narrow screens instead of squeezing the title.
-export function Card({ children, className = '', title, action, pad = true, icon, color = 'rgb(var(--accent))' }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
+export function Card({ children, className = '', title, action, pad = true, icon, color }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
   return (
-    <section className={clsx('card', pad && 'p-4', className)} style={glow(color, icon ? 14 : 8)}>
+    <section className={clsx('card', pad && 'p-4', className)} style={hue(color)}>
       {(title || action) && (
         <div className={clsx('flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
           {/* A plain title in small capitals of the card's colour; a composite one
               (name + figures) keeps its case and wraps rather than overflowing. */}
-          {title && <h2 className={clsx('flex min-w-0 items-center gap-2', typeof title === 'string' ? 'text-xs font-semibold uppercase tracking-wide' : 'flex-wrap text-sm font-semibold')} style={typeof title === 'string' ? { color } : undefined}>
-            {icon && <Chip name={icon} color={color} />}<span className="min-w-0">{title}</span>
+          {title && <h2 className={clsx('flex min-w-0 items-center gap-2', typeof title === 'string' ? 'text-xs font-semibold uppercase tracking-wide' : 'flex-wrap text-sm font-semibold')} style={typeof title === 'string' ? { color: CARD } : undefined}>
+            {icon && <Chip name={icon} color={CARD} />}<span className="min-w-0">{title}</span>
           </h2>}
           {action}
         </div>
@@ -36,11 +43,13 @@ export function Card({ children, className = '', title, action, pad = true, icon
 }
 
 /** A KPI tile: label, headline figure, optional context line. */
-export function Stat({ label, value, sub, tone, onClick, icon, color = 'rgb(var(--accent))' }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; icon?: string; color?: string }) {
+export function Stat({ label, value, sub, tone, onClick, icon, color }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; icon?: string; color?: string }) {
   const C = onClick ? 'button' : 'div'
+  // A figure with a verdict takes that verdict's colour unless it has its own.
+  const c = color ?? (tone ? `var(--hue-${tone})` : undefined)
   return (
-    <C onClick={onClick} className={clsx('card p-3.5 text-left min-w-0', onClick && 'hover:brightness-110 transition')} style={glow(color, 18)}>
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide min-w-0" style={{ color }}>{icon && <Chip name={icon} color={color} size={26} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
+    <C onClick={onClick} className="card p-3.5 text-left min-w-0" style={hue(c)}>
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide min-w-0" style={{ color: CARD }}>{icon && <Chip name={icon} color={CARD} size={26} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
       <div className={clsx('mt-1.5 text-2xl font-bold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted truncate">{sub}</div>}
     </C>
@@ -187,7 +196,9 @@ export function Sheet({ open, onClose, title, children, footer, wide = false, ta
     }
   }, [open, onClose])
   if (!open) return null
-  return (
+  // On the page itself: a sheet opened from inside a card must not be
+  // confined to it (a card can be a containing block while it animates).
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
       <div className={clsx('relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl sm:rounded-2xl bg-surface border border-line shadow-xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg', tall && 'h-[88dvh] sm:h-[min(40rem,88dvh)]')}>
@@ -201,7 +212,8 @@ export function Sheet({ open, onClose, title, children, footer, wide = false, ta
         </div>
         {footer && <div className="shrink-0 border-t border-line px-4 pt-3 pb-safe-3 flex flex-wrap gap-2 justify-end">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -294,7 +306,9 @@ export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; on
 /** Opens the CFO chat with a question about what is on screen. */
 export function AskCFO({ q, label = 'Ask CFO' }: { q: string; label?: string }) {
   return (
-    <a href={`#/ai?q=${encodeURIComponent(q)}`} className="btn-ghost h-8 px-2.5 text-xs text-accent">
+    // label="" gives just the spark (crowded headers); it still has a name.
+    <a href={`#/ai?q=${encodeURIComponent(q)}`} className={clsx('btn-ghost h-8 text-xs text-accent', label ? 'px-2.5' : 'w-8 px-0')}
+      aria-label={label ? undefined : 'Ask CFO'} title={label ? undefined : 'Ask CFO'}>
       <Icon name="spark" size={15} />{label}
     </a>
   )

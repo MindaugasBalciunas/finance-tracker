@@ -37,7 +37,11 @@ export function dayLabel(d: string): string {
   if (same(t, y)) return 'Yesterday'
   return t.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: t.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
 }
-export const shortDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+/** "19 Oct" this year, "19 Oct 2025" otherwise — a bare "26" read like a day. */
+export const shortDate = (d: string) => {
+  const t = new Date(d + 'T00:00:00')
+  return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: t.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' })
+}
 
 export const todayISO = () => {
   const d = new Date()

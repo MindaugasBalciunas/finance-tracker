@@ -11,7 +11,7 @@ import { NotificationsButton } from './components/Notifications'
 import { QuickActionsButton, useAutoSync } from './components/QuickActions'
 import { PullToRefresh } from './components/PullToRefresh'
 import { setUsageEnabled, startUsage, trackView } from './lib/usage'
-import { Loading, ToastProvider } from './components/ui'
+import { hue, Loading, ToastProvider } from './components/ui'
 import Lock from './pages/Lock'
 import { TxEditorProvider } from './components/TxEditor'
 
@@ -33,6 +33,10 @@ const qc = new QueryClient({
     },
   },
 })
+
+// The card tint of each section, matching the sidebar's colours.
+const SECTION_HUE: Record<string, string> = { '': 'var(--hue-home)', ledger: 'var(--hue-ledger)', plan: 'var(--hue-plan)', wealth: 'var(--hue-wealth)',
+  insights: 'var(--hue-insights)', ai: 'var(--hue-ai)', settings: 'var(--hue-settings)', connect: 'var(--hue-settings)' }
 
 const NAV = [
   { to: '/', label: 'Home', icon: 'home', color: 'var(--s1)' },
@@ -190,7 +194,8 @@ function Shell() {
           <button className="rounded-md px-2 py-0.5 font-medium text-accent hover:bg-sunken" onClick={exitDemo.exit}>Exit demo</button>
         </div>
       )}
-      <main className="mx-auto max-w-screen-2xl px-4 pb-28 pt-4 sm:px-6 sm:pt-8 sm:pb-12 lg:px-8">
+      {/* Cards take the section's hue unless they carry a meaning of their own. */}
+      <main className="mx-auto max-w-screen-2xl px-4 pb-28 pt-4 sm:px-6 sm:pt-8 sm:pb-12 lg:px-8" style={hue(SECTION_HUE[loc.pathname.split('/')[1]] ?? 'var(--hue-home)')}>
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route path="/" element={<Home />} />

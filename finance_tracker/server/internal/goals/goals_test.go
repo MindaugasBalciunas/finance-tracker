@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"ft/internal/decisions"
 	"ft/internal/goals"
 	"ft/internal/ledger"
 	. "ft/internal/testutil"
@@ -265,5 +266,68 @@ func TestMoneySetAsideInSavings(t *testing.T) {
 	p, _ = goals.Build(d, "", time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local))
 	if p.Pots[0].SetAside != E(3000) || p.Pots[0].Free != E(500) {
 		t.Errorf("after buying %+v", p.Pots)
+	}
+}
+
+// A €2,400 sofa can't be paid for now: "Save for it" puts it on the wish
+// list, and the journal follows the goal — bought there is bought here
+// (asking "worth it?" 60 days on), dropped is let go, deleted is back to
+// thinking about it.
+func TestDecisionFollowsItsWishListGoal(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	x := decisions.Decision{Title: "Sofa", Amount: E(2400), Note: "the old one sags"}
+	if err := decisions.Create(d, &x, now); err != nil {
+		t.Fatal(err)
+	}
+	g, err := goals.FromDecision(d, x.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Name != "Sofa" || g.Target != E(2400) || g.Note != "the old one sags" || g.Status != "active" {
+		t.Fatalf("goal %+v", g)
+	}
+	got, _ := decisions.Get(d, x.ID)
+	if got.Status != "saving" || got.GoalID != g.ID {
+		t.Fatalf("decision %+v", got)
+	}
+	if _, err := goals.FromDecision(d, x.ID, now); err == nil {
+		t.Error("saved for twice")
+	}
+	got.Status = "bought" // decided in the journal while the goal is open: refused
+	if err := decisions.Update(d, &got, now); err == nil {
+		t.Error("bought in the journal while the wish list still saves for it")
+	}
+
+	g.Status, g.DoneOn = "bought", "2026-12-01"
+	if err := goals.Save(d, &g); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = decisions.Get(d, x.ID)
+	if got.Status != "bought" || got.DecidedOn != "2026-12-01" || got.ReviewOn != "2027-01-30" {
+		t.Errorf("after buying %+v", got)
+	}
+	got.Worth = "yes"
+	if err := decisions.Update(d, &got, now.AddDate(0, 3, 0)); err != nil {
+		t.Errorf("rating a wish-list purchase: %v", err)
+	}
+
+	y := decisions.Decision{Title: "Kayak", Amount: E(900)}
+	decisions.Create(d, &y, now)
+	k, _ := goals.FromDecision(d, y.ID, now)
+	k.Status, k.DoneOn = "dropped", "2026-11-15"
+	goals.Save(d, &k)
+	if got, _ := decisions.Get(d, y.ID); got.Status != "skipped" {
+		t.Errorf("dropped goal → let go, got %+v", got)
+	}
+
+	z := decisions.Decision{Title: "Drone", Amount: E(700)}
+	decisions.Create(d, &z, now)
+	dr, _ := goals.FromDecision(d, z.ID, now)
+	if err := goals.Delete(d, dr.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := decisions.Get(d, z.ID); got.Status != "thinking" || got.GoalID != 0 {
+		t.Errorf("deleted goal → thinking again, got %+v", got)
 	}
 }

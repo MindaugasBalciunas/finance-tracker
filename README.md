@@ -72,7 +72,19 @@ Connections are listed in Settings → Security → AI apps, with when each was 
   "env": {"FT_API_URL": "https://your-host/api", "FT_API_TOKEN": "ftk_…", "FT_BASIC_AUTH": "user:password"}}}}
 ```
 
-Mint tokens in Settings → Security. A read-only token (`ftk_`) reads data; a read-write token (`ftkw_`) may also add/edit transactions, rules and tags, improve bank-inbox proposals, and manage the plan (budget lines, plan settings, recurring items, goals, trips and their dates) and the assistant's memory — never accept bank rows, change settings or read backups.
+Mint tokens in Settings → Security. A read-only token (`ftk_`) reads data; a read-write token (`ftkw_`) may also add/edit transactions, rules and tags, improve bank-inbox proposals, and manage the plan (budget lines, plan settings, recurring items, goals, trips and their dates) and the assistant's memory, and write a purchase into the decision journal (`log_decision`) — never accept bank rows, change settings or read backups.
+
+Planning tools (read-only unless noted), the same in Ask CFO:
+
+| Tool | Returns |
+|---|---|
+| `get_payday_runbook` | This month's pay-yourself-first steps — each saving line's amount, the accounts it usually moves between, done / partial / todo from the bank |
+| `get_next_euro` | Where a spare sum is best put: buffer, 3rd-pillar refund room, a goal about to miss its date, loan rate vs expected return — ranked and split |
+| `get_lifestyle_creep` | Last 12 months against a year (or `years: 3`) earlier: income vs spending growth, what grew and fell most, new regular bills |
+| `get_price_creep` | Regular bills against a year ago, renewals within 45 days, the personal inflation rate and Lithuania's official one |
+| `get_decisions` / `get_decision_impact` | The decision journal and its record; what a purchase would do to the month, buffer, wish list and FI date |
+| `log_decision` | **Writes** (read-write token): a purchase being considered, with its cooling-off date — never decides, rates or deletes |
+| `get_ownership_costs` | The true yearly cost of each property and vehicle — running costs, interest, value lost, money tied up — against renting or a taxi |
 
 On connect the server sends Claude the same data model, strategy and trust rules Ask CFO follows in the app (`internal/advice`), and offers four ready-made analyses as prompts — `/` commands in Claude Code, one click in Claude Desktop:
 

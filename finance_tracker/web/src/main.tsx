@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App, { applyTheme } from './App'
 import './index.css'
+import { startSpotlight } from './lib/spotlight'
 
 applyTheme()
 
@@ -34,6 +35,8 @@ if (typeof window !== 'undefined' && window.visualViewport && window.matchMedia?
   document.addEventListener('focusout', () => setTimeout(update, 50))
   window.addEventListener('orientationchange', () => { tallest = 0; setTimeout(update, 300) })
 }
+
+startSpotlight()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

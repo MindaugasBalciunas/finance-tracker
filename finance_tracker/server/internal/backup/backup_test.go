@@ -33,6 +33,8 @@ func seed(t *testing.T, d *sql.DB) {
 	d.Exec(`INSERT INTO goals(id,name,target,created_at,updated_at) VALUES(1,'Sauna',600000,'x','x')`)
 	d.Exec(`INSERT INTO goal_moves(goal_id,month,amount,kind,account_id,created_at) VALUES(1,'2026-09',150000,'manual','swed','x')`)
 	d.Exec(`INSERT INTO trip_history(tag,state,updated_at) VALUES('trip:egypt','done','x')`)
+	// A decision in the journal: bought, rated.
+	d.Exec(`INSERT INTO decisions(title,amount,category,status,cool_until,decided_on,review_on,worth,note,created_at) VALUES('Bike',89900,'leisure.hobbies','bought','2026-09-01','2026-09-05','2026-11-04','yes','commute','x')`)
 }
 
 // dump renders every table for comparison.
@@ -119,7 +121,7 @@ func TestBackupWithoutSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["transactions"] != 2 {
+	if counts["transactions"] != 2 || counts["decisions"] != 1 {
 		t.Fatal(counts)
 	}
 	var ai, au string

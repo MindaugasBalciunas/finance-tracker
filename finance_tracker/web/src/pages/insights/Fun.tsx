@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
 import { usePeriod } from '../../lib/hooks'
 import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
-import { AskCFO, Loading, useCountUp } from '../../components/ui'
+import { AskCFO, hue, Loading, useCountUp } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
 type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; link?: string }
@@ -63,7 +63,6 @@ function Count({ n, euro }: { n: number; euro?: boolean }) {
   return <>{fmt(useCountUp(n, 1100), euro)}</>
 }
 
-const glow = (c: string): CSSProperties => ({ background: `linear-gradient(135deg, color-mix(in oklab, ${c} 22%, rgb(var(--surface))), rgb(var(--surface)) 70%)` })
 const gradText: CSSProperties = { backgroundImage: 'linear-gradient(90deg, var(--s1), var(--s7))', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }
 
 /** The stories in the whole history, drawn: a career timeline, favourite
@@ -128,7 +127,7 @@ function Hero({ f, lines }: { f: Fact; lines: FunLine[] }) {
 
 function Shell({ f, color, children, big }: { f: Fact; color: string; children?: ReactNode; big?: boolean }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line p-4" style={glow(color)}>
+    <section className="card overflow-hidden p-4" style={hue(color)}>
       <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide" style={{ color }}>
         <span className="grid h-7 w-7 place-items-center rounded-lg" style={{ background: `color-mix(in oklab, ${color} 20%, transparent)` }}><Icon name={f.icon} size={15} /></span>
         {f.title}

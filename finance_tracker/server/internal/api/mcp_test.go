@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"ft/internal/auth"
 	"ft/internal/ledger"
+	"ft/internal/market"
 	"ft/internal/mcptools"
 	. "ft/internal/testutil"
 )
@@ -54,6 +56,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 // PKCE, the MCP tools over HTTP within the chosen scope, refresh rotation
 // with reuse detection, and revocation.
 func TestMCPConnector(t *testing.T) {
+	market.HICPFetch = func() ([]byte, error) { return nil, errors.New("offline in tests") }
 	s, c := newServer(t)
 	s.PublicURL = "https://budget.example"
 	root := strings.TrimSuffix(c.base, "/api")
@@ -194,6 +197,19 @@ func TestMCPConnector(t *testing.T) {
 	if !slices.Contains(names, "search_transactions") || !slices.Contains(names, "ibkr_live") || slices.Contains(names, "create_transaction") || slices.Contains(names, "remember") {
 		t.Errorf("read-only tools %v", names)
 	}
+	// The planning tools: a read-only connection reads them all, but can't
+	// write down a decision.
+	if slices.Contains(names, "log_decision") || !slices.Contains(names, "get_next_euro") || !slices.Contains(names, "get_ownership_costs") {
+		t.Errorf("read-only planning tools %v", names)
+	}
+	for _, tool := range []string{"get_payday_runbook", "get_lifestyle_creep", "get_price_creep", "get_decisions", "get_ownership_costs"} {
+		if res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tool}); err != nil || res.IsError {
+			t.Errorf("%s over a read-only connection: %v %+v", tool, err, res)
+		}
+	}
+	if res, _ := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "log_decision", Arguments: map[string]any{"title": "TV", "amount": 900}}); res != nil && !res.IsError {
+		t.Error("a read-only connection logged a decision")
+	}
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "search_transactions", Arguments: map[string]any{"merchant": "Lidl"}})
 	if err != nil || res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "Lidl") {
 		t.Fatalf("search: %v %+v", err, res)
@@ -231,6 +247,13 @@ func TestMCPConnector(t *testing.T) {
 	}
 	var n int
 	s.DB.QueryRow(`SELECT COUNT(*) FROM transactions WHERE merchant='Caffeine' AND amount=750`).Scan(&n)
+	defer func() {
+		var d int
+		s.DB.QueryRow(`SELECT COUNT(*) FROM decisions WHERE title='Road bike' AND amount=120000 AND status='thinking'`).Scan(&d)
+		if d != 1 {
+			t.Errorf("log_decision wrote %d rows", d)
+		}
+	}()
 	if n != 1 {
 		t.Errorf("created %d rows", n)
 	}
@@ -251,6 +274,9 @@ func TestMCPConnector(t *testing.T) {
 		{"get_net_worth_movement", map[string]any{"from": "2026-01-01"}, `[`},
 		{"set_trip_dates", map[string]any{"tag": "trip:rome", "start": "2026-06-23", "end": "2026-06-27"}, `"trip:rome"`},
 		{"get_trip_untagged", map[string]any{"tag": "trip:rome"}, `"in_dates"`},
+		{"get_next_euro", map[string]any{"amount": 750}, `"sum":750`},
+		{"get_decision_impact", map[string]any{"amount": 300}, `"lines"`},
+		{"log_decision", map[string]any{"title": "Road bike", "amount": 1200, "category": "leisure.hobbies"}, `"status":"thinking"`},
 	} {
 		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
 		if err != nil || res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, c.want) {

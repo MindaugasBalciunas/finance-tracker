@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { byBank } from './brand'
@@ -76,7 +77,9 @@ export const useTransactions = (f: TxFilter) =>
 export function useRefresh() {
   const qc = useQueryClient()
   return () => {
-    for (const k of ['transactions', 'overview', 'plan', 'inbox', 'tags', 'merchants', 'cashflow', 'breakdown', 'trends', 'recurring', 'fi', 'review', 'pace', 'tidy', 'month-review', 'checks', 'movement', 'scenarios', 'trips', 'accounts', 'nw-history', 'loans', 'networth', 'owed', 'tx', 'balances', 'portfolio', 'trades', 'tag-stats', 'tag-suggestions', 'rule-stats', 'category-usage', 'account-usage', 'ibkr', 'goals', 'goal-moves'])
+    for (const k of ['transactions', 'overview', 'plan', 'inbox', 'tags', 'merchants', 'cashflow', 'breakdown', 'trends', 'recurring', 'fi', 'review', 'pace', 'tidy', 'month-review', 'checks', 'movement', 'scenarios', 'trips', 'accounts', 'nw-history', 'loans', 'networth', 'owed', 'tx', 'balances', 'portfolio', 'trades', 'tag-stats', 'tag-suggestions', 'rule-stats', 'category-usage', 'account-usage', 'ibkr', 'goals', 'goal-moves',
+      // the planning views: a transfer ticks payday; a goal bought or dropped moves its decision
+      'runbook', 'decisions', 'next-euro', 'creep', 'prices', 'ownership'])
       qc.invalidateQueries({ queryKey: [k] })
   }
 }
@@ -92,4 +95,19 @@ export function useSaveTx() {
 export function useDeleteTx() {
   const refresh = useRefresh()
   return useMutation({ mutationFn: (id: number) => api.del(`/transactions/${id}`), onSuccess: refresh })
+}
+
+/** Is the screen wide enough for a desktop arrangement (Tailwind's xl)?
+ *  For layouts CSS alone can't reorder without changing the phone order. */
+export function useWide(query = '(min-width: 1280px)') {
+  const get = () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches
+  const [wide, setWide] = useState(get)
+  useEffect(() => {
+    const m = window.matchMedia?.(query)
+    if (!m) return
+    const on = () => setWide(m.matches)
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [query])
+  return wide
 }

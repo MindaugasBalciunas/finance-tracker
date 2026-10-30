@@ -1,3 +1,5 @@
+import { NextEuroCard } from './NextEuro'
+import { DecisionRow, NewDecisionSheet, RecordCard, SleepingOnIt, useJournal } from './Decisions'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -5,7 +7,7 @@ import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useAccounts, useRefresh, useTags } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
-import { AskCFO, Card, Empty, ErrorBox, Field, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
+import { AskCFO, Card, Empty, ErrorBox, Field, hue, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { DateInput } from '../../components/DateInput'
 import { SuggestInput } from '../../components/pickers'
@@ -31,6 +33,8 @@ export function Wishlist() {
   const [edit, setEdit] = useState<Partial<Goal> | null>(() => (sp.get('trip') ? { tag: 'trip:' } : null))
   useEffect(() => { if (sp.get('trip')) setSp({}, { replace: true }) }, [sp, setSp])
   const [fund, setFund] = useState(false)
+  const [thinking, setThinking] = useState(false)
+  const { data: journal } = useJournal()
   const refresh = useRefresh()
   const toast = useToast()
   const move = useMutation({
@@ -51,22 +55,32 @@ export function Wishlist() {
   }
   return (
     <div className="space-y-4">
-      <LeftOver p={p} month={month} setMonth={setMonth} onFund={() => setFund(true)} />
-      <Pots pots={p.pots ?? []} />
+      {/* Wide screens: the month that funds the list beside where its money sits. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+        <LeftOver p={p} month={month} setMonth={setMonth} onFund={() => setFund(true)} />
+        <Pots pots={p.pots ?? []} />
+      </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div>
+      {/* Phones: the title, then the two ways in on their own row — "not sure
+          yet" (the decision journal) and "want it" (a goal). */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start justify-between gap-2">
+          <div>
           <h2 className="text-base font-semibold">Wish list</h2>
           {active.length > 0 && (() => {
             const unpriced = active.filter((g) => !(g.target > 0)).length
             return <div className="text-xs text-muted tnum">{unpriced === active.length ? `${active.length} goals · ${unpriced} need a price` : `${eur(p.total_saved)} saved · ${eur(p.total_needed)} to go${unpriced ? ` · ${unpriced} without a price` : ''} · top first`}</div>
           })()}
+          </div>
+          <div className="sm:hidden"><AskCFO q="Look at my wish list and the last months' left over: is the order sensible, are the prices realistic, and when will each be funded?" label="Review" /></div>
         </div>
         <div className="flex gap-2">
-          <AskCFO q="Look at my wish list and the last months' left over: is the order sensible, are the prices realistic, and when will each be funded?" label="Review" />
-          <button className="btn-primary h-9" onClick={() => setEdit({})}><Icon name="plus" size={16} />Goal</button>
+          <span className="hidden sm:inline-flex"><AskCFO q="Look at my wish list and the last months' left over: is the order sensible, are the prices realistic, and when will each be funded?" label="Review" /></span>
+          <button className="btn-outline h-10 flex-1 whitespace-nowrap sm:h-9 sm:flex-none" onClick={() => setThinking(true)} title="Not sure yet? Write it down and sleep on it"><Icon name="bag" size={16} />Thinking of buying…</button>
+          <button className="btn-primary h-10 flex-1 whitespace-nowrap sm:h-9 sm:flex-none" onClick={() => setEdit({})}><Icon name="plus" size={16} />Goal</button>
         </div>
       </div>
+      <SleepingOnIt items={(journal?.items ?? []).filter((x) => x.status === 'thinking')} />
       {!active.length ? (
         <Card><Empty title="Nothing on the wish list yet" icon="target">Add what you're saving for — a 3D printer, a sauna — and what's left at month end funds it, top of the list first.</Empty></Card>
       ) : (
@@ -76,22 +90,43 @@ export function Wishlist() {
           ))}
         </div>
       )}
-      {done.length > 0 && (
-        <Card pad={false} title="Done">
-          <div className="divide-y divide-line border-t border-line">
-            {done.map((g) => (
-              <button key={g.id} onClick={() => setEdit(g)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-sunken/50">
-                <Icon name={g.status === 'bought' ? 'check' : 'x'} size={16} className={g.status === 'bought' ? 'text-good' : 'text-muted'} />
-                <span className="min-w-0 flex-1 truncate">{g.name}</span>
-                <span className="text-xs text-muted">{g.status === 'bought' ? (g.tag ? 'travelled' : 'bought') : 'dropped'}{g.done_on ? ` ${shortDate(g.done_on)}` : ''}</span>
-                <span className="tnum text-ink2">{eur(g.target)}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-4">
+          {/* One "done" list: journal decisions (with their worth-it rating) and
+              goals bought or dropped that didn't come from the journal — a goal
+              saved for from a decision shows once, as the decision. */}
+          {(() => {
+            const decided = (journal?.items ?? []).filter((x) => x.status === 'bought' || x.status === 'skipped')
+            const linked = new Set((journal?.items ?? []).map((x) => x.goal_id).filter(Boolean))
+            const goalsDone = done.filter((g) => !linked.has(g.id))
+            if (!decided.length && !goalsDone.length) return null
+            return (
+              <Card pad={false} color="var(--hue-good)" title="Done" action={decided.length ? <AskCFO q="What does my decision journal say about what I value?" /> : undefined}>
+                {decided.length > 0 && <ul className="divide-y divide-line border-t border-line px-4">{decided.map((x) => <DecisionRow key={`d${x.id}`} x={x} />)}</ul>}
+                {goalsDone.length > 0 && (
+                  <div className="divide-y divide-line border-t border-line">
+                    {goalsDone.map((g) => (
+                      <button key={g.id} onClick={() => setEdit(g)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-sunken/50">
+                        <Icon name={g.status === 'bought' ? 'check' : 'x'} size={16} className={g.status === 'bought' ? 'text-good' : 'text-muted'} />
+                        <span className="min-w-0 flex-1 truncate">{g.name}</span>
+                        <span className="text-xs text-muted">{g.status === 'bought' ? (g.tag ? 'travelled' : 'bought') : 'dropped'}{g.done_on ? ` ${shortDate(g.done_on)}` : ''}</span>
+                        <span className="tnum text-ink2">{eur(g.target)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )
+          })()}
+          {journal && <RecordCard r={journal.record} />}
+        </div>
+        <div className="space-y-4">
+          <NextEuroCard />
+        </div>
+      </div>
       {edit && <GoalSheet g={edit} pots={p.pots ?? []} onClose={() => setEdit(null)} />}
       {fund && <FundSheet p={p} onClose={() => setFund(false)} />}
+      {thinking && <NewDecisionSheet onClose={() => setThinking(false)} />}
     </div>
   )
 }
@@ -107,7 +142,7 @@ function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; 
   ]
   const max = Math.max(1, ...p.history.map((h) => Math.abs(h.left_over)))
   return (
-    <section className="card p-4">
+    <section className="card p-4" style={hue(f.left_over < 0 ? 'var(--hue-bad)' : 'var(--hue-good)')}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <button className="btn-ghost h-8 w-8 px-0" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month"><Icon name="chevronD" size={16} className="rotate-90" /></button>
@@ -122,8 +157,9 @@ function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; 
         <div className="space-y-1 text-sm">
           {rows.map((r) => (
             <div key={r.label} className="flex items-baseline justify-between gap-3">
-              <span className="text-ink2">{r.label}{r.sub && <span className="hidden text-xs text-muted sm:inline"> · {r.sub}</span>}</span>
-              <span className={clsx('tnum', r.cls)}>{r.v < 0 ? '−' : ''}{eur(Math.abs(r.v))}</span>
+              <span className="min-w-0 text-ink2">{r.label}{r.sub && <span className="hidden text-xs text-muted xl:inline"> · {r.sub}</span>}</span>
+              {/* An amount never splits from its sign. */}
+              <span className={clsx('tnum shrink-0 whitespace-nowrap', r.cls)}>{r.v < 0 ? '−' : ''}{eur(Math.abs(r.v))}</span>
             </div>
           ))}
           <div className="mt-1 flex items-baseline justify-between gap-3 border-t border-line pt-1.5">

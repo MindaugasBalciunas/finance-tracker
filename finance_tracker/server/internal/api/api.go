@@ -209,7 +209,7 @@ const sessionCookie = "ft_session"
 // exports or the chat.
 var tokenReadPrefixes = []string{"/api/health", "/api/overview", "/api/transactions", "/api/categories", "/api/accounts", "/api/tags",
 	"/api/merchants", "/api/rules", "/api/networth", "/api/balances", "/api/loans", "/api/portfolio", "/api/trades", "/api/market",
-	"/api/plan", "/api/forecast", "/api/tax$", "/api/budgets", "/api/trips", "/api/goals", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks", "/api/ibkr/live$"}
+	"/api/plan", "/api/forecast", "/api/tax$", "/api/budgets", "/api/trips", "/api/goals", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks", "/api/ibkr/live$", "/api/wealth/ownership$"}
 
 // Writes a read-write token may make: improve the data and manage the plan,
 // never move money into the ledger from the bank, delete in bulk or touch
@@ -225,6 +225,9 @@ var tokenWriteRoutes = []struct{ method, prefix string }{
 	{"PUT", "/api/trips/dates$"}, {"DELETE", "/api/trips/dates$"},
 	{"POST", "/api/recurring$"}, {"PUT", "/api/recurring/"}, {"DELETE", "/api/recurring/"}, {"POST", "/api/ai/remember$"},
 	{"POST", "/api/goals"}, {"PUT", "/api/goals/"},
+	// Writing down a purchase being considered; deciding, rating and
+	// deleting stay with the owner.
+	{"POST", "/api/plan/decisions$"},
 }
 
 // pathUnder matches a route prefix on segment boundaries; a trailing "$"

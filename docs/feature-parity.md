@@ -69,6 +69,18 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Periods | 3M / 6M / YTD added to net worth, cash flow, trends, spending and positions; each chart's choice remembered on the server | `api/TestPrefsPersist` |
 | Accounts | Settings → Accounts: hide closed/unused accounts (Luminor) from Update balances, pickers and Wealth lists | — |
 
+## Added in v2.58
+
+| Area | Change | Covered by |
+|---|---|---|
+| Plan → Budget | Payday checklist on the lines: saving lines show their route (Swedbank → IBKR) and tick off from the bank over the calendar month; fixed lines show paid / due dates | `cfo/TestRunbook*` (incl. salary paid in parts), `test/planning.test.tsx` |
+| Wish list | Decision journal folded in: "Thinking of buying…" with live impact, cooling-off by price, Bought / Save for it / Let it go, "worth it?" 60 days after buying; a goal from a decision carries its status back (migration 18, `decisions`, in backups); where the next euros go | `decisions/*`, `goals/TestDecisionFollowsItsWishListGoal`, `cfo/TestNextEuro*`, `backup` round-trip |
+| Insights → Drift | Lifestyle creep (1 or 3 years, what grew and fell), price creep with renewals (yearly bills found over two years), personal inflation vs Eurostat HICP (plan changes left out) | `insights/TestLifestyleCreep*`, `TestPriceCreep*`, `TestPersonalInflation*`, `market/TestParseHICP*` |
+| Wealth → Ownership | True cost of the car and house: running costs (tag or the only vehicle's untagged car costs), interest, value lost (a property revaluation shown, not counted), money tied up; vs taxi per km or rent | `wealth/TestOwnership*` |
+| Home | Desktop: net worth and Recent left, the month (left to spend, payday, tiles incl. due-in-7-days and next payday) right; reminders for payday, decisions and renewals | `cfo` overview tests, Firefox sweep |
+| UI | One card system (section hue, colour by meaning, gradient rim, pointer spotlight), compact two-column desktop layouts, dates without the current year | Firefox sweep 390px / 1440px, light and dark |
+| AI / MCP | Eight planning tools with the same names in Ask CFO and MCP; `log_decision` the only new write (rw tokens) | `ai/TestPlanningTools`, `api/TestMCPConnector`, `api/TestAuthBoundaries` |
+
 ## Where v2 is better
 
 - One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.

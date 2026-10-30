@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { api } from '../../lib/api'
 import { eur, monthLabel } from '../../lib/format'
-import { AskCFO, Card, ErrorBox, Loading } from '../../components/ui'
+import { AskCFO, Card, ErrorBox, hue, Loading } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
 
 type Item = { label: string; sub?: string; amount: number; tone?: 'bad' | 'good'; link?: string }
@@ -40,7 +40,7 @@ export function SummaryView() {
         {act > 0 && <> · <span className="text-warn">{act} {act === 1 ? 'thing' : 'things'} worth acting on</span></>}
       </div>
       <TypicalMonth f={data.flow} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
         {data.findings.map((f) => <FindingCard key={f.key} f={f} />)}
       </div>
     </div>
@@ -96,7 +96,7 @@ function FindingCard({ f }: { f: Finding }) {
   const t = TONE[f.tone]
   const items = f.items ?? []
   return (
-    <section className="card flex flex-col p-4" style={{ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${t.color} 16%, transparent), transparent 60%)` }}>
+    <section className="card flex flex-col p-4" style={hue(t.color)}>
       <div className="flex items-start gap-3">
         <IconTile name={ICON[f.key] ?? t.icon} color={t.color} size={32} />
         <div className="min-w-0 flex-1">

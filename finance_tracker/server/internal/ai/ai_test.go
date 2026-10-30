@@ -3,6 +3,7 @@ package ai_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"ft/internal/ai"
 	"ft/internal/ledger"
+	"ft/internal/market"
 	. "ft/internal/testutil"
 )
 
@@ -330,5 +332,48 @@ func TestBudgetTools(t *testing.T) {
 		if r := b.(map[string]any); r["is_error"] == true || !strings.Contains(r["content"].(string), "saved") {
 			t.Fatalf("tool result: %v", r)
 		}
+	}
+}
+
+// The planning tools answer in Ask CFO, and writing down a decision is a
+// write (confirmation required) that lands in the journal as "thinking".
+func TestPlanningTools(t *testing.T) {
+	market.HICPFetch = func() ([]byte, error) { return nil, errors.New("offline in tests") }
+	calls := `{"content":[` +
+		`{"type":"tool_use","id":"1","name":"get_payday_runbook","input":{}},` +
+		`{"type":"tool_use","id":"2","name":"get_next_euro","input":{"amount":800}},` +
+		`{"type":"tool_use","id":"3","name":"get_lifestyle_creep","input":{}},` +
+		`{"type":"tool_use","id":"4","name":"get_price_creep","input":{}},` +
+		`{"type":"tool_use","id":"5","name":"get_decisions","input":{}},` +
+		`{"type":"tool_use","id":"6","name":"get_decision_impact","input":{"amount":450}},` +
+		`{"type":"tool_use","id":"7","name":"log_decision","input":{"title":"Standing desk","amount":450,"category":"housing.furnishing"}},` +
+		`{"type":"tool_use","id":"8","name":"get_ownership_costs","input":{}},` +
+		`{"type":"tool_use","id":"9","name":"get_decision_impact","input":{"amount":0}}` +
+		`],"stop_reason":"tool_use","usage":{}}`
+	a, f := setup(t, "anthropic", calls, textReply)
+	Tx(t, a.DB, ledger.Tx{Date: "2026-09-01", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	Bal(t, a.DB, "swed", "2026-09-30", 4000)
+	res, err := a.Chat(context.Background(), "plan", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := f.reqs[1]["messages"].([]any)
+	out := last[len(last)-1].(map[string]any)["content"].([]any)
+	if len(out) != 9 {
+		t.Fatalf("results %d", len(out))
+	}
+	for i, r := range out {
+		isErr, _ := r.(map[string]any)["is_error"].(bool)
+		if (i == 8) != isErr { // a free purchase has no impact: an error fed back, not a crash
+			t.Errorf("tool %d error=%v: %v", i+1, isErr, r.(map[string]any)["content"])
+		}
+	}
+	if !res.Changed { // only a write tool marks the reply changed
+		t.Error("log_decision is a write")
+	}
+	var n int
+	a.DB.QueryRow(`SELECT COUNT(*) FROM decisions WHERE title='Standing desk' AND amount=45000 AND status='thinking'`).Scan(&n)
+	if n != 1 {
+		t.Errorf("decision rows %d", n)
 	}
 }

@@ -52,8 +52,8 @@ func shortDay(date string) string {
 	return t.Format("2 Jan")
 }
 
-func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring, now time.Time) []Action {
-	out := []Action{}
+func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring, now time.Time, extra ...Action) []Action {
+	out := append([]Action{}, extra...)
 	soon := now.AddDate(0, 0, 3).Format("2006-01-02")
 	if c := o.Cash; c != nil {
 		// Only the next top-up; the whole schedule lives in the cash card.

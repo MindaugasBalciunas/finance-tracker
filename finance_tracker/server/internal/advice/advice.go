@@ -13,7 +13,8 @@ const DataModel = `How the data is modelled:
 - Net worth includes property and loans; "liquid" is cash, brokers, crypto and II/III pillar pensions (cashable); it excludes property, car and debt.`
 
 // Strategy is the owner's money framework.
-const Strategy = `The owner's strategy: pay yourself first — investing, pensions and mortgage principal come off the top — then fixed obligations and spending; what is left at month end funds the wish list (get_goals) in priority order. Planned trips are goals with a trip:<name> tag (their tagged spending shows as spent).`
+const Strategy = `The owner's strategy: pay yourself first — investing, pensions and mortgage principal come off the top — then fixed obligations and spending; what is left at month end funds the wish list (get_goals) in priority order. Planned trips are goals with a trip:<name> tag (their tagged spending shows as spent).
+The planning tools do the arithmetic — use them rather than reasoning it out: get_payday_runbook for what is still to move after payday; get_next_euro for where spare money should go (it ranks buffer, 3rd-pillar refund, loan rate and expected return in the owner's numbers); get_decision_impact before endorsing a purchase, and offer log_decision (cooling-off) for big ones; get_lifestyle_creep and get_price_creep for drift; get_ownership_costs for whether the car or house earns its keep.`
 
 // Trust are the rules that keep answers safe to act on.
 const Trust = `Trust rules — the owner acts on what you say:

@@ -61,6 +61,7 @@
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
   --s-other: #b4b2aa;
   --tint: 15%;
+  --card-glow: 7%; --card-spot: 9%; --card-rim: 55%; --card-hi: 0.75; --card-sh: 0.04; --card-tint: 45%;
   --chart-surface: #fcfcfb; --chart-grid: #e1e0d9; --chart-axis: #c3c2b7; --chart-text: #898781;
 }
 @media (prefers-color-scheme: dark) {
@@ -72,6 +73,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     --s-other: #5c5b57;
     --tint: 24%;
+    --card-glow: 11%; --card-spot: 12%; --card-rim: 60%; --card-hi: 0.06; --card-sh: 0.35; --card-tint: 35%;
     --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
   }
 }
@@ -83,8 +85,22 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --s-other: #5c5b57;
   --tint: 24%;
+  --card-glow: 11%; --card-spot: 12%; --card-rim: 60%; --card-hi: 0.06; --card-sh: 0.35; --card-tint: 35%;
   --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
 }
+
+/* Colour by meaning, one name per idea, for --card-c and anything that
+   should agree with it. Sections follow the sidebar; meanings follow the
+   numbers (in, out, kept, at risk). */
+:root {
+  --hue-home: var(--s1); --hue-ledger: var(--s2); --hue-plan: var(--s3); --hue-wealth: var(--s7);
+  --hue-insights: var(--s5); --hue-ai: var(--s4); --hue-settings: var(--s-other);
+  --hue-good: rgb(var(--good)); --hue-warn: rgb(var(--warn)); --hue-bad: rgb(var(--bad)); --hue-info: rgb(var(--accent));
+  --hue-income: var(--s6); --hue-spending: var(--s2); --hue-saving: var(--s3); --hue-fixed: var(--s4);
+  --hue-invest: var(--s7); --hue-property: var(--s7); --hue-vehicle: var(--s2); --hue-time: var(--s4);
+}
+@property --card-glow { syntax: '<percentage>'; inherits: true; initial-value: 7%; }
+@keyframes card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 html, body { background: rgb(var(--page)); color: rgb(var(--ink)); }
 /* Reserve the scrollbar's width so switching between a short and a long
@@ -93,7 +109,42 @@ html { scrollbar-gutter: stable; }
 body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 .tnum { font-variant-numeric: tabular-nums; }
 .recharts-wrapper:focus, .recharts-surface:focus { outline: none; }
-@utility card { @apply rounded-2xl bg-surface border border-line; }
+/* Panels. Every card carries one colour, --card-c: the page's section hue
+   by default (set on <main> from the route) or the card's own meaning (good /
+   warn / bad, income / spending / saving…). The colour is light on the card,
+   not paint: a gradient rim that catches it at the top-left corner and fades
+   to neutral, a faint wash in that corner, a crisp top highlight and a soft
+   shadow tinted by it. On desktop a spotlight of the colour follows the
+   pointer (--mx/--my, set by lib/spotlight.ts). */
+@utility card {
+  @apply rounded-2xl;
+  --c: var(--card-c, rgb(var(--accent)));
+  border: 1px solid transparent;
+  background:
+    radial-gradient(440px circle at var(--mx, -999px) var(--my, -999px), color-mix(in oklab, var(--c) var(--card-spot), transparent), transparent 45%) padding-box,
+    radial-gradient(90% 70% at 0% 0%, color-mix(in oklab, var(--c) var(--card-glow), transparent), transparent 60%) padding-box,
+    linear-gradient(rgb(var(--surface)), rgb(var(--surface))) padding-box,
+    linear-gradient(150deg, color-mix(in oklab, var(--c) var(--card-rim), rgb(var(--line))) 0%, rgb(var(--line)) 28%, rgb(var(--line)) 78%,
+      color-mix(in oklab, var(--c) calc(var(--card-rim) / 3), rgb(var(--line))) 100%) border-box;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / var(--card-hi)), 0 1px 2px rgb(0 0 0 / var(--card-sh)),
+    0 10px 28px -18px color-mix(in oklab, var(--c) var(--card-tint), transparent);
+  /* backwards, not both: nothing stays in effect after the fade, so a card
+     never becomes the containing block of a fixed sheet or popover inside it. */
+  animation: card-in 0.3s ease-out backwards;
+  /* A card you can press lifts a little and its tint rises. Here, not in a
+     layer, so it wins over the rest of the card style. */
+  &:is(a, button), &[role='button'] { transition: --card-glow 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease; }
+  &:is(a, button):hover, &[role='button']:hover {
+    --card-glow: 16%;
+    transform: translateY(-1px);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / var(--card-hi)), 0 1px 2px rgb(0 0 0 / var(--card-sh)),
+      0 14px 30px -16px color-mix(in oklab, var(--c) 70%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    &:is(a, button):hover, &[role='button']:hover { transform: none; }
+  }
+}
 /* The headline card of a page: two soft colour pools over the surface. */
 @utility hero {
   @apply rounded-2xl border border-line;
@@ -129,3 +180,4 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 
 /* Fun facts: a new "did you know?" line fades in. */
 @keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+

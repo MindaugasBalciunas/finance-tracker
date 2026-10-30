@@ -1,14 +1,14 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { CashAccount, CashItem, CashPlan, Overview } from '../lib/types'
+import type { CashAccount, CashItem, CashPlan, Overview, Runbook } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { useNetWorthHistory, useOverview, usePeriod, usePrefs } from '../lib/hooks'
+import { useNetWorthHistory, useOverview, usePeriod, usePrefs, useWide } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
-import { eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
-import { CountUp, Card, Delta, ErrorBox, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
+import { daysAgo, eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
+import { CountUp, Card, Delta, ErrorBox, hue, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
 import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
@@ -25,6 +25,9 @@ export default function Home() {
   // The chart's period, remembered like every other chart's.
   const [range, setRange] = usePeriod('home', '1y', RANGES.map((r) => r.value))
   const { data: hist } = useNetWorthHistory(rangeFrom(range), rangeStep(range))
+  const wide = useWide()
+  // Desktop's extra tiles: when the next salary is due (the payday checklist's own date).
+  const { data: rb } = useQuery({ queryKey: ['runbook'], queryFn: () => api.get<Runbook>('/plan/payday?moves=0'), enabled: wide })
   if (isLoading) return <Loading />
   if (error || !o) return <ErrorBox error={error} />
 
@@ -52,97 +55,125 @@ export default function Home() {
     )
   }
 
+  const hero = (
+    <section className="hero overflow-hidden">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+        <div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-sm text-ink2">{liquid ? 'Liquid assets' : 'Net worth'}</div>
+            <span className="text-xs sm:hidden"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
+          </div>
+          <div className="grad-text mt-1 text-4xl font-bold tracking-tight sm:text-5xl"><CountUp value={liquid ? o.liquid : o.net_worth} format={eur} /></div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <span className="text-muted">30 days <Delta value={liquid ? o.liquid_30d : o.net_worth_30d} /></span>
+            <span className="text-muted">This year <Delta value={liquid ? o.liquid_ytd : o.net_worth_ytd} /></span>
+            <span className="text-muted">12 months <Delta value={liquid ? o.liquid_12m : o.net_worth_12m} /></span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 sm:items-end">
+        <span className="hidden sm:block"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
+        <div className="grid grid-cols-3 gap-4 text-sm sm:text-right">
+          <div><div className="text-muted">Liquid</div><div className="font-semibold tnum">{eur(o.liquid)}</div></div>
+          <div><div className="text-muted">Debt</div><div className="font-semibold tnum">{eur(o.debt)}</div></div>
+          <div><div className="text-muted">Asset equity</div><div className="font-semibold tnum">{eur((o.by_group.real_assets ?? 0) - o.debt)}</div></div>
+        </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
+        {/* YTD and 1Y repeat a figure already in the headline row */}
+        <span className="text-xs text-muted">{range !== 'ytd' && range !== '1y' && <>{rangeLabel(range)} <Delta value={periodChange} /></>}</span>
+        <Segmented size="sm" value={range} onChange={setRange} options={RANGES} />
+      </div>
+      <div className="h-36 sm:h-44">
+        <ResponsiveContainer>
+          <AreaChart data={spark} margin={{ top: 22, right: 8, bottom: 20, left: 8 }}>
+            <defs>
+              <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.22} />
+                <stop offset="100%" stopColor="var(--s1)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="date" hide />
+            <YAxis hide domain={['dataMin - 5000', 'dataMax + 5000']} />
+            <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) =>
+              active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: liquid ? 'Liquid' : 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
+            <Area type="monotone" dataKey={liquid ? 'liquid' : 'value'} stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
+            {/* A low that is just the series starting near zero (an account opened) says nothing. */}
+            {hi && lo && hi.i !== lo.i && Math.abs(lo.p[key]) > Math.abs(hi.p[key]) * 0.05 && <>
+              <ReferenceDot x={hi.p.date} y={hi.p[key]} r={4} fill="var(--s6)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(hi, true) }} />
+              <ReferenceDot x={lo.p.date} y={lo.p[key]} r={4} fill="var(--s8)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(lo, false) }} />
+            </>}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      {assetTotal > 0 && (
+        <Link to="/wealth" className="block border-t border-line px-4 py-3 hover:bg-sunken/50 sm:px-6">
+          <GroupBar parts={assets} debt={liquid ? 0 : o.debt} />
+          <div className="mt-2 flex items-center justify-between text-xs text-muted">
+            <span>{liquid ? `Liquid total ${eur(assetTotal)} · house and car excluded` : `Assets ${eur(assetTotal)} − debt ${eur(o.debt)} = ${eur(o.net_worth)}`}</span>
+            <span className="inline-flex items-center gap-0.5 text-accent">Wealth <Icon name="chevronR" size={14} /></span>
+          </div>
+        </Link>
+      )}
+    </section>
+  )
+  const month = <>
+    <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
+    {o.cash && <UntilPayday c={o.cash} />}
+  </>
+  // Today's entries before the slow numbers: adding and checking transactions is the daily use.
+  const recent = (
+    <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
+      <div className="flex gap-1">
+        <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
+        <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>
+      </div>}>
+      <div className="divide-y divide-line pb-1">
+        {(o.recent ?? []).map((t) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
+      </div>
+      <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
+    </Card>
+  )
+  // Progress: the slow numbers that say whether wealth is being built.
+  // What's next, for the desktop column: obligations due within a week, and payday.
+  const weekOut = daysAgo(-7) // local day, a week from today
+  const dueSoon = (o.plan.fixed ?? []).filter((f) => f.spent < f.budgeted && f.due && f.due <= weekOut)
+  const dueSum = dueSoon.reduce((a, f) => a + f.budgeted - f.spent, 0)
+  const paydayIn = rb?.expected ? Math.round((new Date(rb.expected + 'T00:00:00').getTime() - new Date(todayISO() + 'T00:00:00').getTime()) / 86400000) : null
+  const tiles = (cols: string, next = false) => (
+    <div className={clsx('grid gap-3', cols)}>
+      {next && <>
+        <Stat icon="calendar" color="var(--s4)" label="Due in 7 days" value={dueSoon.length ? <CountUp value={dueSum} format={eur} /> : '€0'}
+          sub={dueSoon.length ? dueSoon.map((f) => `${f.name} ${shortDate(f.due!)}`).join(' · ') : 'all paid for now'} onClick={() => nav('/plan')} />
+        <Stat icon="send" color="var(--s1)" label="Next payday" value={paydayIn == null ? '—' : paydayIn <= 0 ? 'today' : `in ${paydayIn} day${paydayIn === 1 ? '' : 's'}`}
+          sub={rb?.expected ? `${shortDate(rb.expected)}${rb.salary ? ` · last one ${eur(rb.salary)}` : ''}` : 'set salary timing in Plan'} onClick={() => nav('/plan')} />
+      </>}
+      <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={<CountUp value={o.usual_rate ?? avg.savings_rate} format={pct} />}
+        sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
+      <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={<CountUp value={o.emergency.months} format={(v) => `${v.toFixed(1)} mo`} />} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
+        tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
+      <Stat icon="trend" color="var(--s7)" label="Financial independence" value={<CountUp value={o.fi_progress} format={(v) => pct(v, 1)} />} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
+      <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={<CountUp value={avg.invested * 12} format={eurk} />} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
+    </div>
+  )
   return (
     <div className="flex flex-col gap-4">
       <QuickActions inboxOpen={o.inbox_open} />
 
-      {/* Net worth: the page's hero */}
-      <section className="hero overflow-hidden">
-        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <div className="flex items-center justify-between gap-4">
-              <div className="text-sm text-ink2">{liquid ? 'Liquid assets' : 'Net worth'}</div>
-              <span className="text-xs sm:hidden"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
-            </div>
-            <div className="grad-text mt-1 text-4xl font-bold tracking-tight sm:text-5xl"><CountUp value={liquid ? o.liquid : o.net_worth} format={eur} /></div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span className="text-muted">30 days <Delta value={liquid ? o.liquid_30d : o.net_worth_30d} /></span>
-              <span className="text-muted">This year <Delta value={liquid ? o.liquid_ytd : o.net_worth_ytd} /></span>
-              <span className="text-muted">12 months <Delta value={liquid ? o.liquid_12m : o.net_worth_12m} /></span>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 sm:items-end">
-          <span className="hidden sm:block"><Toggle checked={liquid} onChange={(v) => setPrefs({ liquid_only: v })} label="Liquid only" /></span>
-          <div className="grid grid-cols-3 gap-4 text-sm sm:text-right">
-            <div><div className="text-muted">Liquid</div><div className="font-semibold tnum">{eur(o.liquid)}</div></div>
-            <div><div className="text-muted">Debt</div><div className="font-semibold tnum">{eur(o.debt)}</div></div>
-            <div><div className="text-muted">Asset equity</div><div className="font-semibold tnum">{eur((o.by_group.real_assets ?? 0) - o.debt)}</div></div>
-          </div>
-          </div>
+      {wide ? (
+        // Desktop: net worth then today's entries on the left; the month as
+        // one tall column on the right — left to spend, payday, progress.
+        <div className="grid grid-cols-3 items-start gap-4">
+          <div className="col-span-2 space-y-4">{hero}{recent}</div>
+          <div className="space-y-4">{month}{tiles('grid-cols-2', true)}</div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
-          {/* YTD and 1Y repeat a figure already in the headline row */}
-          <span className="text-xs text-muted">{range !== 'ytd' && range !== '1y' && <>{rangeLabel(range)} <Delta value={periodChange} /></>}</span>
-          <Segmented size="sm" value={range} onChange={setRange} options={RANGES} />
-        </div>
-        <div className="h-36 sm:h-44">
-          <ResponsiveContainer>
-            <AreaChart data={spark} margin={{ top: 22, right: 8, bottom: 20, left: 8 }}>
-              <defs>
-                <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="var(--s1)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="date" hide />
-              <YAxis hide domain={['dataMin - 5000', 'dataMax + 5000']} />
-              <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) =>
-                active && payload?.length ? <TooltipBox title={shortDate(payload[0].payload.date)} rows={[{ label: liquid ? 'Liquid' : 'Net worth', value: eur(payload[0].value as number), bold: true }]} /> : null} />
-              <Area type="monotone" dataKey={liquid ? 'liquid' : 'value'} stroke="var(--s1)" strokeWidth={2} fill="url(#nw)" isAnimationActive={false} />
-              {/* A low that is just the series starting near zero (an account opened) says nothing. */}
-              {hi && lo && hi.i !== lo.i && Math.abs(lo.p[key]) > Math.abs(hi.p[key]) * 0.05 && <>
-                <ReferenceDot x={hi.p.date} y={hi.p[key]} r={4} fill="var(--s6)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(hi, true) }} />
-                <ReferenceDot x={lo.p.date} y={lo.p[key]} r={4} fill="var(--s8)" stroke="var(--chart-surface)" strokeWidth={2} label={{ content: dotLabel(lo, false) }} />
-              </>}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        {assetTotal > 0 && (
-          <Link to="/wealth" className="block border-t border-line px-4 py-3 hover:bg-sunken/50 sm:px-6">
-            <GroupBar parts={assets} debt={liquid ? 0 : o.debt} />
-            <div className="mt-2 flex items-center justify-between text-xs text-muted">
-              <span>{liquid ? `Liquid total ${eur(assetTotal)} · house and car excluded` : `Assets ${eur(assetTotal)} − debt ${eur(o.debt)} = ${eur(o.net_worth)}`}</span>
-              <span className="inline-flex items-center gap-0.5 text-accent">Wealth <Icon name="chevronR" size={14} /></span>
-            </div>
-          </Link>
-        )}
-      </section>
-
-      <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
-
-      {o.cash && <UntilPayday c={o.cash} />}
-
-      {/* Today's entries before the slow numbers: adding and checking transactions is the daily use. */}
-      <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
-        <div className="flex gap-1">
-          <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
-          <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>
-        </div>}>
-        <div className="divide-y divide-line pb-1">
-          {(o.recent ?? []).map((t) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
-        </div>
-        <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
-      </Card>
-
-      {/* Progress: the slow numbers that say whether wealth is being built */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={<CountUp value={o.usual_rate ?? avg.savings_rate} format={pct} />}
-          sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-        <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={<CountUp value={o.emergency.months} format={(v) => `${v.toFixed(1)} mo`} />} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
-          tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s7)" label="Financial independence" value={<CountUp value={o.fi_progress} format={(v) => pct(v, 1)} />} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
-        <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={<CountUp value={avg.invested * 12} format={eurk} />} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
-      </div>
+      ) : <>
+        {hero}
+        {month}
+        {recent}
+        {/* Progress: the slow numbers that say whether wealth is being built */}
+        {tiles('grid-cols-2 lg:grid-cols-4')}
+      </>}
 
       <FunTeaser />
     </div>
@@ -151,19 +182,6 @@ export default function Home() {
 
 
 
-/** Wide screen (≥ 1024 px), following resizes. */
-function useWide() {
-  const q = '(min-width: 1024px)'
-  const [wide, setWide] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false))
-  useEffect(() => {
-    if (!window.matchMedia) return
-    const m = window.matchMedia(q)
-    const on = () => setWide(m.matches)
-    m.addEventListener?.('change', on)
-    return () => m.removeEventListener?.('change', on)
-  }, [])
-  return wide
-}
 
 /** How much of a month's free spending a typical month has done by each day
  *  (0–1), from the typical-month curve — so pace follows your usual rhythm
@@ -180,7 +198,11 @@ function typicalShare(p: Overview['plan'], day: number) {
  *  rhythm through this month's free money, and where this pace ends up; dated
  *  events (obligations due or paid, income) sit on the axis. */
 function MonthTimeline({ p }: { p: Overview['plan'] }) {
-  const wide = useWide()
+  // Every day labelled only when the chart is wide: half the card on a
+  // laptop (lg); on a desktop (xl) it sits in Home's narrow month column.
+  const lg = useWide('(min-width: 1024px)')
+  const xl = useWide()
+  const wide = lg && !xl
   const days = p.days ?? []
   if (days.length < 28) return null
   const dim = days.length
@@ -200,8 +222,9 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
   const evColor = (k: string) => (k === 'income' ? 'var(--s6)' : 'var(--s7)')
   const top = Math.max(free, projEnd) * 1.08
   return (
-    <div className="mt-3 flex flex-col lg:mt-0 lg:h-full">
-      <div className="h-52 sm:h-60 lg:h-auto lg:min-h-72 lg:flex-1">
+    <div className="mt-3 flex flex-col lg:mt-0 lg:h-full xl:h-auto">
+      {/* lg: fills the left half of the card; xl: the card stacks in a column, so a fixed height. */}
+      <div className="h-52 sm:h-60 lg:h-auto lg:min-h-72 lg:flex-1 xl:h-60 xl:min-h-0 xl:flex-none">
         <ResponsiveContainer>
           <ComposedChart data={rows} margin={{ top: 14, right: 8, bottom: 0, left: 0 }}>
             <defs>
@@ -345,7 +368,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   return (
     // Phones: one column. Wide screens: the month chart on the left at full
     // height, so its lines separate; figures and obligations on the right.
-    <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense" style={{ backgroundImage: 'linear-gradient(135deg, color-mix(in oklab, var(--s1) 12%, transparent), transparent 55%)' }}>
+    <section className="card lg:grid lg:grid-cols-2 lg:grid-flow-row-dense xl:block" style={hue(left < 0 ? 'var(--hue-bad)' : p.projected_left < 0 ? 'var(--hue-warn)' : 'var(--hue-good)')}>
       <Link to="/plan" className="block px-4 pt-3 hover:bg-sunken/30 lg:col-start-2" title="Left to spend this month — the same figure as on Plan">
         <div className="flex items-center gap-3">
           <IconTile name="wallet" color="var(--s1)" size={32} />
@@ -361,7 +384,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
         <MonthBar p={p} progress={pace} warn={used > pace + 0.1} />
         <Verdict p={p} />
       </Link>
-      <div className="min-w-0 px-4 pb-3 lg:col-start-1 lg:row-span-6 lg:row-start-1 lg:border-r lg:border-line lg:py-3"><MonthTimeline p={p} /></div>
+      <div className="min-w-0 px-4 pb-3 lg:col-start-1 lg:row-span-6 lg:row-start-1 lg:border-r lg:border-line lg:py-3 xl:border-r-0 xl:pt-1"><MonthTimeline p={p} /></div>
       <TrackRecord p={p} />
       <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30 lg:col-start-2">
         <span>How {eur(left)} is worked out</span>
