@@ -8,6 +8,7 @@ import { useCats } from '../../lib/categories'
 import type { Creep, Prices } from '../../lib/types'
 import { AskCFO, Card, ErrorBox, Loading, Segmented } from '../../components/ui'
 import { Icon } from '../../components/Icon'
+import { MerchantMark } from '../../components/MerchantLogo'
 
 const TONE = { good: 'text-good', warn: 'text-warn', bad: 'text-bad' } as const
 // Yearly totals in whole euros: €599.80 beside €9,100 read as two kinds of number.
@@ -120,7 +121,8 @@ function PriceRow({ it }: { it: Prices['items'][number] }) {
   return (
     <li className="py-2.5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <MerchantMark merchant={it.merchant} category={it.category} size={32} />
+        <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{it.merchant}{it.renews_soon && <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">renews {shortDate(it.next!)}</span>}</div>
           <div className="truncate text-xs text-ink2">{cats.name(it.category)} · {it.cadence} · {eur0(it.yearly)}/yr</div>
         </div>

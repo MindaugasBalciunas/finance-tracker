@@ -348,6 +348,11 @@ func TestPlanningTools(t *testing.T) {
 		`{"type":"tool_use","id":"6","name":"get_decision_impact","input":{"amount":450}},` +
 		`{"type":"tool_use","id":"7","name":"log_decision","input":{"title":"Standing desk","amount":450,"category":"housing.furnishing"}},` +
 		`{"type":"tool_use","id":"8","name":"get_ownership_costs","input":{}},` +
+		`{"type":"tool_use","id":"10","name":"get_fi_plan","input":{}},` +
+		`{"type":"tool_use","id":"11","name":"get_milestones","input":{}},` +
+		`{"type":"tool_use","id":"12","name":"get_fees","input":{}},` +
+		`{"type":"tool_use","id":"13","name":"get_subscriptions","input":{}},` +
+		`{"type":"tool_use","id":"14","name":"get_cash_calendar","input":{"days":30}},` +
 		`{"type":"tool_use","id":"9","name":"get_decision_impact","input":{"amount":0}}` +
 		`],"stop_reason":"tool_use","usage":{}}`
 	a, f := setup(t, "anthropic", calls, textReply)
@@ -359,12 +364,12 @@ func TestPlanningTools(t *testing.T) {
 	}
 	last := f.reqs[1]["messages"].([]any)
 	out := last[len(last)-1].(map[string]any)["content"].([]any)
-	if len(out) != 9 {
+	if len(out) != 14 {
 		t.Fatalf("results %d", len(out))
 	}
 	for i, r := range out {
 		isErr, _ := r.(map[string]any)["is_error"].(bool)
-		if (i == 8) != isErr { // a free purchase has no impact: an error fed back, not a crash
+		if (i == 13) != isErr { // a free purchase has no impact: an error fed back, not a crash
 			t.Errorf("tool %d error=%v: %v", i+1, isErr, r.(map[string]any)["content"])
 		}
 	}

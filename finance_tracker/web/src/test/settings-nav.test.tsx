@@ -25,5 +25,7 @@ describe('settings navigation', () => {
     await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/data'))
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }))
     await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/rules'))
+    fireEvent.click(screen.getByRole('button', { name: 'Logos' }))
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/settings/logos'))
   })
 })

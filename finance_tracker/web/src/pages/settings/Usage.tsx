@@ -88,7 +88,7 @@ export function UsageView() {
             </div>
           </Card>
           {u.unused.length > 0 && (
-            <Card title="Not opened in this period">
+            <Card icon="search" color="var(--s-other)" title="Not opened in this period">
               <div className="flex flex-wrap gap-1.5">{u.unused.map((p: string) => <a key={p} href={`#${p}`} className="chip">{pageName(p)}</a>)}</div>
             </Card>
           )}

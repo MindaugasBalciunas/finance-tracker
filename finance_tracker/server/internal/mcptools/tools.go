@@ -220,6 +220,10 @@ type forecastArgs struct {
 	SkipGoals []int64 `json:"skip_goals,omitempty" jsonschema:"wish-list goal ids to leave out"`
 }
 
+type daysArgs struct {
+	Days int `json:"days,omitempty" jsonschema:"7–120, default 60"`
+}
+
 type creepArgs struct {
 	Years int `json:"years,omitempty" jsonschema:"1 (default) or 3"`
 }
@@ -547,6 +551,30 @@ func New(call Caller) *mcp.Server {
 			}
 			b, _ := json.Marshal(a)
 			return text(call("GET", "/forecast", vals("scenario", string(b)), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_fi_plan", Description: "Financial independence as levels, in today's euros: when the safe payout (withdrawal rate) of investable money covers fixed obligations, then essentials, then full spending, then spending +25% — capital needed, progress and date each; coast FI (when contributions could stop and FI still arrives by the target age); yearly projected payout a month; what +€100/250/500 a month does; savings rate; money locked in pensions."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/wealth/fi-plan", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_milestones", Description: "Dated milestones at today's pace: emergency fund full, the next two round figures of liquid wealth, each loan paid off on its schedule, financial independence. Projections from the app's own figures — say so."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/wealth/milestones", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_fees", Description: "What investments cost a year: each fund's ongoing charge plus platform fee (owner's figure, or a typical one for well-known ETFs — say which), € a year, 20-year drag at the expected return, and the saving against a 0.2% index fund; funds without a figure are counted as missing."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/wealth/fees", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_subscriptions", Description: "The subscription audit: regular charges you could cancel (obligations left out) with yearly cost, new ones (first charged within 90 days), ones that began as a free trial, and the owner's keep / cancel-by verdicts — including any charged again after being marked to cancel."},
+		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/plan/subscriptions", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_cash_calendar", Description: "Cash (checking, savings, cash) day by day for the next days (default 60): each bill, standing order, transfer and income on its date, the usual everyday spending taken off daily, the lowest day and the first day under the emergency floor or below zero."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a daysArgs) (*mcp.CallToolResult, any, error) {
+			q := url.Values{}
+			if a.Days > 0 {
+				q.Set("days", fmt.Sprint(a.Days))
+			}
+			return text(call("GET", "/plan/calendar", q, nil))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_payday_runbook", Description: "Pay yourself first, as a checklist for the latest salary: each saving line's amount with the account it usually leaves from and goes to, the wish list's share of last month's leftovers, and bill top-ups due this week. Each step says done / partial / todo from the transfers the bank shows since payday. Read-only — it moves nothing."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {

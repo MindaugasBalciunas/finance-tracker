@@ -85,6 +85,11 @@ Planning tools (read-only unless noted), the same in Ask CFO:
 | `get_decisions` / `get_decision_impact` | The decision journal and its record; what a purchase would do to the month, buffer, wish list and FI date |
 | `log_decision` | **Writes** (read-write token): a purchase being considered, with its cooling-off date — never decides, rates or deletes |
 | `get_ownership_costs` | The true yearly cost of each property and vehicle — running costs, interest, value lost, money tied up — against renting or a taxi |
+| `get_fi_plan` | Independence in levels — obligations, essentials, full, comfortable — with capital, progress and date each; when saving could stop (coast); projected payouts; what more saving buys |
+| `get_milestones` | Dated milestones at today's pace: emergency fund, the next round figures of liquid wealth, loans paid off, FI |
+| `get_fees` | What investments cost a year and over 20 years, against a 0.2% index fund; funds without a fee are listed as missing |
+| `get_subscriptions` | Cancellable regular charges with yearly cost, new ones, free trials, and your keep / cancel-by verdicts |
+| `get_cash_calendar` | Cash day by day for the next weeks with every bill, transfer and salary on its date, and the tightest day |
 
 On connect the server sends Claude the same data model, strategy and trust rules Ask CFO follows in the app (`internal/advice`), and offers four ready-made analyses as prompts — `/` commands in Claude Code, one click in Claude Desktop:
 

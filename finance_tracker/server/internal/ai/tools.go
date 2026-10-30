@@ -75,6 +75,11 @@ func toolDefs() []tool {
 		{Name: "get_decision_impact", Description: "What a purchase of a given amount would do, as plain sentences: share of this month's left to spend, days of usual spending, buffer months after paying from cash, how far the wish list slips, how much later financial independence comes.", InputSchema: obj(map[string]any{"amount": num("price in euros")}, "amount")},
 		{Name: "log_decision", Description: "Writes a purchase being considered into the decision journal (title, amount in euros, optional category id and note); it starts 'thinking' with a cooling-off date by size. It never decides, rates or deletes. Confirm first.", InputSchema: obj(map[string]any{"title": str("what is being considered"), "amount": num("price in euros"), "category": str("category id, e.g. shopping.electronics"), "note": str("why")}, "title", "amount")},
 		{Name: "get_ownership_costs", Description: "True cost of owning each property and vehicle over the last 12 months: running costs (spending tagged with it, by category), loan interest, value lost or gained, and what the owner's equity would earn invested (an estimate); a year and a month; per km for vehicles and a verdict against the owner's alternative (taxi/rental per km, or rent) when set.", InputSchema: obj(map[string]any{})},
+		{Name: "get_fi_plan", Description: "Financial independence as levels, in today's euros: when the safe payout (withdrawal rate) of investable money covers fixed obligations, then essentials, then full spending, then spending +25% — capital needed, progress and date each; coast FI (when contributions could stop and FI still arrives by the target age); yearly projected payout a month; what +€100/250/500 a month does; savings rate; money locked in pensions.", InputSchema: obj(map[string]any{})},
+		{Name: "get_milestones", Description: "Dated milestones at today's pace: emergency fund full, the next two round figures of liquid wealth, each loan paid off on its schedule, financial independence. Projections from the app's own figures — say so.", InputSchema: obj(map[string]any{})},
+		{Name: "get_fees", Description: "What investments cost a year: each fund's ongoing charge plus platform fee (owner's figure, or a typical one for well-known ETFs — say which), € a year, 20-year drag at the expected return, and the saving against a 0.2% index fund; funds without a figure are counted as missing.", InputSchema: obj(map[string]any{})},
+		{Name: "get_subscriptions", Description: "The subscription audit: regular charges you could cancel (obligations left out) with yearly cost, new ones (first charged within 90 days), ones that began as a free trial, and the owner's keep / cancel-by verdicts — including any charged again after being marked to cancel.", InputSchema: obj(map[string]any{})},
+		{Name: "get_cash_calendar", Description: "Cash (checking, savings, cash) day by day for the next days (default 60): each bill, standing order, transfer and income on its date, the usual everyday spending taken off daily, the lowest day and the first day under the emergency floor or below zero.", InputSchema: obj(map[string]any{"days": num("7–120, default 60")})},
 		{Name: "get_fi", Description: "Financial-independence projection: target, investable assets, progress, years to FI, required monthly saving for the target age, emergency fund.", InputSchema: obj(map[string]any{})},
 		{Name: "get_loans", Description: "Loans (mortgage): balance, rate, next payment split, payoff date, equity and LTV, principal/interest paid in the last 12 months.", InputSchema: obj(map[string]any{})},
 		{Name: "get_portfolio", Description: "Investment positions with live prices, cost basis, gains (EUR), plus trades if asked.", InputSchema: obj(map[string]any{"include_trades": map[string]any{"type": "boolean"}})},
@@ -209,6 +214,16 @@ func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
 		}
 		cats, _ := ledger.CategoryMap(a.DB)
 		return jsonOut(insights.FunFacts(txs, cats, now, args.s("from"), args.s("to")))
+	case "get_fi_plan":
+		return jsonOut2(cfo.BuildFIPlan(a.DB, now))
+	case "get_milestones":
+		return jsonOut2(cfo.Milestones(a.DB, now))
+	case "get_fees":
+		return jsonOut2(cfo.Fees(a.DB, now, true))
+	case "get_subscriptions":
+		return jsonOut2(insights.AuditSubscriptions(a.DB, now))
+	case "get_cash_calendar":
+		return jsonOut2(cfo.CashFlowCalendar(a.DB, now, int(args.f("days"))))
 	case "get_payday_runbook":
 		return jsonOut2(cfo.BuildRunbook(a.DB, now))
 	case "get_next_euro":

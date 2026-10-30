@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"ft/internal/cfo"
 	"log"
 	"net/http"
 	"os"
@@ -15,8 +14,10 @@ import (
 
 	"ft/internal/api"
 	"ft/internal/boot"
+	"ft/internal/cfo"
 	"ft/internal/db"
 	"ft/internal/ibkr"
+	"ft/internal/logos"
 )
 
 var version = "dev"
@@ -24,6 +25,8 @@ var version = "dev"
 func main() {
 	path := envOr("DB_PATH", "finance-v2.db")
 	legacy := envOr("V1_DB_PATH", filepath.Join(filepath.Dir(path), "finance.db"))
+	// Merchant logos are kept beside the database, so a restart doesn't fetch them again.
+	logos.CacheDir = filepath.Join(filepath.Dir(path), "logo-cache")
 	d, _, err := boot.Open(path, legacy)
 	if err != nil {
 		log.Fatalf("starting: %v", err)

@@ -1,3 +1,4 @@
+import { SubscriptionsCard } from '../plan/Subscriptions'
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -38,6 +39,8 @@ export function RecurringView() {
   const sharesMerchant = (r: Recurring) => data.items.filter((x) => x.merchant.toLowerCase() === r.merchant.toLowerCase()).length > 1
   return (
     <div className="space-y-4">
+      {/* The audit of what could be cancelled leads; the full list follows. */}
+      <SubscriptionsCard />
       <div className="flex items-end justify-between gap-3">
         <Stat icon="repeat" color="var(--s7)" label="Recurring costs" value={<CountUp value={data.monthly_total} format={(v) => `${eur(v)}/mo`} />} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.filter((r) => r.kind === 'bill').length} bills`} />
         <button className="btn-primary shrink-0" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>

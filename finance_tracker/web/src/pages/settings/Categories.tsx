@@ -5,10 +5,13 @@ import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { eur, shortDate } from '../../lib/format'
 import type { CategoryUse } from '../../lib/types'
-import { ErrorBox, Field, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
+import { ErrorBox, Field, hue, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
 // ── categories ──────────────────────────────────────────────────────
+
+// Each kind of category in its meaning: money in, money out, money moved.
+const KIND_HUE: Record<string, string> = { income: 'var(--hue-income)', expense: 'var(--hue-spending)', transfer: 'var(--hue-invest)' }
 
 export function Categories() {
   const cats = useCats()
@@ -39,8 +42,8 @@ export function Categories() {
         const list = cats.tree.filter((p) => kind === 'other' ? !['income', 'expense', 'transfer'].includes(p.kind) : p.kind === kind)
         if (!list.length) return null
         return (
-          <section key={kind} className="card overflow-hidden">
-            <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{{ income: 'Income', expense: 'Spending', transfer: 'Transfers', other: 'Other' }[kind]}</div>
+          <section key={kind} className="card overflow-hidden" style={hue(KIND_HUE[kind])}>
+            <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--c)' }}>{{ income: 'Income', expense: 'Spending', transfer: 'Transfers', other: 'Other' }[kind]}</div>
             <div className="divide-y divide-line">
               {list.map((p) => {
                 const fam = family(p.id)

@@ -195,6 +195,26 @@ func TestAuthBoundaries(t *testing.T) {
 		{"a decision on the wish list follows its goal", c, "PUT", "/plan/decisions/1", map[string]any{"title": "Bike", "amount": 400, "status": "bought"}, 400},
 		{"session sets ownership figures", c, "PUT", "/wealth/ownership/house", map[string]any{"rent": 900}, 200},
 		{"ownership only for property and vehicles", c, "PUT", "/wealth/ownership/swed", map[string]any{"rent": 900}, 400},
+		// Milestones, fees, FI plan, subscriptions, calendar (2.59): reads for
+		// tokens; the owner's own figures and verdicts are session-only.
+		{"ro reads milestones", tokRO, "GET", "/wealth/milestones", nil, 200},
+		{"ro reads the FI plan", tokRO, "GET", "/wealth/fi-plan", nil, 200},
+		{"ro reads fees (no live prices)", tokRO, "GET", "/wealth/fees?live=0", nil, 200},
+		{"ro reads subscriptions", tokRO, "GET", "/plan/subscriptions", nil, 200},
+		{"ro reads the cash calendar", tokRO, "GET", "/plan/calendar?days=30", nil, 200},
+		{"rw cannot set a fund's fee", tokRW, "PUT", "/wealth/fees/ibkr", map[string]any{"ter": 0.2}, 403},
+		{"rw cannot mark a subscription", tokRW, "PUT", "/plan/subscriptions", map[string]any{"key": "x|y", "verdict": "keep"}, 403},
+		{"ro cannot read logos (they fetch outside)", tokRO, "GET", "/logos", nil, 403},
+		{"session sets a fund's fee", c, "PUT", "/wealth/fees/artea", map[string]any{"ter": 1.2}, 200},
+		{"a fee out of range is refused", c, "PUT", "/wealth/fees/artea", map[string]any{"ter": 12}, 400},
+		{"session marks a subscription", c, "PUT", "/plan/subscriptions", map[string]any{"key": "netflix|subscriptions.media", "verdict": "cancel", "cancel_by": "2026-11-30"}, 200},
+		{"session reads the logo index", c, "GET", "/logos", nil, 200},
+		{"no logo from an unlisted host, and no fetch", c, "GET", "/logos/192.168.1.1", nil, 404},
+		{"rw cannot upload a logo", tokRW, "PUT", "/logos/custom", map[string]any{"merchant": "VMI", "data": "AA=="}, 403},
+		{"a logo must be an image", c, "PUT", "/logos/custom", map[string]any{"merchant": "VMI", "data": "PGh0bWw+"}, 400},
+		{"session uploads a logo", c, "PUT", "/logos/custom", map[string]any{"merchant": "VMI", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}, 200},
+		{"session reads its upload", c, "GET", "/logos/custom-vmi", nil, 200},
+		{"rw cannot remove a logo", tokRW, "DELETE", "/logos/custom/vmi", nil, 403},
 		{"rw cannot replace a budget line", tokRW, "POST", "/budgets", map[string]any{"name": "x"}, 403},
 		{"rw cannot replace the memory", tokRW, "PUT", "/ai/notes", map[string]any{"content": ""}, 403},
 		{"ro cannot patch budgets", tokRO, "PATCH", "/budgets", map[string]any{"name": "x"}, 403},
@@ -944,5 +964,23 @@ func TestAutoSyncOnOpenIsThrottled(t *testing.T) {
 	c.ok("POST", "/sync", map[string]any{}, &manual)
 	if manual["skipped"] == true {
 		t.Fatal("the Sync button always syncs")
+	}
+}
+
+// A logo is served only as an image: its own type, no sniffing, and a policy
+// that runs nothing even if the picture is opened on its own.
+func TestLogoServedAsAnImageOnly(t *testing.T) {
+	_, c := newServer(t)
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	c.ok("PUT", "/logos/custom", map[string]any{"merchant": "VMI", "data": png}, nil)
+	res, err := c.http.Get(c.base + "/logos/custom-vmi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	h := res.Header
+	if res.StatusCode != 200 || h.Get("Content-Type") != "image/png" || h.Get("X-Content-Type-Options") != "nosniff" ||
+		!strings.Contains(h.Get("Content-Security-Policy"), "default-src 'none'") || !strings.Contains(h.Get("Content-Security-Policy"), "sandbox") {
+		t.Errorf("logo served with %d %v", res.StatusCode, h)
 	}
 }

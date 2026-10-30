@@ -7,6 +7,7 @@ import { addMonths, eur, eurk, monthLabel, thisMonth } from '../../lib/format'
 import { AskCFO, Card, ErrorBox, Loading, NumberInput, Segmented, useToast } from '../../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { Icon } from '../../components/Icon'
+import { CashCalendarCard } from './CashCalendar'
 
 type Item = { id?: number; label: string; kind: 'bill' | 'yearly' | 'tax' | 'goal' | 'purchase'; month?: string; amount: number }
 type Month = { month: string; income: number; fixed: number; saving: number; everyday: number; one_offs: number; dated?: Item[] | null; net: number; end: number }
@@ -65,6 +66,8 @@ export function ForecastView() {
 
   return (
     <div className="space-y-4">
+      {/* The days first (what's tight soon), then the months. */}
+      <CashCalendarCard />
       <section className="hero p-4">
         <div className="text-xs text-ink2">{s ? 'With your what-if' : 'At the current plan'} · cash in checking, savings and cash</div>
         <div className={clsx('mt-1 flex items-start gap-2 text-sm font-medium', verdict.tone)}><Icon name={verdict.icon} size={18} className="mt-0.5 shrink-0" /><span>{verdict.text}</span></div>

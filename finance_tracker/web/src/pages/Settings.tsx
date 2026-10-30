@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { PageHeader, Spinner, Tabs, useToast } from '../components/ui'
+import { hue, PageHeader, Spinner, Tabs, useToast } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { AccountsVisibility } from './settings/Accounts'
 import { Categories } from './settings/Categories'
@@ -11,10 +11,11 @@ import { AISettings } from './settings/AI'
 import { Security } from './settings/Security'
 import { Appearance, Data } from './settings/Data'
 import { UsageView } from './settings/Usage'
+import { Logos } from './settings/Logos'
 
 // Where the money comes from, how it is sorted, then the app itself.
 const SECTIONS = [
-  { to: 'banks', label: 'Banks' }, { to: 'accounts', label: 'Accounts' }, { to: 'categories', label: 'Categories' }, { to: 'tags', label: 'Tags' }, { to: 'rules', label: 'Rules' },
+  { to: 'banks', label: 'Banks' }, { to: 'accounts', label: 'Accounts' }, { to: 'categories', label: 'Categories' }, { to: 'tags', label: 'Tags' }, { to: 'rules', label: 'Rules' }, { to: 'logos', label: 'Logos' },
   { to: 'ai', label: 'AI' }, { to: 'security', label: 'Security' }, { to: 'data', label: 'Data & backup' }, { to: 'appearance', label: 'Appearance' }, { to: 'usage', label: 'Usage' },
 ]
 
@@ -54,7 +55,7 @@ function ShareForAI() {
     } finally { setBusy(false) }
   }
   return (
-    <section className="card flex flex-wrap items-center gap-3 p-4">
+    <section className="card flex flex-wrap items-center gap-3 p-4" style={hue('var(--hue-ai)')}>
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent"><Icon name="spark" /></span>
       <div className="min-w-0 flex-1 basis-48">
         <div className="text-sm font-medium">Export for AI</div>
@@ -86,6 +87,7 @@ export default function Settings() {
         <Route path="security" element={<Security />} />
         <Route path="data" element={<Data top={<ShareForAI />} />} />
         <Route path="usage" element={<UsageView />} />
+        <Route path="logos" element={<Logos />} />
         <Route path="appearance" element={<Appearance />} />
         <Route path="*" element={<UnknownSection />} />
       </Routes>

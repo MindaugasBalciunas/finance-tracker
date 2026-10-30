@@ -46,7 +46,6 @@ type Runbook struct {
 	Open     int         `json:"open"` // steps not done yet
 }
 
-
 // BuildRunbook is this calendar month's checklist.
 func BuildRunbook(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, true) }
 

@@ -49,3 +49,35 @@ func TestNextEuroFillsBufferThenRefundThenBestReturn(t *testing.T) {
 		t.Errorf("destinations %+v", n.Options)
 	}
 }
+
+// Milestones speak in dates: €50k then €75k liquid at this pace, the
+// mortgage on its schedule, and FI.
+func TestMilestonesProjectRoundFiguresAndPayoff(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	for m := 1; m <= 12; m++ {
+		day := now.AddDate(0, -m, 0).Format("2006-01") + "-20"
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(5000), Category: "salary", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(2000), Category: "food.groceries", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Kind: "transfer", Date: day, Amount: E(1000), Category: "transfer.invest", AccountID: "swed", ToAccountID: "ibkr"})
+	}
+	Bal(t, d, "swed", "2026-10-14", 12000)
+	Bal(t, d, "ibkr", "2026-10-14", 30000)
+	Bal(t, d, "house", "2022-01-01", 300000)
+	Bal(t, d, "mortgage", "2026-10-01", -200000)
+	ms, err := cfo.Milestones(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]cfo.Milestone{}
+	for _, m := range ms {
+		keys[m.Key] = m
+	}
+	l50, l75 := keys["liquid:50000"], keys["liquid:75000"]
+	if l50.Date == "" || l75.Date == "" || l50.Months >= l75.Months || l50.Months < 1 {
+		t.Errorf("liquid milestones %+v %+v", l50, l75)
+	}
+	if keys["debt:mortgage"].Date == "" || keys["fi"].Title == "" {
+		t.Errorf("payoff or FI missing: %+v", ms)
+	}
+}

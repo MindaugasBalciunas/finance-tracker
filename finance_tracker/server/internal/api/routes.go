@@ -16,6 +16,7 @@ func (s *Server) routes() {
 	s.planRoutes()
 	s.goalRoutes()
 	s.actRoutes()
+	s.moreRoutes()
 	s.insightRoutes()
 	s.bankRoutes()
 	s.ibkrRoutes()

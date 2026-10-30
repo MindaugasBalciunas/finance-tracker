@@ -47,7 +47,7 @@ export function AccountsVisibility() {
     <div className="space-y-4">
       <p className="text-sm text-muted">Hidden accounts stop appearing when you update balances or log a transaction, and drop out of the Wealth lists. Hiding one that still holds money closes it at €0 from today, so net worth matches what you see; its past balances and transactions stay in every chart. Showing it again restores the last value.</p>
       {groups.map((g) => (
-        <Card key={g.id} pad={false} title={g.name}>
+        <Card key={g.id} pad={false} color={`var(--s${g.slot})`} title={g.name}>
           <div className="divide-y divide-line border-t border-line">
             {g.items.map((a) => (
               <div key={a.id} className={clsx('flex items-center gap-3 px-4 py-2.5', a.archived && 'opacity-60')}>

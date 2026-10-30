@@ -81,6 +81,17 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | UI | One card system (section hue, colour by meaning, gradient rim, pointer spotlight), compact two-column desktop layouts, dates without the current year | Firefox sweep 390px / 1440px, light and dark |
 | AI / MCP | Eight planning tools with the same names in Ask CFO and MCP; `log_decision` the only new write (rw tokens) | `ai/TestPlanningTools`, `api/TestMCPConnector`, `api/TestAuthBoundaries` |
 
+## Added in v2.59
+
+| Area | Change | Covered by |
+|---|---|---|
+| Wealth → Independence | Levels of freedom (obligations, essentials, full, comfortable) with capital, progress and date; when you can stop adding money (coast) for the target age and 55/60/65; projected monthly payouts against obligations, essentials and spending; what +€100/250/500 buys; milestones timeline | `cfo/TestFIPlan*`, `cfo/TestMilestones*`, `test/money.test.tsx` |
+| Wealth → Investments | Fee analyser: each fund's yearly cost and 20-year drag vs a 0.2% index fund; typical figures for well-known ETFs, the owner's for bank and pension funds | `wealth/TestFeeAnalyser*` |
+| Plan → Recurring | Subscription audit: yearly cost, new subscriptions caught early, free trials, keep / cancel-by with reminders and a warning if charged after | `insights/TestSubscriptionAudit*` |
+| Plan → Forecast | Next 60 days day by day: every bill, transfer and salary on its date, daily balance against the emergency floor | `cfo/TestCashFlowCalendar*` |
+| Merchants | Logos from a built-in list of merchant sites (server fetch: listed hosts only, public addresses only, images only, cached beside the database), on a white tile (or the logo's own colour); bank fees show their bank; Settings → Logos lists merchants without one and takes your own upload (kept in backups) | `logos/*`, `api/TestAuthBoundaries`, `api/TestLogoServedAsAnImageOnly`, `web/logos.test` |
+| Settings | Same card style as the rest: icons, colour by meaning, two columns on desktop | Firefox sweep |
+
 ## Where v2 is better
 
 - One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.

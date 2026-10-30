@@ -171,3 +171,27 @@ export type OwnCost = {
   lines: OwnLine[]; running: OwnLine[]; year: number; month: number; per_km?: number; alt_year?: number
   verdict?: string; tone?: 'good' | 'warn'; missing: string[]
 }
+
+// ── independence, milestones, fees, subscriptions, cash calendar ──
+
+export type FreedomLevel = { key: string; title: string; detail: string; monthly: number; capital: number; progress: number; date?: string; months: number; age?: number; done: boolean }
+export type FIPlan = {
+  annual_spend: number; spend_source: string; target: number; investable: number; progress: number; monthly_invested: number
+  expected_return: number; withdrawal_rate: number; years_to_fi: number; fi_date?: string; fi_age?: number; target_age?: number; required_monthly?: number
+  emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
+  levels: FreedomLevel[]; passive_now: number; obligations: number; essentials: number; spending: number
+  coast: { age: number; needed: number; date?: string; months: number; done: boolean; detail: string; later?: { age: number; date?: string; done: boolean }[] }
+  payouts: { year: number; age?: number; investable: number; monthly: number }[]
+  what_ifs: { extra: number; date?: string; sooner: number }[]
+  savings_rate: number; locked: number; notes: string[]
+}
+export type Milestone = { key: string; title: string; detail: string; target?: number; current?: number; date?: string; months: number; done: boolean }
+export type FeeLine = { id: string; name: string; kind: 'fund' | 'stock' | 'account'; value: number; ter: number; platform: number; source: 'yours' | 'typical' | 'none' | 'missing'; yearly: number; drag_20y: number; saving_20y: number }
+export type Fees = { lines: FeeLine[]; value: number; yearly: number; weighted: number; drag_20y: number; saving_20y: number; missing: number; return: number; low_cost: number }
+export type Subscription = {
+  key: string; merchant: string; category: string; cadence: string; amount: number; yearly: number; since: string; last: string; next?: string
+  new: boolean; trial_from?: string; verdict?: { verdict: 'keep' | 'cancel'; cancel_by?: string; decided_on?: string }; charged_after_cancel?: string
+}
+export type Subscriptions = { items: Subscription[]; monthly: number; yearly: number; to_cancel: number }
+export type CalEvent = { label: string; kind: 'income' | 'bill' | 'transfer'; amount: number }
+export type CashCalendar = { start: number; floor: number; daily: number; days: { date: string; events?: CalEvent[]; balance: number; low: boolean; short: boolean }[]; low: number; low_date: string; first_below?: string; first_short?: string }

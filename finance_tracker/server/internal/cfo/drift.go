@@ -7,6 +7,7 @@ import (
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/market"
+	"ft/internal/money"
 	"ft/internal/plan"
 	"ft/internal/wealth"
 )
@@ -38,4 +39,49 @@ func Ownership(d *sql.DB, now time.Time) ([]wealth.OwnCost, error) {
 		return nil, err
 	}
 	return wealth.Ownership(d, book, txs, plan.LoadSettings(d).ExpectedReturn+inflation, now)
+}
+
+// Fees gathers what is invested and what it costs: positions from trades
+// (live prices when asked, else cost) and the accounts that are funds as a
+// whole — pensions, and broker accounts without trades (bank funds).
+func Fees(d *sql.DB, now time.Time, live bool) (*wealth.Fees, error) {
+	trades, err := wealth.ListTrades(d)
+	if err != nil {
+		return nil, err
+	}
+	p := wealth.BuildPortfolio(trades, live)
+	var holdings []wealth.FeeLine
+	for _, h := range p.Holdings {
+		v := 0.0
+		switch {
+		case h.ValueEUR != nil:
+			v = *h.ValueEUR
+		case h.CostEUR != nil:
+			v = *h.CostEUR
+		}
+		if v <= 0 {
+			continue
+		}
+		holdings = append(holdings, wealth.FeeLine{ID: h.Ticker, Name: firstNonEmpty(h.Name, h.Ticker), Value: money.FromFloat(v)})
+	}
+	traded := map[string]bool{}
+	for _, t := range trades {
+		traded[t.AccountID] = true
+	}
+	book, err := wealth.LoadBook(d)
+	if err != nil {
+		return nil, err
+	}
+	snap := book.SnapshotAt(now.Format("2006-01-02"), true)
+	var funds []wealth.FeeLine
+	for id, a := range book.Accounts {
+		if a.Archived || !(a.Kind == "pension" || (a.Kind == "brokerage" && !traded[id])) {
+			continue
+		}
+		if v := snap.ByAccount[id]; v > 0 {
+			funds = append(funds, wealth.FeeLine{ID: id, Name: a.Name, Value: v})
+		}
+	}
+	core := wealth.LoadInvestSettings(d, p).Core
+	return wealth.AnalyseFees(wealth.LoadFeeSettings(d), holdings, funds, plan.LoadSettings(d).ExpectedReturn+inflation, core...), nil
 }

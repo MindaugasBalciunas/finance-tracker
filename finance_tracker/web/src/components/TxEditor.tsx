@@ -2,13 +2,14 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useSt
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
-import { useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
+import { useAccounts, useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
 import { catIcon, useCats } from '../lib/categories'
 import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
+import { logoName, MerchantMark } from './MerchantLogo'
 import { Icon, IconTile } from './Icon'
 import { DateInput } from './DateInput'
 
@@ -347,6 +348,7 @@ function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDo
 /** One ledger row. */
 export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t: Tx; onClick?: () => void; selected?: boolean; onSelect?: () => void; showDate?: boolean }) {
   const cats = useCats()
+  const accounts = useAccounts().data
   const sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : ''
   const title = t.merchant || t.note || cats.name(t.category)
   const sub = [cats.path(t.category), t.merchant && t.note && t.note !== t.merchant ? t.note : '', showDate ? dayLabel(t.date) : ''].filter(Boolean).join(' · ')
@@ -357,7 +359,7 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t:
           <Icon name="check" size={16} />
         </button>
       ) : (
-        <IconTile name={catIcon(t.category)[0]} color={t.kind === 'transfer' ? 'var(--s-other)' : catIcon(t.category)[1]} size={36} round />
+        <MerchantMark merchant={logoName(t, accounts)} category={t.category} transfer={t.kind === 'transfer'} size={36} />
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-ink">{title}</div>

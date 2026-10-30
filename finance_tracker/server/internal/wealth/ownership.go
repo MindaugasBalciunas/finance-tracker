@@ -68,8 +68,8 @@ type OwnLine struct {
 	Estimate bool        `json:"estimate,omitempty"`
 	// Info: shown, not counted — a property's revaluation isn't money spent
 	// or earned, and counting a €55,000 jump made the house "pay" €2,800 a month.
-	Info bool `json:"info,omitempty"`
-	Link     string      `json:"link,omitempty"`
+	Info bool   `json:"info,omitempty"`
+	Link string `json:"link,omitempty"`
 }
 
 type OwnCost struct {

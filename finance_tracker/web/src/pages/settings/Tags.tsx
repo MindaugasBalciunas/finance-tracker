@@ -52,7 +52,7 @@ export function Tags() {
 function TagList({ title, tags, months, onOpen }: { title: string; tags: TagStat[]; months: string[]; onOpen: (t: TagStat) => void }) {
   const cats = useCats()
   return (
-    <Card pad={false} title={<span>{title} <span className="font-normal text-muted">{tags.length}</span></span>}>
+    <Card pad={false} icon={title === 'Trips' ? 'plane' : 'tag'} color={title === 'Trips' ? 'var(--s4)' : 'var(--s5)'} title={<span>{title} <span className="font-normal text-muted">{tags.length}</span></span>}>
       <div className="divide-y divide-line border-t border-line">
         {tags.map((t) => (
           <button key={t.tag} onClick={() => onOpen(t)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
@@ -158,7 +158,7 @@ function TagSuggestions({ onPick }: { onPick: (from: string, to: string) => void
   const { data } = useQuery({ queryKey: ['tag-suggestions'], queryFn: () => api.get<{ from: string; to: string; reason: string }[]>('/tags/suggestions') })
   if (!data?.length) return null
   return (
-    <Card title="Probably the same tag">
+    <Card icon="swap" color="var(--hue-warn)" title="Probably the same tag">
       <div className="space-y-1.5">
         {data.map((s) => (
           <div key={s.from + s.to} className="flex items-center justify-between gap-2 text-sm">

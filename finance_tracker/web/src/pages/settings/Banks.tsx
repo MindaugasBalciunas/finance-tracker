@@ -72,9 +72,9 @@ export function Banks() {
     reload()
   }
   return (
-    <div className="space-y-4">
+    <div className="card-columns">
       <IBKRConnection />
-      <Card title="Connections" action={st?.configured && (
+      <Card icon="bank" color="var(--s1)" title="Connections" action={st?.configured && (
         <div className="flex items-center gap-2">
           <select className="input select-pad h-8 w-auto text-xs" value={bank} onChange={(e) => setBank(e.target.value)}>{['Swedbank', 'SEB', 'Luminor', 'Revolut', 'Šiaulių bankas'].map((b) => <option key={b}>{b}</option>)}</select>
           <button className="btn-primary h-8 text-xs" onClick={connect} disabled={busy}>Connect</button>
@@ -121,12 +121,12 @@ export function Banks() {
           </div>
         )}
       </Card>
-      <Card title="Card reservations">
+      <Card icon="card" color="var(--s2)" title="Card reservations">
         <Toggle checked={!st?.keep_reserved_in_inbox} onChange={async (v) => { await api.put('/bank/settings', { keep_reserved_in_inbox: !v }); qc.invalidateQueries({ queryKey: ['bank-settings'] }) }}
           label="Add to the ledger right away" />
         <div className="mt-2 text-xs text-muted">Card payments the bank has only reserved go straight into the ledger, marked <span className="text-warn">pending</span>, so today's spending counts today. When the bank books one, the same transaction gets the final amount and date — your category and tags stay. A reservation the bank releases is removed. Off: they wait in the inbox until they book.</div>
       </Card>
-      <Card title="Enable Banking application" action={!form && <button className="btn-ghost h-8 text-xs" onClick={() => setForm({ ...st, owner_names: (st?.owner_names ?? []).join('\n'), private_key_pem: '' })}>Edit</button>}>
+      <Card icon="key" color="var(--s7)" title="Enable Banking application" action={!form && <button className="btn-ghost h-8 text-xs" onClick={() => setForm({ ...st, owner_names: (st?.owner_names ?? []).join('\n'), private_key_pem: '' })}>Edit</button>}>
         {!form ? (
           <div className="space-y-1 text-sm">
             <div><span className="text-muted">Application:</span> {st?.application_id || '—'}</div>

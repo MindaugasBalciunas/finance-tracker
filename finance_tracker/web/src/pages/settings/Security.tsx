@@ -29,14 +29,14 @@ export function Security() {
   }
   if (!st) return <Loading />
   return (
-    <div className="max-w-xl space-y-4">
+    <div className="card-columns">
       {demo.on && (
         <div className="flex items-start gap-2 rounded-xl border border-line bg-sunken/40 px-3 py-2 text-sm text-ink2">
           <Icon name="lock" size={16} className="mt-0.5 shrink-0 text-accent" />
           <span>Locked while demo mode is on: the PIN, passkeys and tokens can't be changed until you leave the demo with your PIN.</span>
         </div>
       )}
-      <Card title="App lock">
+      <Card icon="lock" color="var(--s8)" title="App lock">
         <div className="mb-3 text-sm">{st.enabled ? <span className="text-good">PIN lock is on.</span> : <span className="text-warn">PIN lock is off — anyone past the web login can see everything.</span>}</div>
         <div className="grid grid-cols-2 gap-3">
           {st.enabled && <Field label="Current PIN"><PinInput value={pin.current_pin} onChange={(v) => setPin({ ...pin, current_pin: v })} aria-label="Current PIN" /></Field>}
@@ -48,7 +48,7 @@ export function Security() {
           {st.enabled && <button className="btn-ghost ml-auto" onClick={() => api.post('/auth/logout').then(() => window.location.reload())}>Lock now</button>}
         </div>
       </Card>
-      <Card title="Passkeys (Face ID / fingerprint)">
+      <Card icon="fingerprint" color="var(--s1)" title="Passkeys (Face ID / fingerprint)">
         <div className="space-y-2">
           {(keys ?? []).map((k) => (
             <div key={k.id} className="flex items-center justify-between text-sm">
@@ -62,7 +62,7 @@ export function Security() {
         </div>
       </Card>
       <Connectors />
-      <Card title="API tokens (MCP server)">
+      <Card icon="key" color="var(--s5)" title="API tokens (MCP server)">
         <div className="mb-2 text-xs text-muted">Read-only tokens see data routes only; read-write tokens may also edit transactions, rules, tags and inbox proposals — never settings, backups or accepting bank rows.</div>
         {token && <div className="mb-2 break-all rounded-xl bg-sunken p-2 font-mono text-xs">{token}<div className="mt-1 font-sans text-warn">Copy it now — it is shown only once.</div></div>}
         <div className="flex flex-wrap gap-2 text-sm">
@@ -105,7 +105,7 @@ function Connectors() {
     }
   }
   return (
-    <Card title="AI apps (Claude connector)">
+    <Card icon="spark" color="var(--hue-ai)" title="AI apps (Claude connector)">
       <div className="space-y-3 text-sm">
         <p className="text-xs text-ink2">Use your finances in Claude chat — including live IBKR data. In Claude: <b>Settings → Connectors → Add custom connector</b>, paste this address, then press Connect and approve it here. You choose read-only or read and write each time.</p>
         <div className="flex items-center gap-2">

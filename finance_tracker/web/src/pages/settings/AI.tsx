@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { monthLabel, parseNum, shortDate } from '../../lib/format'
-import { Card, Field, Loading, Spinner, Toggle, useToast } from '../../components/ui'
+import { Card, Field, hue, Loading, Spinner, Toggle, useToast } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
 
 // ── AI ──────────────────────────────────────────────────────────────
@@ -33,12 +33,12 @@ export function AISettings() {
   const { data: s, isLoading } = useQuery({ queryKey: ['ai-settings'], queryFn: () => api.get<AISettingsData>('/ai/settings') })
   if (isLoading || !s) return <Loading />
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="card-columns">
       <Status s={s} />
       <Connection s={s} />
       <Spending s={s.spend} />
       <PhoneNotifications />
-      <a href="#/ai?memory=1" className="card flex items-center gap-3 p-4 hover:bg-sunken/50">
+      <a href="#/ai?memory=1" className="card flex items-center gap-3 p-4" style={hue('var(--hue-ai)')}>
         <IconTile name="edit" color="var(--s4)" size={36} />
         <span className="min-w-0 flex-1"><span className="block text-sm font-medium">Memory</span><span className="block text-xs text-muted">Your brief and the decisions the assistant remembers now live next to the chat, in Ask CFO.</span></span>
         <Icon name="chevronR" className="text-muted" />
@@ -70,7 +70,7 @@ function Status({ s }: { s: AISettingsData }) {
   }
   const state = !s.enabled ? 'off' : !s.has_key ? 'nokey' : 'on'
   return (
-    <section className="card p-4">
+    <section className="card p-4" style={hue('var(--hue-ai)')}>
       <div className="flex items-start gap-3">
         <IconTile name="spark" color={state === 'on' ? 'var(--s4)' : 'var(--s-other)'} size={40} />
         <div className="min-w-0 flex-1">
@@ -136,7 +136,7 @@ function Connection({ s }: { s: AISettingsData }) {
   const suggested = f.provider === 'anthropic' ? CLAUDE_MODELS.map((m) => m.id) : []
   const extra = (models ?? []).filter((m) => !suggested.includes(m))
   return (
-    <Card title="Connection">
+    <Card icon="link" color="var(--hue-ai)" title="Connection">
       <div className="space-y-5">
         <div>
           <div className="label">Provider</div>
@@ -216,7 +216,7 @@ function Spending({ s }: { s: Spend }) {
     setAmt(''); setNote(''); setAdding(false); reload()
   }
   return (
-    <Card title="Spending & credit">
+    <Card icon="coins" color="var(--s3)" title="Spending & credit">
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
         <div>
           <div className="text-xs text-muted">Credit left</div>
@@ -326,7 +326,7 @@ actions:
         clickAction: "{{ trigger.json.url }}"
         tag: "{{ trigger.json.tag }}"`
   return (
-    <Card title="Phone notifications">
+    <Card icon="bell" color="var(--s5)" title="Phone notifications">
       <Toggle checked={data.enabled} onChange={(v) => save({ enabled: v })} label="Notify me when an answer is ready and I've left the app" />
       <div className="mt-3 flex gap-2">
         <input className="input font-mono text-xs" placeholder="http://homeassistant:8123/api/webhook/finance_tracker_…" value={value} autoComplete="off" spellCheck={false} onChange={(e) => setUrl(e.target.value)} />

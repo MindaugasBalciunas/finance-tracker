@@ -4,6 +4,8 @@ finance_tracker/backend/tmp/
 finance_tracker/backend/finance.db
 finance_tracker/backend/finance_tracker.db
 finance_tracker/backend/backups/
+# Merchant logos cached beside the database (re-fetched when missing)
+logo-cache/
 finance_tracker/backend/finance.db-shm
 finance_tracker/backend/finance.db-wal
 finance_tracker/backend/docs/swagger.json

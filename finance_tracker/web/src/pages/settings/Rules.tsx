@@ -76,7 +76,7 @@ export function Rules() {
         </div>
       )}
       {stats?.top?.length ? (
-        <Card title="Busiest in the last 90 days">
+        <Card icon="chart" color="var(--s2)" title="Busiest in the last 90 days">
           <div className="space-y-1.5">
             {stats.top.map((id) => {
               const r = all.find((x) => x.id === id)
@@ -109,7 +109,7 @@ export function Rules() {
           {removable.length > 0 && <button className="btn-danger h-8 px-2.5 text-xs" onClick={removeAll}>Delete all {removable.length}</button>}
         </div>
       )}
-      <Card pad={false}>
+      <Card pad={false} color="var(--s1)">
         <div className="divide-y divide-line">
           {list.length === 0 && <div className="px-4 py-6 text-center text-sm text-muted">No rules here.</div>}
           {list.map((r) => {

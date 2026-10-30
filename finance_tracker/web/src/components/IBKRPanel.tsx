@@ -50,7 +50,7 @@ export function IBKRPanel() {
   const [chosen, setChosen] = useState<Set<string> | null>(null)
   const [showRecorded, setShowRecorded] = useState(false)
   if (data?.status.lapsed) return (
-    <Card title="Interactive Brokers">
+    <Card icon="trend" color="var(--hue-invest)" title="Interactive Brokers">
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span className="min-w-0 flex-1 text-ink2">IBKR ends its sign-in every 7 days, so syncing has paused{data.status.last_sync && <> — last synced {ago(data.status.last_sync)}</>}.</span>
         <a className="btn-primary h-8 px-3 text-xs" href="#/settings/banks">Connect again</a>
@@ -83,7 +83,7 @@ export function IBKRPanel() {
   const recorded = (r?.trades ?? []).filter((t) => t.recorded)
   const diff = r?.app_balance != null ? r.net_liquidation - r.app_balance : null
   return (
-    <Card title={<span className="flex items-center gap-2">Interactive Brokers <span className="rounded-full bg-good/15 px-1.5 text-[10px] font-medium text-good">read-only</span></span>}
+    <Card icon="trend" color="var(--hue-invest)" title={<span className="flex items-center gap-2">Interactive Brokers <span className="rounded-full bg-good/15 px-1.5 text-[10px] font-medium text-good">read-only</span></span>}
       action={<button className="btn-outline h-8 px-2.5 text-xs" onClick={sync} disabled={busy}>{busy ? <Spinner className="h-4 w-4" /> : <Icon name="refresh" size={14} />}Sync</button>}>
       {data.status.last_error && <div className="mb-2 rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad">{data.status.last_error}</div>}
       {!r ? <div className="text-sm text-muted">Not synced yet — press Sync to read the account.</div> : (
@@ -181,7 +181,7 @@ export function IBKRConnection() {
   }
   const setAccount = async (id: string) => { await api.put('/ibkr/account', { account: id }); qc.invalidateQueries({ queryKey: ['ibkr'] }) }
   return (
-    <Card title="Interactive Brokers">
+    <Card icon="trend" color="var(--hue-invest)" title="Interactive Brokers">
       {st?.connected ? (
         <div className="space-y-3 text-sm">
           <div className="flex items-start gap-2"><Icon name="check" size={16} className="mt-0.5 shrink-0 text-good" /><span>Connected, read-only{st.connected_at && <span className="text-muted"> · since {shortDate(st.connected_at.slice(0, 10))}</span>}<span className="text-muted"> · last sync {ago(st.last_sync)}</span></span></div>

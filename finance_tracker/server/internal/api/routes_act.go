@@ -1,13 +1,16 @@
 package api
 
 import (
+	"encoding/base64"
 	"net/http"
+	"strings"
 	"time"
 
 	"ft/internal/cfo"
 	"ft/internal/decisions"
 	"ft/internal/goals"
 	"ft/internal/insights"
+	"ft/internal/logos"
 	"ft/internal/money"
 	"ft/internal/wealth"
 )
@@ -115,5 +118,97 @@ func (s *Server) actRoutes() {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, wealth.SaveOwnSettings(s.DB, r.PathValue("id"), in)
+	})
+}
+
+// ── more planning: milestones, subscriptions, fees, calendar, FI plan, logos
+//
+// Reads: /api/plan/* already, /api/wealth/{milestones,fees,fi-plan} listed
+// exactly. Writes (subscription verdicts, fee figures) are the owner's own,
+// session-only. Logos are session-only too: they trigger outbound fetches.
+
+func (s *Server) moreRoutes() {
+	s.handle("GET /api/wealth/milestones", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.Milestones(s.DB, time.Now())
+	})
+	s.handle("GET /api/wealth/fi-plan", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.BuildFIPlan(s.DB, time.Now())
+	})
+	s.handle("GET /api/wealth/fees", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.Fees(s.DB, time.Now(), r.URL.Query().Get("live") != "0")
+	})
+	s.handle("PUT /api/wealth/fees/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in wealth.FeeSetting
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, wealth.SaveFeeSetting(s.DB, r.PathValue("id"), in)
+	})
+	s.handle("GET /api/plan/subscriptions", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return insights.AuditSubscriptions(s.DB, time.Now())
+	})
+	s.handle("PUT /api/plan/subscriptions", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Key string `json:"key"`
+			insights.SubVerdict
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, insights.SetSubVerdict(s.DB, in.Key, in.SubVerdict, time.Now())
+	})
+	s.handle("GET /api/plan/calendar", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.CashFlowCalendar(s.DB, time.Now(), qint(r, "days", 60))
+	})
+	s.handle("GET /api/logos", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		w.Header().Set("Cache-Control", "private, no-cache") // an upload must show at once
+		return logos.IndexWith(s.DB), nil
+	})
+	// Your own logo for a merchant: uploaded, never fetched (base64 in JSON,
+	// well inside the 2 MB body limit; the bytes are checked to be an image).
+	s.handle("PUT /api/logos/custom", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct {
+			Merchant string `json:"merchant"`
+			Data     string `json:"data"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		b, err := base64.StdEncoding.DecodeString(in.Data)
+		if err != nil {
+			return nil, bad("the image didn't arrive intact")
+		}
+		if err := logos.SetCustom(s.DB, in.Merchant, b); err != nil {
+			return nil, bad(err.Error())
+		}
+		return map[string]string{"id": logos.CustomID + logos.Key(in.Merchant)}, nil
+	})
+	s.handle("DELETE /api/logos/custom/{key}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return map[string]bool{"ok": true}, logos.DeleteCustom(s.DB, r.PathValue("key"))
+	})
+	s.handle("GET /api/logos/{domain}", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id := r.PathValue("domain")
+		var b []byte
+		var mime string
+		var err error
+		if key, ok := strings.CutPrefix(id, logos.CustomID); ok {
+			b, mime, err = logos.Custom(s.DB, key)
+			w.Header().Set("Cache-Control", "private, no-cache") // replaced uploads show at once
+		} else {
+			b, mime, err = logos.Get(r.Context(), id)
+		}
+		if err != nil {
+			return nil, notFound("no logo")
+		}
+		w.Header().Set("Content-Type", mime)
+		if w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "private, max-age=2592000")
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// An SVG opened on its own can't run script or reach anything: the
+		// headers are the guard, the SVG check before storing a convenience.
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+		w.Write(b)
+		return nil, nil
 	})
 }

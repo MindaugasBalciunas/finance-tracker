@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
 import { usePeriod, useRefresh, useWide } from '../../lib/hooks'
+import { FeesCard } from './Fees'
 import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeLabel, rangeTick } from '../../lib/periods'
 import { Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, useToast } from '../../components/ui'
@@ -185,6 +186,7 @@ export function Investments() {
       </section>
 
       <QualityCard />
+      <FeesCard />
 
       {/* Desktop: the short cards (allocation, closed positions) stack beside the
           long positions list; phones keep the reading order. */}

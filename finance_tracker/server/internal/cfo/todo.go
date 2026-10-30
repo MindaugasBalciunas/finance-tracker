@@ -54,6 +54,28 @@ func moreActions(d *sql.DB, now time.Time) []Action {
 			}
 		}
 	}
+	// Subscriptions marked to cancel: the day has come, or it charged again.
+	if subs, err := insights.AuditSubscriptions(d, now); err == nil {
+		soon := now.AddDate(0, 0, 3).Format("2006-01-02")
+		for _, it := range subs.Items {
+			v := it.Verdict
+			if v == nil || v.Verdict != "cancel" {
+				continue
+			}
+			switch {
+			case it.ChargedAfterCancel != "":
+				out = append(out, Action{Level: "bad", Kind: "subscription", Text: fmt.Sprintf("%s charged again on %s — you meant to cancel it", it.Merchant, shortDay(it.ChargedAfterCancel)),
+					Detail: fmt.Sprintf("%s a year", eur(it.Yearly)), Link: "/plan/recurring"})
+			case v.CancelBy <= soon:
+				lvl := "info"
+				if v.CancelBy <= now.Format("2006-01-02") {
+					lvl = "warn"
+				}
+				out = append(out, Action{Level: lvl, Kind: "subscription", Text: fmt.Sprintf("Cancel %s by %s", it.Merchant, shortDay(v.CancelBy)),
+					Detail: fmt.Sprintf("saves %s a year", eur(it.Yearly)), Link: "/plan/recurring", Due: v.CancelBy})
+			}
+		}
+	}
 	// Bills about to renew that cost more last time.
 	if p, err := insights.PriceCreep(d, now); err == nil {
 		for _, it := range p.Items {

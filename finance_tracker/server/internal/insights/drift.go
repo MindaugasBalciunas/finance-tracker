@@ -55,7 +55,7 @@ type Creep struct {
 	Text           string        `json:"text"`
 	Drivers        []CreepDriver `json:"drivers"` // what grew most
 	Fallers        []CreepDriver `json:"fallers"` // what fell most (Change negative)
-	New            []Commitment  `json:"new"` // regular bills that started since the first window
+	New            []Commitment  `json:"new"`     // regular bills that started since the first window
 	NewMonthly     money.Cents   `json:"new_monthly"`
 }
 
