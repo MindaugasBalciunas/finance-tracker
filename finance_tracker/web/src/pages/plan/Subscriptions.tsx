@@ -1,32 +1,45 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
+import { ledgerLink } from '../../lib/links'
 import { eur, shortDate, todayISO } from '../../lib/format'
 import { useCats } from '../../lib/categories'
 import type { Subscription, Subscriptions } from '../../lib/types'
 import { AskCFO, Card, ErrorBox, Loading, useToast } from '../../components/ui'
 import { DateInput } from '../../components/DateInput'
 import { MerchantMark } from '../../components/MerchantLogo'
+import { Icon } from '../../components/Icon'
 
 /** The subscription audit: what you pay for regularly that you could cancel,
  *  what each costs a year, and your verdict — keep it, or cancel by a date. */
 export function SubscriptionsCard() {
   const { data, isLoading, error } = useQuery({ queryKey: ['subscriptions'], queryFn: () => api.get<Subscriptions>('/plan/subscriptions') })
-  if (isLoading) return <Card title="Subscriptions" icon="repeat"><Loading /></Card>
+  if (isLoading) return <Card id="subscriptions" title="Subscription review" icon="repeat"><Loading /></Card>
   if (error || !data) return <ErrorBox error={error} />
   if (!data.items.length) return null
-  const open = data.items.filter((s) => !s.verdict).length
+  // Only what still needs a verdict stays open (a cancelled one charged
+  // again needs one too); the decided ones fold away.
+  const pending = data.items.filter((s) => !s.verdict || s.charged_after_cancel)
+  const reviewed = data.items.filter((s) => s.verdict && !s.charged_after_cancel)
+  const open = pending.length
   return (
-    <Card title="Subscriptions" icon="repeat" color={data.items.some((s) => s.charged_after_cancel) ? 'var(--hue-bad)' : open ? 'var(--hue-warn)' : 'var(--hue-good)'}
+    <Card id="subscriptions" title="Subscription review" icon="repeat" color={data.items.some((s) => s.charged_after_cancel) ? 'var(--hue-bad)' : open ? 'var(--hue-warn)' : 'var(--hue-good)'}
       action={<AskCFO q="Audit my subscriptions: which look worth cancelling, which overlap, and what would I save a year?" />}>
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-xs text-muted">A month</div><div className="tnum text-xl font-semibold">{eur(data.monthly)}</div></div>
         <div><div className="text-xs text-muted">A year</div><div className="tnum text-xl font-semibold">{eur(data.yearly)}</div></div>
         <div><div className="text-xs text-muted">Cancelling saves</div><div className={clsx('tnum text-xl font-semibold', data.to_cancel > 0 && 'text-good')}>{data.to_cancel > 0 ? `${eur(data.to_cancel)}/yr` : '—'}</div></div>
       </div>
-      {open > 0 && <p className="mt-2 text-xs text-ink2">{open} still to review — keep or cancel each; the bell reminds you on the day.</p>}
-      <ul className="mt-2 divide-y divide-line">{data.items.map((s) => <Row key={s.key} s={s} />)}</ul>
+      {open > 0 && <p className="mt-2 text-xs text-ink2">{open} still to review — keep or cancel each; the bell reminds you on the day. Tap one to see its charges.</p>}
+      {pending.length > 0 && <ul className="mt-2 divide-y divide-line">{pending.map((s) => <Row key={s.key} s={s} />)}</ul>}
+      {reviewed.length > 0 && (
+        <details className="mt-1 border-t border-line">
+          <summary className="cursor-pointer py-2 text-xs text-ink2">Reviewed ({reviewed.length})</summary>
+          <ul className="divide-y divide-line">{reviewed.map((s) => <Row key={s.key} s={s} />)}</ul>
+        </details>
+      )}
     </Card>
   )
 }
@@ -45,7 +58,8 @@ function Row({ s }: { s: Subscription }) {
   const v = s.verdict
   return (
     <li className="py-2.5">
-      <div className="flex items-center gap-3">
+      {/* The charges behind the verdict, before you make it. */}
+      <Link to={ledgerLink({ merchant: s.merchant })} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-sunken/40" title="See its transactions">
         <MerchantMark merchant={s.merchant} category={s.category} size={32} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
@@ -60,7 +74,8 @@ function Row({ s }: { s: Subscription }) {
           <div className="tnum text-sm font-semibold">{eur(s.yearly)}<span className="text-xs font-normal text-muted">/yr</span></div>
           <div className="tnum text-xs text-muted">{eur(s.amount)} {s.cadence === 'monthly' ? '/mo' : s.cadence === 'yearly' ? '/yr' : '/qtr'}</div>
         </div>
-      </div>
+        <Icon name="chevronR" size={14} className="shrink-0 text-muted" />
+      </Link>
       <div className="mt-2 flex flex-wrap items-center gap-2 pl-11">
         {v?.verdict === 'keep' && <span className="text-xs text-good">Kept {v.decided_on ? shortDate(v.decided_on) : ''}</span>}
         {v?.verdict === 'cancel' && <span className="text-xs text-warn">Cancel by {shortDate(v.cancel_by!)}</span>}

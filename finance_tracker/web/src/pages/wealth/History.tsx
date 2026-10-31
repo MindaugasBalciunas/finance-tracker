@@ -6,8 +6,9 @@ import { useAccounts, usePrefs } from '../../lib/hooks'
 import { LIQUID_GROUPS } from '../../lib/categories'
 import { eurc } from '../../lib/format'
 import { Card, Loading, Sheet, Spinner, Toggle } from '../../components/ui'
-import { Icon, IconTile } from '../../components/Icon'
-import { accountIcon, brandColor } from '../../lib/brand'
+import { Icon } from '../../components/Icon'
+import { brandColor } from '../../lib/brand'
+import { AccountMark } from '../../components/MerchantLogo'
 
 // ── balance history ─────────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ export function BalanceHistory() {
           <div className="divide-y divide-line">
             {inTable.map((a) => (
               <label key={a.id} className="flex cursor-pointer items-center gap-3 py-2">
-                <IconTile name={accountIcon(a)} color={brandColor(a) ?? 'var(--s-other)'} size={28} />
+                <AccountMark a={a} color={brandColor(a) ?? 'var(--s-other)'} size={28} />
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm">{a.name}</span>{a.archived && <span className="text-xs text-muted">hidden account</span>}</span>
                 <Toggle checked={!hidden.has(a.id)} onChange={() => toggle(a.id)} />
               </label>

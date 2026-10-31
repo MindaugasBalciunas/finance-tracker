@@ -180,6 +180,9 @@ func TestAuthBoundaries(t *testing.T) {
 		{"next euro rejects a negative sum", tokRO, "GET", "/plan/next-euro?amount=-5", nil, 400},
 		{"ro reads lifestyle creep", tokRO, "GET", "/insights/creep", nil, 200},
 		{"ro reads price creep", tokRO, "GET", "/insights/prices", nil, 200},
+		// Merchants (2.60): a read view under /insights, like the breakdown.
+		{"ro reads merchant insights", tokRO, "GET", "/insights/merchants?preset=ytd", nil, 200},
+		{"merchant insights reject a reversed window", tokRO, "GET", "/insights/merchants?from=2026-10-01&to=2026-09-01", nil, 400},
 		{"ro reads the decision journal", tokRO, "GET", "/plan/decisions", nil, 200},
 		{"ro reads a purchase's impact", tokRO, "GET", "/plan/decisions/impact?amount=300", nil, 200},
 		{"impact needs a price", tokRO, "GET", "/plan/decisions/impact?amount=0", nil, 400},
@@ -808,6 +811,41 @@ func TestPrefsPersist(t *testing.T) {
 	}
 	if code, _ := c.do("PUT", "/prefs", map[string]any{"periods": map[string]string{"x": strings.Repeat("y", 40)}}); code != 400 {
 		t.Error("oversized period accepted", code)
+	}
+}
+
+// The merchants page reads one window: ranked by spend net of refunds, with
+// the Ledger's spelling-insensitive merchant match.
+func TestMerchantInsights(t *testing.T) {
+	s, c := newServer(t)
+	Tx(t, s.DB, ledger.Tx{Date: "2026-09-02", Amount: E(30), Category: "food.restaurants", Merchant: "Jammi", AccountID: "swed"})
+	Tx(t, s.DB, ledger.Tx{Date: "2026-09-20", Amount: E(12), Category: "food.restaurants", Merchant: "JAMMI", AccountID: "swed"})
+	Tx(t, s.DB, ledger.Tx{Date: "2026-09-21", Amount: E(50), Category: "food", Merchant: "IKEA", AccountID: "swed"})
+	var out struct {
+		Total     float64 `json:"total"`
+		Merchants []struct {
+			Name   string  `json:"name"`
+			Total  float64 `json:"total"`
+			Count  int     `json:"count"`
+			Months []any   `json:"months"`
+		} `json:"merchants"`
+		Lapsed []any `json:"lapsed"`
+	}
+	c.ok("GET", "/insights/merchants?from=2026-09-01&to=2026-09-30", nil, &out)
+	if out.Total != 92 || len(out.Merchants) != 2 || out.Merchants[0].Name != "IKEA" || out.Merchants[1].Total != 42 || out.Merchants[1].Count != 2 || len(out.Merchants[1].Months) != 12 || out.Lapsed == nil {
+		t.Fatalf("%+v", out)
+	}
+	var list struct {
+		Total int `json:"total"`
+	}
+	c.ok("GET", "/transactions?merchant=Jammi&from=2026-09-01&to=2026-09-30", nil, &list)
+	if list.Total != 2 {
+		t.Fatalf("the ledger link finds both spellings: %+v", list)
+	}
+	for _, p := range []string{"/insights/merchants?from=nope&to=2026-09-30", "/insights/merchants?from=2026-09-01&to=2026-13-40"} {
+		if code, _ := c.do("GET", p, nil); code != 400 {
+			t.Errorf("GET %s → %d", p, code)
+		}
 	}
 }
 

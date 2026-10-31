@@ -125,6 +125,19 @@ export function Investments() {
     </Card>
   
   )
+  const tradesCard = (
+    <Card pad={false} icon="list" color="var(--s2)" title={`Trades (${trades?.length ?? 0})`} action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowTrades(!showTrades)}>{showTrades ? 'Hide' : 'Show all'}</button>}>
+          <div className="divide-y divide-line border-t border-line">
+            {[...(trades ?? [])].reverse().slice(0, showTrades ? undefined : 6).map((t) => (
+              <button key={t.id} onClick={() => setTrade(t)} className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-sunken/50">
+                <span className={clsx('w-10 shrink-0 rounded-md py-0.5 text-center text-[10px] font-semibold uppercase', t.action === 'buy' ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad')}>{t.action}</span>
+                <span className="min-w-0 flex-1 truncate"><b>{t.ticker}</b> <span className="text-xs text-muted">{shortDate(t.date)} · {brokerName(t.account_id)}</span></span>
+                <span className="text-right tnum"><span className="text-xs text-muted">{+t.shares.toFixed(4)} × {t.price}</span> <b>{(t.shares * t.price).toFixed(2)} {t.currency}</b></span>
+              </button>
+            ))}
+          </div>
+        </Card>
+  )
   return (
     <div className="space-y-4">
       <IBKRPanel />
@@ -185,35 +198,24 @@ export function Investments() {
         <div className="mt-1 text-[11px] text-muted">From your trades and daily/weekly closes at today's exchange rates; fund accounts without trades (Revolut ETF, Swedbank funds) are on Net worth.</div>
       </section>
 
-      <QualityCard />
-      <FeesCard />
-
-      {/* Desktop: the short cards (allocation, closed positions) stack beside the
-          long positions list; phones keep the reading order. */}
+      {/* Positions are what this page is for, so they come straight after
+          the headline. Desktop: positions and trades in the wide column, the
+          judgements (how it's doing, mix, targets, fees) beside them; phones
+          read the same in one column, most-used first. */}
       {wide ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] items-start gap-4">
-          <div className="space-y-4">{allocation}{closed}</div>
-          {positions}
+        <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start gap-4">
+          <div className="space-y-4">{positions}{tradesCard}</div>
+          <div className="space-y-4"><QualityCard />{allocation}<ScenarioCard /><FeesCard />{closed}</div>
         </div>
       ) : <>
-        {allocation}
         {positions}
+        <QualityCard />
+        {allocation}
+        <ScenarioCard />
+        <FeesCard />
+        {closed}
+        {tradesCard}
       </>}
-
-      <ScenarioCard />
-      {!wide && closed}
-
-      <Card pad={false} icon="list" color="var(--s2)" title={`Trades (${trades?.length ?? 0})`} action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowTrades(!showTrades)}>{showTrades ? 'Hide' : 'Show all'}</button>}>
-        <div className="divide-y divide-line border-t border-line">
-          {[...(trades ?? [])].reverse().slice(0, showTrades ? undefined : 6).map((t) => (
-            <button key={t.id} onClick={() => setTrade(t)} className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-sunken/50">
-              <span className={clsx('w-10 shrink-0 rounded-md py-0.5 text-center text-[10px] font-semibold uppercase', t.action === 'buy' ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad')}>{t.action}</span>
-              <span className="min-w-0 flex-1 truncate"><b>{t.ticker}</b> <span className="text-xs text-muted">{shortDate(t.date)} · {brokerName(t.account_id)}</span></span>
-              <span className="text-right tnum"><span className="text-xs text-muted">{+t.shares.toFixed(4)} × {t.price}</span> <b>{(t.shares * t.price).toFixed(2)} {t.currency}</b></span>
-            </button>
-          ))}
-        </div>
-      </Card>
       {pos && <PositionSheet h={pos} onClose={() => setPos(null)} />}
       {trade && <TradeEditor t={trade} onClose={() => setTrade(null)} />}
     </div>

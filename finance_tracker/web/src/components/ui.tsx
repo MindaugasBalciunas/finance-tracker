@@ -24,9 +24,9 @@ function Chip({ name, color, size = 28 }: { name: string; color: string; size?: 
 
 // The header wraps: the title keeps its line and a long action drops
 // underneath on narrow screens instead of squeezing the title.
-export function Card({ children, className = '', title, action, pad = true, icon, color }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string }) {
+export function Card({ children, className = '', title, action, pad = true, icon, color, id }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; pad?: boolean; icon?: string; color?: string; id?: string }) {
   return (
-    <section className={clsx('card', pad && 'p-4', className)} style={hue(color)}>
+    <section id={id} className={clsx('card scroll-mt-20', pad && 'p-4', className)} style={hue(color)}>
       {(title || action) && (
         <div className={clsx('flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5', pad ? 'mb-3' : 'px-4 pt-4 pb-2')}>
           {/* A plain title in small capitals of the card's colour; a composite one

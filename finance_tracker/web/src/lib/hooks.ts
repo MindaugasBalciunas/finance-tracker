@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { byBank } from './brand'
-import type { Account, Category, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow } from './types'
+import type { Account, Category, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
@@ -19,6 +19,9 @@ export const useCashflow = (from: string, to: string, granularity: 'month' | 'ye
   useQuery({ queryKey: ['cashflow', from, to, granularity], queryFn: () => api.get<Flow[]>('/insights/cashflow', { from, to, granularity }) })
 export const useMerchants = () =>
   useQuery({ queryKey: ['merchants'], queryFn: () => api.get<{ merchant: string; count: number; category: string }[]>('/merchants'), staleTime: 300_000 })
+// Not under ['merchants']: that key is the autocomplete list, kept for minutes.
+export const useMerchantInsights = (preset: string) =>
+  useQuery({ queryKey: ['merchant-insights', preset], queryFn: () => api.get<MerchantReport>('/insights/merchants', { preset }), placeholderData: (p) => p })
 
 export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[]; history_hidden?: string[]; usage_off?: boolean }
 

@@ -16,6 +16,10 @@ export function FeesCard() {
   if (isLoading) return <Card title="Fees" icon="percent"><Loading /></Card>
   if (error || !f) return <ErrorBox error={error} />
   const dear = f.saving_20y > 500
+  // Shares carry no yearly charge: one line for all of them, so the funds —
+  // where the money goes — aren't lost in a list of €0 rows. Unset fees first.
+  const shares = f.lines.filter((l) => l.source === 'none')
+  const lines = f.lines.filter((l) => l.source !== 'none').sort((a, b) => Number(b.source === 'missing') - Number(a.source === 'missing'))
   return (
     <Card title="What your investments cost" icon="percent" color={dear ? 'var(--hue-warn)' : 'var(--hue-good)'}
       action={<AskCFO q="Look at my investment fees: which holdings are expensive, what would cheaper equivalents be, and is it worth switching after costs and taxes?" />}>
@@ -25,7 +29,7 @@ export function FeesCard() {
         <div><div className="text-xs text-muted">At {f.low_cost}% instead</div><div className={clsx('tnum text-xl font-semibold', dear ? 'text-good' : '')}>{dear ? `+${eur(f.saving_20y)}` : '—'}</div><div className="text-xs text-muted">{dear ? 'kept over 20 years' : 'already low-cost'}</div></div>
       </div>
       <ul className="mt-3 divide-y divide-line">
-        {f.lines.map((l) => (
+        {lines.map((l) => (
           <li key={l.id} className="flex items-center gap-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{l.name}{l.name !== l.id && l.kind !== 'account' && <span className="text-muted"> · {l.id}</span>}</div>
@@ -40,6 +44,15 @@ export function FeesCard() {
             {l.kind !== 'stock' && <button className={clsx('h-8 shrink-0 px-2 text-xs', l.source === 'missing' ? 'btn-outline' : 'btn-ghost')} onClick={() => setEdit(l)} aria-label={`Set the fee of ${l.name}`}>{l.source === 'missing' ? 'Set fee' : 'Edit'}</button>}
           </li>
         ))}
+        {shares.length > 0 && (
+          <li className="flex items-center gap-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{shares.length} share{shares.length === 1 ? '' : 's'}</div>
+              <div className="truncate text-xs text-muted">{eur(shares.reduce((a, l) => a + l.value, 0))} · no yearly charge · {shares.map((l) => l.id).join(', ')}</div>
+            </div>
+            <div className="tnum text-sm">€0/yr</div>
+          </li>
+        )}
       </ul>
       {f.missing > 0 && <p className="mt-1 text-xs text-warn">{f.missing} fund{f.missing === 1 ? '' : 's'} without a fee yet — the totals leave {f.missing === 1 ? 'it' : 'them'} out. The yearly fee ("ongoing charges" or TER) is on the fund's key information document.</p>}
       {edit && <FeeSheet line={edit} onClose={() => setEdit(null)} />}

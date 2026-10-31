@@ -48,7 +48,7 @@ var Domains = map[string]string{
 	"Google": "google.com", "YouTube": "youtube.com", "Spotify": "spotify.com", "Netflix": "netflix.com", "Apple": "apple.com",
 	"Disney+": "disneyplus.com", "Microsoft": "microsoft.com", "OpenAI": "openai.com", "Anthropic": "anthropic.com", "Claude": "claude.ai",
 	"Swedbank": "swedbank.lt", "SEB": "seb.lt", "Revolut": "revolut.com", "Interactive Brokers": "interactivebrokers.com", "IBKR": "interactivebrokers.com",
-	"Luminor": "luminor.lt", "Danske Bank": "danskebank.lt", "Barclays": "barclays.co.uk", "PayPal": "paypal.com", "Paysera": "paysera.com",
+	"Luminor": "luminor.lt", "Artea": "artea.lt", "Danske Bank": "danskebank.lt", "Barclays": "barclays.co.uk", "PayPal": "paypal.com", "Paysera": "paysera.com",
 	"Evp International": "paysera.com", "Vipps MobilePay": "vippsmobilepay.com",
 	"If": "if.lt", "Compensa": "compensa.lt", "Gjensidige": "gjensidige.lt", "VMI": "vmi.lt", "Registrų centras": "registrucentras.lt",
 	"McDonald's": "mcdonalds.com", "Hesburger": "hesburger.lt", "KFC": "kfc.lt",

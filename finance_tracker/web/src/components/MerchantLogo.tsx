@@ -1,7 +1,8 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { catIcon } from '../lib/categories'
+import { accountIcon } from '../lib/brand'
 import { IconTile } from './Icon'
 import type { Account, Tx } from '../lib/types'
 
@@ -121,26 +122,41 @@ export function lookOf(img: HTMLImageElement): Look | null {
 /** The merchant's logo on a tile in its own colour, or the category icon. */
 export function MerchantMark({ merchant, category, size = 36, transfer = false }: { merchant?: string; category: string; size?: number; transfer?: boolean }) {
   const { data: index } = useLogoIndex()
-  const domain = transfer ? undefined : logoDomain(index, merchant)
+  const [icon, color] = catIcon(category)
+  return <LogoTile domain={transfer ? undefined : logoDomain(index, merchant)} size={size} fallback={<IconTile name={icon} color={transfer ? 'var(--s-other)' : color} size={size} round />} />
+}
+
+/** The bank an account is held at, as a logo domain: its institution, else
+ *  its name ("Swedbank savings"). A house or car is never shown as the bank
+ *  that lent for it, and cash has no bank. */
+export function accountLogo(index: Record<string, string> | undefined, a: Pick<Account, 'institution' | 'name' | 'kind'>) {
+  if (['property', 'vehicle', 'cash'].includes(a.kind)) return undefined
+  return logoDomain(index, a.institution?.trim()) ?? logoDomain(index, a.name)
+}
+
+/** An account's bank logo, or its kind icon in the bank's colour. */
+export function AccountMark({ a, color, size = 34 }: { a: Pick<Account, 'institution' | 'name' | 'kind'>; color: string; size?: number }) {
+  const { data: index } = useLogoIndex()
+  return <LogoTile domain={accountLogo(index, a)} size={size} fallback={<IconTile name={accountIcon(a)} color={color} size={size} />} />
+}
+
+function LogoTile({ domain, size, fallback }: { domain?: string; size: number; fallback: ReactNode }) {
   // Kept per logo id: an upload swaps vmi.lt (which failed) for custom-vmi,
   // and the new picture must get its own chance and its own colour.
   const [failed, setFailed] = useState<string>()
   const [look, setLook] = useState<[string, Look]>()
-  if (domain && failed !== domain) {
-    const l = (look?.[0] === domain ? look[1] : undefined) ?? looks.get(domain)
-    // A full-bleed square logo (VMI's green block) sits at 80% on a tile of
-    // its own corner colour: the edge can't be seen, and the circle no
-    // longer clips letters near its corners.
-    const inner = Math.round(size * (l?.full ? 0.8 : 0.62))
-    return (
-      <span className="grid shrink-0 place-items-center overflow-hidden rounded-full ring-1 ring-line" style={{ width: size, height: size, background: l?.bg ?? 'rgb(255 255 255)' }}>
-        <img src={`api/logos/${encodeURIComponent(domain)}${versions.has(domain) ? `?v=${versions.get(domain)}` : ''}`} alt="" loading="lazy" width={inner} height={inner}
-          className="object-contain"
-          onLoad={(e) => { if (!looks.has(domain)) { const v = lookOf(e.currentTarget); if (v) { remember(domain, v); setLook([domain, v]) } } }}
-          onError={() => { setFailed(domain); markMissing(domain) }} />
-      </span>
-    )
-  }
-  const [icon, color] = catIcon(category)
-  return <IconTile name={icon} color={transfer ? 'var(--s-other)' : color} size={size} round />
+  if (!domain || failed === domain) return <>{fallback}</>
+  const l = (look?.[0] === domain ? look[1] : undefined) ?? looks.get(domain)
+  // A full-bleed square logo (VMI's green block) sits at 80% on a tile of
+  // its own corner colour: the edge can't be seen, and the circle no
+  // longer clips letters near its corners.
+  const inner = Math.round(size * (l?.full ? 0.8 : 0.62))
+  return (
+    <span className="grid shrink-0 place-items-center overflow-hidden rounded-full ring-1 ring-line" style={{ width: size, height: size, background: l?.bg ?? 'rgb(255 255 255)' }}>
+      <img src={`api/logos/${encodeURIComponent(domain)}${versions.has(domain) ? `?v=${versions.get(domain)}` : ''}`} alt="" loading="lazy" width={inner} height={inner}
+        className="object-contain"
+        onLoad={(e) => { if (!looks.has(domain)) { const v = lookOf(e.currentTarget); if (v) { remember(domain, v); setLook([domain, v]) } } }}
+        onError={() => { setFailed(domain); markMissing(domain) }} />
+    </span>
+  )
 }

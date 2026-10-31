@@ -124,6 +124,27 @@ func (s *Server) insightRoutes() {
 			"merchants": insights.MerchantTotals(txs, from, to, 25), "largest": insights.TopExpenses(txs, from, to, 15),
 			"tags": insights.TagTotals(txs, from, to)}, nil
 	})
+	// Who was paid: merchants ranked over a window, with trends and the
+	// regulars that stopped. Under /api/insights, so read tokens see it like
+	// the breakdown (which already lists top merchants).
+	s.handle("GET /api/insights/merchants", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		from, to := window(r)
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			return nil, bad("invalid from date")
+		}
+		if _, err := time.Parse("2006-01-02", to); err != nil || to < from {
+			return nil, bad("invalid to date")
+		}
+		n := qint(r, "limit", 100)
+		if n < 1 || n > 500 {
+			n = 100
+		}
+		txs, err := ledger.All(s.DB, ledger.Filter{To: to})
+		if err != nil {
+			return nil, err
+		}
+		return insights.Merchants(txs, from, to, n), nil
+	})
 	s.handle("GET /api/insights/trends", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		months := qint(r, "months", 24)
 		if months < 3 || months > 240 {

@@ -11,7 +11,8 @@ import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../../lib/p
 import type { Account } from '../../lib/types'
 import { CountUp, Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
-import { Icon, IconTile } from '../../components/Icon'
+import { Icon } from '../../components/Icon'
+import { AccountMark } from '../../components/MerchantLogo'
 import { accountColors, accountIcon, bankOf, bankRank, brandColor, jitter, volatility } from '../../lib/brand'
 import { cleanTerms, LoanFields } from './Loans'
 import { DateInput } from '../../components/DateInput'
@@ -325,7 +326,7 @@ function AccountRow({ a, onClick, share, color }: { a: Account; onClick: () => v
   const stale = age > 45 && !['property', 'vehicle', 'loan'].includes(a.kind) && !!a.balance
   return (
     <button onClick={onClick} className={clsx('flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/50', a.archived && 'opacity-50')}>
-      <IconTile name={accountIcon(a)} color={brandColor(a) ?? `var(--s${GROUPS.find((g) => g.id === a.group)?.slot ?? 1})`} size={34} />
+      <AccountMark a={a} color={brandColor(a) ?? `var(--s${GROUPS.find((g) => g.id === a.group)?.slot ?? 1})`} size={34} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.name}</div>
         <div className={clsx('truncate text-xs', stale ? 'text-warn' : 'text-muted')}>

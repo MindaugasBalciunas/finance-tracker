@@ -195,3 +195,14 @@ export type Subscription = {
 export type Subscriptions = { items: Subscription[]; monthly: number; yearly: number; to_cancel: number }
 export type CalEvent = { label: string; kind: 'income' | 'bill' | 'transfer'; amount: number }
 export type CashCalendar = { start: number; floor: number; daily: number; days: { date: string; events?: CalEvent[]; balance: number; low: boolean; short: boolean }[]; low: number; low_date: string; first_below?: string; first_short?: string }
+
+// ── merchants ──
+
+export type MerchantStat = {
+  name: string; category: string; total: number; share: number; count: number; average: number; previous: number; change: number
+  first: string; last: string; new: boolean; months: { month: string; amount: number }[]
+}
+export type MerchantReport = {
+  from: string; to: string; prev_from: string; prev_to: string; total: number; unnamed: number; count: number; new_count: number; new_total: number
+  merchants: MerchantStat[]; lapsed: { name: string; category: string; last: string; monthly: number }[]
+}

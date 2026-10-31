@@ -6,8 +6,8 @@ import { api } from '../../lib/api'
 import { useRefresh } from '../../lib/hooks'
 import { catIcon, useCats } from '../../lib/categories'
 import { eur, eurc, parseNum, shortDate } from '../../lib/format'
-import type { Recurring } from '../../lib/types'
-import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, Stat, useToast } from '../../components/ui'
+import type { Recurring, Subscriptions } from '../../lib/types'
+import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, useToast } from '../../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, MerchantInput, NoteInput } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
@@ -27,6 +27,7 @@ export function RecurringView() {
   const { data: accounts } = useAccounts()
   const acctName = (id?: string) => (id ? accounts?.find((a) => a.id === id)?.name ?? id : '')
   const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number; suggestions?: any[] }>('/insights/recurring') })
+  const { data: subs } = useQuery({ queryKey: ['subscriptions'], queryFn: () => api.get<Subscriptions>('/plan/subscriptions') })
   const cats = useCats()
   const [edit, setEdit] = useState<{ r: Recurring | null; prefill?: Partial<EditorValues> } | null>(null)
   const [showHidden, setShowHidden] = useState(false)
@@ -37,94 +38,114 @@ export function RecurringView() {
   const suggestions = data.suggestions ?? []
   // Telia phone and Telia internet: the note goes in the title so the two rows differ.
   const sharesMerchant = (r: Recurring) => data.items.filter((x) => x.merchant.toLowerCase() === r.merchant.toLowerCase()).length > 1
+  const toReview = (subs?.items ?? []).filter((x) => !x.verdict || x.charged_after_cancel).length
+  const bills = data.items.filter((r) => (r.kind ?? 'bill') === 'bill').length
   return (
     <div className="space-y-4">
-      {/* The audit of what could be cancelled leads; the full list follows. */}
-      <SubscriptionsCard />
-      <div className="flex items-end justify-between gap-3">
-        <Stat icon="repeat" color="var(--s7)" label="Recurring costs" value={<CountUp value={data.monthly_total} format={(v) => `${eur(v)}/mo`} />} sub={`${eur(data.monthly_total * 12)} a year across ${data.items.filter((r) => r.kind === 'bill').length} bills`} />
-        <button className="btn-primary shrink-0" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>
-      </div>
-      {suggestions.length > 0 && (
-        <Card pad={false} icon="spark" color="var(--s4)" title="Looks recurring" action={<span className="text-xs text-muted">from your last 12 months</span>}>
-          <div className="divide-y divide-line border-t border-line">
-            {suggestions.map((s) => (
-              <div key={s.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
-                <IconTile name={catIcon(s.category)[0]} color={catIcon(s.category)[1]} size={34} round />
-                <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] sm:basis-0">
-                  <div className="truncate text-sm font-medium">{s.name}</div>
-                  <div className="truncate text-xs text-muted">{eur(s.amount)} · {s.flexible ? `about every ${s.every_days} days (±${s.spread_days})` : 'monthly'} · {s.count}× · next around {shortDate(s.next)}</div>
-                  {s.notes?.length > 0 && <div className="truncate text-[11px] text-muted">“{s.notes.slice(0, 3).join('”, “')}”</div>}
-                </div>
-                <div className="flex w-full justify-end gap-1.5 sm:w-auto">
-                  <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => dismiss(s)}>Not recurring</button>
-                  <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => setEdit({ r: null, prefill: { merchant: s.name, category: s.category, amount: String(s.amount), next_date: s.next,
-                    cadence: s.flexible ? 'flexible' : 'monthly', every_days: s.flexible ? String(s.every_days) : '' } })}>Add</button>
-                </div>
-              </div>
-            ))}
+      {/* What it all costs, then the list itself; the subscription audit and
+          suggestions are to-dos beside it (below it on a phone), and only
+          what still needs a verdict stays open. */}
+      <Card icon="repeat" color="var(--s7)" title="Recurring costs" action={<button className="btn-primary h-9" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>}>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div><div className="text-xs text-muted">A month</div><div className="tnum text-xl font-semibold"><CountUp value={data.monthly_total} format={eur} /></div></div>
+          <div><div className="text-xs text-muted">A year</div><div className="tnum text-xl font-semibold">{eur(data.monthly_total * 12)}</div></div>
+          <div><div className="text-xs text-muted">Bills</div><div className="tnum text-xl font-semibold">{bills}</div></div>
+        </div>
+        {(toReview > 0 || suggestions.length > 0) && (
+          <div className="mt-1 flex flex-wrap gap-x-4">
+            {toReview > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('subscriptions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{toReview} subscription{toReview === 1 ? '' : 's'} to review</button>}
+            {suggestions.length > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('looks-recurring')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{suggestions.length} more look{suggestions.length === 1 ? 's' : ''} recurring</button>}
           </div>
-        </Card>
-      )}
-      {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance, standing orders or anything on a schedule.</Empty> : (['bill', 'transfer', 'income'] as const).map((kind) => {
-        const rows = data.items.filter((r) => (r.kind ?? 'bill') === kind)
-        if (!rows.length) return null
-        return (
-          <Card key={kind} pad={false} title={<span>{KIND_TITLE[kind]} <span className="font-normal text-muted">{rows.length}</span></span>}>
-            <div className="-mt-1 px-4 pb-2 text-xs text-muted">{KIND_HINT[kind]}</div>
+        )}
+      </Card>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance, standing orders or anything on a schedule.</Empty> : (['bill', 'transfer', 'income'] as const).map((kind) => {
+            const rows = data.items.filter((r) => (r.kind ?? 'bill') === kind)
+            if (!rows.length) return null
+            return (
+              <Card key={kind} pad={false} title={<span>{KIND_TITLE[kind]} <span className="font-normal text-muted">{rows.length}</span></span>}>
+                <div className="-mt-1 px-4 pb-2 text-xs text-muted">{KIND_HINT[kind]}</div>
+                <div className="divide-y divide-line border-t border-line">
+                  {rows.map((r) => (
+                    <button key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
+                      {kind === 'bill' ? <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
+                        : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />}
+                      <div className="min-w-0 flex-1">
+                        {/* The name keeps its room; on a phone the chips wrap under it. */}
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium">
+                          <span className="min-w-0 max-w-full truncate">{r.merchant}{sharesMerchant(r) && r.note ? <span className="font-normal text-ink2"> · {r.note}</span> : null}</span>
+                          {r.every_days ? <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2" title={`about every ${r.every_days} days`}>~{r.every_days}d</span>
+                            : r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
+                          {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">{kind === 'transfer' && !r.last ? 'planned' : 'added'}</span>}
+                          {r.source === 'edited' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">edited</span>}
+                          {r.done && <span className="shrink-0 rounded-full bg-good/15 px-1.5 text-[10px] text-good">done this month</span>}
+                          {r.overdue && <span className="shrink-0 rounded-full bg-warn/15 px-1.5 text-[10px] text-warn">not yet</span>}
+                        </div>
+                        <div className="truncate text-xs text-muted">
+                          {kind === 'transfer' ? `${acctName(r.from_account) || '?'} → ${acctName(r.to_account) || '?'}`
+                            : kind === 'income' ? `into ${acctName(r.to_account) || '—'}`
+                            : [r.category ? cats.path(r.category) : 'No category', r.from_account && `from ${acctName(r.from_account)}`].filter(Boolean).join(' · ')}
+                          {r.next && <> · {r.done ? 'next' : r.overdue ? 'was due' : 'next'} {r.source === 'detected' && !r.day ? 'around ' : ''}{shortDate(r.next)}</>}{r.note && !sharesMerchant(r) ? ` · ${r.note}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={clsx('tnum text-sm font-semibold', kind === 'income' && 'text-good')}>{kind === 'income' ? '+' : ''}{eur(r.amount)}</div>
+                        {kind === 'bill' && (r.cadence !== 'monthly' || r.every_days ? <div className="text-xs text-muted tnum">{eur(r.monthly)}/mo</div> : r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>)}
+                      </div>
+                      <Icon name="chevronR" size={14} className="text-muted" />
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            )
+          })}
+          {data.hidden.length > 0 && (
+            <div>
+              <button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
+                <Icon name="chevronD" size={14} className={clsx('transition', showHidden && 'rotate-180')} />Not recurring ({data.hidden.length})
+              </button>
+              {showHidden && (
+                <Card pad={false} className="mt-2">
+                  <div className="divide-y divide-line">
+                    {data.hidden.map((r) => (
+                      <div key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} className="flex items-center gap-3 px-4 py-2 text-sm">
+                        <span className="min-w-0 flex-1 truncate text-ink2">{r.merchant}</span>
+                        <span className="tnum text-muted">{eur(r.amount)}</span>
+                        <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => restore(r)}>Restore</button>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="space-y-4">
+          <SubscriptionsCard />
+        {suggestions.length > 0 && (
+          <Card id="looks-recurring" pad={false} icon="spark" color="var(--s4)" title="Looks recurring" action={<span className="text-xs text-muted">from your last 12 months</span>}>
             <div className="divide-y divide-line border-t border-line">
-              {rows.map((r) => (
-                <button key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
-                  {kind === 'bill' ? <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
-                    : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      <span className="truncate">{r.merchant}{sharesMerchant(r) && r.note ? <span className="font-normal text-ink2"> · {r.note}</span> : null}</span>
-                      {r.every_days ? <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2" title={`about every ${r.every_days} days`}>~{r.every_days}d</span>
-                        : r.cadence !== 'monthly' && <span className="shrink-0 rounded-full bg-sunken px-1.5 text-[10px] text-ink2">{CADENCE_LABEL[r.cadence]}</span>}
-                      {r.source === 'manual' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">{kind === 'transfer' && !r.last ? 'planned' : 'added'}</span>}
-                      {r.source === 'edited' && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-[10px] text-accent">edited</span>}
-                      {r.done && <span className="shrink-0 rounded-full bg-good/15 px-1.5 text-[10px] text-good">done this month</span>}
-                      {r.overdue && <span className="shrink-0 rounded-full bg-warn/15 px-1.5 text-[10px] text-warn">not yet</span>}
-                    </div>
-                    <div className="truncate text-xs text-muted">
-                      {kind === 'transfer' ? `${acctName(r.from_account) || '?'} → ${acctName(r.to_account) || '?'}`
-                        : kind === 'income' ? `into ${acctName(r.to_account) || '—'}`
-                        : [r.category ? cats.path(r.category) : 'No category', r.from_account && `from ${acctName(r.from_account)}`].filter(Boolean).join(' · ')}
-                      {r.next && <> · {r.done ? 'next' : r.overdue ? 'was due' : 'next'} {r.source === 'detected' && !r.day ? 'around ' : ''}{shortDate(r.next)}</>}{r.note && !sharesMerchant(r) ? ` · ${r.note}` : ''}
-                    </div>
+              {suggestions.map((s) => (
+                <div key={s.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+                  <IconTile name={catIcon(s.category)[0]} color={catIcon(s.category)[1]} size={34} round />
+                  <div className="min-w-0 flex-1 basis-[calc(100%-3rem)]">
+                    <div className="truncate text-sm font-medium">{s.name}</div>
+                    <div className="truncate text-xs text-muted">{eur(s.amount)} · {s.flexible ? `about every ${s.every_days} days (±${s.spread_days})` : 'monthly'} · {s.count}× · next around {shortDate(s.next)}</div>
+                    {s.notes?.length > 0 && <div className="truncate text-[11px] text-muted">“{s.notes.slice(0, 3).join('”, “')}”</div>}
                   </div>
-                  <div className="text-right">
-                    <div className={clsx('tnum text-sm font-semibold', kind === 'income' && 'text-good')}>{kind === 'income' ? '+' : ''}{eur(r.amount)}</div>
-                    {kind === 'bill' && (r.cadence !== 'monthly' || r.every_days ? <div className="text-xs text-muted tnum">{eur(r.monthly)}/mo</div> : r.changed && <div className="text-xs text-warn tnum">last {eur(r.last_amount)}</div>)}
+                  <div className="flex w-full justify-end gap-1.5">
+                    <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => dismiss(s)}>Not recurring</button>
+                    <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => setEdit({ r: null, prefill: { merchant: s.name, category: s.category, amount: String(s.amount), next_date: s.next,
+                      cadence: s.flexible ? 'flexible' : 'monthly', every_days: s.flexible ? String(s.every_days) : '' } })}>Add</button>
                   </div>
-                  <Icon name="chevronR" size={14} className="text-muted" />
-                </button>
+                </div>
               ))}
             </div>
           </Card>
-        )
-      })}
-      {data.hidden.length > 0 && (
-        <div>
-          <button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
-            <Icon name="chevronD" size={14} className={clsx('transition', showHidden && 'rotate-180')} />Not recurring ({data.hidden.length})
-          </button>
-          {showHidden && (
-            <Card pad={false} className="mt-2">
-              <div className="divide-y divide-line">
-                {data.hidden.map((r) => (
-                  <div key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} className="flex items-center gap-3 px-4 py-2 text-sm">
-                    <span className="min-w-0 flex-1 truncate text-ink2">{r.merchant}</span>
-                    <span className="tnum text-muted">{eur(r.amount)}</span>
-                    <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => restore(r)}>Restore</button>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+        )}
         </div>
-      )}
+      </div>
       {edit && <RecurringEditor r={edit.r} prefill={edit.prefill} onClose={() => setEdit(null)} />}
     </div>
   )
