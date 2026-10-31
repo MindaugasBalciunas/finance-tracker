@@ -1,11 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HashRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { ToastProvider } from '../components/ui'
 import { MerchantsView, trendLabel } from '../pages/insights/Merchants'
 import { SubscriptionsCard } from '../pages/plan/Subscriptions'
-import { accountLogo } from '../components/MerchantLogo'
+import { accountLogo, MerchantMark } from '../components/MerchantLogo'
 import type { MerchantReport, MerchantStat, Subscriptions } from '../lib/types'
 
 function serve(routes: Record<string, unknown>) {
@@ -99,5 +99,14 @@ describe('account logos', () => {
     expect(accountLogo(index, { institution: 'SEB', name: 'House', kind: 'property' })).toBeUndefined()
     expect(accountLogo(index, { institution: 'Swedbank', name: 'Car', kind: 'vehicle' })).toBeUndefined()
     expect(accountLogo(index, { institution: '', name: 'Cash', kind: 'cash' })).toBeUndefined()
+  })
+})
+
+describe('merchant marks', () => {
+  it('show the logo when the merchant is known, else the given fallback', async () => {
+    serve({ '/logos': { telia: 'telia.lt' } })
+    const { container } = wrap(<><MerchantMark merchant="Telia" category="utilities" /><MerchantMark merchant="Mortgage principal" fallback={<span>arrows</span>} /></>)
+    await screen.findByText('arrows')
+    await waitFor(() => expect(container.querySelector('img')).toHaveAttribute('src', 'api/logos/telia.lt'))
   })
 })

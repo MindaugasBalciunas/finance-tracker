@@ -53,7 +53,9 @@ var Domains = map[string]string{
 	"Luminor": "luminor.lt", "Artea": "artea.lt", "Danske Bank": "danskebank.lt", "Barclays": "barclays.co.uk", "PayPal": "paypal.com", "Paysera": "paysera.com",
 	"Evp International": "paysera.com", "Vipps MobilePay": "vippsmobilepay.com",
 	"If": "if.lt", "Compensa": "compensa.lt", "Gjensidige": "gjensidige.lt", "VMI": "vmi.lt", "Registrų centras": "registrucentras.lt",
-	"McDonald's": "mcdonalds.com", "Hesburger": "hesburger.lt", "KFC": "kfc.lt",
+	// McDonald's: mcdonalds.com refuses automated requests; the Latvian site
+	// serves the same arches.
+	"McDonald's": "mcdonalds.lv", "Hesburger": "hesburger.lt", "KFC": "kfc.lt",
 	"Zara": "zara.com", "H&M": "hm.com", "Booking.com": "booking.com", "Airbnb": "airbnb.com", "Ryanair": "ryanair.com",
 	"Wizz Air": "wizzair.com", "airBaltic": "airbaltic.com", "Facebook": "facebook.com",
 	"Lietuvos paštas": "post.lt", "Akcinė Bendrovė Lietuvos Paštas": "post.lt", "Omniva": "omniva.lt", "DPD": "dpd.com",

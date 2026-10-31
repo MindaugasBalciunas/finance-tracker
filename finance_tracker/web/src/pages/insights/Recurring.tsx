@@ -4,13 +4,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useRefresh } from '../../lib/hooks'
-import { catIcon, useCats } from '../../lib/categories'
+import { useCats } from '../../lib/categories'
 import { eur, eurc, parseNum, shortDate } from '../../lib/format'
 import type { Recurring, Subscriptions } from '../../lib/types'
 import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, useToast } from '../../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, MerchantInput, NoteInput } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
+import { MerchantMark } from '../../components/MerchantLogo'
 import { DateInput } from '../../components/DateInput'
 
 // ── recurring ───────────────────────────────────────────────────────
@@ -69,8 +70,10 @@ export function RecurringView() {
                 <div className="divide-y divide-line border-t border-line">
                   {rows.map((r) => (
                     <button key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
-                      {kind === 'bill' ? <IconTile name={catIcon(r.category)[0]} color={catIcon(r.category)[1]} size={34} round />
-                        : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />}
+                      {/* The payee's logo where there is one (a bill, an employer, the
+                          fund a standing order feeds), else the kind's icon. */}
+                      <MerchantMark merchant={r.merchant} category={r.category} size={34}
+                        fallback={kind === 'bill' ? undefined : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />} />
                       <div className="min-w-0 flex-1">
                         {/* The name keeps its room; on a phone the chips wrap under it. */}
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium">
@@ -128,7 +131,7 @@ export function RecurringView() {
             <div className="divide-y divide-line border-t border-line">
               {suggestions.map((s) => (
                 <div key={s.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
-                  <IconTile name={catIcon(s.category)[0]} color={catIcon(s.category)[1]} size={34} round />
+                  <MerchantMark merchant={s.name} category={s.category} size={34} />
                   <div className="min-w-0 flex-1 basis-[calc(100%-3rem)]">
                     <div className="truncate text-sm font-medium">{s.name}</div>
                     <div className="truncate text-xs text-muted">{eur(s.amount)} · {s.flexible ? `about every ${s.every_days} days (±${s.spread_days})` : 'monthly'} · {s.count}× · next around {shortDate(s.next)}</div>

@@ -415,6 +415,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		}
 		out = append(out, f)
 	}
+	out = append(out, datingFacts(txs, cats, from, to)...)
 	return out
 }
 

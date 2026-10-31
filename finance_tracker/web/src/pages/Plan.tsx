@@ -13,6 +13,7 @@ import { AskCFO, Card, CountUp, Empty, ErrorBox, Field, hue, Loading, Meter, Num
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
 import { Icon } from '../components/Icon'
+import { MerchantMark } from '../components/MerchantLogo'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { Wishlist } from './plan/Wishlist'
 import { ForecastView } from './plan/Forecast'
@@ -268,6 +269,7 @@ function OnceAYear({ r, onEdit, month }: { r: PlanReport; onEdit: (b: Partial<Bu
           const line = y.fund_id ? r.lines.find((l) => l.id === y.fund_id) : undefined
           return (
             <div key={y.merchant} className="flex items-center gap-3 py-2.5">
+              <MerchantMark merchant={y.merchant} category={y.category} size={32} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm"><span className="font-medium">{y.merchant}</span> <span className="text-muted">· {cats.name(y.category)}</span></div>
                 <div className="text-xs text-muted">

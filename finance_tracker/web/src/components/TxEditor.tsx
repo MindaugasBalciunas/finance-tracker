@@ -3,14 +3,14 @@ import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useAccounts, useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
-import { catIcon, useCats } from '../lib/categories'
+import { useCats } from '../lib/categories'
 import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
 import type { Kind, Tx } from '../lib/types'
 import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
 import { logoName, MerchantMark } from './MerchantLogo'
-import { Icon, IconTile } from './Icon'
+import { Icon } from './Icon'
 import { DateInput } from './DateInput'
 
 type Draft = Partial<Tx> & { kind: Kind }
@@ -217,7 +217,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
               {quick!.merchants.map((m) => (
                 <button key={m.merchant} type="button" className="chip shrink-0 hover:bg-sunken" title={`${cats.path(m.category)} · usually ${eurc(m.typical)}`}
                   onClick={() => { set({ merchant: m.merchant, category: m.category, account_id: m.account_id || t.account_id }); setTouchedCat(true); setSuggestedCat(m.category) }}>
-                  <IconTile name={catIcon(m.category)[0]} color={catIcon(m.category)[1]} size={18} round />{m.merchant} <span className="text-muted">· {cats.name(m.category)}</span>
+                  <MerchantMark merchant={m.merchant} category={m.category} size={18} />{m.merchant} <span className="text-muted">· {cats.name(m.category)}</span>
                 </button>
               ))}
             </div>

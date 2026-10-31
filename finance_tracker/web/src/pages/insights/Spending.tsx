@@ -11,6 +11,7 @@ import { Card, Loading } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon, IconTile } from '../../components/Icon'
+import { MerchantMark } from '../../components/MerchantLogo'
 
 // ── spending ────────────────────────────────────────────────────────
 
@@ -72,8 +73,9 @@ export function Spending() {
           <Card pad={false} icon="utensils" color="var(--s4)" title="Top merchants">
             <div className="divide-y divide-line border-t border-line">
               {data.merchants.slice(0, 12).map((m: any) => (
-                <a key={m.name} href={`#/ledger?merchant=${encodeURIComponent(m.name)}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between px-4 py-2 text-sm hover:bg-sunken/40">
-                  <span className="min-w-0 truncate">{m.name} <span className="text-xs text-muted">×{m.count}</span></span>
+                <a key={m.name} href={`#/ledger?merchant=${encodeURIComponent(m.name)}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-sunken/40">
+                  <MerchantMark merchant={m.name} category={m.category} size={26} />
+                  <span className="min-w-0 flex-1 truncate">{m.name} <span className="text-xs text-muted">×{m.count}</span></span>
                   <span className="tnum">{eur(m.amount)}</span>
                 </a>
               ))}

@@ -8,6 +8,7 @@ import { usePeriod } from '../../lib/hooks'
 import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
 import { AskCFO, hue, Loading, useCountUp } from '../../components/ui'
 import { Icon } from '../../components/Icon'
+import { MerchantMark } from '../../components/MerchantLogo'
 
 type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; link?: string }
 export type Fact = { key: string; icon: string; title: string; value: string; detail?: string; items?: Item[] | null; link?: string }
@@ -41,6 +42,7 @@ export function funLines(facts: Fact[]): FunLine[] {
   if (by.rhythm?.detail?.includes('Longest break')) add(`Longest break from spending: ${by.rhythm.detail.split('Longest break: ')[1]}`)
   if (by.new_places) add(`${by.new_places.value.replace(" you'd never paid before", '')} new places — ${by.new_places.items?.slice(0, 2).map((i) => i.label).join(' and ')} among them.`, by.new_places.items?.[0]?.link)
   if (by.vs_before) add(`${by.vs_before.value} spent than in the period before.`)
+  if (by.dating?.items?.[0]) add(`Dating has cost ${by.dating.value} so far — most of it on ${by.dating.items[0].label.toLowerCase()}.`, by.dating.link)
   if (by.trips?.items?.[0]) add(`${by.trips.items[0].label} was your priciest trip: ${by.trips.items[0].value}.`, by.trips.items[0].link)
   return out
 }
@@ -202,6 +204,7 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
     case 'spent_most':
     case 'trips':
     case 'new_places':
+    case 'dating':
       return (
         <Shell f={f} color={color}>
           <div className="mt-3 space-y-1.5">
@@ -209,7 +212,8 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
               <Linked key={it.label} to={it.link} className="relative overflow-hidden rounded-lg px-2.5 py-1.5 text-sm">
                 <div className="absolute inset-y-0 left-0 rounded-lg" style={{ width: `${((it.n ?? 0) / max) * 100}%`, background: `color-mix(in oklab, ${color} 22%, transparent)` }} />
                 <div className="relative flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate">{f.key === 'trips' && <Icon name="plane" size={12} className="mr-1 inline text-muted" />}{it.label}</span>
+                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate">{f.key === 'trips' ? <Icon name="plane" size={12} className="shrink-0 text-muted" />
+                    : f.key !== 'dating' && <MerchantMark merchant={it.label} size={20} fallback={<Icon name="bag" size={12} className="mx-1 shrink-0 text-muted" />} />}<span className="truncate">{it.label}</span></span>
                   <span className="text-xs text-muted">{it.sub}</span>
                   <span className="font-semibold tnum">{it.value}</span>
                   {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
