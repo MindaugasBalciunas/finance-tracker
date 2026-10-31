@@ -3,19 +3,22 @@ package cfo
 import (
 	"database/sql"
 	"fmt"
+	"slices"
 	"time"
 
 	"ft/internal/decisions"
 	"ft/internal/insights"
 	"ft/internal/money"
+	"ft/internal/plan"
 )
 
 // moreActions are the "Needs you" items from the planning tools: payday
 // transfers still to make, and later, renewals and decisions to look at.
-func moreActions(d *sql.DB, now time.Time) []Action {
+// cur is this month's plan report when the caller has it (nil runs it).
+func moreActions(d *sql.DB, now time.Time, cur *plan.Report) []Action {
 	var out []Action
 	// Payday transfers: for ten days after the salary, while any are open.
-	if rb, err := buildRunbook(d, now, false); err == nil && rb.Payday != "" && rb.Open > 0 {
+	if rb, err := buildRunbook(d, now, false, cur); err == nil && rb.Payday != "" && rb.Open > 0 {
 		if pd, err := time.Parse("2006-01-02", rb.Payday); err == nil && now.Sub(pd) <= 10*24*time.Hour {
 			var left money.Cents
 			saving, moved := 0, 0
@@ -54,8 +57,11 @@ func moreActions(d *sql.DB, now time.Time) []Action {
 			}
 		}
 	}
+	// Both bill views below read the same history; read it once (each gets
+	// its own copy, so neither sees the other's sorting).
+	bills, berr := insights.BillHistory(d, now)
 	// Subscriptions marked to cancel: the day has come, or it charged again.
-	if subs, err := insights.AuditSubscriptions(d, now); err == nil {
+	if subs, err := insights.AuditSubscriptionsIn(d, slices.Clone(bills), now); berr == nil && err == nil {
 		soon := now.AddDate(0, 0, 3).Format("2006-01-02")
 		for _, it := range subs.Items {
 			v := it.Verdict
@@ -77,7 +83,7 @@ func moreActions(d *sql.DB, now time.Time) []Action {
 		}
 	}
 	// Bills about to renew that cost more last time.
-	if p, err := insights.PriceCreep(d, now); err == nil {
+	if p, err := insights.PriceCreepIn(d, slices.Clone(bills), now); berr == nil && err == nil {
 		for _, it := range p.Items {
 			if it.RenewsSoon && it.Change >= 5 {
 				out = append(out, Action{Level: "warn", Kind: "renewal", Text: fmt.Sprintf("%s renews %s — %.0f%% dearer last time", it.Merchant, shortDay(it.Next), it.Change),

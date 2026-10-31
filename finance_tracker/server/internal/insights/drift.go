@@ -248,12 +248,23 @@ func perYear(cadence string) int64 {
 // renewWindow: how early a renewal is flagged — enough to get a quote.
 const renewWindow = 45
 
+// BillHistory is what the bill views read: two years and two months to
+// today, enough to see a yearly bill renew twice.
+func BillHistory(d *sql.DB, now time.Time) ([]ledger.Tx, error) {
+	return ledger.All(d, ledger.Filter{From: now.AddDate(-2, -2, 0).Format("2006-01-02"), To: now.Format("2006-01-02")})
+}
+
 // PriceCreep follows every regular bill's price year on year.
 func PriceCreep(d *sql.DB, now time.Time) (*Prices, error) {
-	txs, err := ledger.All(d, ledger.Filter{From: now.AddDate(-2, -2, 0).Format("2006-01-02"), To: now.Format("2006-01-02")})
+	txs, err := BillHistory(d, now)
 	if err != nil {
 		return nil, err
 	}
+	return PriceCreepIn(d, txs, now)
+}
+
+// PriceCreepIn is PriceCreep over an already read BillHistory.
+func PriceCreepIn(d *sql.DB, txs []ledger.Tx, now time.Time) (*Prices, error) {
 	bills, _, err := RecurringCosts(d, txs, now)
 	if err != nil {
 		return nil, err

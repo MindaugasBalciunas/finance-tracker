@@ -148,18 +148,19 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 
 	// 1. Does the plan fit? Recent months measured against today's lines and
 	// the income each one actually had.
-	cur, err := BudgetReport(d, now.Format("2006-01"), now)
+	recent := lastMonths(now, 6)
+	reports, err := BudgetReports(d, append(append(recent, now.Format("2006-01")), to), now)
 	if err != nil {
 		return nil, err
 	}
+	cur := reports[now.Format("2006-01")]
 	freePlanned := cur.IncomeBase - cur.FixedPlanned - cur.SavingPlanned - cur.FundContributions
 	var track []FindingItem
 	var trackSpent []money.Cents
 	overs := 0
-	for i := 6; i >= 1; i-- {
-		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
-		r, err := BudgetReport(d, m, now)
-		if err != nil || r.IncomeActual <= 0 {
+	for _, m := range recent {
+		r := reports[m]
+		if r.IncomeActual <= 0 {
 			continue
 		}
 		sp := r.FreeSpentByMonth[m] + r.FundOverdrawn
@@ -210,10 +211,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	// 3. Spending no budget line covers, and lines far from how money is spent.
 	// The last complete month's report carries exactly the window's twelve
 	// months of history.
-	lastR, err := BudgetReport(d, to, now)
-	if err != nil {
-		return nil, err
-	}
+	lastR := reports[to]
 	complete := map[string]bool{}
 	for _, m := range lastR.Months {
 		if m >= from && m <= to {

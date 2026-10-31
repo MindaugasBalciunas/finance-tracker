@@ -47,15 +47,16 @@ type Runbook struct {
 }
 
 // BuildRunbook is this calendar month's checklist.
-func BuildRunbook(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, true) }
+func BuildRunbook(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, true, nil) }
 
 // PaydaySteps is the checklist without this week's bill top-ups — what the
 // Budget lines and Home's payday tile need, without building Home's cash plan.
-func PaydaySteps(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, false) }
+func PaydaySteps(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, false, nil) }
 
 // withMoves=false leaves out the cash top-ups, for Home, which shows those
 // itself (and builds the cash plan the runbook would otherwise ask it for).
-func buildRunbook(d *sql.DB, now time.Time, withMoves bool) (*Runbook, error) {
+// cur is this month's plan report when the caller already has it.
+func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*Runbook, error) {
 	today := now.Format("2006-01-02")
 	settings := plan.LoadSettings(d)
 	rules := settings.Salary()
@@ -86,9 +87,19 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool) (*Runbook, error) {
 			rb.Salary += t.Amount
 		}
 	}
-	r, err := BudgetReport(d, rb.Month, now)
-	if err != nil {
-		return nil, err
+	// The bill top-ups below come from Home's cash plan; building Home also
+	// yields this month's report.
+	var o *Overview
+	if withMoves {
+		if ov, err := buildOverview(d, now, 0, &cur); err == nil {
+			o = ov
+		}
+	}
+	r := cur
+	if r == nil {
+		if r, err = BudgetReport(d, rb.Month, now); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, l := range r.Lines {
@@ -136,7 +147,7 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool) (*Runbook, error) {
 	}
 
 	// Top-ups a bill needs within the week: the cash plan already knows them.
-	if o, err := maybeOverview(d, now, withMoves); err == nil && o != nil && o.Cash != nil {
+	if o != nil && o.Cash != nil {
 		week := now.AddDate(0, 0, 7).Format("2006-01-02")
 		for i, m := range o.Cash.Moves {
 			if m.By > week {
@@ -186,11 +197,4 @@ func mostUsed(n map[string]int) string {
 		}
 	}
 	return id
-}
-
-func maybeOverview(d *sql.DB, now time.Time, want bool) (*Overview, error) {
-	if !want {
-		return nil, nil
-	}
-	return BuildOverview(d, now, 0)
 }

@@ -161,21 +161,45 @@ type LineBrief struct {
 
 // BudgetReport runs the plan engine for a month.
 func BudgetReport(d *sql.DB, month string, now time.Time) (*plan.Report, error) {
+	rs, err := BudgetReports(d, []string{month}, now)
+	if err != nil {
+		return nil, err
+	}
+	return rs[month], nil
+}
+
+// BudgetReports runs the plan engine for several months over one read of
+// the ledger. Home used to read every transaction 17 times — twice per
+// month for its six-month track record and the month in progress.
+func BudgetReports(d *sql.DB, months []string, now time.Time) (map[string]*plan.Report, error) {
 	budgets, err := plan.List(d, false)
 	if err != nil {
 		return nil, err
 	}
-	sel, _ := time.Parse("2006-01", month)
-	from := sel.AddDate(-1, 0, 0).Format("2006-01") + "-01"
-	// Funds need their whole history since their start month.
-	for _, b := range budgets {
-		if b.Fund && b.StartMonth != "" && b.StartMonth+"-01" < from {
-			from = b.StartMonth + "-01"
+	settings := plan.LoadSettings(d)
+	// A few days into the next month, so its early salary reaches this month.
+	extra := plan.MaxSalaryDays(settings.Salary())
+	type window struct{ from, to string }
+	wins := map[string]window{}
+	var lo, hi string
+	for _, month := range months {
+		sel, _ := time.Parse("2006-01", month)
+		w := window{sel.AddDate(-1, 0, 0).Format("2006-01") + "-01", sel.AddDate(0, 1, extra-1).Format("2006-01-02")}
+		// Funds need their whole history since their start month.
+		for _, b := range budgets {
+			if b.Fund && b.StartMonth != "" && b.StartMonth+"-01" < w.from {
+				w.from = b.StartMonth + "-01"
+			}
+		}
+		wins[month] = w
+		if lo == "" || w.from < lo {
+			lo = w.from
+		}
+		if w.to > hi {
+			hi = w.to
 		}
 	}
-	// A few days into the next month, so its early salary reaches this month.
-	extra := plan.MaxSalaryDays(plan.LoadSettings(d).Salary())
-	txs, err := ledger.All(d, ledger.Filter{From: from, To: sel.AddDate(0, 1, extra-1).Format("2006-01-02")})
+	all, err := ledger.All(d, ledger.Filter{From: lo, To: hi})
 	if err != nil {
 		return nil, err
 	}
@@ -184,27 +208,52 @@ func BudgetReport(d *sql.DB, month string, now time.Time) (*plan.Report, error) 
 	if err != nil {
 		return nil, err
 	}
-	seen := map[int64]bool{}
-	for _, t := range txs {
-		seen[t.ID] = true
-	}
-	for _, t := range inc {
-		if !seen[t.ID] {
-			txs = append(txs, t)
+	out := map[string]*plan.Report{}
+	for _, month := range months {
+		w := wins[month]
+		// Each month sees exactly the rows its own read used to return.
+		var txs []ledger.Tx
+		seen := map[int64]bool{}
+		for _, t := range all {
+			if t.Date >= w.from && t.Date <= w.to {
+				txs = append(txs, t)
+				seen[t.ID] = true
+			}
 		}
+		for _, t := range inc {
+			if !seen[t.ID] {
+				txs = append(txs, t)
+			}
+		}
+		r := plan.Compute(budgets, txs, month, now, settings)
+		// The month in progress counts bank rows not reviewed yet, so Home, Plan
+		// and the assistants agree on one left-to-spend.
+		if month == now.Format("2006-01") {
+			r.Unreviewed, r.UnreviewedCount = countUnreviewed(d, r, month, now.Format("2006-01-02"))
+			r.DiscretionarySpent += r.Unreviewed
+		}
+		out[month] = r
 	}
-	r := plan.Compute(budgets, txs, month, now, plan.LoadSettings(d))
-	// The month in progress counts bank rows not reviewed yet, so Home, Plan
-	// and the assistants agree on one left-to-spend.
-	if month == now.Format("2006-01") {
-		r.Unreviewed, r.UnreviewedCount = countUnreviewed(d, r, month, now.Format("2006-01-02"))
-		r.DiscretionarySpent += r.Unreviewed
+	return out, nil
+}
+
+// lastMonths is the n months before now's, oldest first.
+func lastMonths(now time.Time, n int) []string {
+	var out []string
+	for i := n; i >= 1; i-- {
+		out = append(out, time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01"))
 	}
-	return r, nil
+	return out
 }
 
 // BuildOverview is the Home screen.
 func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
+	return buildOverview(d, now, inboxOpen, nil)
+}
+
+// buildOverview also hands back this month's plan report through month
+// (when not nil), so the payday checklist doesn't run the engine again.
+func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report) (*Overview, error) {
 	book, err := wealth.LoadBook(d)
 	if err != nil {
 		return nil, err
@@ -297,7 +346,12 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	o.MonthProgress = float64(now.Day()) / float64(dim)
 
 	var fixedCats [][]string
-	if r, err := BudgetReport(d, thisM, now); err == nil {
+	track := lastMonths(now, 6)
+	reports, rerr := BudgetReports(d, append(track, thisM), now)
+	if month != nil {
+		*month = reports[thisM]
+	}
+	if r := reports[thisM]; rerr == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
 		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
@@ -373,15 +427,14 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 	}
 	o.Plan.addEvents(txs, fixedCats, plan.LoadSettings(d).Salary(), now)
 	o.Plan.Track = []MonthEnd{}
-	for i := 6; i >= 1; i-- {
-		m := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
-		if r, err := BudgetReport(d, m, now); err == nil && len(r.FreeSpentByMonth) > 0 && r.IncomeActual > 0 {
+	for _, m := range track {
+		if r := reports[m]; rerr == nil && len(r.FreeSpentByMonth) > 0 && r.IncomeActual > 0 {
 			o.Plan.Track = append(o.Plan.Track, MonthEnd{m, r.SafeToSpend, r.FreeSpentByMonth[m] + r.FundOverdrawn})
 		}
 	}
 	o.Cash = buildCashPlan(d, txs, &o.Plan, fixedCats, book, now)
 	budgetDiffs := 0
-	if r, err := BudgetReport(d, thisM, now); err == nil {
+	if r := reports[thisM]; rerr == nil {
 		for _, l := range r.Lines {
 			if l.Suggestion != nil && l.Kind != "saving" {
 				budgetDiffs++
@@ -396,7 +449,9 @@ func BuildOverview(d *sql.DB, now time.Time, inboxOpen int) (*Overview, error) {
 			}
 		}
 	}
-	defer func() { o.Actions = buildActions(o, budgetDiffs, plannedLate, now, moreActions(d, now)...) }()
+	defer func() {
+		o.Actions = buildActions(o, budgetDiffs, plannedLate, now, moreActions(d, now, reports[thisM])...)
+	}()
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
 		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")

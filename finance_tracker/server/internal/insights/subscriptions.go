@@ -95,10 +95,15 @@ func SetSubVerdict(d *sql.DB, key string, v SubVerdict, now time.Time) error {
 }
 
 func AuditSubscriptions(d *sql.DB, now time.Time) (*Subscriptions, error) {
-	txs, err := ledger.All(d, ledger.Filter{From: now.AddDate(-2, -2, 0).Format("2006-01-02"), To: now.Format("2006-01-02")})
+	txs, err := BillHistory(d, now)
 	if err != nil {
 		return nil, err
 	}
+	return AuditSubscriptionsIn(d, txs, now)
+}
+
+// AuditSubscriptionsIn is AuditSubscriptions over an already read BillHistory.
+func AuditSubscriptionsIn(d *sql.DB, txs []ledger.Tx, now time.Time) (*Subscriptions, error) {
 	bills, _, err := RecurringCosts(d, txs, now)
 	if err != nil {
 		return nil, err

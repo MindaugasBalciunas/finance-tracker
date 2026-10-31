@@ -16,8 +16,9 @@ func TestBuildOverview(t *testing.T) {
 	d := DB(t)
 	now := time.Now()
 	for i := 0; i < 13; i++ {
-		day := now.AddDate(0, -i, 0)
-		ds := time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		// Step by calendar month: AddDate(0, -i, 0) from the 31st lands back
+		// on the 1st of the same month.
+		ds := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 		Tx(t, d, ledger.Tx{Date: ds, Amount: E(5000), Category: "salary", AccountID: "swed"})
 		for k := 0; k < 5; k++ { // everyday shopping, not one €1,000 one-off
 			Tx(t, d, ledger.Tx{Date: ds, Amount: E(200), Category: "food.groceries", AccountID: "swed"})
