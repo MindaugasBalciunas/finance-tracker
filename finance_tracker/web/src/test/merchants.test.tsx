@@ -90,10 +90,10 @@ describe('subscription review', () => {
 })
 
 describe('account logos', () => {
-  const index = { swedbank: 'swedbank.lt', seb: 'seb.lt', revolut: 'revolut.com' }
+  const index = { swedbank: 'swedbank.lt', seb: 'seb.lt', revolut: 'revolut.me' }
   it('use the bank, by institution or name', () => {
     expect(accountLogo(index, { institution: 'Swedbank', name: 'Main', kind: 'checking' })).toBe('swedbank.lt')
-    expect(accountLogo(index, { institution: '', name: 'Revolut savings', kind: 'savings' })).toBe('revolut.com')
+    expect(accountLogo(index, { institution: '', name: 'Revolut savings', kind: 'savings' })).toBe('revolut.me')
   })
   it('never give a house, car or cash a bank', () => {
     expect(accountLogo(index, { institution: 'SEB', name: 'House', kind: 'property' })).toBeUndefined()
