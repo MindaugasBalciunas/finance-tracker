@@ -14,6 +14,11 @@ describe('logoName', () => {
     expect(logoName({ merchant: '', note: 'Banko mokestis', category: 'finance.bank_fees', account_id: 'swed' }, accounts)).toBe('Swedbank')
     expect(logoName({ merchant: '', note: 'Loan interest', category: 'housing.mortgage_interest', account_id: 'seb' }, accounts)).toBe('SEB')
   })
+  it('gives loan interest with no account the bank that holds the loan', () => {
+    const withLoan = [...accounts, { id: 'mortgage', name: 'Mortgage', institution: 'SEB', kind: 'loan' } as Account]
+    expect(logoName({ merchant: '', note: 'Loan interest', category: 'housing.mortgage_interest', account_id: '' }, withLoan)).toBe('SEB')
+    expect(logoName({ merchant: '', note: 'Loan interest', category: 'housing.mortgage_interest', account_id: '' }, accounts)).toBe('')
+  })
   it('leaves other rows without a merchant alone', () => {
     expect(logoName({ merchant: '', note: 'Seb loan notary', category: 'finance.legal', account_id: 'swed' }, accounts)).toBe('')
   })

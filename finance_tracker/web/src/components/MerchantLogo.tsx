@@ -26,13 +26,15 @@ export function logoDomain(index: Record<string, string> | undefined, merchant?:
 
 // Bank fees and loan interest rarely carry a merchant — the bank charged
 // them. The bank named in the note wins ("Seb bank fee" paid from Swedbank),
-// else the bank of the account it was paid from.
+// else the bank of the account it was paid from, else (loan interest with no
+// account, as a recurring bill) the bank that holds the loan.
 const BANK_CHARGES = new Set(['finance.bank_fees', 'housing.mortgage_interest'])
 export function logoName(t: Pick<Tx, 'merchant' | 'note' | 'category' | 'account_id'>, accounts: Account[] | undefined) {
   if (t.merchant || !BANK_CHARGES.has(t.category) || !accounts) return t.merchant
   const banks = [...new Set(accounts.map((a) => a.institution.trim()).filter(Boolean))]
   const words = new Set(t.note.split(/[^\p{L}\p{N}]+/u).map(logoKey))
-  return banks.find((b) => words.has(logoKey(b))) ?? accounts.find((a) => a.id === t.account_id)?.institution.trim() ?? ''
+  return banks.find((b) => words.has(logoKey(b))) ?? accounts.find((a) => a.id === t.account_id)?.institution.trim()
+    ?? (t.category === 'housing.mortgage_interest' ? accounts.find((a) => a.kind === 'loan' && a.institution.trim())?.institution.trim() : undefined) ?? ''
 }
 
 type Look = { bg: string; full: boolean }

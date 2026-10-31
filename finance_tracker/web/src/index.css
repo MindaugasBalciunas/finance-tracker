@@ -62,6 +62,9 @@
   --s-other: #b4b2aa;
   --tint: 15%;
   --card-glow: 7%; --card-spot: 9%; --card-rim: 55%; --card-hi: 0.75; --card-sh: 0.04; --card-tint: 45%;
+  /* The hover rainbow (after Gemini's blue → violet → rose): how strong the
+     rim and the halo get at full hover. */
+  --glow-1: #4796e3; --glow-2: #9177c7; --glow-3: #ca6673; --rb-rim: 58%; --rb-halo: 26%; --rb-aur: 26%; --glow-4: #7cc4ff;
   --chart-surface: #fcfcfb; --chart-grid: #e1e0d9; --chart-axis: #c3c2b7; --chart-text: #898781;
 }
 @media (prefers-color-scheme: dark) {
@@ -74,6 +77,7 @@
     --s-other: #5c5b57;
     --tint: 24%;
     --card-glow: 11%; --card-spot: 12%; --card-rim: 60%; --card-hi: 0.06; --card-sh: 0.35; --card-tint: 35%;
+    --rb-rim: 70%; --rb-halo: 36%; --rb-aur: 40%;
     --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
   }
 }
@@ -86,6 +90,7 @@
   --s-other: #5c5b57;
   --tint: 24%;
   --card-glow: 11%; --card-spot: 12%; --card-rim: 60%; --card-hi: 0.06; --card-sh: 0.35; --card-tint: 35%;
+  --rb-rim: 70%; --rb-halo: 36%; --rb-aur: 40%;
   --chart-surface: #1a1a19; --chart-grid: #2c2c2a; --chart-axis: #383835; --chart-text: #898781;
 }
 
@@ -102,6 +107,23 @@
   --hue-invest: var(--s7); --hue-property: var(--s7); --hue-vehicle: var(--s2); --hue-time: var(--s4);
 }
 @property --card-glow { syntax: '<percentage>'; inherits: true; initial-value: 7%; }
+/* 0 → 1 as the pointer rests on a card; not inherited, so a card inside a
+   hovered card stays calm. */
+@property --rb { syntax: '<number>'; inherits: false; initial-value: 0; }
+/* Where the rainbow's bands point; turns while hovered. */
+@property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@property --card-tint { syntax: '<percentage>'; inherits: true; initial-value: 45%; }
+@keyframes rb-spin { to { --ang: 360deg; } }
+/* How wide the edge aurora reaches (share of its full width); two rhythms,
+   so neighbouring edges swell out of step. */
+@property --pk { syntax: '<number>'; inherits: false; initial-value: 0.8; }
+@property --pk2 { syntax: '<number>'; inherits: false; initial-value: 0.8; }
+@keyframes aurora-a { from { --pk: 0.55; } to { --pk: 1; } }
+@keyframes aurora-b { from { --pk2: 1; } to { --pk2: 0.5; } }
+/* Where the pointer is in the card, 0–1 across and down (set by
+   lib/spotlight.ts); registered so the light eases after the mouse. */
+@property --px { syntax: '<number>'; inherits: false; initial-value: 0.5; }
+@property --py { syntax: '<number>'; inherits: false; initial-value: 0.5; }
 @keyframes card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 html, body { background: rgb(var(--page)); color: rgb(var(--ink)); }
@@ -122,25 +144,58 @@ body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
   @apply rounded-2xl;
   --c: var(--card-c, rgb(var(--accent)));
   border: 1px solid transparent;
+  /* Layers, top first: the corner wash, the surface, then the rim — the
+     hover rainbow over the resting gradient. The rainbow is a conic gradient
+     centred on the pointer, bands of the card's own colour, blue, violet and
+     rose that turn with --ang; only its 1px border shows. */
   background:
-    radial-gradient(440px circle at var(--mx, -999px) var(--my, -999px), color-mix(in oklab, var(--c) var(--card-spot), transparent), transparent 45%) padding-box,
     radial-gradient(90% 70% at 0% 0%, color-mix(in oklab, var(--c) var(--card-glow), transparent), transparent 60%) padding-box,
     linear-gradient(rgb(var(--surface)), rgb(var(--surface))) padding-box,
+    conic-gradient(from calc(210deg + var(--ang)) at var(--mx, 50%) var(--my, 50%),
+      color-mix(in oklab, var(--c) calc(var(--rb-rim) * var(--rb)), transparent) 0deg,
+      color-mix(in oklab, var(--glow-1) calc(var(--rb-rim) * var(--rb)), transparent) 35deg,
+      color-mix(in oklab, var(--c) calc(var(--rb-rim) * var(--rb) * 0.35), transparent) 62deg,
+      color-mix(in oklab, var(--glow-2) calc(var(--rb-rim) * var(--rb)), transparent) 110deg,
+      color-mix(in oklab, var(--glow-3) calc(var(--rb-rim) * var(--rb)), transparent) 140deg,
+      color-mix(in oklab, var(--c) calc(var(--rb-rim) * var(--rb) * 0.35), transparent) 175deg,
+      color-mix(in oklab, var(--glow-1) calc(var(--rb-rim) * var(--rb)), transparent) 215deg,
+      color-mix(in oklab, var(--glow-2) calc(var(--rb-rim) * var(--rb) * 0.35), transparent) 250deg,
+      color-mix(in oklab, var(--glow-3) calc(var(--rb-rim) * var(--rb)), transparent) 290deg,
+      color-mix(in oklab, var(--c) calc(var(--rb-rim) * var(--rb)), transparent) 360deg) border-box,
     linear-gradient(150deg, color-mix(in oklab, var(--c) var(--card-rim), rgb(var(--line))) 0%, rgb(var(--line)) 28%, rgb(var(--line)) 78%,
       color-mix(in oklab, var(--c) calc(var(--card-rim) / 3), rgb(var(--line))) 100%) border-box;
+  /* Resting: a top highlight and a shadow tinted by the card. Hovered: light
+     gathers inside the edge — or corner — nearest the pointer (inset shadows
+     pushed away from it: the card's colour, violet that wobbles as --ang
+     turns, sky that breathes with --pk) and slides along as the pointer
+     moves, easing after it (--px/--py); outside, a violet pool leans toward
+     the pointer and a blue one orbits. It fades out within a few millimetres
+     of the edge, clear of the content. All zero until --rb rises. */
   box-shadow: inset 0 1px 0 rgb(255 255 255 / var(--card-hi)), 0 1px 2px rgb(0 0 0 / var(--card-sh)),
-    0 10px 28px -18px color-mix(in oklab, var(--c) var(--card-tint), transparent);
+    0 10px 28px -18px color-mix(in oklab, var(--c) var(--card-tint), transparent),
+    calc((var(--px) - 0.5) * 30px) calc((var(--py) - 0.5) * 22px) 30px -12px color-mix(in oklab, var(--glow-2) calc(var(--rb-halo) * var(--rb)), transparent),
+    calc(cos(var(--ang)) * 12px) calc(sin(var(--ang)) * 8px) 26px -14px color-mix(in oklab, var(--glow-1) calc(var(--rb-halo) * var(--rb) * 0.7), transparent),
+    inset calc((0.5 - var(--px)) * 46px * var(--rb)) calc((0.5 - var(--py)) * 38px * var(--rb)) 26px -8px color-mix(in oklab, var(--c) calc(var(--rb-aur) * var(--rb)), transparent),
+    inset calc(((0.5 - var(--px)) * 30px + cos(var(--ang)) * 4px) * var(--rb)) calc(((0.5 - var(--py)) * 26px + sin(var(--ang)) * 4px) * var(--rb)) 34px -12px color-mix(in oklab, var(--glow-2) calc(var(--rb-aur) * var(--rb) * 0.7), transparent),
+    inset calc((0.5 - var(--px)) * 22px * var(--pk) * var(--rb)) calc((0.5 - var(--py)) * 18px * var(--pk) * var(--rb)) 18px -6px color-mix(in oklab, var(--glow-4) calc(var(--rb-aur) * var(--rb) * 0.55), transparent);
+  /* No box-shadow transition: the halo follows --rb and --ang every frame. */
+  transition: --rb 0.35s ease, --px 0.25s ease-out, --py 0.25s ease-out, --card-glow 0.2s ease, --card-tint 0.2s ease, transform 0.2s ease;
   /* backwards, not both: nothing stays in effect after the fade, so a card
      never becomes the containing block of a fixed sheet or popover inside it. */
   animation: card-in 0.3s ease-out backwards;
-  /* A card you can press lifts a little and its tint rises. Here, not in a
-     layer, so it wins over the rest of the card style. */
-  &:is(a, button), &[role='button'] { transition: --card-glow 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease; }
+  /* With a mouse or trackpad the rainbow fades in under the pointer; touch
+     screens and reduced motion keep the card as it is. */
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    /* card-in stays first, so it isn't started again when the spin is
+       added or removed. */
+    &:hover { --rb: 1; animation: card-in 0.3s ease-out backwards, rb-spin 3.2s linear infinite, aurora-a 1.9s ease-in-out infinite alternate, aurora-b 2.6s ease-in-out infinite alternate; }
+  }
+  /* A card you can press also lifts a little and its tint rises. Here, not
+     in a layer, so it wins over the rest of the card style. */
   &:is(a, button):hover, &[role='button']:hover {
     --card-glow: 16%;
+    --card-tint: 70%;
     transform: translateY(-1px);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / var(--card-hi)), 0 1px 2px rgb(0 0 0 / var(--card-sh)),
-      0 14px 30px -16px color-mix(in oklab, var(--c) 70%, transparent);
   }
   @media (prefers-reduced-motion: reduce) {
     animation: none;

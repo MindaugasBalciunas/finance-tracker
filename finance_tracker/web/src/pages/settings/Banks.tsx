@@ -7,6 +7,9 @@ import { api } from '../../lib/api'
 import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, Toggle, useToast } from '../../components/ui'
 import { AccountSelect, SPEND_KINDS } from '../../components/pickers'
+import { MerchantMark } from '../../components/MerchantLogo'
+import { IconTile } from '../../components/Icon'
+import { brandColor } from '../../lib/brand'
 
 // ── banks ───────────────────────────────────────────────────────────
 
@@ -84,7 +87,8 @@ export function Banks() {
             {(conns ?? []).filter((c) => c.accounts.length || c.status === 'authorized').map((c) => (
               <div key={c.id} className="rounded-xl border border-line p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
+                  <MerchantMark merchant={c.aspsp_name} size={32} fallback={<IconTile name="bank" color={brandColor({ institution: c.aspsp_name, name: c.aspsp_name, kind: 'checking' }) ?? 'var(--s-other)'} size={32} />} />
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold">{c.aspsp_name}</div>
                     <div className={clsx('text-xs', c.status === 'authorized' ? (c.days_left < 14 ? 'text-warn' : 'text-good') : 'text-bad')}>
                       {c.status === 'authorized' ? `connected · consent ends in ${c.days_left} days` : c.status}{c.last_error ? ` · ${c.last_error}` : ''}

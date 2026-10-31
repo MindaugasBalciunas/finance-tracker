@@ -384,6 +384,7 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
   })
   const row = (a: Account) => (
     <div key={a.id} className="flex items-center gap-3 py-2">
+      <AccountMark a={a} color={brandColor(a) ?? 'var(--s-other)'} size={32} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.name}</div>
         <div className="text-xs text-muted">now {a.balance != null ? eurc(a.balance) : '—'}{a.balance_date ? ` · ${shortDate(a.balance_date)}` : ''}</div>

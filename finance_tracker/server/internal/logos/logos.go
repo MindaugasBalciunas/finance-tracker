@@ -52,7 +52,7 @@ var Domains = map[string]string{
 	"Swedbank": "swedbank.lt", "SEB": "seb.lt", "Revolut": "revolut.me", "Interactive Brokers": "interactivebrokers.com", "IBKR": "interactivebrokers.com",
 	"Luminor": "luminor.lt", "Artea": "artea.lt", "Danske Bank": "danskebank.lt", "Barclays": "barclays.co.uk", "PayPal": "paypal.com", "Paysera": "paysera.com",
 	"Evp International": "paysera.com", "Vipps MobilePay": "vippsmobilepay.com",
-	"If": "if.lt", "Compensa": "compensa.lt", "Gjensidige": "gjensidige.lt", "VMI": "vmi.lt", "Registrų centras": "registrucentras.lt",
+	"If": "if.lt", "Argus": "argus.lt", "Compensa": "compensa.lt", "Gjensidige": "gjensidige.lt", "VMI": "vmi.lt", "Registrų centras": "registrucentras.lt",
 	// McDonald's: mcdonalds.com refuses automated requests; the Latvian site
 	// serves the same arches.
 	"McDonald's": "mcdonalds.lv", "Hesburger": "hesburger.lt", "KFC": "kfc.lt",

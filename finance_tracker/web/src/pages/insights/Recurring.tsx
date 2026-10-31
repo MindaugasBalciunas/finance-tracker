@@ -11,7 +11,7 @@ import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, useTo
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, MerchantInput, NoteInput } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
 import { Icon, IconTile } from '../../components/Icon'
-import { MerchantMark } from '../../components/MerchantLogo'
+import { logoDomain, logoName, MerchantMark, useLogoIndex } from '../../components/MerchantLogo'
 import { DateInput } from '../../components/DateInput'
 
 // ── recurring ───────────────────────────────────────────────────────
@@ -26,6 +26,8 @@ const KIND_HINT: Record<string, string> = {
 
 export function RecurringView() {
   const { data: accounts } = useAccounts()
+  // A bill named for what it is ("Loan interest") shows the bank that charges it.
+  const { data: logos } = useLogoIndex()
   const acctName = (id?: string) => (id ? accounts?.find((a) => a.id === id)?.name ?? id : '')
   const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number; suggestions?: any[] }>('/insights/recurring') })
   const { data: subs } = useQuery({ queryKey: ['subscriptions'], queryFn: () => api.get<Subscriptions>('/plan/subscriptions') })
@@ -72,7 +74,7 @@ export function RecurringView() {
                     <button key={`${r.id ?? ""}|${r.merchant}|${r.note ?? ""}`} onClick={() => setEdit({ r })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/40">
                       {/* The payee's logo where there is one (a bill, an employer, the
                           fund a standing order feeds), else the kind's icon. */}
-                      <MerchantMark merchant={r.merchant} category={r.category} size={34}
+                      <MerchantMark merchant={logoDomain(logos, r.merchant) ? r.merchant : logoName({ merchant: '', note: `${r.merchant} ${r.note ?? ''}`, category: r.category, account_id: r.from_account ?? '' }, accounts) || r.merchant} category={r.category} size={34}
                         fallback={kind === 'bill' ? undefined : <IconTile name={kind === 'income' ? 'briefcase' : 'swap'} color={kind === 'income' ? 'var(--s6)' : 'var(--s7)'} size={34} round />} />
                       <div className="min-w-0 flex-1">
                         {/* The name keeps its room; on a phone the chips wrap under it. */}
