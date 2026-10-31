@@ -88,7 +88,7 @@ func monthBounds(m string) (string, string) {
 // BuildMonthReview reviews one month (default: the last complete one).
 func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, error) {
 	if _, err := time.Parse("2006-01", month); err != nil {
-		month = now.AddDate(0, -1, 0).Format("2006-01")
+		month = ledger.AddMonths(now, -1)
 	}
 	sel, _ := time.Parse("2006-01", month)
 	from, to := monthBounds(month)

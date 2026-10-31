@@ -482,3 +482,30 @@ func TestTripHistory(t *testing.T) {
 		t.Errorf("after dates: %v", st)
 	}
 }
+
+// On the 29th–31st, stepping months from today's date rolls over ("31
+// September" = 1 October): last month read as this month and the Trends
+// chart drew every 30-day month twice.
+func TestAddMonthsCountsFromTheFirst(t *testing.T) {
+	d := func(s string) time.Time { x, _ := time.Parse("2006-01-02", s); return x }
+	for _, c := range []struct {
+		from string
+		n    int
+		want string
+	}{
+		{"2026-10-31", -1, "2026-09"}, {"2026-03-31", -1, "2026-02"}, {"2026-01-31", 1, "2026-02"},
+		{"2026-10-31", 0, "2026-10"}, {"2026-01-15", -1, "2025-12"}, {"2026-12-31", 1, "2027-01"}, {"2026-10-31", -23, "2024-11"},
+	} {
+		if got := ledger.AddMonths(d(c.from), c.n); got != c.want {
+			t.Errorf("%s %+d → %s, want %s", c.from, c.n, got, c.want)
+		}
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 24; i++ {
+		m := ledger.AddMonths(d("2026-10-31"), -i)
+		if seen[m] {
+			t.Fatalf("%s twice in 24 months", m)
+		}
+		seen[m] = true
+	}
+}

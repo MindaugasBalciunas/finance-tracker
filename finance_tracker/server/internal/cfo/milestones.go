@@ -50,7 +50,7 @@ func Milestones(d *sql.DB, now time.Time) ([]Milestone, error) {
 	}
 	fi := insights.ComputeFI(txs, cats, book, settings, now)
 	snap := book.SnapshotAt(now.Format("2006-01-02"), false)
-	month := func(m int) string { return now.AddDate(0, m, 0).Format("2006-01") }
+	month := func(m int) string { return ledger.AddMonths(now, m) }
 	out := []Milestone{}
 
 	// The emergency fund fills from what is left at month end.

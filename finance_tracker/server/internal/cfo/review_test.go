@@ -95,3 +95,16 @@ func TestLateSalaryIsExplained(t *testing.T) {
 		t.Fatalf("income %v tone %s %s %+v", r.Flow.Income, r.Tone, r.Verdict, r.Highlights)
 	}
 }
+
+// On 31 October "last month" is September, not October ("31 September"
+// rolled over to 1 October before).
+func TestMonthReviewDefaultsToLastMonthOnTheThirtyFirst(t *testing.T) {
+	d := DB(t)
+	r, err := cfo.BuildMonthReview(d, "", time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Month != "2026-09" {
+		t.Fatalf("got %s", r.Month)
+	}
+}

@@ -100,7 +100,7 @@ func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Bo
 			v = v*(1+r) + monthly
 			if v >= target {
 				out.YearsToFI = math.Round(float64(m)/12*10) / 10
-				out.FIDate = now.AddDate(0, m, 0).Format("2006-01")
+				out.FIDate = ledger.AddMonths(now, m)
 				break
 			}
 		}

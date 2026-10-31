@@ -173,7 +173,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			}
 		}
 		for i := 1; i <= 3 && recent == 0; i++ {
-			recent = months[now.AddDate(0, -i, 0).Format("2006-01")]
+			recent = months[ledger.AddMonths(now, -i)]
 		}
 		f := Fact{Key: "first_pay", Icon: "piggy", Title: "Your first pay cheque", Value: eur(firstPay.Amount),
 			Detail: fmt.Sprintf("From %s on %s.", firstPay.Merchant, day(firstPay.Date)), Link: dayLink(firstPay.Date, "kind", "income")}

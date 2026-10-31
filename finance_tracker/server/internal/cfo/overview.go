@@ -278,7 +278,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 	cats, _ := ledger.CategoryMap(d)
 	flows := insights.CashFlow(txs, cats, "month", plan.LoadSettings(d).Salary())
 	thisM := now.Format("2006-01")
-	lastM := now.AddDate(0, -1, 0).Format("2006-01")
+	lastM := ledger.AddMonths(now, -1)
 	var avg insights.Flow
 	n := 0
 	var savedM []money.Cents
@@ -454,7 +454,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 	}()
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {
-		o.ReviewMonth = now.AddDate(0, -1, 0).Format("2006-01")
+		o.ReviewMonth = ledger.AddMonths(now, -1)
 	}
 	if now.Day() <= 10 {
 		if c, err := Close(d, time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, time.UTC).Format("2006-01"), now); err == nil && !c.Closed {

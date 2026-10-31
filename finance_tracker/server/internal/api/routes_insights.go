@@ -52,7 +52,7 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/close", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		m := r.URL.Query().Get("month")
 		if m == "" {
-			m = time.Now().AddDate(0, -1, 0).Format("2006-01")
+			m = ledger.AddMonths(time.Now(), -1)
 		}
 		return cfo.Close(s.DB, m, time.Now())
 	})
@@ -150,7 +150,7 @@ func (s *Server) insightRoutes() {
 		if months < 3 || months > 240 {
 			months = 24
 		}
-		from := time.Now().AddDate(0, -months+1, 0).Format("2006-01") + "-01"
+		from := ledger.AddMonths(time.Now(), -months+1) + "-01"
 		txs, err := ledger.All(s.DB, ledger.Filter{From: from, Kind: "expense"})
 		if err != nil {
 			return nil, err
@@ -175,7 +175,7 @@ func (s *Server) insightRoutes() {
 		}
 		var rows []map[string]any
 		for i := months - 1; i >= 0; i-- {
-			mo := time.Now().AddDate(0, -i, 0).Format("2006-01")
+			mo := ledger.AddMonths(time.Now(), -i)
 			row := map[string]any{"month": mo}
 			for k, v := range m[mo] {
 				row[k] = v
@@ -208,7 +208,7 @@ func (s *Server) insightRoutes() {
 		return cfo.Checks(s.DB, time.Now()), nil
 	})
 	s.handle("GET /api/insights/pace", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(0, -7, 0).Format("2006-01") + "-01"})
+		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(time.Now(), -7) + "-01"})
 		if err != nil {
 			return nil, err
 		}

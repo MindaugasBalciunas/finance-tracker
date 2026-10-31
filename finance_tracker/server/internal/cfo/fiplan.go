@@ -63,7 +63,7 @@ func coastDate(start, monthly, r, target float64, toAge int, now time.Time) (str
 			if m == 0 {
 				return "", true
 			}
-			return now.AddDate(0, m, 0).Format("2006-01"), false
+			return ledger.AddMonths(now, m), false
 		}
 	}
 	return "", false
@@ -136,7 +136,7 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 	r := settings.ExpectedReturn / 100 / 12 // real: everything in today's euros
 	start, monthly := fi.Investable.Float(), math.Max(fi.MonthlyInvested.Float(), 0)
 	capital := func(perMonth money.Cents) money.Cents { return money.FromFloat(perMonth.Float() * 12 * 100 / wr) }
-	month := func(m int) string { return now.AddDate(0, m, 0).Format("2006-01") }
+	month := func(m int) string { return ledger.AddMonths(now, m) }
 	age := func(m int) float64 {
 		if settings.BirthYear <= 0 {
 			return 0

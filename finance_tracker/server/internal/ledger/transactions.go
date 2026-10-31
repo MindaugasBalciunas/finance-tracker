@@ -642,6 +642,14 @@ func ListMerchants(q querier, from, to string) ([]MerchantCount, error) {
 	return out, nil
 }
 
+// AddMonths is the month (YYYY-MM) n months from t's month. Counted from
+// the 1st: Go's t.AddDate(0, -1, 0) on 31 October is "31 September" = 1
+// October, so on the 29th–31st "last month" came out as this month and
+// charts showed each 30-day month twice.
+func AddMonths(t time.Time, n int) string {
+	return time.Date(t.Year(), t.Month()+time.Month(n), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+}
+
 func orMin(s string) string {
 	if s == "" {
 		return "0000-00-00"

@@ -315,7 +315,7 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 		return best
 	}
 	var out []Recurring
-	recent := now.AddDate(0, -6, 0).Format("2006-01")
+	recent := ledger.AddMonths(now, -6)
 	for m, hs := range by {
 		sort.Slice(hs, func(i, j int) bool { return hs[i].date < hs[j].date })
 		months := map[string]money.Cents{}
