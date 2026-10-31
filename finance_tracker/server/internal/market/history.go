@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,12 +53,17 @@ type HistoryPoint struct {
 	Close float64 `json:"close"`
 }
 
-// fetchYahooHistory fetches OHLCV history and returns date+close pairs.
-// Uses exchange suffix fallback same as fetchYahooPrice.
-// Successful lookups are cached for 30 minutes.
+// History fetches a ticker's closes, oldest first, trying exchange suffixes
+// as fetchYahooPrice does. Successful lookups are cached for 30 minutes and
+// failed ones for negativeTTL: while Yahoo was down, every investment page
+// retried six suffixes at up to 10 s each, on every load. The slice is
+// shared between callers — copy it before changing it.
 func History(ticker, rangeParam string) ([]HistoryPoint, error) {
 	cacheKey := "history:" + ticker + ":" + rangeParam
 	if v, ok := yahooCacheGet(cacheKey); ok {
+		if err, failed := v.(error); failed {
+			return nil, err
+		}
 		return v.([]HistoryPoint), nil
 	}
 
@@ -75,15 +81,23 @@ func History(ticker, rangeParam string) ([]HistoryPoint, error) {
 
 	var lastErr error
 	for _, candidate := range candidates {
-		points, err := fetchYahooHistoryRaw(candidate, interval, rangeParam)
+		points, err := fetchHistory(candidate, interval, rangeParam)
 		if err == nil && len(points) > 0 {
+			sort.SliceStable(points, func(i, j int) bool { return points[i].Date < points[j].Date })
 			yahooCacheSet(cacheKey, points, 30*time.Minute)
 			return points, nil
 		}
 		lastErr = err
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no price history for %s", ticker)
+	}
+	yahooCacheSet(cacheKey, lastErr, negativeTTL)
 	return nil, lastErr
 }
+
+// fetchHistory is the network call behind History (replaced in tests).
+var fetchHistory = fetchYahooHistoryRaw
 
 // yahooSession caches the crumb + cookie jar needed for Yahoo Finance quoteSummary.
 var yahooSession struct {

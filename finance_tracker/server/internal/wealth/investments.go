@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -422,6 +423,9 @@ func PortfolioHistory(trades []Trade, from, today string, prices PriceHistory, t
 			if err != nil {
 				return
 			}
+			// prices may hand back a cached slice other requests are reading:
+			// sort a copy, never the shared one.
+			h = slices.Clone(h)
 			sort.Slice(h, func(i, j int) bool { return h[i].Date < h[j].Date })
 			mu.Lock()
 			closes[tk] = h

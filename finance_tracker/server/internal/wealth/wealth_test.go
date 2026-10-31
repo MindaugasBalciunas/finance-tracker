@@ -1,6 +1,7 @@
 package wealth_test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -440,5 +441,25 @@ func TestCloseAndReopenAccount(t *testing.T) {
 	wealth.CloseAccount(d, "swed", now)
 	if b, _ := wealth.LoadBook(d); len(b.Series("swed")) != 1 {
 		t.Fatal("empty account needs no closing value")
+	}
+}
+
+// Price history may come from a cache other requests read at the same time:
+// building the line never reorders the slice it was given.
+func TestPortfolioHistoryLeavesSharedPricesAlone(t *testing.T) {
+	trades := []wealth.Trade{{Date: "2026-01-10", Action: "buy", Ticker: "AAA", Shares: 10, Price: 10, Currency: "EUR"}}
+	shared := []market.HistoryPoint{{Date: "2026-03-31", Close: 18}, {Date: "2026-01-31", Close: 12}, {Date: "2026-02-28", Close: 15}}
+	eur := func(a float64, _ string) float64 { return a }
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wealth.PortfolioHistory(trades, "2026-01-01", "2026-04-01", func(string) ([]market.HistoryPoint, error) { return shared, nil }, eur)
+		}()
+	}
+	wg.Wait()
+	if shared[0].Date != "2026-03-31" || shared[1].Date != "2026-01-31" {
+		t.Fatalf("shared prices reordered: %+v", shared)
 	}
 }

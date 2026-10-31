@@ -73,15 +73,22 @@ export interface TxFilter {
 export const useTransactions = (f: TxFilter) =>
   useQuery({ queryKey: ['transactions', f], queryFn: () => api.get<TxList>('/transactions', f as any), placeholderData: (p) => p })
 
-/** Invalidate everything a ledger change can move. */
+// Views a ledger change can't move: settings and security, the chat, price
+// charts and the editor's own suggestions. Everything else is refreshed — a
+// hand-kept list of what *does* move kept missing new pages (tax, the month
+// close, the balance table, portfolio quality after a trade…), which then
+// showed old numbers after an edit.
+const UNMOVED = new Set(['ai-models', 'ai-settings', 'analyst', 'auth-status', 'backups', 'bank-connections', 'bank-settings', 'categories', 'chat',
+  'demo', 'hist', 'logos', 'notify', 'oauth-grants', 'oauth-request', 'passkeys', 'plan-settings', 'prefs', 'rules', 'topups',
+  'usage', 'rule-preview', 'cat-suggest', 'note-suggest', 'tag-suggest'])
+
+/** Invalidate everything a ledger change can move (only views on screen refetch). */
 export function useRefresh() {
   const qc = useQueryClient()
+  // Not awaited: a mutation's onSuccess would otherwise hold the editor open
+  // until every view on screen has refetched.
   return () => {
-    for (const k of ['transactions', 'overview', 'plan', 'inbox', 'tags', 'merchants', 'cashflow', 'breakdown', 'trends', 'recurring', 'fi', 'review', 'pace', 'tidy', 'month-review', 'checks', 'movement', 'scenarios', 'trips', 'accounts', 'nw-history', 'loans', 'networth', 'owed', 'tx', 'balances', 'portfolio', 'trades', 'tag-stats', 'tag-suggestions', 'rule-stats', 'category-usage', 'account-usage', 'ibkr', 'goals', 'goal-moves',
-      // the planning views: a transfer ticks payday; a goal bought or dropped moves its decision
-      'runbook', 'decisions', 'next-euro', 'creep', 'prices', 'ownership',
-      'fi-plan', 'milestones', 'fees', 'subscriptions', 'calendar'])
-      qc.invalidateQueries({ queryKey: [k] })
+    void qc.invalidateQueries({ predicate: (q) => !UNMOVED.has(String(q.queryKey[0])) })
   }
 }
 
