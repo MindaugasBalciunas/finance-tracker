@@ -5,21 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ft/internal/cfo"
-	"ft/internal/decisions"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
-	"ft/internal/bank"
-	"ft/internal/goals"
-	"ft/internal/ibkr"
-	"ft/internal/insights"
-	"ft/internal/ledger"
-	"ft/internal/market"
-	"ft/internal/money"
-	"ft/internal/plan"
-	"ft/internal/wealth"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"ft/internal/mcptools"
 )
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -45,10 +38,10 @@ func toolDefs() []tool {
 	return []tool{
 		{Type: webSearchType, Name: "web_search", MaxUses: 5},
 		{Name: "get_overview", Description: "Today's CFO snapshot: net worth and its parts, this month's cash flow vs the trailing average, plan pulse (left to spend — field safe_to_spend, budget lines over limit), emergency-fund months, FI progress, bank inbox size.", InputSchema: obj(map[string]any{})},
-		{Name: "search_transactions", Description: "Find transactions. Returns at most 200 rows plus totals over the whole match. Categories are ids like 'food' or 'food.groceries' (a parent includes children).",
+		{Name: "search_transactions", Description: "Find transactions. Returns up to 100 rows (limit, max 500) plus totals over the whole match. Categories are ids like 'food' or 'food.groceries' (a parent includes children).",
 			InputSchema: obj(map[string]any{"from": str(date), "to": str(date), "kind": str("income | expense | transfer"), "categories": arr("category ids"),
 				"accounts": arr("account ids"), "tags": arr("tags (any match)"), "merchant": str("exact merchant"), "query": str("free text over merchant/note/tags"),
-				"min": num("min amount EUR"), "max": num("max amount EUR"), "sort": str("date | amount"), "limit": num("max rows, default 50")})},
+				"min": num("min amount EUR"), "max": num("max amount EUR"), "sort": str("date | amount"), "limit": num("max rows, default 100, at most 500")})},
 		{Name: "cash_flow", Description: "Income, spending (essential/discretionary), saved, savings rate, invested (incl. mortgage principal) by month or year. Default: last 12 months by month.",
 			InputSchema: obj(map[string]any{"from": str(date), "to": str(date), "granularity": str("month | year")})},
 		{Name: "spending_breakdown", Description: "Spending by category with subcategories, share, monthly average and change vs the previous equal window, plus top merchants.",
@@ -144,6 +137,17 @@ func toolDefs() []tool {
 	}
 }
 
+// ToolNames lists Ask CFO's own tools (not the provider's web search).
+func ToolNames() []string {
+	var out []string
+	for _, d := range toolDefs() {
+		if d.Type == "" {
+			out = append(out, d.Name)
+		}
+	}
+	return out
+}
+
 type toolArgs map[string]any
 
 func (a toolArgs) s(k string) string {
@@ -162,564 +166,223 @@ func (a toolArgs) b(k string) bool {
 	v, _ := a[k].(bool)
 	return v
 }
-func (a toolArgs) list(k string) ([]string, bool) {
-	raw, ok := a[k].([]any)
-	if !ok {
-		return nil, false
-	}
-	var out []string
-	for _, x := range raw {
-		if s, ok := x.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out, true
-}
 
-func jsonOut(v any) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", err
-	}
-	if len(b) > 60000 {
-		return string(b[:60000]) + "… [truncated — narrow the query]", nil
-	}
-	return string(b), nil
-}
+// Ask CFO's older names for the MCP tools it shares.
+var mcpName = map[string]string{"add_rule": "save_rule", "add_recurring": "save_recurring", "get_inbox": "get_bank_inbox"}
 
-func (a *Assistant) runTool(name string, raw json.RawMessage) (string, error) {
-	var args toolArgs
+// RunTool runs one tool the way the chat does. Each tool is the MCP tool of
+// the same name (internal/mcptools) over the app's own routes, so Ask CFO,
+// Claude's connector and the web share one implementation of every figure
+// and rule — Ask CFO used to compute its own, and its cash flow drifted
+// (a salary paid on the 1st–3rd after the window went missing).
+func (a *Assistant) RunTool(ctx context.Context, name string, raw json.RawMessage) (string, error) {
+	args := toolArgs{}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return "", fmt.Errorf("invalid arguments: %w", err)
 		}
 	}
-	now := time.Now()
-	today := now.Format("2006-01-02")
 	switch name {
-	case "get_overview":
-		return jsonOut(a.Overview(now))
-	case "get_portfolio_quality":
-		trades, err := wealth.ListTrades(a.DB)
-		if err != nil {
-			return "", err
-		}
-		p := wealth.BuildPortfolio(trades, true)
-		st := wealth.LoadInvestSettings(a.DB, p)
-		return jsonOut(map[string]any{"quality": wealth.BuildQuality(trades, p, st, func(tk string) ([]market.HistoryPoint, error) { return market.History(tk, "max") }, wealth.LiveEUR(), now), "settings": st})
-	case "get_fun_facts":
-		txs, err := ledger.All(a.DB, ledger.Filter{})
-		if err != nil {
-			return "", err
-		}
-		cats, _ := ledger.CategoryMap(a.DB)
-		return jsonOut(insights.FunFacts(txs, cats, now, args.s("from"), args.s("to")))
-	case "get_fi_plan":
-		return jsonOut2(cfo.BuildFIPlan(a.DB, now))
-	case "get_milestones":
-		return jsonOut2(cfo.Milestones(a.DB, now))
-	case "get_fees":
-		return jsonOut2(cfo.Fees(a.DB, now, true))
-	case "get_subscriptions":
-		return jsonOut2(insights.AuditSubscriptions(a.DB, now))
-	case "get_cash_calendar":
-		return jsonOut2(cfo.CashFlowCalendar(a.DB, now, int(args.f("days"))))
-	case "get_payday_runbook":
-		return jsonOut2(cfo.BuildRunbook(a.DB, now))
-	case "get_next_euro":
-		return jsonOut2(cfo.NextEuroFor(a.DB, money.FromFloat(args.f("amount")), now))
-	case "get_lifestyle_creep":
-		return jsonOut2(insights.LifestyleCreep(a.DB, now, int(args.f("years"))))
-	case "get_price_creep":
-		return jsonOut2(cfo.Prices(a.DB, now))
-	case "get_decisions":
-		all, err := decisions.List(a.DB)
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(map[string]any{"items": all, "record": decisions.Summarise(all)})
-	case "get_decision_impact":
-		return jsonOut2(cfo.DecisionImpact(a.DB, money.FromFloat(args.f("amount")), now))
-	case "log_decision":
-		x := decisions.Decision{Title: args.s("title"), Amount: money.FromFloat(args.f("amount")), Category: args.s("category"), Note: args.s("note")}
-		if err := decisions.Create(a.DB, &x, now); err != nil {
-			return "", err
-		}
-		return jsonOut(x)
-	case "get_ownership_costs":
-		return jsonOut2(cfo.Ownership(a.DB, now))
-	case "get_tax":
-		var in struct {
-			Year int `json:"year"`
-		}
-		json.Unmarshal(raw, &in)
-		if in.Year == 0 {
-			in.Year = now.Year()
-		}
-		return jsonOut2(cfo.Tax(a.DB, in.Year, now))
-	case "get_forecast":
-		var sc cfo.Scenario
-		json.Unmarshal(raw, &sc)
-		if sc.Gross == 0 && sc.Saving == nil && sc.Income == nil && sc.EverydayPct == 0 && len(sc.Purchases) == 0 && len(sc.SkipGoals) == 0 {
-			return jsonOut2(cfo.CompareForecast(a.DB, now, 12, nil))
-		}
-		return jsonOut2(cfo.CompareForecast(a.DB, now, 12, &sc))
-	case "search_transactions":
-		f := ledger.Filter{From: args.s("from"), To: args.s("to"), Kind: args.s("kind"), Merchant: args.s("merchant"), Query: args.s("query"),
-			Min: money.FromFloat(args.f("min")), Max: money.FromFloat(args.f("max")), Sort: args.s("sort"), Limit: int(args.f("limit"))}
-		f.Categories, _ = args.list("categories")
-		f.Accounts, _ = args.list("accounts")
-		f.Tags, _ = args.list("tags")
-		if f.Limit <= 0 {
-			f.Limit = 50
-		}
-		if f.Limit > 200 {
-			f.Limit = 200
-		}
-		return jsonOut2(ledger.List(a.DB, f))
-	case "cash_flow":
-		from, to := args.s("from"), args.s("to")
-		if from == "" {
-			from = now.AddDate(-1, 0, 0).Format("2006-01") + "-01"
-		}
-		if to == "" {
-			to = today
-		}
-		txs, err := ledger.All(a.DB, ledger.Filter{From: from, To: to})
-		if err != nil {
-			return "", err
-		}
-		cats, _ := ledger.CategoryMap(a.DB)
-		g := args.s("granularity")
-		if g != "year" {
-			g = "month"
-		}
-		return jsonOut(insights.CashFlow(txs, cats, g, plan.LoadSettings(a.DB).Salary()))
-	case "spending_breakdown":
-		from, to := args.s("from"), args.s("to")
-		if from == "" || to == "" {
-			from, to = insights.Window("month", now)
-		}
-		txs, err := ledger.All(a.DB, ledger.Filter{})
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(map[string]any{"categories": insights.Breakdown(txs, from, to), "top_merchants": insights.MerchantTotals(txs, from, to, 15)})
-	case "get_net_worth":
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		if hf := args.s("history_from"); hf != "" {
-			return jsonOut(book.History(hf, "", "month"))
-		}
-		d := args.s("date")
-		if d == "" {
-			d = today
-		}
-		return jsonOut(book.SnapshotAt(d, true))
-	case "get_account_history":
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		var pts []wealth.Point
-		for _, p := range book.Series(args.s("account_id")) {
-			if p.Date >= args.s("from") {
-				pts = append(pts, p)
-			}
-		}
-		if len(pts) > 400 {
-			pts = pts[len(pts)-400:]
-		}
-		return jsonOut(pts)
-	case "get_budget_status":
-		m := args.s("month")
-		if m == "" {
-			m = now.Format("2006-01")
-		}
-		r, err := a.BudgetReport(m, now)
-		if err != nil {
-			return "", err
-		}
-		for i := range r.Lines {
-			r.Lines[i].History = nil
-		}
-		for i := range r.Unbudgeted {
-			r.Unbudgeted[i].History = nil
-		}
-		return jsonOut(r)
-	case "get_recurring":
-		txs, err := ledger.All(a.DB, ledger.Filter{From: now.AddDate(-2, 0, 0).Format("2006-01-02")})
-		if err != nil {
-			return "", err
-		}
-		list, _, err := insights.RecurringAll(a.DB, txs, now)
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(list)
-	case "get_fi":
-		txs, err := ledger.All(a.DB, ledger.Filter{From: now.AddDate(-2, 0, 0).Format("2006-01-02")})
-		if err != nil {
-			return "", err
-		}
-		cats, _ := ledger.CategoryMap(a.DB)
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(insights.ComputeFI(txs, cats, book, plan.LoadSettings(a.DB), now))
-	case "get_loans":
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		txs, _ := ledger.All(a.DB, ledger.Filter{From: now.AddDate(-1, 0, 0).Format("2006-01-02")})
-		return jsonOut(wealth.Loans(book, txs, now))
-	case "get_portfolio":
-		trades, err := wealth.ListTrades(a.DB)
-		if err != nil {
-			return "", err
-		}
-		p := wealth.BuildPortfolio(trades, true)
-		if args.b("include_trades") {
-			return jsonOut(map[string]any{"portfolio": p, "trades": trades})
-		}
-		return jsonOut(p)
-	case "get_quote":
-		tk := strings.ToUpper(args.s("ticker"))
-		if !wealth.ValidTicker(tk) {
-			return "", errors.New("invalid ticker")
-		}
-		q, err := market.Fetch(tk)
-		if err != nil {
-			return "", err
-		}
-		an, _ := market.Analyst(tk)
-		return jsonOut(map[string]any{"quote": q, "analyst": an})
-	case "get_market_buzz":
-		tk := strings.ToUpper(args.s("ticker"))
-		if !wealth.ValidTicker(tk) {
-			return "", errors.New("invalid ticker")
-		}
-		return jsonOut(map[string]any{"fear_greed": market.FearGreed(), "headlines": market.Headlines(tk, 8), "social": market.SocialBuzz(tk, 8)})
-	case "get_reconciliation":
-		from := args.s("from")
-		if _, err := time.Parse("2006-01-02", from); err != nil {
-			from = time.Now().AddDate(0, 0, -30).Format("2006-01-02")
-		}
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		txs, err := ledger.All(a.DB, ledger.Filter{From: time.Now().AddDate(-1, 0, 0).Format("2006-01-02")})
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(insights.Reconcile(book, txs, from))
-	case "get_month_review":
-		return jsonOut2(cfo.BuildMonthReview(a.DB, args.s("month"), now))
-	case "get_checks":
-		return jsonOut(cfo.Checks(a.DB, now))
-	case "get_owed":
-		return jsonOut2(ledger.Owed(a.DB))
-	case "get_net_worth_movement":
-		book, err := wealth.LoadBook(a.DB)
-		if err != nil {
-			return "", err
-		}
-		from, to := args.s("from"), args.s("to")
-		if to == "" {
-			to = now.Format("2006-01-02")
-		}
-		if from == "" {
-			from = now.AddDate(-1, 0, 0).Format("2006-01-02")
-		}
-		mv := book.Movement(from, to)
-		if mv == nil {
-			mv = []wealth.Move{}
-		}
-		return jsonOut(mv)
-	case "get_trip_untagged":
-		likely, maybe, book, err := ledger.TripUntagged(a.DB, args.s("tag"))
-		if err != nil {
-			return "", err
-		}
-		return jsonOut(map[string]any{"in_dates": likely, "maybe": maybe, "bookings": book})
-	case "set_trip_dates":
-		if b, _ := args["clear"].(bool); b {
-			if err := ledger.DeleteTripDates(a.DB, args.s("tag")); err != nil {
-				return "", err
-			}
-		} else if err := ledger.SaveTripDates(a.DB, ledger.TripDates{Tag: args.s("tag"), Start: args.s("start"), End: args.s("end")}); err != nil {
-			return "", err
-		}
-		return jsonOut2(ledger.ListTripDates(a.DB))
-	case "get_trips":
-		txs, err := ledger.All(a.DB, ledger.Filter{})
-		if err != nil {
-			return "", err
-		}
-		budgets, _ := plan.List(a.DB, false)
-		trips, sugg := plan.Trips(txs, budgets)
-		var planned []goals.Goal // trips being saved for on the wish list
-		saving := map[string]bool{}
-		if all, err := goals.List(a.DB); err == nil {
-			for _, g := range all {
-				if g.Tag != "" && g.Status == "active" {
-					planned = append(planned, g)
-					saving[g.Tag] = true
-				}
-			}
-		}
-		dates, _ := ledger.ListTripDates(a.DB)
-		states, _ := ledger.TripStates(a.DB)
-		plan.MarkDone(trips, dates, states, saving, time.Now())
-		return jsonOut(map[string]any{"trips": trips, "suggestions": sugg, "planned": planned, "dates": dates})
-	case "get_reference":
-		switch args.s("what") {
-		case "categories":
-			return jsonOut2(ledger.ListCategories(a.DB))
-		case "accounts":
-			return jsonOut2(ledger.ListAccounts(a.DB))
-		case "tags":
-			tags, err := ledger.ListTags(a.DB)
-			sort.Slice(tags, func(i, j int) bool { return tags[i].Count > tags[j].Count })
-			return jsonOut2(tags, err)
-		case "rules":
-			return jsonOut2(ledger.ListRules(a.DB))
-		case "merchants":
-			m, err := ledger.ListMerchants(a.DB, now.AddDate(-2, 0, 0).Format("2006-01-02"), today)
-			if len(m) > 150 {
-				m = m[:150]
-			}
-			return jsonOut2(m, err)
-		}
-		return "", errors.New("what must be categories, accounts, tags, rules or merchants")
-	case "ibkr_live":
-		if a.IBKR == nil {
-			return "", ibkr.ErrNotConnected
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-		out, err := a.IBKR.LiveView(ctx, args.s("what"), args.s("period"))
-		if err != nil {
-			return "", err
-		}
-		return string(out), nil
-	case "get_inbox":
-		if a.Bank == nil {
-			return "[]", nil
-		}
-		return jsonOut2(a.Bank.Inbox("open"))
-	case "create_transaction":
-		t := ledger.Tx{Date: args.s("date"), Amount: money.FromFloat(args.f("amount")), Category: args.s("category"), Merchant: args.s("merchant"),
-			Note: args.s("note"), AccountID: args.s("account_id"), ToAccountID: args.s("to_account_id"), Source: "manual"}
-		t.Tags, _ = args.list("tags")
-		if err := ledger.Validate(a.DB, &t); err != nil {
-			return "", err
-		}
-		if err := ledger.Insert(a.DB, &t); err != nil {
-			return "", err
-		}
-		var moved []string
-		for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
-			if ok, _ := wealth.ApplyDelta(a.DB, acct, t.Date, delta); ok {
-				moved = append(moved, acct)
-			}
-		}
-		return jsonOut(map[string]any{"created": t, "balances_moved": moved})
-	case "update_transaction":
-		t, err := ledger.Get(a.DB, int64(args.f("id")))
-		if err != nil {
-			return "", errors.New("transaction not found")
-		}
-		if v := args.s("category"); v != "" {
-			t.Category = v
-			t.Kind = ""
-		}
-		if _, ok := args["merchant"]; ok {
-			t.Merchant = args.s("merchant")
-		}
-		if _, ok := args["note"]; ok {
-			t.Note = args.s("note")
-		}
-		if tags, ok := args.list("tags"); ok {
-			t.Tags = tags
-		}
-		if err := ledger.Validate(a.DB, &t); err != nil {
-			return "", err
-		}
-		if err := ledger.Update(a.DB, &t); err != nil {
-			return "", err
-		}
-		return jsonOut(map[string]any{"updated": t})
-	case "add_rule":
-		r := ledger.Rule{Pattern: args.s("pattern"), WhenCategory: args.s("when_category"), SetCategory: args.s("set_category"),
-			SetMerchant: args.s("set_merchant"), Enabled: true}
-		r.AddTags, _ = args.list("add_tags")
-		if r.Pattern == "" && r.WhenCategory == "" {
-			return "", errors.New("a rule needs a pattern or a when_category")
-		}
-		if err := ledger.SaveRule(a.DB, &r); err != nil {
-			return "", err
-		}
-		res := map[string]any{"rule": r}
-		if args.b("apply_to_history") {
-			n, err := ledger.ApplyRuleToHistory(a.DB, r)
-			if err != nil {
-				return "", err
-			}
-			res["history_rows_changed"] = n
-		}
-		return jsonOut(res)
-	case "remember":
-		note := args.s("note")
-		if note == "" {
-			return "", errors.New("nothing to remember")
-		}
-		if err := a.Remember(note); err != nil {
-			return "", err
-		}
-		return `{"remembered":true}`, nil
 	case "add_recurring":
-		it := insights.RecurringItem{Merchant: args.s("name"), Kind: args.s("kind"), Amount: money.FromFloat(args.f("amount")), Day: int(args.f("day")),
-			FromAccount: args.s("from_account"), ToAccount: args.s("to_account"), Category: args.s("category"), Cadence: args.s("cadence"), Note: args.s("note")}
-		if it.Amount <= 0 || it.Day < 1 {
+		// The cash plan can only place an item it knows the day and the
+		// accounts of; the web's form asks for these itself.
+		kind := args.s("kind")
+		if args.f("amount") <= 0 || args.f("day") < 1 {
 			return "", errors.New("amount and a day of month (1–31) are required")
 		}
-		if (it.Kind == "transfer" && (it.FromAccount == "" || it.ToAccount == "")) || (it.Kind == "bill" && it.FromAccount == "") || (it.Kind == "income" && it.ToAccount == "") {
+		if (kind == "transfer" && (args.s("from_account") == "" || args.s("to_account") == "")) || (kind == "bill" && args.s("from_account") == "") || (kind == "income" && args.s("to_account") == "") {
 			return "", errors.New("a transfer needs from_account and to_account, a bill from_account, income to_account")
 		}
-		if err := insights.SaveRecurringItem(a.DB, &it); err != nil {
-			return "", err
+	case "get_portfolio":
+		withTrades := args.b("include_trades")
+		delete(args, "include_trades")
+		p, err := a.callTool(ctx, name, args)
+		if err != nil || !withTrades {
+			return trimmed(p, err)
 		}
-		return jsonOut(map[string]any{"saved": it})
-	case "save_budget":
-		var p plan.BudgetPatch
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return "", fmt.Errorf("invalid arguments: %w", err)
-		}
-		b, err := plan.Patch(a.DB, p, now)
-		return jsonOut2(map[string]any{"saved": b}, err)
-	case "delete_budget":
-		if _, err := plan.Get(a.DB, int64(args.f("id"))); err != nil {
-			return "", err
-		}
-		return `{"deleted":true}`, plan.Delete(a.DB, int64(args.f("id")))
-	case "get_plan_settings":
-		st := plan.LoadSettings(a.DB)
-		return jsonOut(map[string]any{"settings": st, "net_from_gross": plan.LTNetSalary(st.GrossFor(time.Now().Format("2006-01")), st.MonthlyDeductions)})
-	case "update_plan_settings":
-		st, err := plan.PatchSettings(a.DB, raw)
-		return jsonOut2(map[string]any{"saved": st}, err)
-	case "tag_trip":
-		var in struct {
-			Name string  `json:"name"`
-			IDs  []int64 `json:"ids"`
-		}
-		if err := json.Unmarshal(raw, &in); err != nil {
-			return "", fmt.Errorf("invalid arguments: %w", err)
-		}
-		tag, n, err := plan.TagTrip(a.DB, in.Name, in.IDs)
-		return jsonOut2(map[string]any{"tag": tag, "transactions_tagged": n}, err)
-	case "get_goals":
-		return jsonOut2(goals.Build(a.DB, args.s("month"), now))
-	case "save_goal":
-		if ids, ok := args["priority_ids"].([]any); ok && len(ids) > 0 {
-			var order []int64
-			for _, x := range ids {
-				if f, ok := x.(float64); ok {
-					order = append(order, int64(f))
-				}
-			}
-			if err := goals.Reorder(a.DB, order); err != nil {
-				return "", err
-			}
-			if args.f("id") == 0 && args.s("name") == "" {
-				return jsonOut2(goals.List(a.DB))
-			}
-		}
-		g := goals.Goal{}
-		if id := int64(args.f("id")); id != 0 {
-			cur, err := goals.Get(a.DB, id)
-			if err != nil {
-				return "", err
-			}
-			g = cur
-		}
-		for k, set := range map[string]*string{"name": &g.Name, "target_date": &g.TargetDate, "note": &g.Note, "url": &g.URL, "status": &g.Status, "tag": &g.Tag} {
-			if _, ok := args[k]; ok {
-				*set = args.s(k)
-			}
-		}
-		if _, ok := args["target"]; ok {
-			g.Target = money.FromFloat(args.f("target"))
-		}
-		if err := goals.Save(a.DB, &g); err != nil {
-			return "", err
-		}
-		return jsonOut2(goals.Get(a.DB, g.ID))
-	case "fund_goals":
-		var in struct {
-			Month       string `json:"month"`
-			Allocations []struct {
-				GoalID int64   `json:"goal_id"`
-				Amount float64 `json:"amount"`
-			} `json:"allocations"`
-		}
-		if err := json.Unmarshal(raw, &in); err != nil {
-			return "", fmt.Errorf("invalid arguments: %w", err)
-		}
-		var allocs []goals.Allocation
-		if len(in.Allocations) == 0 {
-			p, err := goals.Build(a.DB, in.Month, now)
-			if err != nil {
-				return "", err
-			}
-			allocs = p.Proposal
-		}
-		for _, x := range in.Allocations {
-			allocs = append(allocs, goals.Allocation{GoalID: x.GoalID, Amount: money.FromFloat(x.Amount)})
-		}
-		p, err := goals.Fund(a.DB, in.Month, allocs, now)
+		t, err := a.callTool(ctx, "get_trades", toolArgs{})
 		if err != nil {
 			return "", err
 		}
-		return jsonOut(map[string]any{"funded": allocs, "goals": p.Goals, "month": p.Funding})
-	case "delete_rule":
-		return `{"deleted":true}`, ledger.DeleteRule(a.DB, int64(args.f("id")))
-	case "rename_tag":
-		n, err := ledger.RenameTag(a.DB, args.s("from"), strings.ToLower(args.s("to")))
-		return jsonOut2(map[string]int{"transactions_changed": n}, err)
-	case "update_inbox_row":
-		if a.Bank == nil {
-			return "", errors.New("banking unavailable")
-		}
-		e := bank.Edit{}
-		if v := args.s("category"); v != "" {
-			e.Category = &v
-		}
-		if _, ok := args["merchant"]; ok {
-			v := args.s("merchant")
-			e.Merchant = &v
-		}
-		if _, ok := args["note"]; ok {
-			v := args.s("note")
-			e.Note = &v
-		}
-		if tags, ok := args.list("tags"); ok {
-			e.Tags = &tags
-		}
-		return jsonOut2(a.Bank.Update(int64(args.f("id")), e))
+		return trimmed(fmt.Sprintf(`{"portfolio":%s,"trades":%s}`, p, t), nil)
 	}
-	return "", fmt.Errorf("unknown tool %q", name)
-}
-
-func jsonOut2[T any](v T, err error) (string, error) {
+	if n, ok := mcpName[name]; ok {
+		name = n
+	}
+	out, err := a.callTool(ctx, name, args)
 	if err != nil {
 		return "", err
 	}
-	return jsonOut(v)
+	return trimmed(trim(name, args, out), nil)
+}
+
+// callTool runs one MCP tool in process and returns its text.
+func (a *Assistant) callTool(ctx context.Context, name string, args toolArgs) (string, error) {
+	cs, props, err := a.toolSession(ctx)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any(lenient(args, props[name]))})
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, c := range res.Content {
+		if t, ok := c.(*mcp.TextContent); ok {
+			b.WriteString(t.Text)
+		}
+	}
+	if res.IsError {
+		return "", errors.New(b.String())
+	}
+	return b.String(), nil
+}
+
+// lenient fits the model's arguments to the tool's schema, as the old
+// hand-written tools did: the MCP schemas refuse nulls, extra fields and
+// 20.5 where a whole number belongs, and each refusal cost a chat round.
+// props maps a property to its JSON type.
+func lenient(args toolArgs, props map[string]string) toolArgs {
+	out := toolArgs{}
+	for k, v := range args {
+		typ, known := props[k]
+		if v == nil || !known {
+			continue
+		}
+		if f, ok := v.(float64); ok && typ == "integer" {
+			v = math.Round(f)
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// toolSession connects to the MCP tools over a.Call and reads their
+// argument types. A failed connect is tried again on the next call.
+func (a *Assistant) toolSession(ctx context.Context) (*mcp.ClientSession, map[string]map[string]string, error) {
+	a.toolsMu.Lock()
+	defer a.toolsMu.Unlock()
+	if a.tools != nil {
+		return a.tools, a.toolProps, nil
+	}
+	if a.Call == nil {
+		return nil, nil, errors.New("tools are not available")
+	}
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := mcptools.New(a.Call).Connect(context.Background(), st, nil); err != nil {
+		return nil, nil, err
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "ask-cfo"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	list, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		cs.Close()
+		return nil, nil, err
+	}
+	props := map[string]map[string]string{}
+	for _, t := range list.Tools {
+		props[t.Name] = propTypes(t.InputSchema)
+	}
+	a.tools, a.toolProps = cs, props
+	return cs, props, nil
+}
+
+// propTypes reads a tool's input schema into property → JSON type (the
+// non-null one when the schema allows null too).
+func propTypes(schema any) map[string]string {
+	out := map[string]string{}
+	s, _ := schema.(map[string]any)
+	ps, _ := s["properties"].(map[string]any)
+	for k, p := range ps {
+		m, _ := p.(map[string]any)
+		switch t := m["type"].(type) {
+		case string:
+			out[k] = t
+		case []any:
+			for _, x := range t {
+				if x != "null" {
+					out[k], _ = x.(string)
+				}
+			}
+		default:
+			out[k] = ""
+		}
+	}
+	return out
+}
+
+// trim drops what Ask CFO doesn't need from a result, to keep each chat
+// round small: the Home sparkline and recent rows, budget lines' history,
+// all but the 150 most used merchants. Tags come most used first.
+func trim(name string, args toolArgs, out string) string {
+	var drop func(v any) any
+	switch {
+	case name == "get_overview":
+		drop = func(v any) any {
+			if m, ok := v.(map[string]any); ok {
+				delete(m, "spark")
+				delete(m, "recent")
+			}
+			return v
+		}
+	case name == "get_budget_status":
+		drop = func(v any) any {
+			if m, ok := v.(map[string]any); ok {
+				for _, k := range []string{"lines", "unbudgeted"} {
+					rows, _ := m[k].([]any)
+					for _, r := range rows {
+						if row, ok := r.(map[string]any); ok {
+							delete(row, "history")
+						}
+					}
+				}
+			}
+			return v
+		}
+	case name == "get_reference" && args.s("what") == "merchants":
+		drop = func(v any) any {
+			if rows, ok := v.([]any); ok && len(rows) > 150 {
+				return rows[:150]
+			}
+			return v
+		}
+	case name == "get_reference" && args.s("what") == "tags":
+		drop = func(v any) any {
+			if rows, ok := v.([]any); ok {
+				count := func(i int) float64 {
+					m, _ := rows[i].(map[string]any)
+					c, _ := m["count"].(float64)
+					return c
+				}
+				sort.SliceStable(rows, func(i, j int) bool { return count(i) > count(j) })
+			}
+			return v
+		}
+	default:
+		return out
+	}
+	var v any
+	if json.Unmarshal([]byte(out), &v) != nil {
+		return out
+	}
+	b, err := json.Marshal(drop(v))
+	if err != nil {
+		return out
+	}
+	return string(b)
+}
+
+// trimmed caps a result so one tool can't fill the model's context.
+func trimmed(out string, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	if len(out) > 60000 {
+		return out[:60000] + "… [truncated — narrow the query]", nil
+	}
+	return out, nil
 }

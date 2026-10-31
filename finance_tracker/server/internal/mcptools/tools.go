@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -93,8 +94,8 @@ type txArgs struct {
 	Date        string   `json:"date,omitempty" jsonschema:"YYYY-MM-DD"`
 	Amount      float64  `json:"amount,omitempty" jsonschema:"EUR, positive"`
 	Category    string   `json:"category,omitempty" jsonschema:"category id"`
-	Merchant    string   `json:"merchant,omitempty"`
-	Note        string   `json:"note,omitempty"`
+	Merchant    *string  `json:"merchant,omitempty" jsonschema:"on update an empty string clears it"`
+	Note        *string  `json:"note,omitempty" jsonschema:"on update an empty string clears it"`
 	AccountID   string   `json:"account_id,omitempty" jsonschema:"bank/cash account paid from or into"`
 	ToAccountID string   `json:"to_account_id,omitempty" jsonschema:"transfers only"`
 	Tags        []string `json:"tags,omitempty"`
@@ -108,6 +109,8 @@ type ruleArgs struct {
 	SetMerchant  string   `json:"set_merchant,omitempty"`
 	AddTags      []string `json:"add_tags,omitempty"`
 	Disabled     bool     `json:"disabled,omitempty"`
+	// Also fix the transactions already in the ledger.
+	ApplyToHistory bool `json:"apply_to_history,omitempty" jsonschema:"also re-file existing transactions the rule matches"`
 }
 
 type renameArgs struct {
@@ -146,7 +149,7 @@ type planSettingsArgs struct {
 	GrossSalary       *float64           `json:"gross_salary,omitempty" jsonschema:"EUR gross per month — the salary before any gross_changes"`
 	GrossChanges      *[]grossChange     `json:"gross_changes,omitempty" jsonschema:"a raise or new salary from a later month (the months before keep the old one); replaces the list — send every change, [] clears it"`
 	MonthlyDeductions *float64           `json:"monthly_deductions,omitempty"`
-	SalaryRules       []salaryRule       `json:"salary_rules,omitempty" jsonschema:"replaces the whole list — send every rule"`
+	SalaryRules       *[]salaryRule      `json:"salary_rules,omitempty" jsonschema:"replaces the whole list — send every rule, [] clears it"`
 	SalaryAccount     *string            `json:"salary_account,omitempty" jsonschema:"account id salary is paid into"`
 	Buffers           map[string]float64 `json:"buffers,omitempty" jsonschema:"account id → EUR floor; merges per account, 0 removes one"`
 	EmergencyMonths   *float64           `json:"emergency_months,omitempty"`
@@ -176,16 +179,18 @@ type recurringArgs struct {
 	Hidden      bool    `json:"hidden,omitempty" jsonschema:"true = not really recurring, stop counting it"`
 }
 
+// goalArgs: on a change only the fields given are written; an empty string
+// clears one.
 type goalArgs struct {
-	ID          int64   `json:"id,omitempty" jsonschema:"goal id; omit to add"`
-	Name        string  `json:"name,omitempty"`
-	Target      float64 `json:"target,omitempty" jsonschema:"price in EUR"`
-	TargetDate  string  `json:"target_date,omitempty" jsonschema:"YYYY-MM-DD, optional"`
-	Note        string  `json:"note,omitempty"`
-	URL         string  `json:"url,omitempty"`
-	Status      string  `json:"status,omitempty" jsonschema:"active | bought | dropped"`
-	Tag         string  `json:"tag,omitempty" jsonschema:"trip:<name> makes it a planned trip"`
-	PriorityIDs []int64 `json:"priority_ids,omitempty" jsonschema:"goal ids first to last, to reorder"`
+	ID          int64    `json:"id,omitempty" jsonschema:"goal id; omit to add"`
+	Name        *string  `json:"name,omitempty"`
+	Target      *float64 `json:"target,omitempty" jsonschema:"price in EUR"`
+	TargetDate  *string  `json:"target_date,omitempty" jsonschema:"YYYY-MM-DD, optional"`
+	Note        *string  `json:"note,omitempty"`
+	URL         *string  `json:"url,omitempty"`
+	Status      *string  `json:"status,omitempty" jsonschema:"active | bought | dropped"`
+	Tag         *string  `json:"tag,omitempty" jsonschema:"trip:<name> makes it a planned trip"`
+	PriorityIDs []int64  `json:"priority_ids,omitempty" jsonschema:"goal ids first to last, to reorder"`
 }
 
 type fundArgs struct {
@@ -266,8 +271,8 @@ type noteArgs struct {
 type inboxArgs struct {
 	ID       int64    `json:"id" jsonschema:"inbox row id"`
 	Category string   `json:"category,omitempty"`
-	Merchant string   `json:"merchant,omitempty"`
-	Note     string   `json:"note,omitempty"`
+	Merchant *string  `json:"merchant,omitempty" jsonschema:"an empty string clears it"`
+	Note     *string  `json:"note,omitempty" jsonschema:"an empty string clears it"`
 	Tags     []string `json:"tags,omitempty"`
 }
 
@@ -280,6 +285,26 @@ func getTx(call Caller, id int64) (map[string]any, error) {
 		Transaction map[string]any `json:"transaction"`
 	}
 	return out.Transaction, json.Unmarshal(b, &out)
+}
+
+// getGoal is one goal as the wish list shows it (there is no single-goal route).
+func getGoal(call Caller, id int64) (map[string]any, error) {
+	b, err := call("GET", "/goals", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		Goals []map[string]any `json:"goals"`
+	}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, err
+	}
+	for _, g := range p.Goals {
+		if v, _ := g["id"].(float64); int64(v) == id {
+			return g, nil
+		}
+	}
+	return nil, fmt.Errorf("goal %d not found", id)
 }
 
 // WriteTools change data (their descriptions start with WRITES). A
@@ -382,11 +407,13 @@ func New(call Caller) *mcp.Server {
 			an, _ := call("GET", "/market/analyst/"+url.PathEscape(strings.ToUpper(a.Ticker)), nil, nil)
 			return text([]byte(fmt.Sprintf(`{"quote":%s,"analyst":%s}`, q, orNull(an))), nil)
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_reference", Description: "Reference data: categories, accounts (with balances), tags, rules or merchants."},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_reference", Description: "Reference data: categories, accounts (with balances), tags, rules or merchants (used in the last two years)."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a refArgs) (*mcp.CallToolResult, any, error) {
 			switch a.What {
-			case "categories", "accounts", "tags", "rules", "merchants":
+			case "categories", "accounts", "tags", "rules":
 				return text(call("GET", "/"+a.What, nil, nil))
+			case "merchants": // the ones still in use, not every name since the first import
+				return text(call("GET", "/merchants", vals("from", time.Now().AddDate(-2, 0, 0).Format("2006-01-02")), nil))
 			}
 			return nil, nil, fmt.Errorf("what must be categories, accounts, tags, rules or merchants")
 		})
@@ -404,12 +431,17 @@ func New(call Caller) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
-			for k, v := range map[string]any{"date": a.Date, "category": a.Category, "merchant": a.Merchant, "note": a.Note, "account_id": a.AccountID, "to_account_id": a.ToAccountID} {
-				if s, _ := v.(string); s != "" {
-					cur[k] = s
+			for k, v := range map[string]string{"date": a.Date, "category": a.Category, "account_id": a.AccountID, "to_account_id": a.ToAccountID} {
+				if v != "" {
+					cur[k] = v
 					if k == "category" {
 						delete(cur, "kind")
 					}
+				}
+			}
+			for k, v := range map[string]*string{"merchant": a.Merchant, "note": a.Note} {
+				if v != nil {
+					cur[k] = *v
 				}
 			}
 			if a.Amount > 0 {
@@ -420,14 +452,31 @@ func New(call Caller) *mcp.Server {
 			}
 			return text(call("PUT", fmt.Sprintf("/transactions/%d", a.ID), nil, cur))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "save_rule", Description: "WRITES — read-write token. Creates (no id) or replaces (id) a categorisation rule. Confirm first."},
+	mcp.AddTool(s, &mcp.Tool{Name: "save_rule", Description: "WRITES — read-write token. Creates (no id) or replaces (id) a categorisation rule; it applies to future rows, apply_to_history also re-files existing ones. Confirm first."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a ruleArgs) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"pattern": a.Pattern, "when_category": a.WhenCategory, "set_category": a.SetCategory, "set_merchant": a.SetMerchant,
 				"add_tags": a.AddTags, "enabled": !a.Disabled}
+			var saved []byte
+			var err error
 			if a.ID > 0 {
-				return text(call("PUT", fmt.Sprintf("/rules/%d", a.ID), nil, body))
+				saved, err = call("PUT", fmt.Sprintf("/rules/%d", a.ID), nil, body)
+			} else {
+				saved, err = call("POST", "/rules", nil, body)
 			}
-			return text(call("POST", "/rules", nil, body))
+			if err != nil || !a.ApplyToHistory {
+				return text(saved, err)
+			}
+			var rule struct {
+				ID int64 `json:"id"`
+			}
+			if err := json.Unmarshal(saved, &rule); err != nil {
+				return nil, nil, err
+			}
+			applied, err := call("POST", fmt.Sprintf("/rules/%d/apply", rule.ID), nil, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			return text([]byte(fmt.Sprintf(`{"rule":%s,"history":%s}`, saved, applied)), nil)
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_rule", Description: "WRITES — read-write token. Deletes a rule by id. Confirm first."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a ruleArgs) (*mcp.CallToolResult, any, error) {
@@ -443,11 +492,11 @@ func New(call Caller) *mcp.Server {
 			if a.Category != "" {
 				body["category"] = a.Category
 			}
-			if a.Merchant != "" {
-				body["merchant"] = a.Merchant
+			if a.Merchant != nil {
+				body["merchant"] = *a.Merchant
 			}
-			if a.Note != "" {
-				body["note"] = a.Note
+			if a.Note != nil {
+				body["note"] = *a.Note
 			}
 			if a.Tags != nil {
 				body["tags"] = a.Tags
@@ -493,17 +542,32 @@ func New(call Caller) *mcp.Server {
 		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/goals", vals("month", a.Month), nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "save_goal", Description: "WRITES — read-write token. Adds a wish-list goal (no id) or changes one (send all its fields); priority_ids reorders the list. Confirm first."},
+	mcp.AddTool(s, &mcp.Tool{Name: "save_goal", Description: "WRITES — read-write token. Adds a wish-list goal (no id) or changes one (only the fields given change); priority_ids reorders the list. Confirm first."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a goalArgs) (*mcp.CallToolResult, any, error) {
 			if len(a.PriorityIDs) > 0 {
 				if _, err := call("POST", "/goals/order", nil, map[string]any{"ids": a.PriorityIDs}); err != nil {
 					return nil, nil, err
 				}
-				if a.ID == 0 && a.Name == "" {
+				if a.ID == 0 && a.Name == nil {
 					return text(call("GET", "/goals", nil, nil))
 				}
 			}
-			body := map[string]any{"name": a.Name, "target": a.Target, "target_date": a.TargetDate, "note": a.Note, "url": a.URL, "status": a.Status, "tag": a.Tag}
+			body := map[string]any{}
+			if a.ID > 0 {
+				cur, err := getGoal(call, a.ID)
+				if err != nil {
+					return nil, nil, err
+				}
+				body = cur
+			}
+			for k, v := range map[string]*string{"name": a.Name, "target_date": a.TargetDate, "note": a.Note, "url": a.URL, "status": a.Status, "tag": a.Tag} {
+				if v != nil {
+					body[k] = *v
+				}
+			}
+			if a.Target != nil {
+				body["target"] = *a.Target
+			}
 			if a.ID > 0 {
 				return text(call("PUT", fmt.Sprintf("/goals/%d", a.ID), nil, body))
 			}

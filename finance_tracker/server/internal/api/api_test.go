@@ -351,6 +351,52 @@ func TestDeletingABankRowReturnsItToTheInbox(t *testing.T) {
 	}
 }
 
+// Bulk edits move balances and the inbox exactly as one-by-one edits do:
+// bulk-deleting cash expenses used to leave the cash balance short.
+func TestBulkEditsMoveBalancesAndInbox(t *testing.T) {
+	s, c := newServer(t)
+	Bal(t, s.DB, "cash", "2026-09-01", 100)
+	var created struct {
+		Transaction ledger.Tx `json:"transaction"`
+	}
+	ids := []int64{}
+	for _, amt := range []float64{10, 15} {
+		c.ok("POST", "/transactions", map[string]any{"date": "2026-09-05", "amount": amt, "category": "food.groceries", "account_id": "cash"}, &created)
+		ids = append(ids, created.Transaction.ID)
+	}
+	cash := func() float64 {
+		var accts []struct {
+			ID      string  `json:"id"`
+			Balance float64 `json:"balance"`
+		}
+		c.ok("GET", "/accounts", nil, &accts)
+		for _, a := range accts {
+			if a.ID == "cash" {
+				return a.Balance
+			}
+		}
+		return -1
+	}
+	if got := cash(); got != 75 {
+		t.Fatalf("after two expenses: %v", got)
+	}
+	c.ok("POST", "/transactions/bulk", map[string]any{"ids": ids[:1], "set_category": "side_income"}, nil)
+	if got := cash(); got != 95 {
+		t.Fatalf("expense re-filed as income: %v", got)
+	}
+	bank := Tx(t, s.DB, ledger.Tx{Date: "2026-09-01", Amount: E(9), Category: "food", AccountID: "swed", ExternalID: "eb:1:y", Source: "bank"})
+	s.DB.Exec(`INSERT INTO bank_inbox(external_id,date,kind,amount,state,imported_tx_id,first_seen_at,last_seen_at) VALUES('eb:1:y','2026-09-01','expense',900,'imported',?,'x','x')`, bank.ID)
+	c.ok("POST", "/transactions/bulk", map[string]any{"ids": append(ids, bank.ID), "delete": true}, nil)
+	if got := cash(); got != 100 {
+		t.Fatalf("after bulk delete: %v", got)
+	}
+	var rows []map[string]any
+	c.ok("GET", "/bank/inbox", nil, &rows)
+	if len(rows) != 1 {
+		t.Fatal("bulk-deleted bank row should be back for review", rows)
+	}
+}
+
 func TestBulkSplitOwed(t *testing.T) {
 	s, c := newServer(t)
 	a := Tx(t, s.DB, ledger.Tx{Date: "2026-09-01", Amount: E(100), Category: "food.groceries", AccountID: "swed", Tags: []string{"old"}})

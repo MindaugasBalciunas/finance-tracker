@@ -58,7 +58,10 @@ func newServer(d *sql.DB, dbPath, version string, isDemo bool) *Server {
 	s.IBKR = ibkr.New(d)
 	s.OAuth = &oauth.Server{DB: d}
 	s.PublicURL = PublicURLFromEnv()
-	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Bank: s.Bank, IBKR: s.IBKR}
+	// Ask CFO's tools are the MCP tools over these same routes, held to what
+	// a read-write connection may reach: it can't accept bank rows, change
+	// settings or delete in bulk any more than Claude's connector can.
+	s.AI = &ai.Assistant{DB: d, Client: &ai.Client{DB: d}, Call: s.localCaller(oauth.ReadWrite)}
 	s.routes()
 	if !isDemo {
 		s.demoRoutes()

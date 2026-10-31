@@ -2,15 +2,12 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"ft/internal/mcptools"
-	. "ft/internal/testutil"
 )
 
 // Ask CFO and the MCP tools (stdio server and Claude's connector) offer the
@@ -83,37 +80,43 @@ func TestToolParityWithMCP(t *testing.T) {
 	}
 }
 
-// The views added for parity answer in Ask CFO too, and a trip's dates are
-// found however the assistant spells its tag.
-func TestParityToolsInAskCFO(t *testing.T) {
-	a := &Assistant{DB: DB(t)}
-	run := func(name, args string) string {
-		t.Helper()
-		out, err := a.runTool(name, json.RawMessage(args))
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+// Ask CFO runs the MCP tools, so every argument its definitions offer must
+// exist on the MCP tool — or the model's input would be silently dropped.
+func TestToolArgumentsReachMCP(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := mcptools.New(nil).Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := map[string]map[string]any{}
+	for _, x := range res.Tools {
+		s, _ := x.InputSchema.(map[string]any)
+		p, _ := s["properties"].(map[string]any)
+		props[x.Name] = p
+	}
+	handled := map[string]bool{"get_portfolio.include_trades": true} // RunTool adds the trades itself
+	for _, d := range toolDefs() {
+		if d.Type != "" {
+			continue // server-side tools (web search)
 		}
-		return out
-	}
-	if out := run("set_trip_dates", `{"tag":"trip:Rome","start":"2026-06-23","end":"2026-06-27"}`); !strings.Contains(out, `"trip:rome"`) {
-		t.Errorf("set: %s", out)
-	}
-	if out := run("get_trip_untagged", `{"tag":"trip:Rome"}`); !strings.Contains(out, `"in_dates"`) {
-		t.Errorf("untagged: %s", out)
-	}
-	if out := run("get_trips", `{}`); !strings.Contains(out, `"dates":[{"tag":"trip:rome"`) {
-		t.Errorf("trips lack the dates: %.300s", out)
-	}
-	run("set_trip_dates", `{"tag":"Trip:Rome ","clear":true}`)
-	if out := run("get_trips", `{}`); strings.Contains(out, "trip:rome") {
-		t.Errorf("dates not cleared: %.300s", out)
-	}
-	for _, c := range [][2]string{{"get_month_review", `{"month":"2026-09"}`}, {"get_checks", `{}`}, {"get_owed", `{}`}, {"get_net_worth_movement", `{}`}} {
-		if out := run(c[0], c[1]); out == "" || out == "null" {
-			t.Errorf("%s: %q", c[0], out)
+		n := d.Name
+		if a, ok := mcpName[n]; ok {
+			n = a
 		}
-	}
-	if out := run("get_forecast", `{"skip_goals":[1]}`); !strings.Contains(out, `"scenario"`) {
-		t.Errorf("skip_goals alone is a what-if: %.200s", out)
+		want, _ := d.InputSchema["properties"].(map[string]any)
+		for k := range want {
+			if _, ok := props[n][k]; !ok && !handled[d.Name+"."+k] {
+				t.Errorf("Ask CFO's %s takes %q, the MCP tool %s doesn't", d.Name, k, n)
+			}
+		}
 	}
 }

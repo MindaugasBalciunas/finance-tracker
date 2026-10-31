@@ -1092,12 +1092,8 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 		// sync (a savings account entered by hand) moves that account's
 		// balance, so it doesn't keep showing money already moved out.
 		// Synced accounts are skipped: their bank states the truth.
-		if t.Kind == "transfer" && !t.Pending {
-			for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
-				if _, err := wealth.ApplyDelta(tx, acct, t.Date, delta); err != nil {
-					return nil, err
-				}
-			}
+		if _, err := wealth.MoveForTx(tx, t, 1); err != nil {
+			return nil, err
 		}
 		r.State, r.ImportedTxID = "imported", t.ID
 		if err := saveInbox(tx, &r); err != nil {
@@ -1172,9 +1168,7 @@ func (s *Service) addReservations() int {
 // ReturnToInbox handles a bank-sourced transaction the owner deleted. A booked
 // row goes back to the inbox for review; a reservation is dismissed instead —
 // otherwise the next sync would add it straight back.
-func (s *Service) ReturnToInbox(e interface {
-	Exec(string, ...any) (sql.Result, error)
-}, txID int64) error {
+func ReturnToInbox(e execer, txID int64) error {
 	if _, err := e.Exec(`UPDATE bank_inbox SET state='dismissed', imported_tx_id=NULL, matched_tx_id=NULL,
 		verdict_note='removed from the ledger while reserved', last_seen_at=? WHERE imported_tx_id=? AND pending=1`, db.Now(), txID); err != nil {
 		return err

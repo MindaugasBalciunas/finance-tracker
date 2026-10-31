@@ -2,16 +2,20 @@ package ai_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"ft/internal/ai"
+	"ft/internal/api"
 	"ft/internal/ledger"
 	"ft/internal/market"
 	. "ft/internal/testutil"
@@ -55,7 +59,12 @@ func setup(t *testing.T, provider string, replies ...string) (*ai.Assistant, *fa
 		key = "nexos-key"
 	}
 	ai.SaveSettings(d, ai.Settings{GatewayURL: srv.URL, APIKey: key, Model: "claude-opus-5-5", Provider: provider, Enabled: true})
-	return &ai.Assistant{DB: d, Client: &ai.Client{DB: d}}, f
+	return askCFO(t, d), f
+}
+
+// askCFO is the app's own assistant: its tools reach the real routes.
+func askCFO(t *testing.T, d *sql.DB) *ai.Assistant {
+	return api.New(d, filepath.Join(t.TempDir(), "finance-v2.db"), "test").AI
 }
 
 const textReply = `{"content":[{"type":"text","text":"You spent **€23** on groceries."}],"stop_reason":"end_turn","usage":{"input_tokens":1000,"output_tokens":50}}`
@@ -308,7 +317,7 @@ func TestAddRecurringTool(t *testing.T) {
 	if err != nil || !res.Changed {
 		t.Fatalf("%v %+v", err, res)
 	}
-	for i, want := range []string{`"saved"`, `"IBKR top-up"`} {
+	for i, want := range []string{`"merchant":"IBKR top-up"`, `"IBKR top-up"`} {
 		msgs := f.reqs[i+1]["messages"].([]any)
 		out := msgs[len(msgs)-1].(map[string]any)["content"].([]any)[0].(map[string]any)
 		if out["is_error"] == true || !strings.Contains(out["content"].(string), want) {
@@ -328,8 +337,9 @@ func TestBudgetTools(t *testing.T) {
 		t.Fatalf("%v %+v", err, res)
 	}
 	msgs := f.reqs[1]["messages"].([]any)
-	for _, b := range msgs[len(msgs)-1].(map[string]any)["content"].([]any) {
-		if r := b.(map[string]any); r["is_error"] == true || !strings.Contains(r["content"].(string), "saved") {
+	for i, b := range msgs[len(msgs)-1].(map[string]any)["content"].([]any) {
+		want := []string{`"name":"Food"`, `"gross_salary":10000`}[i]
+		if r := b.(map[string]any); r["is_error"] == true || !strings.Contains(r["content"].(string), want) {
 			t.Fatalf("tool result: %v", r)
 		}
 	}
@@ -380,5 +390,145 @@ func TestPlanningTools(t *testing.T) {
 	a.DB.QueryRow(`SELECT COUNT(*) FROM decisions WHERE title='Standing desk' AND amount=45000 AND status='thinking'`).Scan(&n)
 	if n != 1 {
 		t.Errorf("decision rows %d", n)
+	}
+}
+
+// The views added for parity answer in Ask CFO too, and a trip's dates are
+// found however the assistant spells its tag.
+func TestParityToolsInAskCFO(t *testing.T) {
+	a := askCFO(t, DB(t))
+	run := func(name, args string) string {
+		t.Helper()
+		out, err := a.RunTool(context.Background(), name, json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return out
+	}
+	if out := run("set_trip_dates", `{"tag":"trip:Rome","start":"2026-06-23","end":"2026-06-27"}`); !strings.Contains(out, `"trip:rome"`) {
+		t.Errorf("set: %s", out)
+	}
+	if out := run("get_trip_untagged", `{"tag":"trip:Rome"}`); !strings.Contains(out, `"in_dates"`) {
+		t.Errorf("untagged: %s", out)
+	}
+	if out := run("get_trips", `{}`); !strings.Contains(out, `"dates":[{"tag":"trip:rome"`) {
+		t.Errorf("trips lack the dates: %.300s", out)
+	}
+	run("set_trip_dates", `{"tag":"Trip:Rome ","clear":true}`)
+	if out := run("get_trips", `{}`); strings.Contains(out, "trip:rome") {
+		t.Errorf("dates not cleared: %.300s", out)
+	}
+	for _, c := range [][2]string{{"get_month_review", `{"month":"2026-09"}`}, {"get_checks", `{}`}, {"get_owed", `{}`}, {"get_net_worth_movement", `{}`}} {
+		if out := run(c[0], c[1]); out == "" || out == "null" {
+			t.Errorf("%s: %q", c[0], out)
+		}
+	}
+	if out := run("get_forecast", `{"skip_goals":[1]}`); !strings.Contains(out, `"scenario"`) {
+		t.Errorf("skip_goals alone is a what-if: %.200s", out)
+	}
+}
+
+// Without an IBKR connection the tool says so plainly instead of guessing.
+func TestIBKRLiveToolNotConnected(t *testing.T) {
+	a := askCFO(t, DB(t))
+	if _, err := a.RunTool(context.Background(), "ibkr_live", json.RawMessage(`{"what":"positions"}`)); err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("not connected: %v", err)
+	}
+}
+
+// Ask CFO's figures are the app's: a salary paid on the 2nd counts for the
+// month before even when it falls after the window asked about.
+func TestCashFlowCountsLateSalary(t *testing.T) {
+	d := DB(t)
+	Tx(t, d, ledger.Tx{Date: "2026-10-02", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	out, err := askCFO(t, d).RunTool(context.Background(), "cash_flow", json.RawMessage(`{"from":"2026-09-01","to":"2026-09-30"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flows []struct {
+		Period string  `json:"period"`
+		Income float64 `json:"income"`
+	}
+	if err := json.Unmarshal([]byte(out), &flows); err != nil {
+		t.Fatal(err, out)
+	}
+	if len(flows) != 1 || flows[0].Period != "2026-09" || flows[0].Income != 3000 {
+		t.Fatalf("September should hold the salary paid on 2 October: %s", out)
+	}
+}
+
+// Changing one field of a goal or a transaction leaves the others alone, and
+// an empty string clears a field.
+func TestEditsChangeOnlyTheFieldsGiven(t *testing.T) {
+	d := DB(t)
+	a := askCFO(t, d)
+	run := func(name, args string) string {
+		t.Helper()
+		out, err := a.RunTool(context.Background(), name, json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return out
+	}
+	run("save_goal", `{"name":"Bike","target":900,"note":"gravel"}`)
+	if out := run("save_goal", `{"id":1,"status":"bought"}`); !strings.Contains(out, `"name":"Bike"`) || !strings.Contains(out, `"target":900`) || !strings.Contains(out, `"note":"gravel"`) || !strings.Contains(out, `"status":"bought"`) {
+		t.Fatalf("goal lost fields: %s", out)
+	}
+	tx := Tx(t, d, ledger.Tx{Date: "2026-09-01", Amount: E(12), Category: "food", Merchant: "Lidl", Note: "milk", AccountID: "swed"})
+	run("update_transaction", fmt.Sprintf(`{"id":%d,"merchant":""}`, tx.ID))
+	if got, _ := ledger.Get(d, tx.ID); got.Merchant != "" || got.Note != "milk" || got.Category != "food" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// Models send nulls, extra fields and 20.5 where a whole number belongs; the
+// tools take what fits instead of refusing the call.
+func TestToolsTolerateLooseArguments(t *testing.T) {
+	d := DB(t)
+	a := askCFO(t, d)
+	for _, c := range [][2]string{
+		{"get_overview", `{"month":"2026-09"}`},
+		{"get_reference", `{"what":"categories","limit":10}`},
+		{"search_transactions", `{"to":null,"limit":20.5}`},
+		{"create_transaction", `{"date":"2026-09-01","amount":4.5,"category":"food.coffee","account_id":"swed","to_account_id":null}`},
+	} {
+		if _, err := a.RunTool(context.Background(), c[0], json.RawMessage(c[1])); err != nil {
+			t.Errorf("%s %s: %v", c[0], c[1], err)
+		}
+	}
+}
+
+// Every Ask CFO tool reaches its route: none falls outside the read-write
+// scope it is held to.
+func TestEveryToolIsInScope(t *testing.T) {
+	d := DB(t)
+	a := askCFO(t, d)
+	for _, td := range ai.ToolNames() {
+		_, err := a.RunTool(context.Background(), td, json.RawMessage(`{}`))
+		if err != nil && (strings.Contains(err.Error(), "scope") || strings.Contains(err.Error(), "read-only")) {
+			t.Errorf("%s: %v", td, err)
+		}
+	}
+}
+
+// An empty salary_rules list clears the rules (back to the default).
+func TestPlanSettingsClearSalaryRules(t *testing.T) {
+	d := DB(t)
+	a := askCFO(t, d)
+	run := func(name, args string) string {
+		t.Helper()
+		out, err := a.RunTool(context.Background(), name, json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return out
+	}
+	run("update_plan_settings", `{"salary_rules":[{"from":"","paid_by_day":10}]}`)
+	if out := run("get_plan_settings", `{}`); !strings.Contains(out, `"paid_by_day":10`) {
+		t.Fatalf("rule not saved: %.300s", out)
+	}
+	run("update_plan_settings", `{"salary_rules":[]}`)
+	if out := run("get_plan_settings", `{}`); strings.Contains(out, `"paid_by_day":10`) {
+		t.Fatalf("rules not cleared: %.300s", out)
 	}
 }

@@ -11,16 +11,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"ft/internal/advice"
-	"ft/internal/bank"
-	"ft/internal/cfo"
 	"ft/internal/db"
-	"ft/internal/ibkr"
 	"ft/internal/ledger"
+	"ft/internal/mcptools"
 	"ft/internal/money"
-	"ft/internal/plan"
 )
 
 const (
@@ -34,25 +34,12 @@ const (
 type Assistant struct {
 	DB     *sql.DB
 	Client *Client
-	Bank   *bank.Service
-	IBKR   *ibkr.Service // read-only Interactive Brokers, when connected
-}
+	// Call reaches the app's API in process; every tool runs over it.
+	Call mcptools.Caller
 
-func (a *Assistant) Overview(now time.Time) *cfo.Overview {
-	n := 0
-	if a.Bank != nil {
-		n = a.Bank.OpenCount()
-	}
-	o, _ := cfo.BuildOverview(a.DB, now, n)
-	if o != nil {
-		o.Spark = nil
-		o.Recent = nil
-	}
-	return o
-}
-
-func (a *Assistant) BudgetReport(month string, now time.Time) (*plan.Report, error) {
-	return cfo.BudgetReport(a.DB, month, now)
+	toolsMu   sync.Mutex
+	tools     *mcp.ClientSession
+	toolProps map[string]map[string]string // tool → argument → JSON type
 }
 
 // Context is the owner's standing brief for the assistant (who they are,
@@ -310,7 +297,7 @@ func (a *Assistant) answer(ctx context.Context, s Settings, now time.Time, msgs 
 			if writeTools[tc.Name] {
 				res.Changed = true
 			}
-			out, terr := a.runTool(tc.Name, tc.Input)
+			out, terr := a.RunTool(ctx, tc.Name, tc.Input)
 			seen = append(seen, out)
 			b := block{Type: "tool_result", ToolUseID: tc.ID, Content: out}
 			if terr != nil {

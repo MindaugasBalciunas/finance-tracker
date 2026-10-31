@@ -1,10 +1,13 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"ft/internal/entry"
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
@@ -75,8 +78,10 @@ func (s *Server) ledgerRoutes() {
 			return nil, err
 		}
 		t := in.Tx
-		t.ID, t.ExternalID, t.SplitOf = 0, "", 0
-		if t.Source == "" {
+		t.ID, t.ExternalID, t.SplitOf, t.Pending = 0, "", 0, false
+		// Bank and import rows only come from sync and conversion; a client
+		// claiming either would skip the balance move a hand entry makes.
+		if t.Source == "" || t.Source == "bank" || t.Source == "import" {
 			t.Source = "manual"
 		}
 		if in.AutoFill || t.Category == "" {
@@ -93,13 +98,14 @@ func (s *Server) ledgerRoutes() {
 				}
 			}
 		}
-		if err := ledger.Validate(s.DB, &t); err != nil {
+		var moved []string
+		err := entry.Do(s.DB, func(tx *sql.Tx) (err error) {
+			moved, err = entry.Create(tx, &t)
+			return err
+		})
+		if err != nil {
 			return nil, err
 		}
-		if err := ledger.Insert(s.DB, &t); err != nil {
-			return nil, err
-		}
-		moved := s.moveBalances(t, 1)
 		return map[string]any{"transaction": t, "balances_moved": moved}, nil
 	})
 	s.handle("PUT /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -107,24 +113,21 @@ func (s *Server) ledgerRoutes() {
 		if err != nil {
 			return nil, err
 		}
-		cur, err := ledger.Get(s.DB, id)
-		if err != nil {
-			return nil, notFound("transaction not found")
-		}
 		var in ledger.Tx
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		in.ID, in.ExternalID, in.SplitOf, in.Source = id, cur.ExternalID, cur.SplitOf, cur.Source
-		if err := ledger.Validate(s.DB, &in); err != nil {
+		// The stored row is read inside the transaction, so a sync settling
+		// it meanwhile can't have its balance reversed from stale values.
+		err = entry.Do(s.DB, func(tx *sql.Tx) error {
+			cur, err := ledger.Get(tx, id)
+			if err != nil {
+				return entry.ErrNotFound
+			}
+			return entry.Update(tx, cur, &in)
+		})
+		if err != nil {
 			return nil, err
-		}
-		if err := ledger.Update(s.DB, &in); err != nil {
-			return nil, err
-		}
-		if cur.Date != in.Date || cur.Amount != in.Amount || cur.AccountID != in.AccountID || cur.ToAccountID != in.ToAccountID || cur.Kind != in.Kind {
-			s.moveBalances(cur, -1)
-			s.moveBalances(in, 1)
 		}
 		return in, nil
 	})
@@ -133,19 +136,9 @@ func (s *Server) ledgerRoutes() {
 		if err != nil {
 			return nil, err
 		}
-		cur, err := ledger.Get(s.DB, id)
-		if err != nil {
-			return nil, notFound("transaction not found")
-		}
-		// A deleted bank row goes back to the inbox rather than vanishing (a
-		// reservation is dismissed, so sync doesn't re-add it).
-		if err := s.Bank.ReturnToInbox(s.DB, id); err != nil {
+		if err := entry.Do(s.DB, func(tx *sql.Tx) error { return entry.Delete(tx, id) }); err != nil {
 			return nil, err
 		}
-		if err := ledger.Delete(s.DB, id); err != nil {
-			return nil, err
-		}
-		s.moveBalances(cur, -1)
 		return map[string]bool{"ok": true}, nil
 	})
 	s.handle("POST /api/transactions/bulk", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -160,49 +153,47 @@ func (s *Server) ledgerRoutes() {
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		tx, err := s.DB.Begin()
+		n := 0
+		err := entry.Do(s.DB, func(tx *sql.Tx) error {
+			for _, id := range in.IDs {
+				cur, err := ledger.Get(tx, id)
+				if err != nil {
+					continue
+				}
+				if in.Delete {
+					if err := entry.Delete(tx, id); err != nil {
+						return err
+					}
+					n++
+					continue
+				}
+				t := cur
+				t.Tags = slices.Clone(cur.Tags)
+				if in.SetCategory != "" {
+					t.Category, t.Kind = in.SetCategory, ""
+				}
+				if in.SetMerchant != nil {
+					t.Merchant = *in.SetMerchant
+				}
+				t.Tags = append(t.Tags, in.AddTags...)
+				if len(in.RemoveTags) > 0 {
+					rm := map[string]bool{}
+					for _, x := range ledger.NormalizeTags(in.RemoveTags) {
+						rm[x] = true
+					}
+					t.Tags = slices.DeleteFunc(t.Tags, func(x string) bool { return rm[x] })
+				}
+				if err := entry.Update(tx, cur, &t); err != nil {
+					return err
+				}
+				n++
+			}
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		defer tx.Rollback()
-		n := 0
-		for _, id := range in.IDs {
-			t, err := ledger.Get(tx, id)
-			if err != nil {
-				continue
-			}
-			if in.Delete {
-				ledger.Delete(tx, id)
-				n++
-				continue
-			}
-			if in.SetCategory != "" {
-				t.Category, t.Kind = in.SetCategory, ""
-			}
-			if in.SetMerchant != nil {
-				t.Merchant = *in.SetMerchant
-			}
-			t.Tags = append(t.Tags, in.AddTags...)
-			if len(in.RemoveTags) > 0 {
-				rm := map[string]bool{}
-				for _, x := range ledger.NormalizeTags(in.RemoveTags) {
-					rm[x] = true
-				}
-				var keep []string
-				for _, x := range t.Tags {
-					if !rm[x] {
-						keep = append(keep, x)
-					}
-				}
-				t.Tags = keep
-			}
-			if err := ledger.Validate(tx, &t); err != nil {
-				return nil, err
-			}
-			ledger.Update(tx, &t)
-			n++
-		}
-		return map[string]int{"changed": n}, tx.Commit()
+		return map[string]int{"changed": n}, nil
 	})
 	// One-tap tags for the form: the trip by date, the merchant's usual tags, the most used.
 	s.handle("GET /api/tags/suggest", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -525,22 +516,4 @@ func firstNonEmptyStr(v ...string) string {
 		}
 	}
 	return ""
-}
-
-// moveBalances applies (sign=1) or reverses (sign=-1) a transaction's
-// effect on account balances. Hand-entered rows move both sides; a bank row
-// only matters when it is a booked transfer touching an account the bank
-// doesn't sync (ApplyDelta never touches synced ones — the bank states their
-// balance on every sync). Imports and split parts never move balances.
-func (s *Server) moveBalances(t ledger.Tx, sign money.Cents) []string {
-	if t.Source == "import" || t.SplitOf != 0 || (t.Source == "bank" && (t.Kind != "transfer" || t.Pending)) {
-		return nil
-	}
-	var moved []string
-	for acct, delta := range wealth.TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount) {
-		if ok, err := wealth.ApplyDelta(s.DB, acct, t.Date, delta*sign); err == nil && ok {
-			moved = append(moved, acct)
-		}
-	}
-	return moved
 }

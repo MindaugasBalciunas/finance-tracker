@@ -336,6 +336,97 @@ func TxDeltas(kind, account, to string, amount money.Cents) map[string]money.Cen
 	return out
 }
 
+// MoveForTx applies (sign=1) or reverses (sign=-1) a transaction's effect on
+// account balances and lists the accounts that moved.
+func MoveForTx(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, t ledger.Tx, sign money.Cents) ([]string, error) {
+	var moved []string
+	for acct, delta := range balanceMoves(t) {
+		ok, err := ApplyDelta(d, acct, t.Date, delta*sign)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			moved = append(moved, acct)
+		}
+	}
+	return moved, nil
+}
+
+// balanceMoves is what a transaction does to balances. Hand-entered rows
+// move both sides; a bank row only matters when it is a booked transfer
+// touching an account the bank doesn't sync (ApplyDelta never touches
+// synced ones — the bank states their balance on every sync). Imports and
+// split parts never move balances: a split carves the parent, whose own
+// amount plus its parts is what left the account.
+func balanceMoves(t ledger.Tx) map[string]money.Cents {
+	if t.Source == "import" || t.SplitOf != 0 || (t.Source == "bank" && (t.Kind != "transfer" || t.Pending)) {
+		return nil
+	}
+	return TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount)
+}
+
+// MoveForEdit moves balances for a transaction edited from cur to next.
+// Reversing cur and applying next one after the other went wrong when the
+// date moved earlier: creating cur had written a balance point on its date,
+// so next — now dated before that point — counted as already inside it and
+// the expense vanished from the balance. So, per account: cur is reversed;
+// a point it leaves holding the same value as the one before is only cur's
+// echo and goes; then next applies by the usual rule. When a real recorded
+// value still sits after next's date, next's effect lands on cur's point.
+func MoveForEdit(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, cur, next ledger.Tx) error {
+	was, now := balanceMoves(cur), balanceMoves(next)
+	accts := map[string]bool{}
+	for a := range was {
+		accts[a] = true
+	}
+	for a := range now {
+		accts[a] = true
+	}
+	for acct := range accts {
+		var latest string
+		d.QueryRow(`SELECT date FROM balances WHERE account_id=? ORDER BY date DESC LIMIT 1`, acct).Scan(&latest)
+		// curIn: the reversal really moved this account. ApplyDelta leaves
+		// valued (crypto, property), bank-synced and unrecorded accounts
+		// alone, and their points — an unchanged valuation the owner
+		// re-confirmed — must never be taken for cur's echo.
+		curIn := false
+		if was[acct] != 0 && latest != "" && cur.Date >= latest {
+			ok, err := ApplyDelta(d, acct, cur.Date, -was[acct])
+			if err != nil {
+				return err
+			}
+			curIn = ok
+		}
+		if curIn {
+			if _, err := d.Exec(`DELETE FROM balances WHERE account_id=? AND date=? AND source='manual'
+				AND value = (SELECT p.value FROM balances p WHERE p.account_id=? AND p.date<? ORDER BY p.date DESC LIMIT 1)`, acct, cur.Date, acct, cur.Date); err != nil {
+				return err
+			}
+		}
+		if now[acct] == 0 {
+			continue
+		}
+		date := next.Date
+		if curIn {
+			var last string
+			d.QueryRow(`SELECT date FROM balances WHERE account_id=? ORDER BY date DESC LIMIT 1`, acct).Scan(&last)
+			if date < last && last == cur.Date {
+				date = cur.Date
+			}
+		}
+		if _, err := ApplyDelta(d, acct, date, now[acct]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Move is one account's change across a window.
 type Move struct {
 	AccountID string      `json:"account_id"`

@@ -346,7 +346,7 @@ func TestDeletedReservationStaysGoneAndBookingSurvives(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 	txs, _ := ledger.All(d, ledger.Filter{})
-	if err := s.ReturnToInbox(d, txs[0].ID); err != nil {
+	if err := bank.ReturnToInbox(d, txs[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	ledger.Delete(d, txs[0].ID)
