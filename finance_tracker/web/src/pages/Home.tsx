@@ -257,10 +257,14 @@ function MonthTimeline({ p }: { p: Overview['plan'] }) {
             <Line dataKey="pace" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             <Area dataKey="cum" stroke="var(--s1)" strokeWidth={2} fill="url(#mt-cum)" dot={false} isAnimationActive={false} connectNulls={false} />
             <Line dataKey="proj" stroke={over ? 'rgb(var(--warn))' : 'var(--s1)'} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
-            <ReferenceLine x={today} stroke="rgb(var(--ink))" strokeOpacity={0.5} label={{ value: 'today', position: 'top', fontSize: 10, fill: 'var(--chart-text)' }} />
-            {/* What is left today: the gap from your spending up to the free money. */}
+            {/* On the last day "today" would hang off the right edge; shift it in. */}
+            <ReferenceLine x={today} stroke="rgb(var(--ink))" strokeOpacity={0.5} label={{ value: 'today', position: 'top', dx: today === dim ? -10 : 0, fontSize: 10, fill: 'var(--chart-text)' }} />
+            {/* What is left today: the gap from your spending up to the free money.
+                Its label sits on the roomier side of today, so early in the
+                month it doesn't run into the euro axis, and a halo in the
+                card's colour keeps it readable where a line crosses it. */}
             <ReferenceLine segment={[{ x: today, y: cumToday }, { x: today, y: free }]} stroke={p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))'} strokeWidth={3} ifOverflow="extendDomain"
-              label={{ value: p.safe_to_spend < 0 ? `${eur(-p.safe_to_spend)} over` : `${eur(p.safe_to_spend)} left`, position: 'left', fontSize: 11, fontWeight: 600, fill: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))' }} />
+              label={{ value: p.safe_to_spend < 0 ? `${eur(-p.safe_to_spend)} over` : `${eur(p.safe_to_spend)} left`, position: today <= dim / 2 ? 'right' : 'left', fontSize: 11, fontWeight: 600, stroke: 'var(--chart-surface)', strokeWidth: 3, paintOrder: 'stroke', fill: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))' }} />
             {runOut != null && (
               <ReferenceDot x={runOut} y={free} r={4} fill="rgb(var(--warn))" stroke="var(--chart-surface)" strokeWidth={2} ifOverflow="visible"
                 label={wide ? { value: `runs out ~${runOut}`, position: 'top', fontSize: 10, fill: 'rgb(var(--warn))' } : undefined} />
