@@ -30,7 +30,7 @@ func TestDatingFacts(t *testing.T) {
 		trip,
 		tx("2026-08-02", "expense", "food", 40, "swed"),
 	}
-	facts := insights.FunFacts(txs, cats(t), time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), "", "")
+	facts := insights.FunFacts(txs, cats(t), time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), "", "", nil)
 	by := map[string]insights.Fact{}
 	for _, f := range facts {
 		by[f.Key] = f
@@ -59,7 +59,7 @@ func TestDatingFacts(t *testing.T) {
 		t.Fatal("facts link to their transactions")
 	}
 	// No dating rows in the window: no dating facts.
-	for _, f := range insights.FunFacts(txs, cats(t), time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), "2026-08-01", "2026-10-31") {
+	for _, f := range insights.FunFacts(txs, cats(t), time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), "2026-08-01", "2026-10-31", nil) {
 		if f.Key == "dating" || f.Key == "flowers" || f.Key == "together" {
 			t.Fatalf("%s shown without dating rows", f.Key)
 		}

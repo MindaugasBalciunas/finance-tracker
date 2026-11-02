@@ -80,6 +80,7 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 		names       map[string]int
 		cats        map[string]int
 		catLast     map[string]string
+		winCats     map[string]int // categories inside the window: they label the row
 		total, prev money.Cents
 		count       int            // rows of its own in the window
 		ownIDs      map[int64]bool // …by id, so their split parts aren't counted again
@@ -114,7 +115,7 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 		k := merchant.Key(x.Merchant)
 		a := by[k]
 		if a == nil {
-			a = &agg{names: map[string]int{}, cats: map[string]int{}, catLast: map[string]string{}, byMonth: map[string]money.Cents{}, regMonths: map[string]bool{},
+			a = &agg{names: map[string]int{}, cats: map[string]int{}, catLast: map[string]string{}, winCats: map[string]int{}, byMonth: map[string]money.Cents{}, regMonths: map[string]bool{},
 				ownIDs: map[int64]bool{}, parts: map[int64]bool{}}
 			by[k] = a
 		}
@@ -139,6 +140,9 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 		switch {
 		case x.Date >= from:
 			a.total += amt
+			if !refund {
+				a.winCats[x.Category]++
+			}
 			switch {
 			case refund:
 			case x.SplitOf == 0:
@@ -176,7 +180,12 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 			}
 		}
 		name := top(a.names, nil)
+		// Labelled by what it was paid for in the window: October's alimony to
+		// Evelina isn't "Mortgage payment" because years ago it was.
 		cat := top(a.cats, a.catLast)
+		if len(a.winCats) > 0 {
+			cat = top(a.winCats, a.catLast)
+		}
 		if a.count == 0 {
 			// A regular in the half-year before, quiet for two months by
 			// the window's end: worth a look (moved shop? cancelled?).
@@ -220,10 +229,16 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 	return rep
 }
 
-// prevWindow is the equal-length window just before [from,to].
+// prevWindow is the equal-length window just before [from,to]. Whole
+// calendar months compare with the months before: October against
+// September, not 31 August–30 September; Spending's breakdown uses it too.
 func prevWindow(from, to string) (string, string) {
 	f, _ := time.Parse("2006-01-02", from)
 	t, _ := time.Parse("2006-01-02", to)
+	if f.Day() == 1 && t.AddDate(0, 0, 1).Day() == 1 && !t.Before(f) {
+		months := (t.Year()-f.Year())*12 + int(t.Month()-f.Month()) + 1
+		return f.AddDate(0, -months, 0).Format("2006-01-02"), f.AddDate(0, 0, -1).Format("2006-01-02")
+	}
 	span := t.Sub(f) + 24*time.Hour
 	return f.Add(-span).Format("2006-01-02"), f.Add(-24 * time.Hour).Format("2006-01-02")
 }

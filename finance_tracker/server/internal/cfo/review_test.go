@@ -7,6 +7,7 @@ import (
 
 	"ft/internal/cfo"
 	"ft/internal/ledger"
+	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
 
@@ -106,5 +107,72 @@ func TestMonthReviewDefaultsToLastMonthOnTheThirtyFirst(t *testing.T) {
 	}
 	if r.Month != "2026-09" {
 		t.Fatalf("got %s", r.Month)
+	}
+}
+
+// The review loads a few days of the next month only so a late salary counts.
+// On 2 November, October's review must not pick up a 1 November subscription
+// in its categories, nor list 1 October's pay (September's) or a 2 November
+// gift under money in — and it isn't final while October's pay may still come.
+func TestMonthReviewStaysInsideItsMonth(t *testing.T) {
+	d := DB(t)
+	Tx(t, d, ledger.Tx{Date: "2026-10-01", Amount: E(3000), Category: "salary", Merchant: "September pay", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-09", Amount: E(3500), Category: "salary", Merchant: "October pay", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-01", Amount: E(20), Category: "subscriptions.software", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-01", Amount: E(21), Category: "subscriptions.software", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Amount: E(100), Category: "other_income", Merchant: "Gift", AccountID: "cash"})
+
+	r, err := cfo.BuildMonthReview(d, "2026-10", time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Categories) != 1 || r.Categories[0].Spent != E(20) || r.Categories[0].Count != 1 {
+		t.Fatalf("categories %+v", r.Categories)
+	}
+	if len(r.TopIncome) != 1 || r.TopIncome[0].Merchant != "October pay" {
+		t.Fatalf("money in %+v", r.TopIncome)
+	}
+	// Over, so it can be closed (Home links here to close it), but not final.
+	if !r.Complete || r.Final || !strings.HasPrefix(r.Verdict, "So far: ") || !strings.Contains(r.Highlights[0].Text, "paid by 3 Nov") {
+		t.Fatalf("complete %v final %v verdict %q %+v", r.Complete, r.Final, r.Verdict, r.Highlights)
+	}
+
+	// From 4 November October's pay can no longer arrive: the review is final.
+	r, _ = cfo.BuildMonthReview(d, "2026-10", time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC))
+	if !r.Final || strings.HasPrefix(r.Verdict, "So far") {
+		t.Fatalf("final %v verdict %q", r.Final, r.Verdict)
+	}
+
+	// Pay that has already landed on 2 November: final in all but name, so
+	// no "so far" next to "salary arrived in the first days of next month".
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Amount: E(3100), Category: "salary", AccountID: "swed"})
+	r, _ = cfo.BuildMonthReview(d, "2026-10", time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC))
+	for _, h := range r.Highlights {
+		if strings.Contains(h.Text, "Not final") {
+			t.Fatalf("%+v", r.Highlights)
+		}
+	}
+	if strings.HasPrefix(r.Verdict, "So far") {
+		t.Fatal(r.Verdict)
+	}
+}
+
+// The "not final yet" date follows the rule for the month after: with pay
+// moving to the 10th from November, October's review waits until 10 Nov,
+// while September's (still paid by the 3rd) was final on 4 October.
+func TestMonthReviewWaitsForTheRuleInForce(t *testing.T) {
+	d := DB(t)
+	s := plan.LoadSettings(d)
+	s.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	if err := plan.SaveSettings(d, s); err != nil {
+		t.Fatal(err)
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-09", Amount: E(3500), Category: "salary", AccountID: "swed"})
+	r, _ := cfo.BuildMonthReview(d, "2026-10", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC))
+	if r.Final || !strings.Contains(r.Highlights[0].Text, "paid by 10 Nov") {
+		t.Fatalf("October %v %+v", r.Final, r.Highlights)
+	}
+	if r, _ = cfo.BuildMonthReview(d, "2026-09", time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)); !r.Final {
+		t.Fatal("September is final from 4 October")
 	}
 }

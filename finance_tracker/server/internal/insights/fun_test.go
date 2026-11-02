@@ -8,6 +8,7 @@ import (
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/money"
+	"ft/internal/plan"
 )
 
 // Fun facts rank employers by what they paid, find the most visited shop,
@@ -34,7 +35,7 @@ func TestFunFacts(t *testing.T) {
 	add("2026-07-01", "expense", "travel.lodging", "Hotel", 900, "trip:rome")
 
 	by := map[string]insights.Fact{}
-	for _, f := range insights.FunFacts(txs, nil, now, "", "") {
+	for _, f := range insights.FunFacts(txs, nil, now, "", "", nil) {
 		by[f.Key] = f
 	}
 	if f := by["employers"]; f.Value != "Big Co" || len(f.Items) != 3 || f.Items[0].Value != "€15,000" {
@@ -97,7 +98,7 @@ func TestFunFactsInAPeriod(t *testing.T) {
 		{Date: "2026-09-19", Kind: "expense", Category: "food.groceries", Merchant: "Lidl", Amount: e(30)},
 	}
 	by := map[string]insights.Fact{}
-	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30") {
+	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30", nil) {
 		by[f.Key] = f
 	}
 	if _, ok := by["first_pay"]; ok {
@@ -138,7 +139,7 @@ func TestPeriodFacts(t *testing.T) {
 		tx("2026-09-15", "income", "refunds", "Shop", 25),
 	}
 	by := map[string]insights.Fact{}
-	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30") {
+	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30", nil) {
 		by[f.Key] = f
 	}
 	if f := by["rhythm"]; f.Value != "5 of 30" || !strings.Contains(f.Detail, "Longest break: 6 days") {
@@ -156,5 +157,46 @@ func TestPeriodFacts(t *testing.T) {
 	// 81.10 against 130 (Lidl 100 + Senukai 30) in the 30 days before (2–31 Aug).
 	if f := by["vs_before"]; f.Value != "38% less" {
 		t.Errorf("vs before %+v", f)
+	}
+}
+
+// Fun facts for October earn what the month review says October earned: pay
+// booked on 1 October is September's, pay on 2 November is October's, and a
+// refund is money back, not earnings. A Lidl receipt split three ways is one
+// visit, not three.
+func TestFunFactsWindowCountsLikeTheMonthReview(t *testing.T) {
+	e := money.FromFloat
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	txs := []ledger.Tx{
+		{ID: 1, Date: "2026-10-01", Kind: "income", Category: "salary", Merchant: "Nexos.ai", Amount: e(3000)},
+		{ID: 2, Date: "2026-10-09", Kind: "income", Category: "salary", Merchant: "Nexos.ai", Amount: e(3500)},
+		{ID: 3, Date: "2026-11-02", Kind: "income", Category: "salary", Merchant: "Nexos.ai", Amount: e(3100)},
+		{ID: 4, Date: "2026-10-14", Kind: "income", Category: "refunds", Merchant: "If", Amount: e(184)},
+		{ID: 5, Date: "2026-10-05", Kind: "expense", Category: "food.groceries", Merchant: "Lidl", Amount: e(15)},
+		{ID: 6, Date: "2026-10-05", Kind: "expense", Category: "shopping.clothing", Merchant: "Lidl", Amount: e(5), SplitOf: 5},
+		{ID: 7, Date: "2026-10-05", Kind: "expense", Category: "food.groceries", Merchant: "Lidl", Amount: e(4), SplitOf: 5},
+		{ID: 8, Date: "2026-10-20", Kind: "expense", Category: "food.groceries", Merchant: "Lidl", Amount: e(30)},
+		{ID: 9, Date: "2026-10-21", Kind: "expense", Category: "food.groceries", Merchant: "Maxima", Amount: e(10)},
+		{ID: 10, Date: "2026-10-22", Kind: "expense", Category: "food.groceries", Merchant: "Maxima", Amount: e(10)},
+		{ID: 11, Date: "2026-10-23", Kind: "expense", Category: "food.groceries", Merchant: "Maxima", Amount: e(10)},
+	}
+	by := map[string]insights.Fact{}
+	for _, f := range insights.FunFacts(txs, nil, now, "2026-10-01", "2026-10-31", plan.DefaultSalaryRules) {
+		by[f.Key] = f
+	}
+	if f := by["lifetime"]; f.Value != "€6,600" {
+		t.Errorf("earned in October %+v", f)
+	}
+	if f := by["employers"]; !strings.Contains(f.Detail, "€6,600") || !strings.Contains(f.Detail, "2 payments") {
+		t.Errorf("employers in October %+v", f)
+	}
+	if f := by["visits"]; f.Value != "Maxima" || f.Items[1].Label != "Lidl" || f.Items[1].Value != "2×" || f.Items[1].Sub != "€54" {
+		t.Errorf("visits in October %+v", f)
+	}
+	// September keeps the pay booked on 1 October: one payment.
+	for _, f := range insights.FunFacts(txs, nil, now, "2026-09-01", "2026-09-30", plan.DefaultSalaryRules) {
+		if f.Key == "employers" && f.Detail != "€3,000 in 2026, in 1 payment." {
+			t.Errorf("employers in September %q", f.Detail)
+		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"ft/internal/ledger"
 	"ft/internal/merchant"
 	"ft/internal/money"
+	"ft/internal/plan"
 )
 
 // Fact is one fun statistic from the whole history: a headline figure, a
@@ -54,17 +55,25 @@ func bill(cat string) bool {
 // history, or the days between from and to (inclusive; "" = open). In a
 // window the lifetime-only facts (the first pay cheque, this year's
 // favourite) are left out and the story counts days instead of years.
-func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, from, to string) []Fact {
+// Salary is dated the way cash flow dates it, so October's earnings match
+// the month review: pay booked on 1 October belongs to September.
+func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, from, to string, salary []plan.SalaryRule) []Fact {
 	windowed := from != "" || to != ""
 	all := txs // the whole history: "new places" and "the period before" need it
 	if windowed {
 		in := make([]ledger.Tx, 0, len(txs))
-		for _, t := range txs {
-			if (from == "" || t.Date >= from) && (to == "" || t.Date <= to) {
-				in = append(in, t)
+		for i := range txs {
+			if d := plan.FlowDate(&txs[i], salary); (from == "" || d >= from) && (to == "" || d <= to) {
+				in = append(in, txs[i])
 			}
 		}
 		txs = in
+	}
+	payments := func(n int) string {
+		if n == 1 {
+			return "1 payment"
+		}
+		return fmt.Sprintf("%d payments", n)
 	}
 	var out []Fact
 	eur := func(c money.Cents) string { return eurWhole(c) }
@@ -109,7 +118,8 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		if firstDate == "" || t.Date < firstDate {
 			firstDate = t.Date
 		}
-		if t.Kind != "income" {
+		// Refunds are money back, not money earned.
+		if t.Kind != "income" || ledger.Top(t.Category) == "refunds" {
 			continue
 		}
 		income += t.Amount
@@ -120,21 +130,23 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			firstPay = t
 		}
 		k := merchant.Fold(t.Merchant)
+		// December's pay booked on 2 January is a December payment.
+		fd := plan.FlowDate(t, salary)
 		p := payers[k]
 		if p == nil {
-			p = &payer{name: t.Merchant, first: t.Date, last: t.Date, years: map[int]bool{}}
+			p = &payer{name: t.Merchant, first: fd, last: fd, years: map[int]bool{}}
 			payers[k] = p
 		}
-		if y, err := strconv.Atoi(t.Date[:4]); err == nil {
+		if y, err := strconv.Atoi(fd[:4]); err == nil {
 			p.years[y] = true
 		}
 		p.total += t.Amount
 		p.n++
-		if t.Date < p.first {
-			p.first = t.Date
+		if fd < p.first {
+			p.first = fd
 		}
-		if t.Date > p.last {
-			p.last, p.name = t.Date, t.Merchant
+		if fd > p.last {
+			p.last, p.name = fd, t.Merchant
 		}
 	}
 	if len(payers) > 0 {
@@ -144,9 +156,9 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		}
 		sort.Slice(ps, func(i, j int) bool { return ps[i].total > ps[j].total })
 		f := Fact{Key: "employers", Icon: "briefcase", Title: "Who paid you the most", Value: ps[0].name,
-			Detail: fmt.Sprintf("%s over %s–%s, in %d payments.", eur(ps[0].total), year(ps[0].first), year(ps[0].last), ps[0].n)}
+			Detail: fmt.Sprintf("%s over %s–%s, in %s.", eur(ps[0].total), year(ps[0].first), year(ps[0].last), payments(ps[0].n))}
 		if year(ps[0].first) == year(ps[0].last) {
-			f.Detail = fmt.Sprintf("%s in %s, in %d payments.", eur(ps[0].total), year(ps[0].first), ps[0].n)
+			f.Detail = fmt.Sprintf("%s in %s, in %s.", eur(ps[0].total), year(ps[0].first), payments(ps[0].n))
 		}
 		f.Link = win("kind", "income", "category", "salary", "merchant", ps[0].name)
 		for _, p := range ps[:min(6, len(ps))] {
@@ -229,6 +241,24 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 	// People paid obligations (an ex-partner, family) aren't shops.
 	// (Over the whole history, as the Ledger's "choices" filter has it.)
 	people := map[string]bool{}
+	// A split purchase is one visit: three Lidl rows from one receipt are
+	// one trip, so visits count receipts (the split's parent), not rows.
+	visited := map[string]bool{}
+	firstVisit := func(key string, t *ledger.Tx) bool {
+		v := t.ID
+		if t.SplitOf != 0 {
+			v = t.SplitOf
+		}
+		if v == 0 { // not stored yet: its own visit
+			return true
+		}
+		key += "|" + strconv.FormatInt(v, 10)
+		if visited[key] {
+			return false
+		}
+		visited[key] = true
+		return true
+	}
 	for i := range all {
 		if all[i].Kind == "expense" && all[i].Merchant != "" && ledger.PaysAPerson(all[i].Category) {
 			people[merchant.Key(all[i].Merchant)] = true
@@ -241,7 +271,9 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			continue
 		}
 		days[t.Date] += t.Amount
-		catCount[t.Category]++
+		if firstVisit("habit|"+t.Category, t) { // a split coffee receipt is one coffee
+			catCount[t.Category]++
+		}
 		catSum[t.Category] += t.Amount
 		for _, tag := range t.Tags {
 			if ledger.TripTag(tag) {
@@ -270,10 +302,12 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			s = &shop{name: t.Merchant, cat: t.Category}
 			shops[k] = s
 		}
-		s.n++
 		s.total += t.Amount
-		if t.Date >= since {
-			s.recent++
+		if firstVisit(k, t) {
+			s.n++
+			if t.Date >= since {
+				s.recent++
+			}
 		}
 		leaf := t.Category
 		if byCat[leaf] == nil {
@@ -282,7 +316,9 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		if byCat[leaf][k] == nil {
 			byCat[leaf][k] = &shop{name: t.Merchant}
 		}
-		byCat[leaf][k].n++
+		if firstVisit(leaf+"|"+k, t) {
+			byCat[leaf][k].n++
+		}
 		byCat[leaf][k].total += t.Amount
 	}
 	list := make([]*shop, 0, len(shops))
@@ -300,7 +336,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		}
 		out = append(out, f)
 		sort.Slice(list, func(i, j int) bool { return list[i].total > list[j].total })
-		f = Fact{Key: "spent_most", Icon: "coins", Title: "Where the most money went", Value: list[0].name, Detail: fmt.Sprintf("%s over %d payments.", eur(list[0].total), list[0].n),
+		f = Fact{Key: "spent_most", Icon: "coins", Title: "Where the most money went", Value: list[0].name, Detail: fmt.Sprintf("%s over %s.", eur(list[0].total), payments(list[0].n)),
 			Link: win("kind", "expense", "merchant", list[0].name)}
 		for _, s := range list[:min(5, len(list))] {
 			f.Items = append(f.Items, FactItem{Label: s.name, Value: eur(s.total), Sub: fmt.Sprintf("%d×", s.n), N: s.total.Float(), Link: win("kind", "expense", "merchant", s.name)})
@@ -638,6 +674,7 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 		first := map[string]string{}
 		name := map[string]string{}
 		count := map[string]int{}
+		counted := map[string]bool{}
 		for i := range all {
 			t := &all[i]
 			if t.Kind != "expense" || t.Merchant == "" {
@@ -648,7 +685,15 @@ func periodFacts(all, txs []ledger.Tx, now time.Time, from, to string, windowed 
 				first[k] = t.Date // the first payment of any kind
 			}
 			if t.Date >= start && t.Date <= end && choice(t) && !bill(t.Category) && !people[k] {
-				count[k]++
+				// A split receipt is one visit, as in Most visited.
+				receipt := t.ID
+				if t.SplitOf != 0 {
+					receipt = t.SplitOf
+				}
+				if rk := k + "|" + strconv.FormatInt(receipt, 10); receipt == 0 || !counted[rk] {
+					counted[rk] = true
+					count[k]++
+				}
 				name[k] = t.Merchant
 			}
 		}

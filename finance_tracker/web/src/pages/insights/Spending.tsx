@@ -26,13 +26,16 @@ export function Spending() {
   if (isLoading || !data) return <Loading />
   const total = data.categories.reduce((a: number, c: any) => a + c.total, 0)
   const max = Math.max(...data.categories.map((c: any) => c.total), 1)
+  // The header nets refunds off; the donut can only show what was spent.
+  const refunds = data.categories.some((c: any) => c.total < 0)
   return (
     <div className="space-y-4">
       <div className="no-scrollbar overflow-y-hidden -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         {PRESETS.map((p) => <button key={p.value} className={preset === p.value ? 'chip-on' : 'chip'} onClick={() => setPreset(p.value)}>{p.label}</button>)}
       </div>
-      <PaceCard />
-      <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the same length before</div>
+      {/* The pace card is always about the month you're in: beside a past period it read as that period's. */}
+      {preset !== 'last_month' && preset !== 'last_year' && <PaceCard />}
+      <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the period before</div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card pad={false} icon="bag" color="var(--s2)" title="By category" className="lg:col-span-2">
           <div className="divide-y divide-line border-t border-line">
@@ -68,7 +71,7 @@ export function Spending() {
         </Card>
         <div className="space-y-4">
           <Card icon="pie" color="var(--s2)" title="Where it went">
-            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub="spent" stacked />
+            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub={refunds ? 'before refunds' : 'spent'} stacked />
           </Card>
           <Card pad={false} icon="utensils" color="var(--s4)" title="Top merchants">
             <div className="divide-y divide-line border-t border-line">

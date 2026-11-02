@@ -359,7 +359,7 @@ func New(call Caller) *mcp.Server {
 		func(ctx context.Context, r *mcp.CallToolRequest, a flowArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/insights/cashflow", vals("from", a.From, "to", a.To, "granularity", a.Granularity), nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "spending_breakdown", Description: "Spending by category and subcategory in a window, vs the previous equal window; top merchants; largest expenses."},
+	mcp.AddTool(s, &mcp.Tool{Name: "spending_breakdown", Description: "Spending by category and subcategory in a window, vs the period before (the previous months for whole months); top merchants; largest expenses."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a windowArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/insights/breakdown", vals("from", a.From, "to", a.To, "preset", a.Preset), nil))
 		})

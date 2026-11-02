@@ -39,8 +39,21 @@ func TestMerchantsRankWhoWasPaid(t *testing.T) {
 		paid("2026-08-01", "Oldie", "food", 3),              // before both windows
 	}
 	r := insights.Merchants(txs, "2026-10-01", "2026-10-31", 10)
-	if r.PrevFrom != "2026-08-31" || r.PrevTo != "2026-09-30" {
+	// A whole month compares with the month before, not the 31 days before.
+	if r.PrevFrom != "2026-09-01" || r.PrevTo != "2026-09-30" {
 		t.Fatalf("previous window %s–%s", r.PrevFrom, r.PrevTo)
+	}
+	if r2 := insights.Merchants(txs, "2026-10-05", "2026-10-14", 10); r2.PrevFrom != "2026-09-25" || r2.PrevTo != "2026-10-04" {
+		t.Fatalf("a span of days compares with as many days before: %s–%s", r2.PrevFrom, r2.PrevTo)
+	}
+	for _, w := range [][4]string{
+		{"2026-01-01", "2026-03-31", "2025-10-01", "2025-12-31"}, // a quarter
+		{"2025-01-01", "2025-12-31", "2024-01-01", "2024-12-31"}, // last year
+		{"2026-02-01", "2026-02-28", "2026-01-01", "2026-01-31"}, // February against January
+	} {
+		if r := insights.Merchants(nil, w[0], w[1], 10); r.PrevFrom != w[2] || r.PrevTo != w[3] {
+			t.Errorf("%s–%s compares with %s–%s", w[0], w[1], r.PrevFrom, r.PrevTo)
+		}
 	}
 	if len(r.Items) != 4 || r.Count != 4 {
 		t.Fatalf("got %+v", r.Items)
@@ -105,5 +118,20 @@ func TestMerchantsOnAnEmptyLedger(t *testing.T) {
 	r := insights.Merchants(nil, "2026-10-01", "2026-10-31", 10)
 	if r.Items == nil || r.Lapsed == nil || r.Total != 0 {
 		t.Fatalf("empty lists, not null: %+v", r)
+	}
+}
+
+// A merchant is labelled by what it was paid for in the window: alimony to
+// someone once paid toward the mortgage reads as alimony this month.
+func TestMerchantsLabelByTheWindowsCategory(t *testing.T) {
+	txs := []ledger.Tx{
+		paid("2014-06-06", "Evelina", "housing.mortgage", 300),
+		paid("2015-06-06", "Evelina", "housing.mortgage", 300),
+		paid("2016-06-06", "Evelina", "housing.mortgage", 300),
+		paid("2026-10-17", "Evelina", "kids.alimony", 1000),
+	}
+	r := insights.Merchants(txs, "2026-10-01", "2026-10-31", 10)
+	if len(r.Items) != 1 || r.Items[0].Category != "kids.alimony" {
+		t.Fatalf("%+v", r.Items)
 	}
 }

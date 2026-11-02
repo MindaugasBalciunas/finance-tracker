@@ -211,6 +211,14 @@ func TestTopExpensesAndMerchants(t *testing.T) {
 	if m[0].Name != "Airbnb" || m[1].Count != 2 || m[1].Amount != E(25) {
 		t.Error(m)
 	}
+	// A receipt split in two is still one Lidl visit.
+	c.ID, b.ID = 7, 6
+	part := tx("2026-09-03", "expense", "shopping", 5)
+	part.Merchant, part.ID, part.SplitOf = "Lidl", 8, 7
+	m = insights.MerchantTotals([]ledger.Tx{a, b, c, part}, "2026-09-01", "2026-09-30", 5)
+	if m[1].Count != 2 || m[1].Amount != E(30) {
+		t.Error(m)
+	}
 }
 
 func TestPace(t *testing.T) {
@@ -425,5 +433,19 @@ func TestRecurringSameMerchantTwoItems(t *testing.T) {
 	}
 	if len(got) != 2 || !got["phone"] || got["Internet"] {
 		t.Fatalf("each payment to its own item: %v", got)
+	}
+}
+
+// A whole month's breakdown compares with the calendar month before: 31
+// August is not part of October's "previous".
+func TestBreakdownComparesWithTheMonthBefore(t *testing.T) {
+	txs := []ledger.Tx{
+		tx("2026-08-31", "expense", "food", 500),
+		tx("2026-09-10", "expense", "food", 100),
+		tx("2026-10-10", "expense", "food", 150),
+	}
+	cs := insights.Breakdown(txs, "2026-10-01", "2026-10-31")
+	if len(cs) != 1 || cs[0].Previous != E(100) {
+		t.Fatalf("%+v", cs)
 	}
 }

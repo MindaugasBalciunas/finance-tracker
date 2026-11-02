@@ -44,7 +44,7 @@ func toolDefs() []tool {
 				"min": num("min amount EUR"), "max": num("max amount EUR"), "sort": str("date | amount"), "limit": num("max rows, default 100, at most 500")})},
 		{Name: "cash_flow", Description: "Income, spending (essential/discretionary), saved, savings rate, invested (incl. mortgage principal) by month or year. Default: last 12 months by month.",
 			InputSchema: obj(map[string]any{"from": str(date), "to": str(date), "granularity": str("month | year")})},
-		{Name: "spending_breakdown", Description: "Spending by category with subcategories, share, monthly average and change vs the previous equal window, plus top merchants.",
+		{Name: "spending_breakdown", Description: "Spending by category with subcategories, share, monthly average and change vs the period before (the previous months for whole months), plus top merchants.",
 			InputSchema: obj(map[string]any{"from": str(date), "to": str(date)})},
 		{Name: "get_net_worth", Description: "Net worth on a date (by account and group) or its history (month ends). Includes house, car and mortgage.",
 			InputSchema: obj(map[string]any{"date": str("snapshot date (default today)"), "history_from": str("if set, return month-end history from this date")})},

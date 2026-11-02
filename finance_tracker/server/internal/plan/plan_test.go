@@ -488,3 +488,25 @@ func TestFinishedMonthUsesActualSalary(t *testing.T) {
 		t.Errorf("median mode unchanged: %s", med.IncomeBaseSource)
 	}
 }
+
+// A month's salary may arrive until the paid-by day of the next month under
+// the rule in force then; with no early pay counted back it is due by the
+// month's own last day. Settled is the day after.
+func TestSalaryDueAndSettled(t *testing.T) {
+	rules := []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	for month, want := range map[string]string{"2026-09": "2026-10-03", "2026-10": "2026-11-10", "2027-02": "2027-03-10"} {
+		if got := plan.SalaryDue(month, rules); got != want {
+			t.Errorf("%s due %s want %s", month, got, want)
+		}
+	}
+	if got := plan.SalaryDue("2026-02", []plan.SalaryRule{{PaidByDay: 0}}); got != "2026-02-28" {
+		t.Errorf("no early pay: due %s", got)
+	}
+	at := func(d string) time.Time { x, _ := time.Parse("2006-01-02", d); return x }
+	if plan.SalarySettled("2026-10", rules, at("2026-11-10")) || !plan.SalarySettled("2026-10", rules, at("2026-11-11")) {
+		t.Error("October settles on 11 November")
+	}
+	if !plan.SalarySettled("2026-02", []plan.SalaryRule{{PaidByDay: 0}}, at("2026-03-01")) {
+		t.Error("no early pay: settled on the 1st")
+	}
+}

@@ -151,20 +151,20 @@ type CategoryStat struct {
 	Share       float64        `json:"share"`
 	Count       int            `json:"count"`
 	MonthlyAvg  money.Cents    `json:"monthly_avg"`
-	Previous    money.Cents    `json:"previous"` // same-length window before
+	Previous    money.Cents    `json:"previous"` // the period before (prevWindow)
 	Change      float64        `json:"change"`   // vs previous, ratio
 	TopMerchant string         `json:"top_merchant,omitempty"`
 	Children    []CategoryStat `json:"children,omitempty"`
 }
 
 // Breakdown splits spending in [from,to] by category (top level with leaf
-// children), compared with the equal window before.
+// children), compared with the period before — the months before for whole
+// months, as Merchants compares (prevWindow).
 func Breakdown(txs []ledger.Tx, from, to string) []CategoryStat {
 	f, _ := time.Parse("2006-01-02", from)
 	t, _ := time.Parse("2006-01-02", to)
 	span := t.Sub(f) + 24*time.Hour
-	pf := f.Add(-span).Format("2006-01-02")
-	pt := f.Add(-24 * time.Hour).Format("2006-01-02")
+	pf, pt := prevWindow(from, to)
 	months := span.Hours() / 24 / 30.44
 	if months < 1 {
 		months = 1
@@ -435,6 +435,8 @@ func TopExpenses(txs []ledger.Tx, from, to string, n int) []ledger.Tx {
 // MerchantTotals ranks merchants by spend in a window.
 func MerchantTotals(txs []ledger.Tx, from, to string, n int) []NamedCount {
 	m := map[string]*NamedCount{}
+	// Count is visits, as on Merchants: a Lidl receipt split three ways is ×1.
+	seen := map[string]map[int64]bool{}
 	for _, t := range txs {
 		if t.Kind != "expense" || t.Date < from || t.Date > to || t.Merchant == "" {
 			continue
@@ -443,9 +445,17 @@ func MerchantTotals(txs []ledger.Tx, from, to string, n int) []NamedCount {
 		if x == nil {
 			x = &NamedCount{Name: t.Merchant, Category: t.Category}
 			m[t.Merchant] = x
+			seen[t.Merchant] = map[int64]bool{}
 		}
 		x.Amount += t.Amount
-		x.Count++
+		receipt := t.ID
+		if t.SplitOf != 0 {
+			receipt = t.SplitOf
+		}
+		if receipt == 0 || !seen[t.Merchant][receipt] {
+			seen[t.Merchant][receipt] = true
+			x.Count++
+		}
 	}
 	out := make([]NamedCount, 0, len(m))
 	for _, v := range m {

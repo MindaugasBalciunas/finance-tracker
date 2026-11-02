@@ -312,6 +312,18 @@ func SalarySettled(month string, rules []SalaryRule, now time.Time) bool {
 	return now.Format("2006-01-02") >= next.AddDate(0, 0, by).Format("2006-01-02")
 }
 
+// SalaryDue is the last day month's salary may still arrive and count for
+// it: the rule's paid-by day of the next month, or the month's own last day
+// when the rule counts no early pay back.
+func SalaryDue(month string, rules []SalaryRule) string {
+	first, err := time.Parse("2006-01", month)
+	if err != nil {
+		return ""
+	}
+	next := first.AddDate(0, 1, 0)
+	return next.AddDate(0, 0, paidBy(next.Format("2006-01-02"), rules)-1).Format("2006-01-02")
+}
+
 // PaysFor is the month a salary paid in payMonth is for: the month before
 // when the rule in force counts early-month pay for it.
 func PaysFor(payMonth string, rules []SalaryRule) string {

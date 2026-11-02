@@ -90,7 +90,7 @@ func (s *Server) insightRoutes() {
 		}
 		cats, _ := ledger.CategoryMap(s.DB)
 		q := r.URL.Query()
-		return insights.FunFacts(txs, cats, time.Now(), q.Get("from"), q.Get("to")), nil
+		return insights.FunFacts(txs, cats, time.Now(), q.Get("from"), q.Get("to"), plan.LoadSettings(s.DB).Salary()), nil
 	})
 	s.handle("GET /api/insights/summary", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildSummary(s.DB, time.Now())
