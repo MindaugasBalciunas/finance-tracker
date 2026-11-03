@@ -12,6 +12,7 @@ import type { Budget, PlanLine, PlanReport, Runbook, Tx, TxList } from '../lib/t
 import { AskCFO, Card, CountUp, Empty, ErrorBox, Field, hue, Loading, Meter, NumberInput, PageHeader, Segmented, Sheet, Tabs, Toggle, useToast } from '../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TagInput } from '../components/pickers'
 import { TooltipBox } from '../components/charts'
+import { MonthTimeline } from '../components/MonthChart'
 import { Icon } from '../components/Icon'
 import { MerchantMark } from '../components/MerchantLogo'
 import { TxRow, useTxEditor } from '../components/TxEditor'
@@ -157,6 +158,14 @@ function Month() {
       </div>
       {/* The month's number first, then why and what to change, then the lines; the slower views close the page. */}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
+      {/* Home's month chart, full width: spending so far against the plan's
+          pace through the month's free money, and where this rhythm ends up. */}
+      {current && (o?.plan.days?.length ?? 0) >= 28 && (
+        <Card icon="trend" color="var(--s1)" title="The month day by day"
+          action={<span className="text-xs text-muted">{o!.plan.safe_to_spend > 0 ? <>≈ <b className="tnum text-ink">{eur(o!.plan.per_day_left)}</b>/day · {o!.plan.days_left} days left</> : <span className="text-bad">over budget</span>}</span>}>
+          <MonthTimeline p={o!.plan} big />
+        </Card>
+      )}
       {current && rebalance ? (
         <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
           {suggestions(true)}

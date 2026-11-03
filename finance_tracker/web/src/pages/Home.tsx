@@ -4,12 +4,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { CashAccount, CashItem, CashPlan, Overview, Runbook } from '../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
-import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useNetWorthHistory, useOverview, usePeriod, usePrefs, useWide } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { daysAgo, eur, eurk, monthLabel, parseNum, pct, shortDate, todayISO } from '../lib/format'
 import { CountUp, Card, Delta, ErrorBox, hue, Loading, Segmented, Stat, Toggle, useToast } from '../components/ui'
-import { axisProps, GroupBar, gridProps, TooltipBox } from '../components/charts'
+import { GroupBar, TooltipBox } from '../components/charts'
+import { MonthTimeline, typicalShare } from '../components/MonthChart'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { FunTeaser } from './insights/Fun'
@@ -182,108 +183,6 @@ export default function Home() {
 
 
 
-
-/** How much of a month's free spending a typical month has done by each day
- *  (0–1), from the typical-month curve — so pace follows your usual rhythm
- *  (rent-week, weekends, payday) instead of a straight line. Falls back to
- *  an even split when there is no history. */
-function typicalShare(p: Overview['plan'], day: number) {
-  const days = p.days ?? []
-  const end = days[days.length - 1]?.typical ?? 0
-  if (!days.length || end <= 0) return days.length ? day / days.length : 0
-  return Math.min(1, Math.max(0, (days[Math.min(day, days.length) - 1]?.typical ?? 0) / end))
-}
-
-/** The month day by day: free spending so far against your typical month's
- *  rhythm through this month's free money, and where this pace ends up; dated
- *  events (obligations due or paid, income) sit on the axis. */
-function MonthTimeline({ p }: { p: Overview['plan'] }) {
-  // Every day labelled only when the chart is wide: half the card on a
-  // laptop (lg); on a desktop (xl) it sits in Home's narrow month column.
-  const lg = useWide('(min-width: 1024px)')
-  const xl = useWide()
-  const wide = lg && !xl
-  const days = p.days ?? []
-  if (days.length < 28) return null
-  const dim = days.length
-  const today = days.filter((d) => d.cum != null).length
-  // The month's free money as planned: the day line also carries what was
-  // paid beyond what funds held (on the day it happened), so the gap at
-  // today is still exactly what is left.
-  const free = p.free_spent + (p.fund_overdrawn ?? 0) + p.safe_to_spend
-  const cumToday = days[today - 1]?.cum ?? 0
-  // The forecast comes from the server: your typical month's rhythm from
-  // today on, plus its usual share of one-offs.
-  const projEnd = days[dim - 1]?.proj ?? cumToday
-  const over = projEnd > free
-  const rows = days.map((d) => ({ day: d.day, cum: d.cum, pace: free * typicalShare(p, d.day), proj: d.proj }))
-  const events = p.events ?? []
-  const runOut = p.run_out_day || null
-  const evColor = (k: string) => (k === 'income' ? 'var(--s6)' : 'var(--s7)')
-  const top = Math.max(free, projEnd) * 1.08
-  return (
-    <div className="mt-3 flex flex-col lg:mt-0 lg:h-full xl:h-auto">
-      {/* lg: fills the left half of the card; xl: the card stacks in a column, so a fixed height. */}
-      <div className="h-52 sm:h-60 lg:h-auto lg:min-h-72 lg:flex-1 xl:h-60 xl:min-h-0 xl:flex-none">
-        <ResponsiveContainer>
-          <ComposedChart data={rows} margin={{ top: 14, right: 8, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id="mt-cum" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="var(--s1)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid {...gridProps} />
-            {/* Every day of this month (28–31), labelled; phones label every other day. */}
-            <XAxis dataKey="day" {...axisProps} type="number" domain={[1, dim]} interval={0}
-              ticks={Array.from({ length: dim }, (_, i) => i + 1).filter((d) => wide || d % 2 === 1 || d === dim)}
-              tick={{ ...axisProps.tick, fontSize: wide ? 9 : 10 }} />
-            <YAxis {...axisProps} tickFormatter={eurk} width={44} domain={[0, top]} />
-            <Tooltip cursor={{ stroke: 'var(--chart-axis)' }} content={({ active, payload }) => {
-              if (!active || !payload?.length) return null
-              const r = payload[0].payload as (typeof rows)[number]
-              const ev = events.filter((e) => e.day === r.day)
-              return <TooltipBox title={`Day ${r.day}`} rows={[
-                ...(r.cum != null ? [{ color: 'var(--s1)', label: 'Spent so far', value: eur(r.cum), bold: true }, { label: 'that day', value: eur(days[r.day - 1].spent) }]
-                  : r.proj != null ? [{ color: over ? 'rgb(var(--warn))' : 'var(--s1)', label: 'Expected', value: eur(r.proj) }] : []),
-                { color: 'var(--s-other)', label: 'On plan by now', value: eur(r.pace) },
-                ...ev.map((e) => ({ color: evColor(e.kind), label: `${e.label}${e.done ? (e.kind === 'income' ? ' received' : ' paid') : ' due'}`, value: eur(e.amount) })),
-              ]} />
-            }} />
-            <ReferenceLine y={free} stroke="var(--chart-axis)" strokeDasharray="4 3"
-              label={{ value: `spending money ${eurk(free)}`, position: 'insideBottomLeft', fontSize: 10, fill: 'var(--chart-text)' }} />
-            {/* Your usual rhythm squeezed into this month's free money: where
-                spending should be by each day to land on plan. */}
-            <Line dataKey="pace" stroke="var(--s-other)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-            <Area dataKey="cum" stroke="var(--s1)" strokeWidth={2} fill="url(#mt-cum)" dot={false} isAnimationActive={false} connectNulls={false} />
-            <Line dataKey="proj" stroke={over ? 'rgb(var(--warn))' : 'var(--s1)'} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
-            {/* On the last day "today" would hang off the right edge; shift it in. */}
-            <ReferenceLine x={today} stroke="rgb(var(--ink))" strokeOpacity={0.5} label={{ value: 'today', position: 'top', dx: today === dim ? -10 : 0, fontSize: 10, fill: 'var(--chart-text)' }} />
-            {/* What is left today: the gap from your spending up to the free money.
-                Its label sits on the roomier side of today, so early in the
-                month it doesn't run into the euro axis, and a halo in the
-                card's colour keeps it readable where a line crosses it. */}
-            <ReferenceLine segment={[{ x: today, y: cumToday }, { x: today, y: free }]} stroke={p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))'} strokeWidth={3} ifOverflow="extendDomain"
-              label={{ value: p.safe_to_spend < 0 ? `${eur(-p.safe_to_spend)} over` : `${eur(p.safe_to_spend)} left`, position: today <= dim / 2 ? 'right' : 'left', fontSize: 11, fontWeight: 600, stroke: 'var(--chart-surface)', strokeWidth: 3, paintOrder: 'stroke', fill: p.safe_to_spend < 0 ? 'rgb(var(--bad))' : 'rgb(var(--good))' }} />
-            {runOut != null && (
-              <ReferenceDot x={runOut} y={free} r={4} fill="rgb(var(--warn))" stroke="var(--chart-surface)" strokeWidth={2} ifOverflow="visible"
-                label={wide ? { value: `runs out ~${runOut}`, position: 'top', fontSize: 10, fill: 'rgb(var(--warn))' } : undefined} />
-            )}
-            {events.map((e, i) => (
-              <ReferenceDot key={i} x={e.day} y={0} r={5} fill={e.done ? evColor(e.kind) : 'rgb(var(--surface))'} stroke={evColor(e.kind)} strokeWidth={2} ifOverflow="visible" />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded bg-[var(--s1)]" />you</span>
-        <span className="inline-flex items-center gap-1" title="The rest of the month as your last six months spent it, one-offs included"><span className="w-3 border-t-2 border-dashed" style={{ borderColor: over ? 'rgb(var(--warn))' : 'var(--s1)' }} />expected</span>
-        <span className="inline-flex items-center gap-1" title="This month's spending money spent in the rhythm of your typical month"><span className="h-0.5 w-3 rounded bg-[var(--s-other)]" />on plan</span>
-        {events.length > 0 && <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2" style={{ borderColor: 'var(--s7)' }} />due · <span className="h-2 w-2 rounded-full" style={{ background: 'var(--s7)' }} />paid</span>}
-      </div>
-    </div>
-  )
-}
 
 /** The whole month's income as one bar: what is committed (fixed, saving,
  *  funds — solid once paid, striped while still to go), what was spent, and
