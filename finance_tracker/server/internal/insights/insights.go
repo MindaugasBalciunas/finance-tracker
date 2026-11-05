@@ -58,6 +58,11 @@ type Flow struct {
 	Refunds        money.Cents            `json:"refunds"`         // refunds/reimbursements already deducted from Spending
 	IncomeBy       map[string]money.Cents `json:"income_by"`
 	SpendingBy     map[string]money.Cents `json:"spending_by"` // by top-level category
+	// A month whose pay hasn't all come yet but still may (its pay window is
+	// open): what the plan says is still to come, and the savings rate
+	// counting it. Income and SavingsRate stay what actually came in.
+	ExpectedSalary      money.Cents `json:"expected_salary,omitempty"`
+	ExpectedSavingsRate *float64    `json:"expected_savings_rate,omitempty"`
 }
 
 func periodKey(date, granularity string) string {

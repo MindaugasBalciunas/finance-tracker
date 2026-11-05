@@ -1,4 +1,6 @@
 import { dayTicks } from '../components/MonthChart'
+import { barRate } from '../lib/flow'
+import type { Flow } from '../lib/types'
 import { ledgerLink } from '../lib/links'
 import { clickLabel } from '../lib/usage'
 import { addMonths, eur, eurc, eurk, monthLabel, parseNum, pct, signed } from '../lib/format'
@@ -97,5 +99,15 @@ describe('month chart day labels', () => {
     expect(dayTicks(30, false).slice(-2)).toEqual([27, 30])
     expect(dayTicks(31, false).slice(-2)).toEqual([29, 31])
     expect(dayTicks(31, false)[0]).toBe(1)
+  })
+})
+
+describe('savings rate by month', () => {
+  const flow = (f: Partial<Flow>): Flow => ({ period: '2026-11', income: 0, spending: 0, essential: 0, discretionary: 0, saved: 0, savings_rate: 0, invested: 0, principal: 0, payroll_pension: 0, income_by: {}, spending_by: {}, ...f })
+  it('rates a month whose salary is still due with the expected salary, not as a month with no pay', () => {
+    // November on the 5th: €100 in, €257 spent, salary due by 10 Dec.
+    expect(barRate(flow({ income: 100, spending: 257, savings_rate: -1.57, expected_salary: 6000, expected_savings_rate: 0.958 }))).toBeCloseTo(95.8)
+    expect(barRate(flow({ income: 4125, spending: 4000, savings_rate: 0.03 }))).toBeCloseTo(3)
+    expect(barRate(flow({ income: 0, spending: 300 }))).toBeNull()
   })
 })

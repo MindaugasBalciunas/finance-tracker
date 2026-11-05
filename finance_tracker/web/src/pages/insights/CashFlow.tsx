@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 import { useCashflow, usePeriod } from '../../lib/hooks'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth, todayISO } from '../../lib/format'
 import type { Flow } from '../../lib/types'
+import { barRate } from '../../lib/flow'
 import { Link, useNavigate } from 'react-router-dom'
 import { CountUp, Card, Loading, Segmented, Stat } from '../../components/ui'
 import { incomeCategories, ledgerLink } from '../../lib/links'
@@ -27,17 +28,23 @@ export function CashFlow() {
   const from = addMonths(thisMonth(), -spanMonths(span) + 1) + '-01'
   const { data: months, isLoading } = useCashflow(from, todayISO(), 'month')
   const { data: years } = useCashflow('', '', 'year')
-  const rows = useMemo(() => (months ?? []).map((f) => ({ ...f, label: f.period, spendNeg: -f.spending, rate: f.income > 0 ? f.savings_rate * 100 : null })), [months])
+  // A month whose pay is still due is rated with what the plan says is still
+  // to come (a lighter bar), not as a month with no pay.
+  const rows = useMemo(() => (months ?? []).map((f) => ({
+    ...f, label: f.period, spendNeg: -f.spending,
+    rate: barRate(f),
+  })), [months])
   const complete = (months ?? []).filter((f) => f.period < thisMonth())
   const last12 = complete.slice(-12)
-  const sum = (k: keyof Flow) => last12.reduce((a, f) => a + (f[k] as number), 0)
-  const inc = sum('income')
+  const sum = (k: keyof Flow) => last12.reduce((a, f) => a + ((f[k] as number) ?? 0), 0)
+  const due = sum('expected_salary') // last month's pay may still be on its way (1st–10th)
+  const inc = sum('income') + due
   const sp = sum('spending')
   if (isLoading) return <Loading />
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon="briefcase" color="var(--s6)" label="Income · 12 mo" value={<CountUp value={inc} format={eur} />} sub={`${eur(inc / 12)}/month`} />
+        <Stat icon="briefcase" color="var(--s6)" label="Income · 12 mo" value={<CountUp value={inc} format={eur} />} sub={due > 0 ? `${eur(inc / 12)}/month · incl. ${eur(due)} still to come` : `${eur(inc / 12)}/month`} />
         <Stat icon="bag" color="var(--s2)" label="Spending · 12 mo" value={<CountUp value={sp} format={eur} />} sub={`${eur(sp / 12)}/month`} />
         <Stat icon="piggy" color="var(--s3)" label="Savings rate" value={<CountUp value={inc ? (inc - sp) / inc : 0} format={pct} />} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
         <Stat icon="trend" color="var(--s7)" label="Invested · 12 mo" value={<CountUp value={sum('invested')} format={eur} />} sub={`incl. ${eur(sum('principal'))} loan principal`} />
@@ -84,14 +91,22 @@ export function CashFlow() {
               <XAxis dataKey="label" {...axisProps} tickFormatter={(m) => monthLabel(m)} minTickGap={24} />
               <YAxis {...axisProps} tickFormatter={(v) => `${v}%`} width={40} domain={[-50, 100]} ticks={[-50, 0, 50, 100]} allowDataOverflow />
               <ReferenceLine y={0} stroke="var(--chart-axis)" />
-              <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? <TooltipBox title={monthLabel(payload[0].payload.period, true)} rows={[{ label: 'Savings rate', value: pct(payload[0].payload.savings_rate), bold: true }]} /> : null} />
+              <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? (() => {
+                const f = payload[0].payload as Flow
+                return <TooltipBox title={monthLabel(f.period, true)} rows={f.expected_savings_rate != null ? [
+                  { label: 'Savings rate, with pay still to come', value: pct(f.expected_savings_rate), bold: true },
+                  { label: <span className="pl-3 text-muted">still to come (plan)</span>, value: <span className="text-muted">{eurc(f.expected_salary ?? 0)}</span> },
+                  { label: <span className="pl-3 text-muted">in so far</span>, value: <span className="text-muted">{eurc(f.income)}</span> },
+                  { label: <span className="pl-3 text-muted">spent so far</span>, value: <span className="text-muted">{eurc(f.spending)}</span> },
+                ] : [{ label: 'Savings rate', value: pct(f.savings_rate), bold: true }]} />
+              })() : null} />
               <Bar dataKey="rate" name="Savings rate" fill="var(--s3)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-                {rows.map((r) => <Cell key={r.period} fillOpacity={r.period === thisMonth() ? 0.4 : 1} />)}
+                {rows.map((r) => <Cell key={r.period} fillOpacity={r.period === thisMonth() || r.expected_savings_rate != null ? 0.4 : 1} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-1 text-xs text-muted">Salary paid on the 30th sometimes lands on the 1st — read single months with that in mind; the 12-month figure above is the honest one.</div>
+        <div className="mt-1 text-xs text-muted">Lighter bars: the pay isn't all in yet, so they count what your plan says is still to come. A month in progress has only part of its spending yet. The 12-month figure above is the steadiest read.</div>
       </Card>
       <Card pad={false} title="Every year">
         <div className="overflow-x-auto">

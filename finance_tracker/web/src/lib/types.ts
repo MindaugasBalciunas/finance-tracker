@@ -32,6 +32,8 @@ export interface Flow {
   savings_rate: number; invested: number; principal: number; payroll_pension: number
   income_by: Record<string, number>; spending_by: Record<string, number>
   refunds?: number
+  /** Salary still due for the month (its pay window is open): what the plan expects, and the rate counting it. */
+  expected_salary?: number; expected_savings_rate?: number
 }
 
 export interface Snapshot {

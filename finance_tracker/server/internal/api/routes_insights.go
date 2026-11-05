@@ -112,7 +112,13 @@ func (s *Server) insightRoutes() {
 		if g != "year" {
 			g = "month"
 		}
-		return insights.CashFlowRange(txs, cats, g, from, to, salary), nil
+		flows := insights.CashFlowRange(txs, cats, g, from, to, salary)
+		if g == "month" {
+			if err := cfo.ExpectSalary(s.DB, flows, time.Now()); err != nil {
+				return nil, err
+			}
+		}
+		return flows, nil
 	})
 	s.handle("GET /api/insights/breakdown", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		from, to := window(r)
