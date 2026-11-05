@@ -35,7 +35,11 @@ function MonthReviewView() {
   const f = r.flow as Flow
   const avg = r.six_month_avg as Flow
   const prev = r.previous as Flow
-  const rate = Math.max(0, Math.min(1, f.savings_rate))
+  // Pay still to come (salary due by the rule's day) counts, as on Cash flow.
+  const due = f.expected_salary ?? 0
+  const fRate = f.expected_savings_rate ?? f.savings_rate
+  const saved = f.saved + due
+  const rate = Math.max(0, Math.min(1, fRate))
   const vs = (cur: number, ref: number, goodUp: boolean) => ref ? <Delta value={cur - ref} goodWhenUp={goodUp} /> : null
   const maxCat = Math.max(...r.categories.map((c: any) => Math.max(c.spent, c.average)), 1)
   return (
@@ -51,11 +55,11 @@ function MonthReviewView() {
       <section className="card p-4" style={hue(r.tone === 'good' ? 'var(--hue-good)' : r.tone === 'bad' ? 'var(--hue-bad)' : undefined)}>
         <div className="section-title">The month in one line</div>
         <h2 className="mt-1 text-lg font-semibold">{r.verdict}</h2>
-        {f.income > 0 && (
+        {f.income + due > 0 && (
           <div className="mt-3">
-            <div className="flex justify-between text-xs text-muted"><span>Savings rate <b className="text-ink">{pct(f.savings_rate)}</b></span><span>usual {pct(avg.savings_rate)}</span></div>
+            <div className="flex justify-between text-xs text-muted"><span>Savings rate{due > 0 && ', with pay still to come'} <b className="text-ink">{pct(fRate)}</b></span><span>usual {pct(avg.savings_rate)}</span></div>
             <div className="relative mt-1 h-2 rounded-full bg-sunken">
-              <div className={clsx('h-full rounded-full', f.savings_rate < avg.savings_rate ? 'bg-warn' : 'bg-good')} style={{ width: `${rate * 100}%` }} />
+              <div className={clsx('h-full rounded-full', fRate < avg.savings_rate ? 'bg-warn' : 'bg-good')} style={{ width: `${rate * 100}%` }} />
               <div className="absolute -top-1 h-4 w-0.5 rounded bg-ink" style={{ left: `${Math.max(0, Math.min(1, avg.savings_rate)) * 100}%` }} />
             </div>
           </div>
@@ -73,9 +77,9 @@ function MonthReviewView() {
       </section>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Income" value={<CountUp value={f.income} format={eur} />} sub={<>vs last month {vs(f.income, prev.income, true)}</>} />
+        <Stat label="Income" value={<CountUp value={f.income} format={eur} />} sub={due > 0 ? <>+ {eur(due)} still to come</> : <>vs last month {vs(f.income, prev.income, true)}</>} />
         <Stat label="Spending" value={<CountUp value={f.spending} format={eur} />} sub={<>vs 6-mo avg {vs(f.spending, avg.spending, false)}</>} />
-        <Stat label="Saved" value={<CountUp value={f.saved} format={eur} />} tone={f.saved < 0 ? 'bad' : undefined} sub={<>vs 6-mo avg {vs(f.saved, avg.saved, true)}</>} />
+        <Stat label="Saved" value={<CountUp value={saved} format={eur} />} tone={saved < 0 ? 'bad' : undefined} sub={due > 0 ? <>with pay still to come</> : <>vs 6-mo avg {vs(f.saved, avg.saved, true)}</>} />
         <Stat label="Net worth" value={<CountUp value={r.net_worth.end} format={eur} />} sub={<Delta value={r.net_worth.change} />} />
       </div>
       <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">

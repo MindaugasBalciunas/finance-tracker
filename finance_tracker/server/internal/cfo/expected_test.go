@@ -2,6 +2,7 @@ package cfo_test
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,5 +101,76 @@ func TestFixedIncomePlanDoesNotCountOtherIncomeTwice(t *testing.T) {
 	nov := expectedFlows(t, d, time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC))["2026-11"]
 	if nov.ExpectedSalary != E(4000) || rateOf(nov) != 0.9 { // (6,000 − 600) / 6,000
 		t.Errorf("still due %v rate %v, want €4,000 and 0.9", nov.ExpectedSalary, rateOf(nov))
+	}
+}
+
+// Month review of November on the 5th: not "You spent €157 more than you
+// earned" — the salary due by 10 Dec is counted, and the review says so.
+func TestMonthReviewCountsPayStillToCome(t *testing.T) {
+	d := DB(t)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.GrossSalary = "gross", 10000
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	plan.SaveSettings(d, st)
+	for _, m := range []string{"2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"} {
+		Tx(t, d, ledger.Tx{Date: m + "-20", Amount: E(4000), Category: "food.groceries", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: m + "-25", Kind: "income", Amount: E(5000), Category: "salary", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Kind: "income", Amount: E(100), Category: "other_income", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-03", Amount: E(257), Category: "food.groceries", AccountID: "swed"})
+	r, err := cfo.BuildMonthReview(d, "2026-11", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	net := money.FromFloat(plan.LTNetSalary(10000, 0))
+	if r.Flow.ExpectedSalary != net || r.Flow.ExpectedSavingsRate == nil || r.Flow.Income != E(100) {
+		t.Fatalf("flow %+v", r.Flow)
+	}
+	if r.Tone != "neutral" || !strings.HasPrefix(r.Verdict, "So far: ") || strings.Contains(r.Verdict, "more than you earned") {
+		t.Errorf("verdict %q tone %s", r.Verdict, r.Tone)
+	}
+	if len(r.Highlights) == 0 || !strings.Contains(r.Highlights[0].Text, "still to come by 10 Dec") {
+		t.Errorf("highlights %+v", r.Highlights)
+	}
+}
+
+// Pay a little under the plan's figure is the month's pay: October paid
+// €30 short on 2 Nov is final in spirit — no "still to come", no "So far".
+// A month with nothing in it yet still says so.
+func TestPayUnderPlanSettlesTheMonth(t *testing.T) {
+	d := DB(t)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.GrossSalary = "gross", 10000
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}}
+	plan.SaveSettings(d, st)
+	net := money.FromFloat(plan.LTNetSalary(10000, 0))
+	for _, m := range []string{"2026-07", "2026-08", "2026-09"} {
+		Tx(t, d, ledger.Tx{Date: m + "-20", Amount: E(4000), Category: "food.groceries", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: m + "-30", Kind: "income", Amount: net, Category: "salary", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-20", Amount: E(4000), Category: "food.groceries", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Kind: "income", Amount: net - E(30), Category: "salary", AccountID: "swed"})
+	now := time.Date(2026, 11, 2, 18, 0, 0, 0, time.UTC)
+	if oct := expectedFlows(t, d, now)["2026-10"]; oct.ExpectedSalary != 0 || oct.ExpectedSavingsRate != nil {
+		t.Errorf("October paid €30 under plan: still to come %v", oct.ExpectedSalary)
+	}
+	r, err := cfo.BuildMonthReview(d, "2026-10", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range r.Highlights {
+		if strings.Contains(h.Text, "still to come") || strings.Contains(h.Text, "Not final") {
+			t.Errorf("paid month: %q", h.Text)
+		}
+	}
+	if strings.HasPrefix(r.Verdict, "So far") {
+		t.Errorf("verdict %q", r.Verdict)
+	}
+	empty, err := cfo.BuildMonthReview(d, "2026-12", time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.Verdict != "Nothing recorded for this month yet." || empty.Tone != "neutral" {
+		t.Errorf("empty December: %q %s", empty.Verdict, empty.Tone)
 	}
 }

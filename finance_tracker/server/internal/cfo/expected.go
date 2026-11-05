@@ -20,8 +20,9 @@ import (
 // for the month less what already came: in gross mode the plan models the
 // salary, so salary received counts against it (an advance on the 15th
 // leaves the rest due); a fixed amount or the median models all income, so
-// all income received does — other income is never counted twice. Months
-// whose window has closed keep their numbers: a missing salary there is real.
+// all income received does — other income is never counted twice. Once pay
+// of at least half the plan is in, nothing more is expected. Months whose
+// window has closed keep their numbers: a missing salary there is real.
 func ExpectSalary(d *sql.DB, flows []insights.Flow, now time.Time) error {
 	settings := plan.LoadSettings(d)
 	rules := settings.Salary()
@@ -39,12 +40,20 @@ func ExpectSalary(d *sql.DB, flows []insights.Flow, now time.Time) error {
 			}
 		}
 		base, src := plan.IncomeBase(settings, income, f.Period, nowYM)
+		// Pay of at least half the plan is the month's pay, even a little
+		// under the plan's figure: October paid €30 short of it is paid, not
+		// "€30 still to come" until the 10th. Less (an advance) leaves the
+		// rest due.
+		paid := salaryIn(f)
+		if paid*2 >= base {
+			continue
+		}
 		received := f.Income
 		if strings.HasPrefix(src, "gross") {
-			received = salaryIn(f)
+			received = paid
 		}
 		due := base - received
-		if due <= 0 {
+		if due < money.Cents(100) { // under €1 is rounding, not pay
 			continue
 		}
 		f.ExpectedSalary = due

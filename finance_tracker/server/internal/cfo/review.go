@@ -23,7 +23,7 @@ type MonthReview struct {
 	Month       string           `json:"month"`
 	Complete    bool             `json:"complete"` // the month is over (it can be closed)
 	Final       bool             `json:"final"`    // …and its salary can no longer arrive
-	Flow       insights.Flow    `json:"flow"`
+	Flow        insights.Flow    `json:"flow"`
 	Previous    insights.Flow    `json:"previous"`
 	SixMonthAvg insights.Flow    `json:"six_month_avg"`
 	Verdict     string           `json:"verdict"`
@@ -40,6 +40,7 @@ type MonthReview struct {
 	Checks      []Check          `json:"checks"`
 	lateSalary  money.Cents
 	salaryUntil string // the month is over but its salary may still arrive until this day
+	salaryDue   string // the last day this month's pay can still come
 }
 
 type Highlight struct {
@@ -124,6 +125,13 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	}
 	r.Flow = byPeriod[month]
 	r.Flow.Period = month
+	// Pay still to come counts, as on the cash-flow chart: November on the
+	// 5th, its salary due by 10 Dec, is not "€157 more than you earned".
+	one := []insights.Flow{r.Flow}
+	if err := ExpectSalary(d, one, now); err != nil {
+		return nil, err
+	}
+	r.Flow, r.salaryDue = one[0], plan.SalaryDue(month, salary)
 	r.Previous = byPeriod[sel.AddDate(0, -1, 0).Format("2006-01")]
 	var avg insights.Flow
 	for i := 1; i <= 6; i++ {
@@ -247,6 +255,9 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	if due := plan.SalaryDue(month, salary); r.Complete && !r.Final && r.lateSalary == 0 && due > to {
 		r.salaryUntil = due
 	}
+	if r.Complete && r.lateSalary > 0 {
+		r.Flow.ExpectedSalary, r.Flow.ExpectedSavingsRate = 0, nil
+	}
 	r.Verdict, r.Tone, r.Highlights = verdict(r)
 	r.Checks = Checks(d, now)
 	return r, nil
@@ -268,12 +279,22 @@ func verdict(r *MonthReview) (string, string, []Highlight) {
 	if r.lateSalary > 0 {
 		hs = append(hs, Highlight{"neutral", fmt.Sprintf("Salary of %s arrived in the first days of next month and is counted in this month.", eurS(r.lateSalary))})
 	}
-	if r.salaryUntil != "" {
+	if f.Income == 0 && f.Spending == 0 {
+		return "Nothing recorded for this month yet.", "neutral", hs
+	}
+	soFar := r.salaryUntil != ""
+	switch {
+	case f.ExpectedSavingsRate != nil:
+		// Judge the month with the pay still to come, and say so.
+		soFar = true
+		hs = append(hs, Highlight{"neutral", fmt.Sprintf("Not final yet: %s of pay still to come by %s is counted.", eurS(f.ExpectedSalary), shortDay(r.salaryDue))})
+		f.Income += f.ExpectedSalary
+		f.Saved += f.ExpectedSalary
+		f.SavingsRate = *f.ExpectedSavingsRate
+	case r.salaryUntil != "":
 		hs = append(hs, Highlight{"neutral", fmt.Sprintf("Not final yet: salary paid by %s still counts in this month.", shortDay(r.salaryUntil))})
 	}
 	switch {
-	case f.Income == 0 && f.Spending == 0:
-		return "Nothing recorded for this month yet.", "neutral", nil
 	case f.Saved < 0:
 		tone, head = "bad", fmt.Sprintf("You spent %s more than you earned.", eurS(-f.Saved))
 	case avg.Income > 0 && f.SavingsRate >= avg.SavingsRate+0.05:
@@ -283,8 +304,13 @@ func verdict(r *MonthReview) (string, string, []Highlight) {
 	default:
 		head = fmt.Sprintf("You kept %s of your income — about your usual %s.", pctS(f.SavingsRate), pctS(avg.SavingsRate))
 	}
-	if r.salaryUntil != "" {
+	if soFar {
 		head = "So far: " + head
+	}
+	// A month in progress counts its whole pay against a few days of
+	// spending: say how it is going, but don't colour it as won or lost.
+	if !r.Complete && f.ExpectedSavingsRate != nil {
+		tone = "neutral"
 	}
 	return head, tone, append(hs, tail(r)...)
 }
