@@ -109,3 +109,178 @@ func TestCashUntilPayday(t *testing.T) {
 		t.Errorf("%d move actions", found)
 	}
 }
+
+// The new job pays October's salary on 5 Nov under a "by the 10th" rule. That
+// payday is settled: the next is 10 Dec, so Home plans Swedbank through the
+// €1,000 alimony on the 17th instead of stopping at the 10th and calling the
+// money for it idle — and the calendar adds no salary on 10 Nov.
+func TestPayAlreadyInMovesPaydayToNextMonth(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 5, 15, 0, 0, 0, time.UTC)
+	if _, err := ledger.SaveAccount(d, ledger.Account{ID: "swed_sav", Name: "Swedbank savings", Institution: "Swedbank", Kind: "savings", Liquid: true}); err != nil {
+		t.Fatal(err)
+	}
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.ManualIncome = "manual", 6000
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	if err := plan.SaveSettings(d, st); err != nil {
+		t.Fatal(err)
+	}
+	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(1000)}
+	plan.Save(d, &alimony, "")
+	for _, m := range []string{"2026-08", "2026-09", "2026-10"} {
+		Tx(t, d, ledger.Tx{Date: m + "-17", Amount: E(1000), Category: "kids.alimony", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: m + "-06", Amount: E(300), Category: "food.groceries", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-09-01", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-01", Amount: E(3100), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(4125), Category: "salary", AccountID: "swed"})
+	Bal(t, d, "swed", "2026-11-05", 978.84)
+	Bal(t, d, "swed_sav", "2026-11-05", 8000)
+
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := o.Cash
+	if c == nil || c.Payday != "2026-12-10" {
+		t.Fatalf("payday %+v", c)
+	}
+	for _, a := range c.Accounts {
+		if a.ID != "swed" {
+			continue
+		}
+		var alimonyIn bool
+		for _, it := range a.Items {
+			alimonyIn = alimonyIn || (it.Date == "2026-11-17" && it.Amount == -E(1000))
+		}
+		if !alimonyIn || a.Idle != 0 || a.Needed <= 0 {
+			t.Errorf("swed until 10 Dec: alimony %v idle %v needed %v items %+v", alimonyIn, a.Idle, a.Needed, a.Items)
+		}
+	}
+	for _, m := range c.ToSavings {
+		if m.From == "swed" {
+			t.Errorf("money for the alimony sent to savings: %+v", m)
+		}
+	}
+
+	rb, err := cfo.BuildRunbook(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Payday != "2026-11-05" || rb.Expected != "2026-12-10" {
+		t.Errorf("runbook payday %q expected %q", rb.Payday, rb.Expected)
+	}
+
+	cal, err := cfo.CashFlowCalendar(d, now, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var salaries []string
+	for _, day := range cal.Days {
+		for _, e := range day.Events {
+			if e.Kind == "income" {
+				salaries = append(salaries, day.Date)
+			}
+		}
+	}
+	if len(salaries) != 1 || salaries[0] != "2026-12-10" {
+		t.Errorf("calendar salaries %v, want only 2026-12-10", salaries)
+	}
+}
+
+// A mid-month advance (the old job's 15th) is not next month's pay come
+// early: on the 20th the final part is still due by the 3rd.
+func TestAdvanceDoesNotSettleNextPayday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	Tx(t, d, ledger.Tx{Date: "2026-09-01", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-09-15", Amount: E(2000), Category: "salary", AccountID: "swed"})
+	rb, err := cfo.BuildRunbook(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Expected != "2026-10-03" {
+		t.Errorf("expected %q, want 2026-10-03", rb.Expected)
+	}
+}
+
+// A €30 voucher booked as salary on 27 Nov is not December's pay come early:
+// payday stays 10 Dec rather than jumping to January.
+func TestSmallSalaryRowDoesNotSettlePayday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)
+	st := plan.LoadSettings(d)
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	plan.SaveSettings(d, st)
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(4125), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-27", Amount: E(30), Category: "salary", AccountID: "swed", Note: "birthday voucher"})
+	rb, err := cfo.BuildRunbook(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Expected != "2026-12-10" {
+		t.Errorf("expected %q, want 2026-12-10", rb.Expected)
+	}
+	// The real pay on 6 Dec does settle it.
+	Tx(t, d, ledger.Tx{Date: "2026-12-06", Amount: E(4200), Category: "salary", AccountID: "swed"})
+	if rb, _ = cfo.BuildRunbook(d, time.Date(2026, 12, 6, 18, 0, 0, 0, time.UTC)); rb.Expected != "2027-01-10" || rb.Payday != "2026-12-06" {
+		t.Errorf("after December's pay: payday %q expected %q", rb.Payday, rb.Expected)
+	}
+}
+
+// With payday a month out, an obligation due early next month (alimony on
+// the 2nd) is in the plan — it is in neither month's list otherwise.
+func TestCashPlanCountsObligationEarlyNextMonth(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 5, 15, 0, 0, 0, time.UTC)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.ManualIncome = "manual", 6000
+	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
+	plan.SaveSettings(d, st)
+	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(1000)}
+	plan.Save(d, &alimony, "")
+	for _, m := range []string{"2026-09", "2026-10", "2026-11"} {
+		Tx(t, d, ledger.Tx{Date: m + "-02", Amount: E(1000), Category: "kids.alimony", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-01", Amount: E(3100), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(4125), Category: "salary", AccountID: "swed"})
+	Bal(t, d, "swed", "2026-11-05", 1200)
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Cash == nil || o.Cash.Payday != "2026-12-10" {
+		t.Fatalf("cash %+v", o.Cash)
+	}
+	var found bool
+	for _, a := range o.Cash.Accounts {
+		for _, it := range a.Items {
+			if it.Date == "2026-12-02" && it.Kind == "obligation" && it.Amount == -E(1000) && a.ID == "swed" {
+				found = true
+			}
+		}
+		if a.ID == "swed" && a.Idle > E(150) { // €1,200 − €1,000 alimony − the €50 buffer
+			t.Errorf("money for December's alimony called idle: %v", a.Idle)
+		}
+	}
+	if !found {
+		t.Errorf("no 2 Dec alimony in %+v", o.Cash.Accounts)
+	}
+}
+
+// Pay on 30 Sep for the "by the 3rd" payday is October's payday: Plan shows
+// it in, not "Salary not in yet".
+func TestPayOnTheThirtiethIsThisMonthsPayday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	Tx(t, d, ledger.Tx{Date: "2026-08-31", Amount: E(3000), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-09-30", Amount: E(3100), Category: "salary", AccountID: "swed"})
+	rb, err := cfo.BuildRunbook(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Payday != "2026-09-30" || rb.Salary != E(3100) || rb.Expected != "2026-11-03" {
+		t.Errorf("payday %q salary %v expected %q", rb.Payday, rb.Salary, rb.Expected)
+	}
+}

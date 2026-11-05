@@ -335,7 +335,8 @@ formats, my brief and the decisions I've made since. Answer from the data — qu
 
 1. **Where I stand** — net worth and liquid assets now, change over 12 months and why (today.json, networth_monthly.csv).
 2. **Cash flow** — savings rate for the last 12 months vs the year before; months that broke the pattern and the cause
-   (cashflow_monthly.csv, transactions.csv). A salary booked on the 1st–3rd belongs to the previous month.
+   (cashflow_monthly.csv, transactions.csv). A salary booked on or before the paid-by day of the salary rule in
+   force on its date (reference.json → plan_settings.salary_rules; none = by the 3rd) belongs to the previous month.
 3. **Spending** — the 5 categories and 10 merchants that grew most; recurring charges I could cut.
 4. **Debt** — mortgage: rate, reset date, prepay vs invest at my rate, and what happens if EURIBOR moves ±1% (loans.csv).
 5. **Safety** — emergency fund in months of essential spending; anything stale or risky.

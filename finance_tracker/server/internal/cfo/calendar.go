@@ -144,8 +144,9 @@ func CashFlowCalendar(d *sql.DB, now time.Time, days int) (*CashCalendar, error)
 	if !salaryKnown && f.Assumed.Income > 0 {
 		rules := plan.LoadSettings(d).Salary()
 		at := now
+		paid, _ := lastSalary(txs, now.Format("2006-01-02"))
 		for i := 0; i < days/28+2; i++ {
-			p := nextPayday(rules, at)
+			p := nextPayday(rules, at, paid)
 			if p == "" {
 				break
 			}

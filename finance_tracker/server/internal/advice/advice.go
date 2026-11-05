@@ -9,7 +9,7 @@ const DataModel = `How the data is modelled:
 - Transactions are income, expense or transfer. Transfers move money between own accounts; transfer.invest / transfer.pension / transfer.debt (mortgage principal) / transfer.asset build wealth and count as "invested" (money paid back out of a pension, broker or crypto account counts against it, a move between two of them is neutral), transfer.internal is just shuffling cash.
 - Categories are two-level ids (food.groceries). Merchant is who was paid. Tags are who/why/where: people (kids, evelina, kristina), properties (house, apartment), trips (trip:…).
 - Savings rate = (income − spending) / income; refunds reduce spending. Mortgage interest is spending; principal is saving.
-- A salary paid on the 1st–3rd belongs to the month before; cash_flow and get_overview already put each salary leg in its month.
+- A salary paid early in a month — on or before the paid-by day of the salary rule in force on its date (get_plan_settings → salary_rules, none saved = by the 3rd; a new job brings a new rule) — belongs to the month before; cash_flow and get_overview already put each salary leg in its month.
 - Net worth includes property and loans; "liquid" is cash, brokers, crypto and II/III pillar pensions (cashable); it excludes property, car and debt.`
 
 // Strategy is the owner's money framework.

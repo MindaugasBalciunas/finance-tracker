@@ -549,6 +549,25 @@ func (p *PlanPulse) fillDaily(free map[string]money.Cents, everyday map[string]m
 // detected rhythm (mortgage interest: no merchant, a new amount every month)
 // from the day of its last payment in the past two months; "" if unknown or
 // that day has already passed.
+// nextMonthDue is the day next month an obligation is due, from the day it
+// was last paid (last two months); "" when it hasn't been paid lately.
+func nextMonthDue(txs []ledger.Tx, cats []string, now time.Time) string {
+	since := now.AddDate(0, -2, 0).Format("2006-01-02")
+	last := ""
+	for i := range txs {
+		t := &txs[i]
+		if t.Date >= since && t.Date > last && t.Kind != "income" && within(t.Category, cats) {
+			last = t.Date
+		}
+	}
+	if last == "" {
+		return ""
+	}
+	day, _ := time.Parse("2006-01-02", last)
+	dim := time.Date(now.Year(), now.Month()+2, 0, 0, 0, 0, 0, time.UTC).Day()
+	return time.Date(now.Year(), now.Month()+1, min(day.Day(), dim), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+}
+
 func dueFromHistory(txs []ledger.Tx, cats []string, now time.Time) string {
 	since := now.AddDate(0, -2, 0).Format("2006-01-02")
 	thisMonth := now.Format("2006-01")

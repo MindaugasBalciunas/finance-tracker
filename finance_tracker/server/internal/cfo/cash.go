@@ -90,9 +90,69 @@ type CashMove struct {
 	For      string      `json:"for"`
 }
 
-// nextPayday is the first day after today on which, under the salary rule in
-// force that day, salary is due (its "paid by" day). "" when no rule says.
-func nextPayday(rules []plan.SalaryRule, now time.Time) string {
+// paidEarly: a salary booked this many days before a payday is that payday's
+// salary come early. Long enough for pay on the 5th against "by the 10th" or
+// on the 28th before a holiday; short enough that a mid-month advance (the
+// 15th) doesn't settle the next month's payday.
+const paidEarly = 14
+
+// nextPayday is the next payday whose salary hasn't come yet: the first day
+// after today on which, under the salary rule in force that day, salary is
+// due (its "paid by" day), skipped when paid (the latest salary booked, ""
+// = none) landed within paidEarly days before it. Without the skip, October's
+// pay on 5 Nov still left "payday 10 Nov": Home planned cash only to the
+// 10th, missed the €1,000 alimony on the 17th and called the money for it
+// idle, and the calendar added a salary that wasn't coming. "" when no rule
+// says.
+func nextPayday(rules []plan.SalaryRule, now time.Time, paid string) string {
+	at := now
+	for range 3 {
+		p := paydayAfter(rules, at)
+		if p == "" || !settles(paid, p) {
+			return p
+		}
+		t, _ := time.Parse("2006-01-02", p)
+		at = time.Date(t.Year(), t.Month()+1, 0, 23, 0, 0, 0, time.UTC) // one salary a month
+	}
+	return ""
+}
+
+// lastSalary is the latest settled pay booked on or before today ("" =
+// none): a salary row at least half the largest of the last 100 days, so a
+// €30 voucher or a small expense refund booked as salary doesn't pass for
+// the month's pay and push payday a month out.
+func lastSalary(txs []ledger.Tx, today string) (string, money.Cents) {
+	is := func(t *ledger.Tx) bool {
+		return t.Kind == "income" && ledger.Top(t.Category) == "salary" && !t.Pending && t.Date <= today
+	}
+	since := today
+	if d, err := time.Parse("2006-01-02", today); err == nil {
+		since = d.AddDate(0, 0, -100).Format("2006-01-02")
+	}
+	var top money.Cents
+	for i := range txs {
+		if t := &txs[i]; is(t) && t.Date >= since && t.Amount > top {
+			top = t.Amount
+		}
+	}
+	last, amt := "", money.Cents(0)
+	for i := range txs {
+		if t := &txs[i]; is(t) && t.Amount*2 >= top && t.Date > last {
+			last, amt = t.Date, t.Amount
+		}
+	}
+	return last, amt
+}
+
+// settles: pay booked on paid is payday's salary come early.
+func settles(paid, payday string) bool {
+	t, err := time.Parse("2006-01-02", payday)
+	return err == nil && paid != "" && paid <= payday && paid >= t.AddDate(0, 0, -paidEarly).Format("2006-01-02")
+}
+
+// paydayAfter is the first day after now on which, under the salary rule in
+// force that day, salary is due. "" when no rule says.
+func paydayAfter(rules []plan.SalaryRule, now time.Time) string {
 	rules = append([]plan.SalaryRule(nil), rules...)
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].From < rules[j].From })
 	for i := 1; i <= 70; i++ {
@@ -142,7 +202,8 @@ func usualAccount(txs []ledger.Tx, now time.Time, match func(*ledger.Tx) bool) s
 func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]string, book *wealth.Book, now time.Time) *CashPlan {
 	settings := plan.LoadSettings(d)
 	today := now.Format("2006-01-02")
-	cp := &CashPlan{Payday: nextPayday(settings.Salary(), now), Accounts: []CashAccount{}, Moves: []CashMove{}, ToSavings: []CashMove{}}
+	paid, _ := lastSalary(txs, today)
+	cp := &CashPlan{Payday: nextPayday(settings.Salary(), now, paid), Accounts: []CashAccount{}, Moves: []CashMove{}, ToSavings: []CashMove{}}
 	if cp.Payday == "" {
 		return cp
 	}
@@ -191,6 +252,19 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 		acct := usualAccount(txs, now, func(t *ledger.Tx) bool { return t.Kind != "income" && within(t.Category, cats) })
 		add(acct, f.Due, f.Name, "obligation", -(f.Budgeted - f.Spent))
 	}
+	// …and next month's, when it falls before payday: with pay on the 5th and
+	// payday "by the 10th", the plan runs into next month, and an obligation
+	// on the 2nd would otherwise be in neither month's list.
+	for i, f := range p.Fixed {
+		if i >= len(fixedCats) || f.Budgeted <= 0 {
+			continue
+		}
+		cats := fixedCats[i]
+		if next := nextMonthDue(txs, cats, now); next != "" && next < cp.Payday {
+			acct := usualAccount(txs, now, func(t *ledger.Tx) bool { return t.Kind != "income" && within(t.Category, cats) })
+			add(acct, next, f.Name, "obligation", -f.Budgeted)
+		}
+	}
 	// 2. Recurring bills, standing orders, planned transfers and income — every
 	// occurrence before payday; those inside an obligation are counted there.
 	var allCats []string
@@ -203,7 +277,7 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 			if r.Next == "" || within(r.Category, allCats) {
 				continue
 			}
-			for date, n := r.Next, 0; date != "" && date < cp.Payday && n < 3; n++ {
+			for date, n := r.Next, 0; date != "" && date < cp.Payday && n < 6; n++ {
 				switch r.Kind {
 				case "bill":
 					add(firstNonEmpty(r.FromAccount, cp.DailyAccount), date, r.Merchant, "bill", -r.Amount)

@@ -38,7 +38,7 @@ type RunStep struct {
 type Runbook struct {
 	Month    string      `json:"month"`    // the calendar month the transfers belong to
 	Payday   string      `json:"payday"`   // when this month's salary landed ("" = not yet)
-	Expected string      `json:"expected"` // when the next one is due, by the salary rules
+	Expected string      `json:"expected"` // the next payday whose salary isn't in yet, by the salary rules
 	Salary   money.Cents `json:"salary"`
 	Steps    []RunStep   `json:"steps"`
 	Total    money.Cents `json:"total"`
@@ -72,7 +72,8 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*
 	for _, a := range accts {
 		names[a.ID] = a.Name
 	}
-	rb := &Runbook{Month: now.Format("2006-01"), Expected: nextPayday(rules, now), Steps: []RunStep{}}
+	paid, paidAmt := lastSalary(txs, today)
+	rb := &Runbook{Month: now.Format("2006-01"), Expected: nextPayday(rules, now, paid), Steps: []RunStep{}}
 
 	// Payday is this month's first salary payment; a salary paid in parts
 	// (1 Oct and 9 Oct) adds up. Steps count over the whole calendar month,
@@ -85,6 +86,16 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*
 				rb.Payday = t.Date
 			}
 			rb.Salary += t.Amount
+		}
+	}
+	// Pay that came in the last days of last month for this month's payday
+	// (on the 30th, before a holiday) is this month's payday: otherwise Plan
+	// said "Salary not in yet" with the money already in.
+	if first := now.Format("2006-01") + "-01"; rb.Payday == "" && paid != "" && paid < first {
+		if fd, err := time.Parse("2006-01-02", first); err == nil {
+			if p := paydayAfter(rules, fd.AddDate(0, 0, -1)); p != "" && p[:7] == month && settles(paid, p) {
+				rb.Payday, rb.Salary = paid, paidAmt
+			}
 		}
 	}
 	// The bill top-ups below come from Home's cash plan; building Home also
