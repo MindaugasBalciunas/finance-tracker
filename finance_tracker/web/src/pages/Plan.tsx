@@ -365,6 +365,7 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
             </div>
           )}
         </div>
+        {!current && <IncomeUsed r={r} />}
         <Allocation r={r} />
         {/* The legend shows what's not allocated; over-allocation needs words and the fix. */}
         {unallocated < 0 && (
@@ -425,6 +426,48 @@ function EmergencyFund() {
         </ul>
       </div>
     </Card>
+  )
+}
+
+/** A finished month: the income that actually came in, and where it went —
+ *  obligations, saved and invested, spending, and what was left (or how far
+ *  spending ran past it). Obligations leave the mortgage principal to saving. */
+export function IncomeUsed({ r }: { r: PlanReport }) {
+  const income = r.income_actual
+  if (income <= 0) return <div className="mt-4 text-sm text-muted">No income recorded for {monthLabel(r.month, true)}.</div>
+  const obligations = r.fixed_expense ?? r.fixed_spent
+  const parts = [
+    { label: 'Obligations', value: obligations, color: 'var(--hue-fixed)' },
+    { label: 'Saved & invested', value: Math.max(0, r.saved_actual), color: 'var(--hue-saving)' },
+    { label: 'Spending', value: r.discretionary_spent, color: 'var(--hue-spending)' },
+  ]
+  const used = parts.reduce((a, x) => a + x.value, 0)
+  const left = income - used
+  const spent = obligations + r.discretionary_spent
+  const total = Math.max(income, used, 1)
+  return (
+    <div className="mt-4">
+      <div className="text-sm">
+        <span className="text-ink2">Of the <b className="tnum text-ink">{eur(income)}</b> that came in, you spent </span>
+        <b className="tnum">{eur(spent)}</b> <span className="text-muted tnum">({Math.round((spent / income) * 100)}%)</span>
+        <span className="text-ink2"> and {left >= 0 ? <>had <b className="tnum text-good">{eur(left)}</b> left over</> : <>went <b className="tnum text-bad">{eur(-left)}</b> past it</>}.</span>
+      </div>
+      <div className="mt-2 flex h-5 overflow-hidden rounded-full bg-sunken" role="img"
+        aria-label={`${parts.map((x) => `${x.label} ${eur(x.value)}`).join(', ')}, ${left >= 0 ? `left over ${eur(left)}` : `over by ${eur(-left)}`}, of ${eur(income)} received`}>
+        {parts.map((x) => x.value > 0 && <div key={x.label} className="h-full border-r-2 border-[rgb(var(--surface))]" style={{ width: `${(x.value / total) * 100}%`, background: x.color }} />)}
+        {left > 0 && <div className="h-full bg-good/70" style={{ width: `${(left / total) * 100}%` }} />}
+      </div>
+      {left < 0 && <div className="relative h-0"><div className="absolute -top-5 h-5 w-0.5 bg-ink" style={{ left: `${(income / total) * 100}%` }} title="income received" /></div>}
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-4">
+        {[...parts, { label: left >= 0 ? 'Left over' : 'Past the income', value: Math.abs(left), color: left >= 0 ? 'rgb(var(--good))' : 'rgb(var(--bad))' }].map((x) => (
+          <div key={x.label}>
+            <div className="flex items-center gap-1.5 text-xs text-muted"><span className="h-2 w-2 rounded-full" style={{ background: x.color }} />{x.label}</div>
+            <div className="tnum font-medium">{eur(x.value)} <span className="text-xs font-normal text-muted">{Math.round((x.value / income) * 100)}%</span></div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 border-t border-line pt-3 text-xs text-muted">The plan for {monthLabel(r.month)}:</div>
+    </div>
   )
 }
 

@@ -87,12 +87,16 @@ type Report struct {
 	IncomeActual     money.Cents `json:"income_actual"`
 	// Refunds: money back this month; it reduces discretionary spending
 	// (and so adds to safe to spend), never the income.
-	Refunds            money.Cents `json:"refunds"`
-	Lines              []Line      `json:"lines"`
-	FixedPlanned       money.Cents `json:"fixed_planned"`
-	SavingPlanned      money.Cents `json:"saving_planned"`
-	SpendingPlanned    money.Cents `json:"spending_planned"`
-	FixedSpent         money.Cents `json:"fixed_spent"`
+	Refunds         money.Cents `json:"refunds"`
+	Lines           []Line      `json:"lines"`
+	FixedPlanned    money.Cents `json:"fixed_planned"`
+	SavingPlanned   money.Cents `json:"saving_planned"`
+	SpendingPlanned money.Cents `json:"spending_planned"`
+	FixedSpent      money.Cents `json:"fixed_spent"`
+	// FixedExpense: the fixed lines' expenses only — without the mortgage
+	// principal a loan line also matches, which SavedActual already holds —
+	// so income = FixedExpense + SavedActual + DiscretionarySpent + left over.
+	FixedExpense       money.Cents `json:"fixed_expense"`
 	SavedActual        money.Cents `json:"saved_actual"`
 	DiscretionarySpent money.Cents `json:"discretionary_spent"`
 	FundContributions  money.Cents `json:"fund_contributions"`
@@ -227,6 +231,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	fundSpent := map[string]money.Cents{}
 	fundDays := make([][]dayAmount, len(lines)) // this month's fund payments, per line
 	fixedSpent := map[string]money.Cents{}
+	fixedExpense := map[string]money.Cents{}
 	saved := map[string]money.Cents{}
 	income := map[string]money.Cents{}
 	salaryIn := map[string]money.Cents{} // salary, in the month it pays for
@@ -276,6 +281,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		}
 		if isFixed {
 			fixedSpent[m] += t.Amount
+			if t.Kind == "expense" {
+				fixedExpense[m] += t.Amount
+			}
 		}
 		disc := t.Kind == "expense" && !isFixed
 		if disc {
@@ -446,7 +454,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	for m, v := range discretionary {
 		r.FreeSpentByMonth[m] = v - fundSpent[m]
 	}
-	r.FixedSpent = fixedSpent[month]
+	r.FixedSpent, r.FixedExpense = fixedSpent[month], fixedExpense[month]
 	r.SavedActual = saved[month]
 	r.IncomeActual = income[month]
 	r.Refunds = refunds[month]

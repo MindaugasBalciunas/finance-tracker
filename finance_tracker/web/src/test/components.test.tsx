@@ -73,3 +73,15 @@ describe('IBKR open orders', () => {
     expect(screen.getByText('BRK B')).toBeInTheDocument()
   })
 })
+
+describe('a finished month in the plan', () => {
+  it('shows the income that came in and where it went, without the principal twice', async () => {
+    const { IncomeUsed } = await import('../pages/Plan')
+    // October 2026: fixed €2,361.66 of which €438.95 is mortgage principal, also in saved.
+    const r = { month: '2026-10', income_actual: 7884.92, fixed_spent: 2361.66, fixed_expense: 1922.71, saved_actual: 508.44, discretionary_spent: 2077.87 } as any
+    render(<IncomeUsed r={r} />)
+    expect(document.body).toHaveTextContent('Of the €7,885 that came in, you spent €4,001 (51%) and had €3,376 left over.')
+    expect(screen.getByText('Obligations').nextSibling).toHaveTextContent('€1,923')
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('left over €3,376')
+  })
+})

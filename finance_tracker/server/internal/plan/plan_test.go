@@ -510,3 +510,31 @@ func TestSalaryDueAndSettled(t *testing.T) {
 		t.Error("no early pay: settled on the 1st")
 	}
 }
+
+// October: a loan line matches the interest (an expense) and the principal
+// (transfer.debt, which is saving too). Fixed spent keeps both, as the line
+// shows; FixedExpense leaves the principal to saving, so the month's income
+// splits into obligations + saved + spending + left over without counting
+// the €438.95 twice.
+func TestFixedExpenseLeavesPrincipalToSaving(t *testing.T) {
+	now := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
+	budgets := []plan.Budget{
+		line(1, "Loan payments", "fixed", []string{"housing.mortgage_interest", "transfer.debt"}, 1361.66),
+		line(2, "Alimony", "fixed", []string{"kids.alimony"}, 1000),
+	}
+	principal := tx("2026-10-17", "transfer", 438.95)
+	principal.Category, principal.AccountID, principal.ToAccountID = "transfer.debt", "seb", "mortgage"
+	txs := []ledger.Tx{
+		tx("2026-10-19", "housing.mortgage_interest", 922.71), principal,
+		tx("2026-10-17", "kids.alimony", 1000),
+		tx("2026-10-09", "salary", 7884.92),
+		tx("2026-10-14", "transport.car", 2077.87),
+	}
+	r := plan.Compute(budgets, txs, "2026-10", now, plan.Settings{IncomeMode: "manual", ManualIncome: 5000})
+	if r.FixedSpent != E(2361.66) || r.FixedExpense != E(1922.71) || r.SavedActual != E(438.95) || r.DiscretionarySpent != E(2077.87) {
+		t.Fatalf("fixed %v expense %v saved %v spending %v", r.FixedSpent, r.FixedExpense, r.SavedActual, r.DiscretionarySpent)
+	}
+	if left := r.IncomeActual - r.FixedExpense - r.SavedActual - r.DiscretionarySpent; left != E(3445.39) {
+		t.Errorf("left over %v", left)
+	}
+}
