@@ -71,6 +71,7 @@ func coastDate(start, monthly, r, target float64, toAge int, now time.Time) (str
 
 type PayoutPoint struct {
 	Year       int         `json:"year"`
+	Month      string      `json:"month,omitempty"` // YYYY-MM, on the month-by-month points
 	Age        int         `json:"age,omitempty"`
 	Investable money.Cents `json:"investable"`
 	Monthly    money.Cents `json:"monthly"` // safe payout a month if you stopped then
@@ -84,17 +85,18 @@ type WhatIf struct {
 
 type FIPlan struct {
 	insights.FI
-	Levels      []FreedomLevel `json:"levels"`
-	PassiveNow  money.Cents    `json:"passive_now"` // safe payout a month from today's investable money
-	Obligations money.Cents    `json:"obligations"` // fixed obligations a month (plan)
-	Essentials  money.Cents    `json:"essentials"`
-	Spending    money.Cents    `json:"spending"` // a month, what FI is measured on
-	Coast       Coast          `json:"coast"`
-	Payouts     []PayoutPoint  `json:"payouts"`
-	WhatIfs     []WhatIf       `json:"what_ifs"`
-	SavingsRate float64        `json:"savings_rate"` // last 12 months, 0..1
-	Locked      money.Cents    `json:"locked"`       // in pensions: not reachable before retirement age
-	Notes       []string       `json:"notes"`
+	Levels         []FreedomLevel `json:"levels"`
+	PassiveNow     money.Cents    `json:"passive_now"` // safe payout a month from today's investable money
+	Obligations    money.Cents    `json:"obligations"` // fixed obligations a month (plan)
+	Essentials     money.Cents    `json:"essentials"`
+	Spending       money.Cents    `json:"spending"` // a month, what FI is measured on
+	Coast          Coast          `json:"coast"`
+	Payouts        []PayoutPoint  `json:"payouts"`                   // a point a year, 30 years
+	PayoutsByMonth []PayoutPoint  `json:"payouts_monthly,omitempty"` // a point a month, 10 years: the 1–10 year views (route: ?monthly=1)
+	WhatIfs        []WhatIf       `json:"what_ifs"`
+	SavingsRate    float64        `json:"savings_rate"` // last 12 months, 0..1
+	Locked         money.Cents    `json:"locked"`       // in pensions: not reachable before retirement age
+	Notes          []string       `json:"notes"`
 }
 
 // monthsTo grows start by monthly at real rate r (a month) until it reaches
@@ -128,7 +130,7 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 		return nil, err
 	}
 	fi := insights.ComputeFI(txs, cats, book, settings, now)
-	p := &FIPlan{FI: fi, Levels: []FreedomLevel{}, Payouts: []PayoutPoint{}, WhatIfs: []WhatIf{}, Notes: []string{}}
+	p := &FIPlan{FI: fi, Levels: []FreedomLevel{}, Payouts: []PayoutPoint{}, PayoutsByMonth: []PayoutPoint{}, WhatIfs: []WhatIf{}, Notes: []string{}}
 	wr := settings.WithdrawalRate
 	if wr <= 0 {
 		wr = 4
@@ -217,8 +219,20 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 		p.Coast = c
 	}
 
-	// Payouts: what the money could pay a month if you stopped in each year.
+	// Payouts: what the money could pay a month if you stopped in each year
+	// — and month by month for ten years, so the next year or three can be
+	// read on their own rather than as two dots on a 30-year line.
 	v := start
+	for m := 0; m <= 120; m++ {
+		at := time.Date(now.Year(), now.Month()+time.Month(m), 1, 0, 0, 0, 0, time.UTC)
+		pt := PayoutPoint{Year: at.Year(), Month: month(m), Investable: money.FromFloat(v), Monthly: money.FromFloat(v * wr / 100 / 12)}
+		if settings.BirthYear > 0 {
+			pt.Age = at.Year() - settings.BirthYear
+		}
+		p.PayoutsByMonth = append(p.PayoutsByMonth, pt)
+		v = v*(1+r) + monthly
+	}
+	v = start
 	for y := 0; y <= 30; y++ {
 		pt := PayoutPoint{Year: now.Year() + y, Investable: money.FromFloat(v), Monthly: money.FromFloat(v * wr / 100 / 12)}
 		if settings.BirthYear > 0 {

@@ -132,7 +132,14 @@ func (s *Server) moreRoutes() {
 		return cfo.Milestones(s.DB, time.Now())
 	})
 	s.handle("GET /api/wealth/fi-plan", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		return cfo.BuildFIPlan(s.DB, time.Now())
+		p, err := cfo.BuildFIPlan(s.DB, time.Now())
+		// The month-by-month points are for the page's 1–10 year views; the
+		// assistants (MCP, Ask CFO) read the yearly line and would only pay
+		// ~4k tokens a call for them.
+		if err == nil && r.URL.Query().Get("monthly") != "1" {
+			p.PayoutsByMonth = nil
+		}
+		return p, err
 	})
 	s.handle("GET /api/wealth/fees", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.Fees(s.DB, time.Now(), r.URL.Query().Get("live") != "0")

@@ -103,6 +103,17 @@ func TestFIPlanLevelsCoastAndWhatIfs(t *testing.T) {
 	if len(p.Payouts) != 31 || p.Payouts[0].Age != 38 || p.Payouts[10].Monthly <= p.Payouts[0].Monthly {
 		t.Errorf("payouts %+v", p.Payouts[:2])
 	}
+	// Month by month for the 1–10 year views: from this month, ten years on,
+	// and on the same path as the yearly points.
+	pm := p.PayoutsByMonth
+	if len(pm) != 121 || pm[0].Month != "2026-10" || pm[12].Month != "2027-10" || pm[120].Month != "2036-10" || pm[2].Age != 38 || pm[3].Age != 39 {
+		t.Fatalf("monthly payouts %d %+v", len(pm), pm[:4])
+	}
+	for _, y := range []int{1, 5, 10} {
+		if pm[12*y].Investable != p.Payouts[y].Investable {
+			t.Errorf("year %d: monthly %v, yearly %v", y, pm[12*y].Investable, p.Payouts[y].Investable)
+		}
+	}
 	if p.SavingsRate <= 0 || p.PassiveNow <= 0 {
 		t.Errorf("rate %v passive %v", p.SavingsRate, p.PassiveNow)
 	}

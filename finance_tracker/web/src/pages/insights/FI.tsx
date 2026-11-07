@@ -4,7 +4,9 @@ import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceLine, Res
 import { api } from '../../lib/api'
 import { eur, eurk, monthLabel, pct } from '../../lib/format'
 import type { FIPlan, Milestone } from '../../lib/types'
-import { AskCFO, Card, ErrorBox, Loading, Meter } from '../../components/ui'
+import { AskCFO, Card, ErrorBox, Loading, Meter, Segmented } from '../../components/ui'
+import { usePeriod } from '../../lib/hooks'
+import { FI_SPANS, fiSeries, type FIPoint } from '../../lib/fi'
 import { axisProps, gridProps, TooltipBox } from '../../components/charts'
 import { Icon } from '../../components/Icon'
 
@@ -18,11 +20,29 @@ const LEVEL_HUE: Record<string, string> = { obligations: 'var(--hue-fixed)', ess
 const when = (date?: string, age?: number) => date ? `${monthLabel(date, true)}${age ? ` · age ${Math.floor(age)}` : ''}` : 'not at this pace'
 
 export function FI() {
-  const { data: f, isLoading, error } = useQuery({ queryKey: ['fi-plan'], queryFn: () => api.get<FIPlan>('/wealth/fi-plan') })
+  const { data: f, isLoading, error } = useQuery({ queryKey: ['fi-plan'], queryFn: () => api.get<FIPlan>('/wealth/fi-plan', { monthly: 1 }) })
   const { data: ms } = useQuery({ queryKey: ['milestones'], queryFn: () => api.get<Milestone[]>('/wealth/milestones') })
+  const [span, setSpan] = usePeriod('fi', '10', FI_SPANS.map((s) => s.value))
   if (isLoading) return <Loading />
   if (error || !f) return <ErrorBox error={error} />
   const share = f.spending > 0 ? f.passive_now / f.spending : 0
+  // One span for both projections; the strip says where it ends up.
+  const series = fiSeries(f, Number(span))
+  const byMonth = series.length > 1 && !!series[0].month
+  const tick = (v: string) => (byMonth ? monthLabel(v) : v)
+  const title = (p: FIPoint, long = true) => `${byMonth && p.month ? monthLabel(p.month, long) : p.year}${p.age ? ` · age ${p.age}` : ''}`
+  const end = series[series.length - 1]
+  const ofSpend = (monthly: number) => {
+    const x = f.spending > 0 ? monthly / f.spending : 0
+    return x >= 2 ? `${x.toFixed(1)}× your spending` : `${pct(x)} of your spending`
+  }
+  // A short span sits far below what life costs: the lines above its scale
+  // aren't drawn, so name them instead.
+  const top = Math.max(0, ...series.map((p) => p.monthly))
+  const topInvested = Math.max(0, ...series.map((p) => p.investable))
+  const offScale = [[f.obligations, 'obligations'], [f.essentials, 'essentials'], [f.spending, 'your spending']]
+    .filter(([v]) => (v as number) > top).map(([v, n]) => `${n} ${eur(v as number)}/mo`)
+  const spanPicker = <Segmented size="sm" value={span} onChange={setSpan} options={FI_SPANS} />
   return (
     <div className="space-y-4">
       {/* Where you stand: what the money could pay you today. */}
@@ -97,17 +117,24 @@ export function FI() {
         </Card>
       </div>
 
-      {/* What the money could pay each year, against what life costs. */}
-      <Card title="Projected payouts" icon="coins" color="var(--s4)">
-        <p className="-mt-1 mb-2 text-xs text-muted">If you stopped working in a given year: the safe monthly payout, in today's euros, while saving continues until then.</p>
+      {/* What the money could pay at each point, against what life costs. */}
+      <Card title="Projected payouts" icon="coins" color="var(--s4)" action={spanPicker}>
+        <p className="-mt-1 mb-2 text-xs text-muted">If you stopped working at a given point: the safe monthly payout, in today's euros, while saving continues until then.</p>
+        {end && (
+          <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl bg-sunken p-3 text-sm">
+            <div><div className="text-xs text-muted">In {span === '1' ? '1 year' : `${span} years`}</div><div className="font-semibold tnum">{title(end, false)}</div></div>
+            <div><div className="text-xs text-muted">Invested</div><div className="font-semibold tnum">{eur(end.investable)}</div></div>
+            <div><div className="text-xs text-muted">Could pay</div><div className="font-semibold tnum">{eur(end.monthly)}/mo</div>{f.spending > 0 && <div className="text-xs text-muted">{ofSpend(end.monthly)}</div>}</div>
+          </div>
+        )}
         <div className="h-64">
           <ResponsiveContainer>
-            <ComposedChart data={f.payouts} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid {...gridProps} />
-              <XAxis dataKey="year" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+              <XAxis dataKey="label" {...axisProps} tickFormatter={tick} interval="preserveStartEnd" minTickGap={28} />
               <YAxis {...axisProps} tickFormatter={eurk} width={52} />
-              <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                <TooltipBox title={`${label}${payload[0].payload.age ? ` · age ${payload[0].payload.age}` : ''}`} rows={[
+              <Tooltip content={({ active, payload }) => active && payload?.length ? (
+                <TooltipBox title={title(payload[0].payload as FIPoint)} rows={[
                   { color: 'var(--s4)', label: 'Safe payout', value: `${eur(payload[0].payload.monthly)}/mo`, bold: true },
                   { label: 'Invested', value: eur(payload[0].payload.investable) }]} />) : null} />
               {f.obligations > 0 && <ReferenceLine y={f.obligations} stroke="var(--hue-fixed)" strokeDasharray="4 3" label={{ value: 'obligations', fill: 'var(--chart-text)', fontSize: 10, position: 'insideTopLeft' }} />}
@@ -117,6 +144,7 @@ export function FI() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        {offScale.length > 0 && <p className="mt-1 text-xs text-muted">Above this range: {offScale.join(' · ')}.</p>}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
@@ -145,19 +173,20 @@ export function FI() {
             </div>
             <Meter className="mt-3" value={f.emergency.cash} max={f.emergency.target || 1} goal />
           </Card>
-          <Card title="Growth to independence" icon="chart" color="var(--s1)">
+          <Card title="Growth to independence" icon="chart" color="var(--s1)" action={spanPicker}>
             <div className="h-48">
               <ResponsiveContainer>
-                <AreaChart data={f.payouts} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+                <AreaChart data={series} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
                   <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="year" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+                  <XAxis dataKey="label" {...axisProps} tickFormatter={tick} interval="preserveStartEnd" minTickGap={28} />
                   <YAxis {...axisProps} tickFormatter={eurk} width={52} />
-                  <Tooltip content={({ active, payload, label }) => active && payload?.length ? <TooltipBox title={String(label)} rows={[{ color: 'var(--s1)', label: 'Invested', value: eur(payload[0].payload.investable), bold: true }, { label: 'FI target', value: eur(f.target) }]} /> : null} />
+                  <Tooltip content={({ active, payload }) => active && payload?.length ? <TooltipBox title={title(payload[0].payload as FIPoint)} rows={[{ color: 'var(--s1)', label: 'Invested', value: eur(payload[0].payload.investable), bold: true }, { label: 'FI target', value: eur(f.target) }]} /> : null} />
                   <ReferenceLine y={f.target} stroke="var(--s2)" label={{ value: 'FI target', fill: 'var(--chart-text)', fontSize: 11, position: 'insideTopLeft' }} />
                   <Area dataKey="investable" stroke="var(--s1)" strokeWidth={2} fill="var(--s1)" fillOpacity={0.15} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            {f.target > topInvested && <p className="mt-1 text-xs text-muted">FI target {eur(f.target)} is above this range.</p>}
             <p className="mt-2 text-xs text-muted">Target = {f.spend_source} ({eur(f.annual_spend)}/yr) ÷ {f.withdrawal_rate}%. Invested = brokers, pensions, crypto and cash above the emergency fund — the house isn't counted.</p>
           </Card>
         </div>

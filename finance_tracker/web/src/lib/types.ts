@@ -183,7 +183,9 @@ export type FIPlan = {
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
   levels: FreedomLevel[]; passive_now: number; obligations: number; essentials: number; spending: number
   coast: { age: number; needed: number; date?: string; months: number; done: boolean; detail: string; later?: { age: number; date?: string; done: boolean }[] }
-  payouts: { year: number; age?: number; investable: number; monthly: number }[]
+  payouts: PayoutPoint[]
+  /** Month by month for ten years (the 1–10 year views); only with ?monthly=1. */
+  payouts_monthly?: PayoutPoint[]
   what_ifs: { extra: number; date?: string; sooner: number }[]
   savings_rate: number; locked: number; notes: string[]
 }
@@ -208,3 +210,6 @@ export type MerchantReport = {
   from: string; to: string; prev_from: string; prev_to: string; total: number; unnamed: number; count: number; new_count: number; new_total: number
   merchants: MerchantStat[]; lapsed: { name: string; category: string; last: string; monthly: number }[]
 }
+
+/** A projected point: what is invested and what it could pay a month if you stopped then. `month` on the month-by-month points. */
+export type PayoutPoint = { year: number; month?: string; age?: number; investable: number; monthly: number }

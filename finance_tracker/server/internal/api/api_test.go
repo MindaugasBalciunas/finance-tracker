@@ -1068,3 +1068,17 @@ func TestLogoServedAsAnImageOnly(t *testing.T) {
 		t.Errorf("logo served with %d %v", res.StatusCode, h)
 	}
 }
+
+// The FI page asks for the month-by-month projection; the assistants read
+// the same route without it, so a get_fi_plan call doesn't carry 121 points.
+func TestFIPlanMonthlyPointsOnlyWhenAsked(t *testing.T) {
+	_, c := newServer(t)
+	code, plain := c.do("GET", "/wealth/fi-plan", nil)
+	if code != 200 || bytes.Contains(plain, []byte("payouts_monthly")) || !bytes.Contains(plain, []byte(`"payouts"`)) {
+		t.Fatalf("plain read %d: has monthly %v", code, bytes.Contains(plain, []byte("payouts_monthly")))
+	}
+	code, page := c.do("GET", "/wealth/fi-plan?monthly=1", nil)
+	if code != 200 || !bytes.Contains(page, []byte(`"payouts_monthly":[{`)) {
+		t.Fatalf("page read %d: %.200s", code, page)
+	}
+}

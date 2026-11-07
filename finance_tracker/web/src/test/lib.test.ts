@@ -1,5 +1,6 @@
 import { dayTicks } from '../components/MonthChart'
 import { barRate } from '../lib/flow'
+import { fiSeries } from '../lib/fi'
 import type { Flow } from '../lib/types'
 import { ledgerLink } from '../lib/links'
 import { clickLabel } from '../lib/usage'
@@ -109,5 +110,22 @@ describe('savings rate by month', () => {
     expect(barRate(flow({ income: 100, spending: 257, savings_rate: -1.57, expected_salary: 6000, expected_savings_rate: 0.958 }))).toBeCloseTo(95.8)
     expect(barRate(flow({ income: 4125, spending: 4000, savings_rate: 0.03 }))).toBeCloseTo(3)
     expect(barRate(flow({ income: 0, spending: 300 }))).toBeNull()
+  })
+})
+
+describe('FI projection spans', () => {
+  const yearly = Array.from({ length: 31 }, (_, y) => ({ year: 2026 + y, investable: 1000 * y, monthly: 10 * y }))
+  const monthly = Array.from({ length: 121 }, (_, m) => ({ year: 2026 + Math.floor((m + 10) / 12), month: `${2026 + Math.floor((m + 10) / 12)}-${String(((m + 10) % 12) + 1).padStart(2, '0')}`, investable: 100 * m, monthly: m }))
+  it('reads up to ten years month by month and further a year at a time', () => {
+    const one = fiSeries({ payouts: yearly, payouts_monthly: monthly }, 1)
+    expect(one).toHaveLength(13)
+    expect(one[0].label).toBe('2026-11')
+    expect(one[12].label).toBe('2027-11')
+    expect(fiSeries({ payouts: yearly, payouts_monthly: monthly }, 10)).toHaveLength(121)
+    const thirty = fiSeries({ payouts: yearly, payouts_monthly: monthly }, 30)
+    expect(thirty).toHaveLength(31)
+    expect(thirty[30].label).toBe('2056')
+    // An older server without monthly points still draws the yearly line.
+    expect(fiSeries({ payouts: yearly }, 3).map((p) => p.label)).toEqual(['2026', '2027', '2028', '2029'])
   })
 })
