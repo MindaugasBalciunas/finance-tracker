@@ -171,7 +171,7 @@ function Month() {
         <Rebalance r={r} onAddLine={(u) => setEdit({ kind: 'spending', name: cats.name(u.category), categories: [u.category], amount: u.suggestion!.amount, fund: u.suggestion!.lumpy, start_month: month, period: 'monthly' })}>
           {suggestions(true)}
         </Rebalance>
-      ) : suggestions(false)}
+      ) : current && suggestions(false)}
       {/* Desktop: what goes out first (fixed, saving) and what no line covers on
           the left; day-to-day spending and once-a-year costs on the right.
           Phones keep the reading order. */}
@@ -348,6 +348,9 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
   const unallocated = r.income_base - planned
   // Over-allocated: offer to take the excess off the biggest monthly spending budget.
   const trim = unallocated < 0 ? r.lines.filter((l) => l.kind === 'spending' && l.period === 'monthly' && !l.fund && l.monthly_share > -unallocated).sort((a, b) => b.monthly_share - a.monthly_share)[0] : undefined
+  // A finished month: one card with how it went — no plan-basis figure
+  // beside the real one, no second set of bars.
+  if (!current) return <MonthResult r={r} />
   return (
     // Side by side, equal, only where both fit (xl); stacked below that.
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -365,7 +368,6 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
             </div>
           )}
         </div>
-        {!current && <IncomeUsed r={r} />}
         <Allocation r={r} />
         {/* The legend shows what's not allocated; over-allocation needs words and the fix. */}
         {unallocated < 0 && (
@@ -429,10 +431,60 @@ function EmergencyFund() {
   )
 }
 
+/** A finished month, in one card: what was left over (or how far spending
+ *  ran past the income) as the headline, the income and where it went, then
+ *  the plan beside what happened, group by group. */
+function MonthResult({ r }: { r: PlanReport }) {
+  const savingLines = r.lines.filter((l) => l.kind === 'saving').reduce((a, l) => a + l.spent, 0)
+  const left = r.income_actual - r.fixed_spent - savingLines - r.discretionary_spent
+  const plannedLeft = r.income_base - r.fixed_planned - r.saving_planned - r.spending_planned
+  const principal = Math.max(0, r.fixed_spent - (r.fixed_expense ?? r.fixed_spent))
+  // vs plan, coloured by what is good: more income and saving, less spending.
+  const rows: { label: string; plan: number; actual: number; goodUp: boolean | null; note?: string }[] = [
+    { label: 'Income', plan: r.income_base, actual: r.income_actual, goodUp: true },
+    { label: 'Fixed', plan: r.fixed_planned, actual: r.fixed_spent, goodUp: null, note: principal > 0.005 ? `incl. ${eur(principal)} mortgage principal` : undefined },
+    { label: 'Saving', plan: r.saving_planned, actual: savingLines, goodUp: true },
+    { label: 'Spending', plan: r.spending_planned, actual: r.discretionary_spent, goodUp: false },
+    { label: 'Left over', plan: plannedLeft, actual: left, goodUp: true },
+  ]
+  return (
+    <section className="hero p-4 sm:p-5" style={hue(left < 0 ? 'var(--hue-bad)' : 'var(--hue-good)')}>
+      <div className="text-sm text-ink2">How {monthLabel(r.month, true)} went</div>
+      <div className={clsx('text-3xl font-semibold tracking-tight', left < 0 ? 'text-bad' : 'text-good')}>
+        <CountUp value={Math.abs(left)} format={eur} /> <span className="text-lg font-medium">{left < 0 ? 'more went out than came in' : 'left over'}</span>
+      </div>
+      <div className="grid grid-cols-1 gap-x-8 gap-y-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center">
+        <IncomeUsed r={r} brief />
+        <div className="lg:mt-4">
+          <div className="mb-1.5 text-xs text-muted">Against the plan</div>
+          <table className="w-full text-[13px] tnum sm:text-sm [&_td:not(:first-child)]:whitespace-nowrap [&_td:not(:first-child)]:pl-2 [&_th:not(:first-child)]:pl-2">
+            <thead className="text-xs text-muted"><tr className="[&>th]:pb-1 [&>th]:font-medium"><th className="text-left" /><th className="text-right">Planned</th><th className="text-right">Actual</th><th className="text-right">vs plan</th></tr></thead>
+            <tbody className="divide-y divide-line">
+              {rows.map((x) => {
+                const d = x.actual - x.plan
+                const tone = Math.abs(d) < 0.5 || x.goodUp == null ? 'text-muted' : (d > 0) === x.goodUp ? 'text-good' : 'text-bad'
+                return (
+                  <tr key={x.label} className={clsx('[&>td]:py-1.5', x.label === 'Left over' && 'font-semibold')}>
+                    <td className="text-left">{x.label}{x.note && <span className="block text-[11px] font-normal text-muted">{x.note}</span>}</td>
+                    <td className="text-right text-ink2">{eur(x.plan)}</td>
+                    <td className="text-right">{eur(x.actual)}</td>
+                    <td className={clsx('text-right text-xs', tone)}>{Math.abs(d) < 0.5 ? '—' : `${d > 0 ? '+' : '−'}${eur(Math.abs(d))}`}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {plannedLeft < -0.5 && <p className="mt-2 text-xs text-muted">The plan allocated {eur(-plannedLeft)} more than its {eur(r.income_base)} income base ({r.income_base_source}).</p>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /** A finished month: the income that actually came in, and where it went —
  *  obligations, saved and invested, spending, and what was left (or how far
  *  spending ran past it). Obligations leave the mortgage principal to saving. */
-export function IncomeUsed({ r }: { r: PlanReport }) {
+export function IncomeUsed({ r, brief = false }: { r: PlanReport; brief?: boolean }) {
   const income = r.income_actual
   if (income <= 0) return <div className="mt-4 text-sm text-muted">No income recorded for {monthLabel(r.month, true)}.</div>
   const obligations = r.fixed_expense ?? r.fixed_spent
@@ -450,7 +502,9 @@ export function IncomeUsed({ r }: { r: PlanReport }) {
       <div className="text-sm">
         <span className="text-ink2">Of the <b className="tnum text-ink">{eur(income)}</b> that came in, you spent </span>
         <b className="tnum">{eur(spent)}</b> <span className="text-muted tnum">({Math.round((spent / income) * 100)}%)</span>
-        <span className="text-ink2"> and {left >= 0 ? <>had <b className="tnum text-good">{eur(left)}</b> left over</> : <>went <b className="tnum text-bad">{eur(-left)}</b> past it</>}.</span>
+        {brief
+          ? <span className="text-ink2"> and put <b className="tnum text-ink">{eur(Math.max(0, r.saved_actual))}</b> into saving and the mortgage.</span>
+          : <span className="text-ink2"> and {left >= 0 ? <>had <b className="tnum text-good">{eur(left)}</b> left over</> : <>went <b className="tnum text-bad">{eur(-left)}</b> past it</>}.</span>}
       </div>
       <div className="mt-2 flex h-5 overflow-hidden rounded-full bg-sunken" role="img"
         aria-label={`${parts.map((x) => `${x.label} ${eur(x.value)}`).join(', ')}, ${left >= 0 ? `left over ${eur(left)}` : `over by ${eur(-left)}`}, of ${eur(income)} received`}>
@@ -466,7 +520,6 @@ export function IncomeUsed({ r }: { r: PlanReport }) {
           </div>
         ))}
       </div>
-      <div className="mt-4 border-t border-line pt-3 text-xs text-muted">The plan for {monthLabel(r.month)}:</div>
     </div>
   )
 }
@@ -629,7 +682,7 @@ export function LineRow({ l, month, onEdit, monthPace, extra }: { l: PlanLine; m
         <div className="flex items-baseline justify-between gap-2">
           <div className="min-w-0">
             <span className="text-sm font-medium">{l.name}</span>
-            {l.fund && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{l.fund_state ? 'fund' : `fund from ${monthLabel(l.start_month)}`}</span>}
+            {l.fund && (l.fund_state || !l.start_month || l.start_month <= month) && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{l.fund_state ? 'fund' : `fund from ${monthLabel(l.start_month)}`}</span>}
             {l.period === 'yearly' && <span className="ml-1.5 rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-ink2">yearly</span>}
             <div className="truncate text-xs text-muted">{what}</div>
             {extra && (extra.route || extra.note) && (
