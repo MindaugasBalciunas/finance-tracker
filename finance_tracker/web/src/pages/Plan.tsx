@@ -344,40 +344,74 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
   const { data: o } = useOverview()
   const heading = current && (o?.plan.projected_left ?? 0) < 0
   const planned = r.fixed_planned + r.saving_planned + r.spending_planned
-  const rows = [
-    { label: 'Income base', value: r.income_base, sub: r.income_base_source },
-    { label: 'Fixed', value: -r.fixed_planned },
-    { label: 'Saving target', value: -r.saving_planned },
-    { label: 'Spending budgets', value: -r.spending_planned },
-  ]
   const unallocated = r.income_base - planned
   // Over-allocated: offer to take the excess off the biggest monthly spending budget.
   const trim = unallocated < 0 ? r.lines.filter((l) => l.kind === 'spending' && l.period === 'monthly' && !l.fund && l.monthly_share > -unallocated).sort((a, b) => b.monthly_share - a.monthly_share)[0] : undefined
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-      <section className="hero p-4 lg:col-span-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    // Side by side, equal, only where both fit (xl); stacked below that.
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <section className="hero flex flex-col p-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="shrink-0">
             <div className="text-sm text-ink2">{current ? 'Left to spend this month' : 'Left after the plan'}</div>
             <div className={clsx('text-3xl font-semibold tracking-tight', r.safe_to_spend < 0 ? 'text-bad' : heading ? 'text-warn' : 'text-good')}><CountUp value={r.safe_to_spend} format={eur} /></div>
             {heading && r.safe_to_spend >= 0 && <div className="text-xs text-warn">heading for {eur(-o!.plan.projected_left)} over by month end</div>}
           </div>
-          <div className="text-xs text-muted sm:text-right">income − fixed − saving − fund set-asides − spent outside funds (net of {(r.refunds ?? 0) > 0.005 ? <span className="text-good">{eur(r.refunds!)} refunds</span> : 'refunds'}){(r.fund_overdrawn ?? 0) > 0.005 && <> − <span className="text-bad">{eur(r.fund_overdrawn!)} paid beyond what funds held</span></>}{(r.unreviewed ?? 0) > 0.005 && <> · incl. <span className="text-ink2">{eur(r.unreviewed!)} in the bank inbox, not reviewed yet</span></>}</div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-          {rows.map((x) => (
-            <div key={x.label}>
-              <div className="text-xs text-muted">{x.label}</div>
-              <div className="tnum font-medium">{eur(x.value)}</div>
+          {current && o && o.plan.days_left > 0 && r.safe_to_spend > 0 && (
+            <div className="rounded-xl bg-sunken/70 px-3 py-2 text-right">
+              <div className="text-lg font-semibold tnum">≈ {eur(o.plan.per_day_left)}<span className="text-sm font-normal text-muted"> a day</span></div>
+              <div className="text-xs text-muted">for the {o.plan.days_left} days left · you average {eur(o.plan.avg_day)}</div>
             </div>
-          ))}
+          )}
         </div>
-        <div className={clsx('mt-3 flex flex-wrap items-center gap-2 text-xs', unallocated < 0 ? 'text-bad' : 'text-muted')}>
-          <span>{unallocated >= 0 ? `${eur(unallocated)} of the income base is not allocated to any line.` : `The plan allocates ${eur(-unallocated)} more than the income base.`}</span>
-          {trim && current && <button className="chip hover:bg-sunken" onClick={() => onTrim(trim, Math.floor((trim.monthly_share + unallocated) * 100) / 100)}>Take it off {trim.name} ({eur(trim.monthly_share)} → {eur(Math.floor((trim.monthly_share + unallocated) * 100) / 100)})</button>}
-        </div>
+        <Allocation r={r} />
+        {/* The legend shows what's not allocated; over-allocation needs words and the fix. */}
+        {unallocated < 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-bad">
+            <span>The plan allocates {eur(-unallocated)} more than the income base.</span>
+            {trim && current && <button className="chip hover:bg-sunken" onClick={() => onTrim(trim, Math.floor((trim.monthly_share + unallocated) * 100) / 100)}>Take it off {trim.name} ({eur(trim.monthly_share)} → {eur(Math.floor((trim.monthly_share + unallocated) * 100) / 100)})</button>}
+          </div>
+        )}
+        <div className="mt-auto pt-3 text-[11px] text-muted">Left to spend = income − fixed − saving − fund set-asides − spent outside funds (net of {(r.refunds ?? 0) > 0.005 ? <span className="text-good">{eur(r.refunds!)} refunds</span> : 'refunds'}){(r.fund_overdrawn ?? 0) > 0.005 && <> − <span className="text-bad">{eur(r.fund_overdrawn!)} paid beyond what funds held</span></>}{(r.unreviewed ?? 0) > 0.005 && <> · incl. <span className="text-ink2">{eur(r.unreviewed!)} in the bank inbox, not reviewed yet</span></>}</div>
       </section>
       <ActualSoFar r={r} current={current} />
+    </div>
+  )
+}
+
+/** Where the income base goes: one bar split into fixed, saving, spending
+ *  budgets and what no line takes — the plan at a glance. */
+function Allocation({ r }: { r: PlanReport }) {
+  const parts = [
+    { label: 'Fixed', value: r.fixed_planned, color: 'var(--hue-fixed)' },
+    { label: 'Saving', value: r.saving_planned, color: 'var(--hue-saving)' },
+    { label: 'Spending budgets', value: r.spending_planned, color: 'var(--hue-spending)' },
+  ]
+  const planned = parts.reduce((a, x) => a + x.value, 0)
+  const free = r.income_base - planned
+  const total = Math.max(r.income_base, planned, 1)
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted">
+        <span>Where your <b className="tnum text-ink">{eur(r.income_base)}</b> income base goes</span>
+        <span>{r.income_base_source}</span>
+      </div>
+      <div className="mt-2 flex h-4 overflow-hidden rounded-full bg-sunken" role="img" aria-label={parts.map((x) => `${x.label} ${eur(x.value)}`).join(', ') + (free > 0 ? `, not allocated ${eur(free)}` : '')}>
+        {parts.map((x) => x.value > 0 && <div key={x.label} className="h-full border-r-2 border-[rgb(var(--surface))] last:border-r-0" style={{ width: `${(x.value / total) * 100}%`, background: x.color }} />)}
+        {free < 0 && <div className="h-full bg-bad" style={{ width: `${(-free / total) * 100}%` }} />}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-4">
+        {parts.map((x) => (
+          <div key={x.label}>
+            <div className="flex items-center gap-1.5 text-xs text-muted"><span className="h-2 w-2 rounded-full" style={{ background: x.color }} />{x.label}</div>
+            <div className="tnum font-medium">{eur(x.value)} <span className="text-xs font-normal text-muted">{r.income_base > 0 ? `${Math.round((x.value / r.income_base) * 100)}%` : ''}</span></div>
+          </div>
+        ))}
+        <div>
+          <div className="flex items-center gap-1.5 text-xs text-muted"><span className={clsx('h-2 w-2 rounded-full', free < 0 ? 'bg-bad' : 'bg-sunken ring-1 ring-line')} />{free < 0 ? 'Over the base' : 'Not allocated'}</div>
+          <div className={clsx('tnum font-medium', free < 0 && 'text-bad')}>{eur(Math.abs(free))}</div>
+        </div>
+      </div>
     </div>
   )
 }
