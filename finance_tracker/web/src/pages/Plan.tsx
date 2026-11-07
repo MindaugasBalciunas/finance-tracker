@@ -377,14 +377,62 @@ function Summary({ r, current, onTrim }: { r: PlanReport; current: boolean; onTr
           {trim && current && <button className="chip hover:bg-sunken" onClick={() => onTrim(trim, Math.floor((trim.monthly_share + unallocated) * 100) / 100)}>Take it off {trim.name} ({eur(trim.monthly_share)} → {eur(Math.floor((trim.monthly_share + unallocated) * 100) / 100)})</button>}
         </div>
       </section>
-      <section className="card p-4 text-sm">
-        <div className="section-title mb-2">Actual so far</div>
-        {([['Income received', r.income_actual], ['Fixed paid', r.fixed_spent], ['Saved & invested', r.saved_actual], ['Discretionary spent', r.discretionary_spent], ['…of which from funds', r.fund_spent]] as [string, number][])
-          .concat((r.refunds ?? 0) > 0.005 ? [['…after refunds of', r.refunds!]] : []).map(([l, v]) => (
-          <div key={l as string} className="flex justify-between py-0.5"><span className="text-ink2">{l}</span><span className="tnum">{eur(v as number)}</span></div>
-        ))}
-      </section>
+      <ActualSoFar r={r} current={current} />
     </div>
+  )
+}
+
+/** Actual so far, each against its part of the plan: a bar per line with
+ *  how much of it is used, and — this month — a tick on spending for how
+ *  far through the month we are, so it reads as ahead of or behind the pace. */
+function ActualSoFar({ r, current }: { r: PlanReport; current: boolean }) {
+  const pace = current ? monthProgress() : 1
+  const day = new Date().getDate()
+  const rows: { label: string; used: number; of: number; tone: 'goal' | 'paid' | 'spend'; note?: string }[] = [
+    { label: 'Income received', used: r.income_actual, of: r.income_base, tone: 'goal' },
+    { label: 'Fixed paid', used: r.fixed_spent, of: r.fixed_planned, tone: 'paid' },
+    { label: 'Saved & invested', used: r.saved_actual, of: r.saving_planned, tone: 'goal' },
+    { label: 'Spending', used: r.discretionary_spent, of: r.spending_planned, tone: 'spend',
+      note: [r.fund_spent > 0.005 && `${eur(r.fund_spent)} from funds`, (r.refunds ?? 0) > 0.005 && `after ${eur(r.refunds!)} refunds`].filter(Boolean).join(' · ') || undefined },
+  ]
+  return (
+    <section className="card p-4 text-sm">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <div className="section-title">Actual so far</div>
+        {current && <span className="text-xs text-muted">day {day} · {Math.round(pace * 100)}% of the month</span>}
+      </div>
+      <ul className="space-y-3">
+        {rows.map((x) => {
+          const ratio = x.of > 0 ? x.used / x.of : x.used > 0 ? 1 : 0
+          const over = x.tone === 'spend' && ratio > 1
+          const ahead = x.tone === 'spend' && current && !over && ratio > pace + 0.1
+          const done = x.tone !== 'spend' && x.of > 0 && ratio >= 0.995
+          const fill = over ? 'bg-bad' : ahead ? 'bg-warn' : done ? 'bg-good' : x.tone === 'spend' ? 'bg-accent' : x.tone === 'paid' ? 'bg-[var(--s1)]' : 'bg-[var(--s3)]'
+          const left = x.of - x.used
+          const status = x.of <= 0 ? (x.used > 0 ? 'nothing planned' : '—')
+            : x.tone === 'spend' ? (over ? `${eur(-left)} over` : `${eur(left)} left${current ? ahead ? ' · ahead of the month' : ' · on pace' : ''}`)
+            : done ? (x.tone === 'paid' ? 'all paid' : 'done') : `${eur(left)} to go`
+          return (
+            <li key={x.label}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-ink2">{x.label}</span>
+                <span className="tnum"><b className="font-semibold">{eur(x.used)}</b><span className="text-muted"> of {eur(x.of)}</span></span>
+              </div>
+              <div className="relative mt-1 h-2.5 overflow-hidden rounded-full bg-sunken" role="meter" aria-label={x.label} aria-valuenow={Math.round(ratio * 100)} aria-valuemin={0} aria-valuemax={100}>
+                <div className={clsx('h-full rounded-full', fill)} style={{ width: `${Math.max(x.used > 0 ? 2 : 0, Math.min(ratio, 1) * 100)}%` }} />
+                {/* Income and bills come on their own days; only spending runs with the month. */}
+                {current && pace < 1 && x.tone === 'spend' && <div className="absolute top-0 h-full w-0.5 bg-ink/50" style={{ left: `${pace * 100}%` }} title="today" />}
+              </div>
+              <div className={clsx('mt-0.5 flex justify-between gap-2 text-xs', over ? 'text-bad' : ahead ? 'text-warn' : 'text-muted')}>
+                <span className="tnum">{x.of > 0 ? `${Math.round(ratio * 100)}%` : ''}{x.note && <span className="text-muted">{x.of > 0 ? ' · ' : ''}{x.note}</span>}</span>
+                <span>{status}</span>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      {current && <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted"><span className="inline-block h-2.5 w-0.5 bg-ink/50" />today — spending past the line is ahead of the month</div>}
+    </section>
   )
 }
 
