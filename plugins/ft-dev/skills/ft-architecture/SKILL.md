@@ -25,7 +25,7 @@ A personal CFO for one household, shipped as a Home Assistant add-on: one contai
 2. **Business rules live in the domain package, not the handler.** Handlers decode, call domain functions, return. Invariants (e.g. property/vehicle never "paid from") are enforced in the domain (`ledger.Validate`) *and* mirrored in the UI (`AccountSelect kinds`), never only in the UI. **Every transaction create/edit/delete goes through `entry`** (`entry.Do` + `Create`/`Update`/`Delete`): it validates, writes, moves balances (`wealth.MoveForTx`) and returns bank rows to the inbox in one DB transaction. Never call `ledger.Insert/Update/Delete` plus balance moves by hand — that is how bulk delete left balances wrong.
 3. **Cross-domain views go in `cfo`** (Home overview, plan report, cash until payday) or `insights`; they read, they don't write. Computations that depend on "today" take `now time.Time` as a parameter.
 4. **`api` imports domains; domains never import `api`.** `advice` holds assistant rules shared by `ai` and `mcptools` — keep one source of truth.
-5. **Dependencies: stdlib first.** A new module needs a strong reason (security surface, Docker image size, `govulncheck`). Never `go mod tidy` with a newer local toolchain without checking the `go` directive still matches the Dockerfile's `golang:` image.
+5. **Dependencies: stdlib first.** A new module needs a strong reason (security surface, Docker image size, `govulncheck`). Never `go mod tidy` with a newer local toolchain without checking the `go` directive still matches the `toolchain` CI builds with (setup-go reads it from `go.mod`).
 
 ## Types and data conventions
 

@@ -1,0 +1,6 @@
+# The image needs only what CI built and the nginx/start-up files; keep
+# node_modules, sources and any local data out of the build context.
+*
+!prebuilt
+!nginx.conf
+!run.sh

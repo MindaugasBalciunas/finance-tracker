@@ -57,7 +57,7 @@ gh run list --json databaseId,headSha --jq ".[] | select(.headSha==\"$SHA\") | .
 gh run watch <id> --exit-status
 ```
 
-Watching "the latest run" once reported a previous run's green for a broken release. The workflow (`.github/workflows/build.yaml`) runs go vet + race tests, the real-nginx gate test, tsc + vitest + build, then builds the arm64 image.
+Watching "the latest run" once reported a previous run's green for a broken release. The workflow (`.github/workflows/build.yaml`) is one job: go vet + race tests (Go's compile cache rolls forward between runs), the real-nginx gate test, tsc + vitest + build, then cross-compiles the arm64 binaries into `finance_tracker/prebuilt/` with the web build, and the Dockerfile only copies those into the nginx image (it no longer compiles anything).
 
 ## 5. Verify the image exists
 

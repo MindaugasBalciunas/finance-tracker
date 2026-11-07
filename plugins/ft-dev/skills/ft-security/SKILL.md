@@ -60,4 +60,4 @@ recoverer → crossOriginGuard → limitBodies → authenticate → routes
 
 ## Release security pass
 
-From `finance_tracker/server`: `go vet ./...`, `go test -race ./...`, `~/go/bin/govulncheck ./...` (report any *called* vulnerability as a blocker; uncalled ones as notes). From `finance_tracker/web`: `npm audit --omit=dev` (0 is the bar). Check the `Dockerfile` `golang:` image matches `go.mod`'s toolchain and nginx base is current. `config.yaml` keeps `8080/tcp: null` (the debug port bypasses nginx auth). CI also runs `test/nginx_gate.sh` against real nginx.
+From `finance_tracker/server`: `go vet ./...`, `go test -race ./...`, `~/go/bin/govulncheck ./...` (report any *called* vulnerability as a blocker; uncalled ones as notes). From `finance_tracker/web`: `npm audit --omit=dev` (0 is the bar). CI builds the binaries with `go.mod`'s toolchain (setup-go reads it; the Dockerfile no longer compiles); check the Dockerfile's nginx base is current. `config.yaml` keeps `8080/tcp: null` (the debug port bypasses nginx auth). CI also runs `test/nginx_gate.sh` against real nginx.

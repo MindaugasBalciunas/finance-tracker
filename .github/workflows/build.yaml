@@ -9,9 +9,18 @@ env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/mindaugasbalciunas/finance-tracker
 
+# One job: test, then build the arm64 binaries and the web app here — with
+# Go's compile cache carried from the last run — and let Docker only copy
+# them into the image. Before, a second job compiled everything again from
+# scratch inside Docker (~85 s) and Go's cache was saved once and never
+# updated, so the race-test build started cold every time (~85 s).
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -20,7 +29,20 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: finance_tracker/server/go.mod
-          cache-dependency-path: finance_tracker/server/go.sum
+          cache: false # the rolling cache below replaces setup-go's write-once one
+
+      # Saved under a new key every run and restored from the latest, so only
+      # packages that changed since the last run are compiled.
+      - name: Go module and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('finance_tracker/server/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('finance_tracker/server/go.sum') }}-
+            go-${{ runner.os }}-
 
       - name: Server tests
         working-directory: finance_tracker/server
@@ -50,24 +72,27 @@ jobs:
           npx vitest run
           npm run build
 
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
       - name: Read version from config.yaml
         id: version
         run: |
           VERSION=$(grep '^version:' finance_tracker/config.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU (for arm64 cross-build)
+      # What the image ships, built once: the add-on runs on arm64.
+      - name: Build arm64 binaries and stage the web app
+        working-directory: finance_tracker
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          mkdir -p prebuilt
+          (cd server && go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o ../prebuilt/finance-tracker ./cmd/server)
+          (cd server && go build -trimpath -ldflags "-s -w" -o ../prebuilt/finance-tracker-mcp ./cmd/mcp)
+          cp -R web/dist prebuilt/web
+          file prebuilt/finance-tracker | grep -q 'ARM aarch64'
+
+      - name: Set up QEMU (for the arm64 image's RUN steps)
         uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64

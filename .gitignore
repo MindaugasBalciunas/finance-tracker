@@ -43,3 +43,6 @@ finance_tracker/web/node_modules/
 finance_tracker/web/dist/
 finance_tracker/server/bin/
 finance_tracker/backend/*.log
+
+# CI build output copied into the add-on image (see .github/workflows/build.yaml)
+finance_tracker/prebuilt/
