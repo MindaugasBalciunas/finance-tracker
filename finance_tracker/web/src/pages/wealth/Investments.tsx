@@ -9,7 +9,7 @@ import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeLabel, rangeTick } from '../../lib/periods'
 import { Card, Delta, Empty, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, useToast } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
-import { IBKRPanel } from '../../components/IBKRPanel'
+import { IBKROrders, IBKRPanel } from '../../components/IBKRPanel'
 import { Icon } from '../../components/Icon'
 import { brandColor } from '../../lib/brand'
 import { DateInput } from '../../components/DateInput'
@@ -216,6 +216,8 @@ export function Investments() {
         {closed}
         {tradesCard}
       </>}
+      {/* Orders last: what may still change the holdings above. */}
+      <IBKROrders />
       {pos && <PositionSheet h={pos} onClose={() => setPos(null)} />}
       {trade && <TradeEditor t={trade} onClose={() => setTrade(null)} />}
     </div>

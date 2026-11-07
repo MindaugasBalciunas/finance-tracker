@@ -15,18 +15,81 @@ export type IBKRReport = {
   orders?: IBKROrder[] | null; instructions?: IBKROrder[] | null; orders_error?: string
   trades_window?: string; trades_error?: string
 }
-export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; tif?: string; created?: string; expires?: string }
+export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; remaining?: number; tif?: string; created?: string; expires?: string }
 
-function OrderRow({ o }: { o: IBKROrder }) {
+// "REPLACED", "limit", "PreSubmitted", "PENDING_CANCEL" → "Replaced", "Limit", "Pre submitted", "Pending cancel".
+const titleCase = (s?: string) => {
+  const w = (s ?? '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().trim()
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : ''
+}
+// The order's day where you are, not IBKR's UTC day.
+const placed = (iso?: string) => {
+  const d = iso ? new Date(iso) : null
+  return d && !isNaN(d.getTime()) ? shortDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`) : '—'
+}
+const qty = (n?: number) => (n ? String(Math.round(n * 1e6) / 1e6) : '0')
+
+/** Orders as a table: side, symbol, shares and limit always; type, time in
+ *  force and status get columns from lg (under the symbol before that), and
+ *  filled/left and when placed from xl. Scrolls rather than clips. */
+export function OrderTable({ orders }: { orders: IBKROrder[] }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2 text-sm">
-      <span className={clsx('w-9 shrink-0 text-xs font-medium uppercase', o.side === 'sell' ? 'text-bad' : 'text-good')}>{o.side || '—'}</span>
-      <span className="min-w-0 flex-1">
-        <b>{o.symbol || o.description}</b> <span className="text-xs text-muted">{o.quantity}{o.filled ? ` (${o.filled} filled)` : ''} · {o.type}{o.price ? ` ${o.price}` : ''}{o.tif ? ` · ${o.tif}` : ''}</span>
-        {o.symbol && o.description && <span className="block truncate text-xs text-muted">{o.description}</span>}
-      </span>
-      {o.status && <span className="shrink-0 rounded-full bg-sunken px-2 py-0.5 text-[11px] text-ink2">{o.status}</span>}
+    <div className="overflow-x-auto rounded-xl border border-line">
+      <table className="w-full text-sm tnum">
+        <thead className="bg-sunken text-left text-xs text-muted">
+          <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
+            <th>Order</th>
+            <th className="text-right">Shares</th>
+            <th className="hidden text-right xl:table-cell">Filled · left</th>
+            <th className="hidden lg:table-cell">Type</th>
+            <th className="text-right">Limit</th>
+            <th className="hidden lg:table-cell">Valid</th>
+            <th className="hidden lg:table-cell">Status</th>
+            <th className="hidden text-right xl:table-cell">Placed</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {orders.map((o) => (
+            <tr key={o.id || o.symbol || o.description} className="[&>td]:px-3 [&>td]:py-2 align-top">
+              <td>
+                <span className={clsx('mr-1.5 text-xs font-semibold uppercase', o.side === 'sell' ? 'text-bad' : 'text-good')}>{o.side || '—'}</span>
+                <b>{o.symbol || o.description || '—'}</b>
+                {o.symbol && o.description && <span className="block max-w-[14rem] truncate text-xs text-muted">{o.description}</span>}
+                <span className="block text-xs text-muted lg:hidden">{titleCase(o.type)}{o.tif ? ` · ${o.tif}` : ''}{o.filled ? ` · ${qty(o.filled)} filled` : ''}{o.status ? ` · ${titleCase(o.status)}` : ''}</span>
+              </td>
+              <td className="text-right">{qty(o.quantity)}</td>
+              <td className="hidden text-right text-ink2 xl:table-cell">{qty(o.filled)} · {qty(o.remaining ?? Math.max(0, o.quantity - (o.filled ?? 0)))}</td>
+              <td className="hidden text-ink2 lg:table-cell">{titleCase(o.type) || '—'}</td>
+              <td className="text-right">{o.price ? o.price.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—'}</td>
+              <td className="hidden text-ink2 lg:table-cell">{o.tif || '—'}</td>
+              <td className="hidden lg:table-cell">{o.status ? <span className="whitespace-nowrap rounded-full bg-sunken px-2 py-0.5 text-[11px] text-ink2">{titleCase(o.status)}</span> : '—'}</td>
+              <td className="hidden whitespace-nowrap text-right text-ink2 xl:table-cell">{placed(o.created)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
+  )
+}
+
+/** IBKR's open orders and saved instructions, read-only — at the bottom of
+ *  Investments, below the holdings they would change. */
+export function IBKROrders() {
+  const { data } = useIBKR()
+  const r = data?.status.connected ? data.report : null
+  if (!r || !((r.orders ?? []).length > 0 || (r.instructions ?? []).length > 0 || r.orders_error)) return null
+  return (
+    <Card icon="list" color="var(--hue-invest)" title={`Open orders at IBKR${(r.orders ?? []).length ? ` (${r.orders!.length})` : ''}`} action={<span className="text-xs text-muted">as of {ago(r.at)}</span>}>
+      {r.orders_error && <div className="mb-2 text-xs text-warn">{r.orders_error}</div>}
+      {(r.orders ?? []).length > 0 ? <OrderTable orders={r.orders!} /> : !r.orders_error && <div className="text-sm text-muted">No open orders.</div>}
+      {(r.instructions ?? []).length > 0 && (
+        <>
+          <div className="mb-1.5 mt-3 text-xs text-muted">Saved instructions — not orders until you submit them in IBKR</div>
+          <OrderTable orders={r.instructions!} />
+        </>
+      )}
+      <div className="mt-2 text-[11px] text-muted">Shown for information — the app can't place, change or cancel orders. Sync IBKR above to refresh.</div>
+    </Card>
   )
 }
 
@@ -116,20 +179,6 @@ export function IBKRPanel() {
               : r.trades_window && r.trades_window !== 'YEAR_TO_DATE' && <div className="mt-1.5 text-xs text-muted">IBKR couldn't list this year's trades, so the last {({ DAYS_90: '90 days', DAYS_30: '30 days', MONTH_TO_DATE: 'month' } as Record<string, string>)[r.trades_window] ?? r.trades_window} were checked.</div>}
           </div>
 
-          {((r.orders ?? []).length > 0 || (r.instructions ?? []).length > 0 || r.orders_error) && (
-            <div>
-              <div className="section-title mb-1.5">Open orders</div>
-              {r.orders_error && <div className="mb-1.5 text-xs text-warn">{r.orders_error}</div>}
-              {(r.orders ?? []).length > 0 && <div className="divide-y divide-line rounded-xl border border-line">{r.orders!.map((o) => <OrderRow key={o.id || o.symbol} o={o} />)}</div>}
-              {(r.instructions ?? []).length > 0 && (
-                <>
-                  <div className="mb-1 mt-2 text-xs text-muted">Saved instructions — not orders until you submit them in IBKR</div>
-                  <div className="divide-y divide-line rounded-xl border border-line">{r.instructions!.map((o) => <OrderRow key={o.id || o.description} o={o} />)}</div>
-                </>
-              )}
-              <div className="mt-1 text-[11px] text-muted">Shown for information — the app can't place, change or cancel orders.</div>
-            </div>
-          )}
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <div className="section-title">Trades this year</div>

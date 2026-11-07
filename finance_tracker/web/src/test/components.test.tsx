@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Delta, Meter, NumberInput, Segmented, Stat } from '../components/ui'
+import { OrderTable } from '../components/IBKRPanel'
 
 describe('ui primitives', () => {
   it('Delta shows direction with an arrow and colours by meaning', () => {
@@ -49,5 +50,26 @@ describe('NumberInput', () => {
     fireEvent.change(el, { target: { value: '12.25' } })
     expect(el).not.toHaveAttribute('aria-invalid')
     expect(got[got.length - 1]).toBe(12.25)
+  })
+})
+
+describe('IBKR open orders', () => {
+  it('lists each order as a table row: side, symbol, shares, limit, time in force, status', () => {
+    // The order IBKR returned on 6 Nov, as the server now reads it.
+    render(<OrderTable orders={[{ id: '15555562', symbol: 'VWCE', side: 'buy', type: 'limit', status: 'REPLACED', quantity: 6, filled: 0, remaining: 6, price: 162.8, tif: 'GTC', created: '2026-11-06T06:24:15Z' }]} />)
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Order', 'Shares', 'Filled · left', 'Type', 'Limit', 'Valid', 'Status', 'Placed'])
+    const row = screen.getAllByRole('row')[1]
+    expect(row).toHaveTextContent('buyVWCE')
+    expect(row).toHaveTextContent('162.80')
+    expect(row).toHaveTextContent('GTC')
+    expect(row).toHaveTextContent('Replaced') // in its column, and under the symbol on a phone
+    expect(row).toHaveTextContent('0 · 6')
+    expect(screen.getByText('buy')).toHaveClass('text-good')
+  })
+  it('reads IBKR status spellings as words', () => {
+    render(<OrderTable orders={[{ id: '1', symbol: 'VALL', side: 'sell', type: 'LIMIT', status: 'PreSubmitted', quantity: 10, price: 4.2 }, { id: '2', symbol: 'BRK B', side: 'buy', type: 'market', status: 'PENDING_CANCEL', quantity: 1 }]} />)
+    expect(screen.getAllByText('Pre submitted').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Pending cancel').length).toBeGreaterThan(0)
+    expect(screen.getByText('BRK B')).toBeInTheDocument()
   })
 })

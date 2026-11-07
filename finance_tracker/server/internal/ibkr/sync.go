@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -55,6 +56,7 @@ type Order struct {
 	Quantity    float64 `json:"quantity"`
 	Price       float64 `json:"price,omitempty"`
 	Filled      float64 `json:"filled,omitempty"`
+	Remaining   float64 `json:"remaining,omitempty"` // still to fill
 	TimeInForce string  `json:"tif,omitempty"`
 	Created     string  `json:"created,omitempty"`
 	Expires     string  `json:"expires,omitempty"`
@@ -109,22 +111,100 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 	}
 	out := []Order{}
 	for _, m := range arr {
-		out = append(out, Order{
+		o := Order{
 			ID:          str(m, "order_id", "orderId", "instruction_id", "id"),
 			Symbol:      strings.ToUpper(str(m, "symbol", "ticker", "contract_description")),
 			Description: str(m, "description", "company_name"),
 			Side:        strings.ToLower(str(m, "side", "action", "direction")),
 			Type:        strings.ToLower(str(m, "order_type", "orderType", "type")),
 			Status:      str(m, "status", "order_status"),
-			Quantity:    num(m, "quantity", "total_size", "totalSize", "size"),
+			Quantity:    num(m, "quantity", "total_shares_qty", "totalQuantity", "total_size", "totalSize", "size"),
 			Price:       num(m, "limit_price", "limitPrice", "price"),
-			Filled:      num(m, "filled_quantity", "filledQuantity", "filled", "cum_fill"),
-			TimeInForce: str(m, "time_in_force", "tif"),
+			Filled:      num(m, "filled_quantity", "filledQuantity", "cum_shares_qty", "filled", "cum_fill"),
+			Remaining:   num(m, "remaining_shares_qty", "remaining_quantity", "remainingQuantity"),
+			TimeInForce: strings.ToUpper(str(m, "time_in_force", "tif")),
 			Created:     str(m, "creation_time", "created", "created_at", "order_time"),
 			Expires:     str(m, "expiration", "expires", "expires_at"),
-		})
+		}
+		// IBKR's account orders name the order in prose — "Buy 6 VWCE",
+		// "Limit 162.8000, GTC" — with no symbol or time-in-force field, so
+		// the table showed a nameless order of 0 shares. Saved instructions
+		// do the same in "description" ("Buy 10 VALL"). Only "buy|sell
+		// <shares> <symbol>" is read, the whole rest as the symbol (BRK B).
+		primary, secondary := str(m, "primary_description"), str(m, "secondary_description")
+		prose := primary
+		if prose == "" {
+			prose = str(m, "description") // not company_name: that is a name, not prose
+		}
+		if sym := proseSymbol(prose); o.Symbol == "" && sym != "" {
+			o.Symbol = sym
+			if o.Description == prose {
+				o.Description = "" // the row already says buy, shares and symbol
+			}
+		}
+		if o.Symbol == "" && o.Description == "" {
+			o.Description = primary
+		}
+		if i := strings.LastIndex(secondary, ","); o.TimeInForce == "" && i >= 0 {
+			if t := strings.ToUpper(strings.TrimSpace(secondary[i+1:])); tifs[t] {
+				o.TimeInForce = t
+			}
+		}
+		if o.Quantity == 0 && o.Remaining > 0 {
+			o.Quantity = o.Filled + o.Remaining
+		}
+		if !has(m, "remaining_shares_qty", "remaining_quantity", "remainingQuantity") && o.Quantity > o.Filled {
+			o.Remaining = o.Quantity - o.Filled
+		}
+		out = append(out, o)
 	}
 	return out, nil
+}
+
+var tifs = map[string]bool{"DAY": true, "GTC": true, "GTD": true, "IOC": true, "FOK": true, "OPG": true}
+
+var proseOrder = regexp.MustCompile(`(?i)^(buy|sell)\s+[\d.,]+\s+(\S.*)$`)
+
+// proseSymbol reads the symbol out of "Buy 6 VWCE" or "Sell 100 BRK B": the
+// words after the share count, each ticker-like (capitals, digits, dots),
+// at least one letter among them. "" for anything else ("Buy 6", prose).
+func proseSymbol(prose string) string {
+	g := proseOrder.FindStringSubmatch(strings.TrimSpace(prose))
+	if g == nil {
+		return ""
+	}
+	letter := false
+	for _, w := range strings.Fields(g[2]) {
+		if !tickerLike(w) {
+			return ""
+		}
+		letter = letter || strings.ContainsAny(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	}
+	if !letter {
+		return ""
+	}
+	return strings.Join(strings.Fields(g[2]), " ")
+}
+
+func tickerLike(w string) bool {
+	if w == "" || len(w) > 12 {
+		return false
+	}
+	for _, r := range w {
+		if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func has(m map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 type Position struct {
