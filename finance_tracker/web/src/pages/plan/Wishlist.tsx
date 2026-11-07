@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
-import { useAccounts, useRefresh, useTags } from '../../lib/hooks'
+import { useAccounts, useOverview, useRefresh, useTags } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
 import { AskCFO, Card, Empty, ErrorBox, Field, hue, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
@@ -35,6 +35,11 @@ export function Wishlist() {
   const [fund, setFund] = useState(false)
   const [thinking, setThinking] = useState(false)
   const { data: journal } = useJournal()
+  // The emergency fund comes first: what's above its floor is the room the
+  // wish list can take now (undefined when Home hasn't worked it out).
+  const { data: o } = useOverview()
+  const em = o?.emergency_plan
+  const room = em && em.monthly_essential > 0 ? em.spare : undefined
   const refresh = useRefresh()
   const toast = useToast()
   const move = useMutation({
@@ -57,7 +62,7 @@ export function Wishlist() {
     <div className="space-y-4">
       {/* Wide screens: the month that funds the list beside where its money sits. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-        <LeftOver p={p} month={month} setMonth={setMonth} onFund={() => setFund(true)} />
+        <LeftOver p={p} month={month} setMonth={setMonth} onFund={() => setFund(true)} room={room} />
         <Pots pots={p.pots ?? []} />
       </div>
 
@@ -125,7 +130,8 @@ export function Wishlist() {
         </div>
       </div>
       {edit && <GoalSheet g={edit} pots={p.pots ?? []} onClose={() => setEdit(null)} />}
-      {fund && <FundSheet p={p} onClose={() => setFund(false)} />}
+      {/* Keyed on the room so the capped split applies once Home's figures arrive. */}
+      {fund && <FundSheet key={room ?? 'none'} p={p} onClose={() => setFund(false)} room={room} months={em?.target_months} />}
       {thinking && <NewDecisionSheet onClose={() => setThinking(false)} />}
     </div>
   )
@@ -133,8 +139,9 @@ export function Wishlist() {
 
 /** The month's waterfall: income, paid yourself first, obligations and
  *  spending — what is left funds the wish list. */
-function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; setMonth: (m: string) => void; onFund: () => void }) {
+function LeftOver({ p, month, setMonth, onFund, room }: { p: WishPlan; month: string; setMonth: (m: string) => void; onFund: () => void; room?: number }) {
   const f = p.funding
+  const can = room == null ? f.available : Math.min(f.available, room)
   const rows = [
     { label: 'Income', v: f.income, cls: 'text-ink' },
     { label: 'Paid yourself first', sub: 'investing, pensions, mortgage principal', v: -f.invested, cls: 'text-ink2' },
@@ -150,9 +157,14 @@ function LeftOver({ p, month, setMonth, onFund }: { p: WishPlan; month: string; 
           <button className="btn-ghost h-8 w-8 px-0 disabled:opacity-30" disabled={month >= lastDone()} onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon name="chevronD" size={16} className="-rotate-90" /></button>
         </div>
         {f.available > 0 && f.complete && p.proposal.length > 0 && (
-          <button className="btn-primary h-9" onClick={onFund}><Icon name="target" size={16} />Fund goals · {eur(f.available)}</button>
+          <button className={can > 0 ? 'btn-primary h-9' : 'btn-outline h-9'} onClick={onFund}><Icon name="target" size={16} />Fund goals · {eur(can)}</button>
         )}
       </div>
+      {f.available > 0 && f.complete && room != null && room < f.available && (
+        <div className="mt-2 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
+          {room > 0 ? `Only ${eur(room)} of the ${eur(f.available)} is above the emergency fund's floor — the rest keeps it whole.` : `The emergency fund is under its floor — keep the ${eur(f.available)} in savings for now.`} <a className="underline" href="#/plan">See Plan</a>
+        </div>
+      )}
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1 text-sm">
           {rows.map((r) => (
@@ -256,11 +268,16 @@ function GoalCard({ g, rank, first, last, onUp, onDown, onOpen }: { g: Goal; ran
 
 /** Fund a finished month: the suggested split (top of the list first), each
  *  amount editable, never more than the month left over. */
-function FundSheet({ p, onClose }: { p: WishPlan; onClose: () => void }) {
+function FundSheet({ p, onClose, room, months }: { p: WishPlan; onClose: () => void; room?: number; months?: number }) {
   const active = p.goals.filter((g) => g.status === 'active' && g.remaining > 0)
-  const [amt, setAmt] = useState<Record<number, number | undefined>>(() => Object.fromEntries(p.proposal.map((a) => [a.goal_id, a.amount])))
+  // The suggested split, top first, stops where the emergency fund's floor is.
+  const [amt, setAmt] = useState<Record<number, number | undefined>>(() => {
+    let left = room == null ? Infinity : Math.max(0, room)
+    return Object.fromEntries(p.proposal.map((a) => { const v = Math.min(a.amount, left); left -= v; return [a.goal_id, v > 0 ? Math.round(v * 100) / 100 : undefined] }))
+  })
   const total = active.reduce((t, g) => t + (amt[g.id] ?? 0), 0)
   const over = total > p.funding.available + 0.005
+  const underFloor = room != null && total > room + 0.005
   const refresh = useRefresh()
   const toast = useToast()
   const save = useMutation({
@@ -289,6 +306,7 @@ function FundSheet({ p, onClose }: { p: WishPlan; onClose: () => void }) {
         <span>{over ? 'More than the month left over' : 'Left unassigned'}</span>
         <span className="tnum font-semibold">{eur(Math.abs(p.funding.available - total))}</span>
       </div>
+      {underFloor && !over && <p className="mt-2 text-xs text-warn">{eur(total - room!)} of this takes the emergency fund under {months ?? 3} months — you can still do it.</p>}
     </Sheet>
   )
 }

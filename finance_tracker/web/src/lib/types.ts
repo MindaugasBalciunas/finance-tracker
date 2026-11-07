@@ -66,6 +66,8 @@ export interface Overview {
     days?: { day: number; spent: number; cum?: number; typical: number; proj?: number }[] | null
     events?: { day: number; kind: 'fixed' | 'income'; label: string; amount: number; done: boolean }[] | null }
   emergency: { cash: number; monthly_essential: number; months: number; target_months: number; target: number }
+  /** The emergency fund after what leaves before payday and the wish list's set-asides. */
+  emergency_plan?: EmergencyPlan
   fi_progress: number; years_to_fi: number
   anomalies: Anomaly[] | null; upcoming: Recurring[] | null; stale: Record<string, string> | null
   inbox_open: number; recent: Tx[] | null
@@ -213,3 +215,8 @@ export type MerchantReport = {
 
 /** A projected point: what is invested and what it could pay a month if you stopped then. `month` on the month-by-month points. */
 export type PayoutPoint = { year: number; month?: string; age?: number; investable: number; monthly: number }
+
+export type EmergencyPlan = {
+  bank: number; cash: number; counts_cash: boolean; committed: number; set_aside: number; available: number
+  monthly_essential: number; target_months: number; target: number; months: number; gap: number; spare: number; payday?: string
+}

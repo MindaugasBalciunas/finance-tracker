@@ -42,12 +42,15 @@ type Overview struct {
 	Avg12       insights.Flow          `json:"avg12"` // trailing 12 complete months, monthly average
 	// A usual month over the same twelve: the median, which a bonus month
 	// can't lift the way it lifts the average.
-	UsualSaved    money.Cents          `json:"usual_saved"`
-	UsualRate     float64              `json:"usual_rate"`
-	Year          insights.Flow        `json:"year"`           // year to date
-	MonthProgress float64              `json:"month_progress"` // share of the month elapsed
-	Plan          PlanPulse            `json:"plan"`
-	Emergency     insights.Emergency   `json:"emergency"`
+	UsualSaved    money.Cents        `json:"usual_saved"`
+	UsualRate     float64            `json:"usual_rate"`
+	Year          insights.Flow      `json:"year"`           // year to date
+	MonthProgress float64            `json:"month_progress"` // share of the month elapsed
+	Plan          PlanPulse          `json:"plan"`
+	Emergency     insights.Emergency `json:"emergency"`
+	// The emergency fund after what leaves before payday and the wish
+	// list's set-asides: what the plan and the payday checklist go by.
+	EmergencyPlan *EmergencyPlan       `json:"emergency_plan,omitempty"`
 	FIProgress    float64              `json:"fi_progress"`
 	YearsToFI     float64              `json:"years_to_fi"`
 	Anomalies     []insights.Anomaly   `json:"anomalies"`
@@ -433,6 +436,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 		}
 	}
 	o.Cash = buildCashPlan(d, txs, &o.Plan, fixedCats, book, now)
+	o.EmergencyPlan = buildEmergencyPlan(d, book, o.Emergency, o.Cash, now)
 	budgetDiffs := 0
 	if r := reports[thisM]; rerr == nil {
 		for _, l := range r.Lines {
@@ -450,7 +454,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 		}
 	}
 	defer func() {
-		o.Actions = buildActions(o, budgetDiffs, plannedLate, now, moreActions(d, now, reports[thisM])...)
+		o.Actions = buildActions(o, budgetDiffs, plannedLate, now, moreActions(d, now, reports[thisM], o.EmergencyPlan)...)
 	}()
 	o.Checks = Checks(d, now)
 	if now.Day() <= 7 {

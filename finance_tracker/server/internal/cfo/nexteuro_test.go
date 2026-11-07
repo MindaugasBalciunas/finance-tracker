@@ -28,7 +28,14 @@ func TestNextEuroFillsBufferThenRefundThenBestReturn(t *testing.T) {
 	yes := true
 	cfo.SaveTaxSettings(d, cfo.TaxSettings{Pillar3Before2025: &yes})
 
-	n, err := cfo.NextEuroFor(d, E(1000), now)
+	// The buffer is the plan's emergency fund: what an emergency could use
+	// after what leaves before payday, against 3 months of essentials.
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil || o.EmergencyPlan == nil || o.EmergencyPlan.Gap <= 0 {
+		t.Fatalf("emergency %+v %v", o.EmergencyPlan, err)
+	}
+	gap := o.EmergencyPlan.Gap
+	n, err := cfo.NextEuroFor(d, gap+E(500), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,8 +48,8 @@ func TestNextEuroFillsBufferThenRefundThenBestReturn(t *testing.T) {
 	if len(keys) < 4 || keys[0] != "buffer" || keys[1] != "pillar3" || keys[2] != "invest" || keys[3] != "loan:mortgage" {
 		t.Fatalf("order %v", keys)
 	}
-	// Essential spending €1,000 a month × 3 = €3,000; €2,500 in cash.
-	if share["buffer"] != 500 || share["pillar3"] != 200 || share["invest"] != 300 || share["loan:mortgage"] != 0 {
+	// The buffer's gap first, then €200 of 3rd-pillar refund room, then investing.
+	if share["buffer"] != gap.Float() || share["pillar3"] != 200 || share["invest"] != 300 || share["loan:mortgage"] != 0 {
 		t.Errorf("split %v", share)
 	}
 	if n.Options[2].To != "ibkr" || n.Options[1].To != "artea" {

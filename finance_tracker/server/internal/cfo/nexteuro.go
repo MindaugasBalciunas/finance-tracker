@@ -73,10 +73,16 @@ func NextEuroFor(d *sql.DB, sum money.Cents, now time.Time) (*NextEuro, error) {
 	room := func(c money.Cents) *money.Cents { return &c }
 
 	// 1. The buffer: below target, cash comes first whatever it earns.
+	// The same fund the plan holds the wish list to: after what leaves
+	// before payday and the wish list's set-asides (Home works it out).
 	em := insights.ComputeFI(txs, cats, book, settings, now).Emergency
-	if gap := em.Target - em.Cash; gap > 0 {
-		opts = append(opts, EuroOption{Key: "buffer", Title: "Emergency buffer", Return: math.Inf(1), Sure: true, Room: room(gap), Link: "/wealth/fi",
-			Why: fmt.Sprintf("Cash covers %.1f of the %.0f months you aim for — %s short. Safety comes before return.", em.Months, em.TargetMonths, eur(gap))})
+	gap, have := em.Target-em.Cash, em.Months
+	if ov, err := BuildOverview(d, now, 0); err == nil && ov.EmergencyPlan != nil {
+		gap, have = ov.EmergencyPlan.Gap, ov.EmergencyPlan.Months
+	}
+	if gap > 0 {
+		opts = append(opts, EuroOption{Key: "buffer", Title: "Emergency buffer", Return: math.Inf(1), Sure: true, Room: room(gap), Link: "/plan",
+			Why: fmt.Sprintf("After what leaves before payday, cash covers %.1f of the %s months you aim for — %s short. Safety comes before return.", have, months(em.TargetMonths), eur(gap))})
 	}
 
 	// 2. The 3rd pillar while this year's refund has room.

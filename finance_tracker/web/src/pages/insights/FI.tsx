@@ -5,7 +5,7 @@ import { api } from '../../lib/api'
 import { eur, eurk, monthLabel, pct } from '../../lib/format'
 import type { FIPlan, Milestone } from '../../lib/types'
 import { AskCFO, Card, ErrorBox, Loading, Meter, Segmented } from '../../components/ui'
-import { usePeriod } from '../../lib/hooks'
+import { useOverview, usePeriod } from '../../lib/hooks'
 import { FI_SPANS, fiSeries, type FIPoint } from '../../lib/fi'
 import { axisProps, gridProps, TooltipBox } from '../../components/charts'
 import { Icon } from '../../components/Icon'
@@ -23,6 +23,7 @@ export function FI() {
   const { data: f, isLoading, error } = useQuery({ queryKey: ['fi-plan'], queryFn: () => api.get<FIPlan>('/wealth/fi-plan', { monthly: 1 }) })
   const { data: ms } = useQuery({ queryKey: ['milestones'], queryFn: () => api.get<Milestone[]>('/wealth/milestones') })
   const [span, setSpan] = usePeriod('fi', '10', FI_SPANS.map((s) => s.value))
+  const { data: o } = useOverview()
   if (isLoading) return <Loading />
   if (error || !f) return <ErrorBox error={error} />
   const share = f.spending > 0 ? f.passive_now / f.spending : 0
@@ -172,6 +173,10 @@ export function FI() {
               <div><div className="text-xs text-muted">Covers</div><div className={clsx('font-semibold', f.emergency.months < f.emergency.target_months ? 'text-warn' : 'text-good')}>{f.emergency.months} months</div><div className="text-xs text-muted">target {f.emergency.target_months}</div></div>
             </div>
             <Meter className="mt-3" value={f.emergency.cash} max={f.emergency.target || 1} goal />
+            {/* Cash today; the plan's figure takes off what leaves before payday. */}
+            {o?.emergency_plan && (
+              <a href="#/plan" className="mt-2 block text-xs text-muted hover:text-ink">Cash today, before bills — after what leaves before payday it covers <b className={o.emergency_plan.gap > 0 ? 'text-warn' : 'text-ink2'}>{o.emergency_plan.months.toFixed(1)} months</b>. See Plan →</a>
+            )}
           </Card>
           <Card title="Growth to independence" icon="chart" color="var(--s1)" action={spanPicker}>
             <div className="h-48">

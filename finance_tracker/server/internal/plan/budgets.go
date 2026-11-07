@@ -230,6 +230,9 @@ type Settings struct {
 	WithdrawalRate  float64 `json:"withdrawal_rate"`  // e.g. 4
 	ExpectedReturn  float64 `json:"expected_return"`  // real, % p.a.
 	EmergencyMonths float64 `json:"emergency_months"`
+	// EmergencyExcludeCash: notes and coins (Cash accounts) don't count
+	// toward the emergency fund — only money in the bank does.
+	EmergencyExcludeCash bool `json:"emergency_exclude_cash,omitempty"`
 	// When salary arrives after the month it pays for. Each rule applies to
 	// salary booked on or after From; one paid on day ≤ PaidByDay counts for
 	// the previous month. A new job gets a new rule from its start date.

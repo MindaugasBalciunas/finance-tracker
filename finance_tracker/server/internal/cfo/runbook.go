@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"ft/internal/goals"
@@ -21,7 +22,7 @@ import (
 
 type RunStep struct {
 	Key      string      `json:"key"`
-	Kind     string      `json:"kind"` // saving | wishlist | move
+	Kind     string      `json:"kind"` // saving | emergency | wishlist | move
 	Title    string      `json:"title"`
 	Detail   string      `json:"detail,omitempty"`
 	From     string      `json:"from,omitempty"`
@@ -47,16 +48,24 @@ type Runbook struct {
 }
 
 // BuildRunbook is this calendar month's checklist.
-func BuildRunbook(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, true, nil) }
+func BuildRunbook(d *sql.DB, now time.Time) (*Runbook, error) {
+	return buildRunbook(d, now, true, nil, nil)
+}
 
 // PaydaySteps is the checklist without this week's bill top-ups — what the
 // Budget lines and Home's payday tile need, without building Home's cash plan.
-func PaydaySteps(d *sql.DB, now time.Time) (*Runbook, error) { return buildRunbook(d, now, false, nil) }
+// Without the cash plan it has no emergency fund, so it doesn't hold the
+// wish list back — the Budget lines and the payday tile read only saving.
+func PaydaySteps(d *sql.DB, now time.Time) (*Runbook, error) {
+	return buildRunbook(d, now, false, nil, nil)
+}
 
 // withMoves=false leaves out the cash top-ups, for Home, which shows those
 // itself (and builds the cash plan the runbook would otherwise ask it for).
 // cur is this month's plan report when the caller already has it.
-func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*Runbook, error) {
+// em is the emergency fund (nil: taken from Home's overview when withMoves
+// builds it, else none — the wish list then isn't held back).
+func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report, em *EmergencyPlan) (*Runbook, error) {
 	today := now.Format("2006-01-02")
 	settings := plan.LoadSettings(d)
 	rules := settings.Salary()
@@ -104,6 +113,9 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*
 	if withMoves {
 		if ov, err := buildOverview(d, now, 0, &cur); err == nil {
 			o = ov
+			if em == nil {
+				em = ov.EmergencyPlan
+			}
 		}
 	}
 	r := cur
@@ -150,10 +162,27 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*
 		for _, a := range gp.Proposal {
 			proposed += a.Amount
 		}
-		if want := proposed + gp.Funding.Funded; want > 0 {
-			st := RunStep{Key: "wishlist:" + gp.Funding.Month, Kind: "wishlist", Title: "Fund the wish list", Amount: want, Done: gp.Funding.Funded, Link: "/plan/wishlist",
-				Detail: fmt.Sprintf("%s left over from %s, split by priority.", eur(gp.Funding.LeftOver), monthName(gp.Funding.Month))}
-			rb.add(st)
+		want := proposed + gp.Funding.Funded
+		// The emergency fund comes first: the wish list gets only what is
+		// above its floor, and a fund that is short says so — about the
+		// leftovers not yet put into goals.
+		if em != nil && proposed > 0 && em.Gap > 0 {
+			keep := min(em.Gap, proposed)
+			detail := fmt.Sprintf("%s short of %s months of essentials (%s) — leave %s of %s's leftovers in savings.", eur(em.Gap), months(em.TargetMonths), eur(em.Target), eur(keep), monthName(gp.Funding.Month))
+			if em.Available < 0 {
+				detail = fmt.Sprintf("What leaves before payday is %s more than the bank holds, and %s months of essentials is %s — leave %s of %s's leftovers in savings.", eur(-em.Available), months(em.TargetMonths), eur(em.Target), eur(keep), monthName(gp.Funding.Month))
+			}
+			rb.add(RunStep{Key: "emergency:" + gp.Funding.Month, Kind: "emergency", Title: "Keep it for the emergency fund", Amount: keep, Link: "/plan", Detail: detail})
+		}
+		detail := fmt.Sprintf("%s left over from %s, split by priority.", eur(gp.Funding.LeftOver), monthName(gp.Funding.Month))
+		if em != nil {
+			if room := em.Spare + gp.Funding.Funded; room < want {
+				detail = fmt.Sprintf("%s of the %s left over from %s — the rest keeps the emergency fund at %s months.", eur(max(0, room)), eur(gp.Funding.LeftOver), monthName(gp.Funding.Month), months(em.TargetMonths))
+				want = max(gp.Funding.Funded, room)
+			}
+		}
+		if want > 0 {
+			rb.add(RunStep{Key: "wishlist:" + gp.Funding.Month, Kind: "wishlist", Title: "Fund the wish list", Amount: want, Done: gp.Funding.Funded, Link: "/plan/wishlist", Detail: detail})
 		}
 	}
 
@@ -173,6 +202,13 @@ func buildRunbook(d *sql.DB, now time.Time, withMoves bool, cur *plan.Report) (*
 }
 
 func (rb *Runbook) add(st RunStep) {
+	// Keeping money for the emergency fund is advice, not a transfer: it isn't
+	// ticked off by the bank and stays out of the totals still to move.
+	if st.Kind == "emergency" {
+		st.Status = "info"
+		rb.Steps = append(rb.Steps, st)
+		return
+	}
 	switch {
 	case st.Done >= st.Amount:
 		st.Status = "done"
@@ -194,7 +230,7 @@ func rank(status string) int {
 	switch status {
 	case "partial":
 		return 0
-	case "todo":
+	case "todo", "info":
 		return 1
 	}
 	return 2
@@ -209,3 +245,6 @@ func mostUsed(n map[string]int) string {
 	}
 	return id
 }
+
+// months: 3 → "3", 2.5 → "2.5".
+func months(m float64) string { return strconv.FormatFloat(m, 'f', -1, 64) }

@@ -151,8 +151,14 @@ export default function Home() {
       </>}
       <Stat icon="piggy" color="var(--s6)" label="Savings rate · usual month" value={<CountUp value={o.usual_rate ?? avg.savings_rate} format={pct} />}
         sub={`${eur(Math.round(o.usual_saved ?? avg.saved))}/mo · 12-mo avg ${pct(avg.savings_rate)}`} tone={(o.usual_rate ?? avg.savings_rate) < 0 ? 'bad' : undefined} onClick={() => nav('/insights/cashflow')} />
-      <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={<CountUp value={o.emergency.months} format={(v) => `${v.toFixed(1)} mo`} />} sub={`${eur(o.emergency.cash)} · target ${o.emergency.target_months} mo`}
-        tone={o.emergency.months < o.emergency.target_months ? 'warn' : undefined} onClick={() => nav('/wealth/fi')} />
+      {/* The same figure the plan holds the wish list to: after what leaves before payday. */}
+      {(() => {
+        const e = o.emergency_plan
+        const months = e ? e.months : o.emergency.months, target = e ? e.target_months : o.emergency.target_months
+        return <Stat icon="umbrella" color="var(--s3)" label="Emergency fund" value={<CountUp value={months} format={(v) => `${v.toFixed(1)} mo`} />}
+          sub={e ? `${eur(e.available)} after what leaves before payday · target ${target} mo` : `${eur(o.emergency.cash)} · target ${target} mo`}
+          tone={(e ? e.gap > 0 : months < target) ? 'warn' : undefined} onClick={() => nav('/plan')} />
+      })()}
       <Stat icon="trend" color="var(--s7)" label="Financial independence" value={<CountUp value={o.fi_progress} format={(v) => pct(v, 1)} />} sub={o.years_to_fi >= 0 ? `${o.years_to_fi.toFixed(1)} years at this pace` : 'set a target in Plan'} onClick={() => nav('/wealth/fi')} />
       <Stat icon="trend" color="var(--s2)" label="Invested · 12 mo" value={<CountUp value={avg.invested * 12} format={eurk} />} sub={`${eur(avg.invested)}/month incl. loan principal`} onClick={() => nav('/insights/cashflow')} />
     </div>

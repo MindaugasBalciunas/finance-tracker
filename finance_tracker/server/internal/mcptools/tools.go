@@ -144,20 +144,21 @@ type grossChange struct {
 }
 
 type planSettingsArgs struct {
-	IncomeMode        *string            `json:"income_mode,omitempty" jsonschema:"median | manual | gross"`
-	ManualIncome      *float64           `json:"manual_income,omitempty" jsonschema:"EUR net per month"`
-	GrossSalary       *float64           `json:"gross_salary,omitempty" jsonschema:"EUR gross per month — the salary before any gross_changes"`
-	GrossChanges      *[]grossChange     `json:"gross_changes,omitempty" jsonschema:"a raise or new salary from a later month (the months before keep the old one); replaces the list — send every change, [] clears it"`
-	MonthlyDeductions *float64           `json:"monthly_deductions,omitempty"`
-	SalaryRules       *[]salaryRule      `json:"salary_rules,omitempty" jsonschema:"replaces the whole list — send every rule, [] clears it"`
-	SalaryAccount     *string            `json:"salary_account,omitempty" jsonschema:"account id salary is paid into"`
-	Buffers           map[string]float64 `json:"buffers,omitempty" jsonschema:"account id → EUR floor; merges per account, 0 removes one"`
-	EmergencyMonths   *float64           `json:"emergency_months,omitempty"`
-	TargetAge         *int               `json:"target_age,omitempty"`
-	BirthYear         *int               `json:"birth_year,omitempty"`
-	FIMonthlySpend    *float64           `json:"fi_monthly_spend,omitempty"`
-	WithdrawalRate    *float64           `json:"withdrawal_rate,omitempty"`
-	ExpectedReturn    *float64           `json:"expected_return,omitempty"`
+	IncomeMode           *string            `json:"income_mode,omitempty" jsonschema:"median | manual | gross"`
+	ManualIncome         *float64           `json:"manual_income,omitempty" jsonschema:"EUR net per month"`
+	GrossSalary          *float64           `json:"gross_salary,omitempty" jsonschema:"EUR gross per month — the salary before any gross_changes"`
+	GrossChanges         *[]grossChange     `json:"gross_changes,omitempty" jsonschema:"a raise or new salary from a later month (the months before keep the old one); replaces the list — send every change, [] clears it"`
+	MonthlyDeductions    *float64           `json:"monthly_deductions,omitempty"`
+	SalaryRules          *[]salaryRule      `json:"salary_rules,omitempty" jsonschema:"replaces the whole list — send every rule, [] clears it"`
+	SalaryAccount        *string            `json:"salary_account,omitempty" jsonschema:"account id salary is paid into"`
+	Buffers              map[string]float64 `json:"buffers,omitempty" jsonschema:"account id → EUR floor; merges per account, 0 removes one"`
+	EmergencyMonths      *float64           `json:"emergency_months,omitempty"`
+	EmergencyExcludeCash *bool              `json:"emergency_exclude_cash,omitempty" jsonschema:"true = notes and coins (Cash accounts) don't count toward the emergency fund"`
+	TargetAge            *int               `json:"target_age,omitempty"`
+	BirthYear            *int               `json:"birth_year,omitempty"`
+	FIMonthlySpend       *float64           `json:"fi_monthly_spend,omitempty"`
+	WithdrawalRate       *float64           `json:"withdrawal_rate,omitempty"`
+	ExpectedReturn       *float64           `json:"expected_return,omitempty"`
 }
 
 type tripArgs struct {

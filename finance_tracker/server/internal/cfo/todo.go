@@ -14,11 +14,12 @@ import (
 
 // moreActions are the "Needs you" items from the planning tools: payday
 // transfers still to make, and later, renewals and decisions to look at.
-// cur is this month's plan report when the caller has it (nil runs it).
-func moreActions(d *sql.DB, now time.Time, cur *plan.Report) []Action {
+// cur is this month's plan report when the caller has it (nil runs it);
+// em the emergency fund Home worked out, so the checklist holds the same line.
+func moreActions(d *sql.DB, now time.Time, cur *plan.Report, em *EmergencyPlan) []Action {
 	var out []Action
 	// Payday transfers: for ten days after the salary, while any are open.
-	if rb, err := buildRunbook(d, now, false, cur); err == nil && rb.Payday != "" && rb.Open > 0 {
+	if rb, err := buildRunbook(d, now, false, cur, em); err == nil && rb.Payday != "" && rb.Open > 0 {
 		if pd, err := time.Parse("2006-01-02", rb.Payday); err == nil && now.Sub(pd) <= 10*24*time.Hour {
 			var left money.Cents
 			saving, moved := 0, 0

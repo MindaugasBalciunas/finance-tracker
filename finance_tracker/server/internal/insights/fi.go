@@ -67,8 +67,15 @@ func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Bo
 		essential += f.Essential
 		saved += f.Saved
 	}
-	snap := book.SnapshotAt(now.Format("2006-01-02"), false)
+	snap := book.SnapshotAt(now.Format("2006-01-02"), s.EmergencyExcludeCash)
 	cash := snap.ByGroup["cash"]
+	if s.EmergencyExcludeCash { // only money in the bank is the emergency fund
+		for id, v := range snap.ByAccount {
+			if book.Accounts[id].Kind == "cash" {
+				cash -= v
+			}
+		}
+	}
 	out := FI{ExpectedReturn: s.ExpectedReturn, WithdrawalRate: s.WithdrawalRate, TargetAge: s.TargetAge}
 	out.Emergency = Emergency{Cash: cash, MonthlyEssential: essential / 12, TargetMonths: s.EmergencyMonths}
 	out.Emergency.Target = money.FromFloat(out.Emergency.MonthlyEssential.Float() * s.EmergencyMonths)
@@ -80,7 +87,9 @@ func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Bo
 		out.AnnualSpend, out.SpendSource = money.FromFloat(s.FIMonthlySpend*12), "your FI spending target"
 	}
 	out.Target = money.FromFloat(out.AnnualSpend.Float() * 100 / s.WithdrawalRate)
-	buffer := cash - out.Emergency.Target
+	// Cash beyond the fund is investable either way: leaving notes out of
+	// the emergency fund doesn't take them out of what works toward FI.
+	buffer := snap.ByGroup["cash"] - out.Emergency.Target
 	if buffer < 0 {
 		buffer = 0
 	}
