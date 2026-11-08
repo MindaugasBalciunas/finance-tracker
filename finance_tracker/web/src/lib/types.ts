@@ -13,6 +13,8 @@ export interface Tx {
   tags: string[]
   external_id?: string
   split_of?: number
+  /** The recurring item this pays (set from the editor's "Recurring payment" switch). */
+  recurring_id?: number
   source: string
   pending?: boolean
 }
@@ -219,4 +221,11 @@ export type PayoutPoint = { year: number; month?: string; age?: number; investab
 export type EmergencyPlan = {
   bank: number; cash: number; counts_cash: boolean; committed: number; set_aside: number; available: number
   monthly_essential: number; target_months: number; target: number; months: number; gap: number; spare: number; payday?: string
+}
+
+/** A transaction as a recurring payment: what it is marked as, what it already matches (and how), the items to pick from and the item it would make. */
+export type TxRecurring = {
+  recurring_id: number; match_id: number; match_by: '' | 'marked' | 'merchant' | 'habit'; marked: boolean
+  items: { id: number; merchant: string; note: string; cadence: string; amount: number; kind: 'bill' | 'income' | 'transfer'; hidden: boolean }[]
+  new: { merchant: string; amount: number; day: number; cadence: string; kind: string }
 }

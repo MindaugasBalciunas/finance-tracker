@@ -54,6 +54,65 @@ func (s *Server) ledgerRoutes() {
 	s.handle("GET /api/transactions/quick", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return ledger.Quick(s.DB, time.Now())
 	})
+	// A transaction as a recurring payment: the item it is marked as, the
+	// one it already matches by merchant or habit, the items to choose from,
+	// and the monthly item it would make.
+	s.handle("GET /api/transactions/{id}/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			return nil, err
+		}
+		t, err := ledger.Get(s.DB, id)
+		if err != nil {
+			return nil, notFound("transaction not found")
+		}
+		items, err := insights.ListRecurringItems(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		match, by := insights.MatchingItem(&t, items)
+		shown := []insights.RecurringItem{}
+		for _, it := range items {
+			if !it.Hidden {
+				shown = append(shown, it)
+			}
+		}
+		return map[string]any{"recurring_id": t.RecurringID, "match_id": match, "match_by": by, "marked": by == "marked", "items": shown, "new": insights.ItemFromTx(&t)}, nil
+	})
+	// Mark it: an existing item (recurring_id), a new monthly item made from
+	// it (create — or the item its merchant already has), or none (0).
+	s.handle("PUT /api/transactions/{id}/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			return nil, err
+		}
+		var in struct {
+			RecurringID int64 `json:"recurring_id"`
+			Create      bool  `json:"create"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		t, err := ledger.Get(s.DB, id)
+		if err != nil {
+			return nil, notFound("transaction not found")
+		}
+		names := map[string]string{}
+		if accts, err := ledger.ListAccounts(s.DB); err == nil {
+			for _, a := range accts {
+				names[a.ID] = a.Name
+			}
+		}
+		item, err := insights.LinkTx(s.DB, &t, in.Create, in.RecurringID, names)
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		link := int64(0)
+		if item != nil {
+			link = item.ID
+		}
+		return map[string]any{"recurring_id": link, "item": item}, nil
+	})
 	s.handle("GET /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := idParam(r, "id")
 		if err != nil {
@@ -78,7 +137,7 @@ func (s *Server) ledgerRoutes() {
 			return nil, err
 		}
 		t := in.Tx
-		t.ID, t.ExternalID, t.SplitOf, t.Pending = 0, "", 0, false
+		t.ID, t.ExternalID, t.SplitOf, t.Pending, t.RecurringID = 0, "", 0, false, 0
 		// Bank and import rows only come from sync and conversion; a client
 		// claiming either would skip the balance move a hand entry makes.
 		if t.Source == "" || t.Source == "bank" || t.Source == "import" {

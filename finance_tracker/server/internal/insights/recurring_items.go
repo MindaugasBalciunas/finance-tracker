@@ -3,6 +3,7 @@ package insights
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -132,7 +133,11 @@ func SaveRecurringItem(d *sql.DB, it *RecurringItem) error {
 }
 
 func DeleteRecurringItem(d *sql.DB, id int64) error {
-	_, err := d.Exec(`DELETE FROM recurring_items WHERE id=?`, id)
+	if _, err := d.Exec(`DELETE FROM recurring_items WHERE id=?`, id); err != nil {
+		return err
+	}
+	// Payments marked as this item are just transactions again.
+	_, err := d.Exec(`UPDATE transactions SET recurring_id=0 WHERE recurring_id=?`, id)
 	return err
 }
 
@@ -245,6 +250,14 @@ func settle(r *Recurring, now time.Time) {
 	}
 	month := now.Format("2006-01")
 	r.Done = r.Last != "" && r.Last[:7] == month
+	// Paid this month: the next one is a period on, not later this month —
+	// Argus paid on 5 Nov read "done · next 10 Nov" and came round again in
+	// the cash calendar on the 10th.
+	if r.Done && r.EveryDays == 0 && strings.HasPrefix(r.Next, month) {
+		if t, err := time.Parse("2006-01-02", r.Next); err == nil {
+			r.Next = t.AddDate(0, max(1, cadenceMonths[r.Cadence]), 0).Format("2006-01-02")
+		}
+	}
 	if r.Day <= 0 || r.EveryDays > 0 || (r.Cadence != "" && r.Cadence != "monthly") {
 		return
 	}
@@ -326,7 +339,7 @@ func DetectTransfers(txs []ledger.Tx, now time.Time, names map[string]string) []
 	type key struct{ from, to, cat string }
 	by := map[key][]ledger.Tx{}
 	for _, t := range txs {
-		if t.Kind != "transfer" || t.Date < since || t.AccountID == "" || t.ToAccountID == "" {
+		if t.Kind != "transfer" || t.Date < since || t.AccountID == "" || t.ToAccountID == "" || t.RecurringID != 0 {
 			continue
 		}
 		k := key{t.AccountID, t.ToAccountID, t.Category}
@@ -402,9 +415,10 @@ func firstNonEmpty(v ...string) string {
 	return ""
 }
 
-// lastPayments finds each saved item's most recent payment: by merchant, or —
-// for a habit without one (haircuts at whichever salon) — by category at a
-// similar amount (±25%).
+// lastPayments finds each saved item's most recent payment: a transaction
+// marked as it first of all; else by merchant, or — for a habit without one
+// (haircuts at whichever salon) — by category at a similar amount (±25%).
+// A transaction marked as one item never counts for another.
 func lastPayments(txs []ledger.Tx, items []RecurringItem) map[int64]string {
 	out := map[int64]string{}
 	siblings := map[string][]RecurringItem{}
@@ -412,37 +426,163 @@ func lastPayments(txs []ledger.Tx, items []RecurringItem) map[int64]string {
 		siblings[strings.ToLower(it.Merchant)] = append(siblings[strings.ToLower(it.Merchant)], it)
 	}
 	for _, it := range items {
-		m := strings.ToLower(it.Merchant)
-		sib := siblings[m]
+		sib := siblings[strings.ToLower(it.Merchant)]
 		for i := range txs {
 			t := &txs[i]
-			if t.Date <= out[it.ID] || (it.Kind != "transfer" && it.Kind != "income" && t.Kind != "expense") {
-				continue
-			}
-			byMerchant := t.Merchant != "" && strings.ToLower(t.Merchant) == m
-			similar := it.Amount > 0 && math.Abs(t.Amount.Float()-it.Amount.Float()) <= 0.25*it.Amount.Float()
-			if byMerchant && len(sib) > 1 && !noteFits(it, sib, t) {
-				byMerchant = false
-			}
-			switch it.Kind {
-			case "transfer": // the same accounts (and a similar amount, or the name)
-				if t.Kind == "transfer" && (it.FromAccount != "" || it.ToAccount != "") &&
-					(it.FromAccount == "" || t.AccountID == it.FromAccount) && (it.ToAccount == "" || t.ToAccountID == it.ToAccount) && (similar || byMerchant) {
-					out[it.ID] = t.Date
-				}
-			case "income": // into the same account, by name or a similar amount
-				if t.Kind == "income" && (it.ToAccount == "" || t.AccountID == it.ToAccount) && (byMerchant || (similar && it.Category != "" && t.Category == it.Category)) {
-					out[it.ID] = t.Date
-				}
-			default:
-				byHabit := it.Category != "" && t.Category == it.Category && similar
-				if byMerchant || byHabit {
-					out[it.ID] = t.Date
-				}
+			if t.Date > out[it.ID] && itemPays(it, sib, t) {
+				out[it.ID] = t.Date
 			}
 		}
 	}
 	return out
+}
+
+// itemPays: is t a payment of it? sib are the items sharing its merchant.
+func itemPays(it RecurringItem, sib []RecurringItem, t *ledger.Tx) bool {
+	if t.RecurringID != 0 {
+		return t.RecurringID == it.ID
+	}
+	if it.Kind != "transfer" && it.Kind != "income" && t.Kind != "expense" {
+		return false
+	}
+	m := strings.ToLower(it.Merchant)
+	byMerchant := t.Merchant != "" && strings.ToLower(t.Merchant) == m
+	similar := it.Amount > 0 && math.Abs(t.Amount.Float()-it.Amount.Float()) <= 0.25*it.Amount.Float()
+	if byMerchant && len(sib) > 1 && !noteFits(it, sib, t) {
+		byMerchant = false
+	}
+	switch it.Kind {
+	case "transfer": // the same accounts (and a similar amount, or the name)
+		return t.Kind == "transfer" && (it.FromAccount != "" || it.ToAccount != "") &&
+			(it.FromAccount == "" || t.AccountID == it.FromAccount) && (it.ToAccount == "" || t.ToAccountID == it.ToAccount) && (similar || byMerchant)
+	case "income": // into the same account, by name or a similar amount
+		return t.Kind == "income" && (it.ToAccount == "" || t.AccountID == it.ToAccount) && (byMerchant || (similar && it.Category != "" && t.Category == it.Category))
+	}
+	return byMerchant || (it.Category != "" && t.Category == it.Category && similar)
+}
+
+// MatchingItem is the saved item a transaction pays: the one it is marked
+// as, else one whose merchant it carries, else one whose habit (category at
+// a similar amount) it fits — and how it matched: marked | merchant | habit.
+func MatchingItem(t *ledger.Tx, items []RecurringItem) (id int64, by string) {
+	if t.RecurringID != 0 {
+		for _, it := range items {
+			if it.ID == t.RecurringID {
+				return it.ID, "marked"
+			}
+		}
+	}
+	siblings := map[string][]RecurringItem{}
+	for _, it := range items {
+		siblings[strings.ToLower(it.Merchant)] = append(siblings[strings.ToLower(it.Merchant)], it)
+	}
+	probe := *t
+	probe.RecurringID = 0
+	for _, merchantOnly := range []bool{true, false} {
+		for _, it := range items {
+			named := probe.Merchant != "" && strings.EqualFold(probe.Merchant, it.Merchant)
+			if it.Hidden || named != merchantOnly || !itemPays(it, siblings[strings.ToLower(it.Merchant)], &probe) {
+				continue
+			}
+			if merchantOnly {
+				return it.ID, "merchant"
+			}
+			return it.ID, "habit"
+		}
+	}
+	return 0, ""
+}
+
+// itemKind is the recurring kind a transaction would be: bill for spending.
+func itemKind(t *ledger.Tx) string {
+	switch t.Kind {
+	case "income":
+		return "income"
+	case "transfer":
+		return "transfer"
+	}
+	return "bill"
+}
+
+// LinkTx marks t as a payment of a recurring item: id (it must be the same
+// kind — an income never pays a bill), a new monthly item made from t when
+// create (reusing the item its merchant already has, of the same kind and
+// closest in amount, shown again if it was hidden), or none (id 0, not
+// create). names are account names, for naming a transfer with no merchant.
+func LinkTx(d *sql.DB, t *ledger.Tx, create bool, id int64, names map[string]string) (*RecurringItem, error) {
+	items, err := ListRecurringItems(d)
+	if err != nil {
+		return nil, err
+	}
+	kind := itemKind(t)
+	var item *RecurringItem
+	switch {
+	case create:
+		it := ItemFromTx(t)
+		if it.Merchant == "" && kind == "transfer" && names[t.ToAccountID] != "" {
+			it.Merchant = "To " + names[t.ToAccountID]
+		}
+		if it.Merchant == "" {
+			return nil, errors.New("give it a merchant or a note first — that is the recurring payment's name")
+		}
+		best := -1
+		for i := range items {
+			if items[i].Kind == kind && strings.EqualFold(items[i].Merchant, it.Merchant) &&
+				(best < 0 || math.Abs(items[i].Amount.Float()-t.Amount.Float()) < math.Abs(items[best].Amount.Float()-t.Amount.Float())) {
+				best = i
+			}
+		}
+		if best >= 0 {
+			item = &items[best]
+			if item.Hidden { // dismissed once; marking a payment says it is recurring after all
+				item.Hidden = false
+				if err := SaveRecurringItem(d, item); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			if err := SaveRecurringItem(d, &it); err != nil {
+				return nil, err
+			}
+			item = &it
+		}
+	case id != 0:
+		for i := range items {
+			if items[i].ID == id {
+				item = &items[i]
+			}
+		}
+		if item == nil {
+			return nil, errors.New("that recurring payment doesn't exist")
+		}
+		if item.Kind != kind {
+			return nil, fmt.Errorf("%s is a recurring %s — this transaction can't pay it", item.Merchant, item.Kind)
+		}
+	}
+	link := int64(0)
+	if item != nil {
+		link = item.ID
+	}
+	return item, ledger.SetRecurring(d, t.ID, link)
+}
+
+// ItemFromTx is a monthly recurring item shaped like the payment: its
+// merchant (or note), category, amount, accounts and day of the month.
+func ItemFromTx(t *ledger.Tx) RecurringItem {
+	name := firstNonEmpty(t.Merchant, t.Note)
+	if r := []rune(name); len(r) > 60 {
+		name = strings.TrimSpace(string(r[:60]))
+	}
+	it := RecurringItem{Merchant: name, Category: t.Category, Cadence: "monthly", Amount: t.Amount, Day: dayOfMonth(t.Date)}
+	switch itemKind(t) {
+	case "income":
+		it.Kind, it.ToAccount = "income", t.AccountID
+	case "transfer":
+		it.Kind, it.FromAccount, it.ToAccount = "transfer", t.AccountID, t.ToAccountID
+	default:
+		it.Kind, it.FromAccount = "bill", t.AccountID
+	}
+	return it
 }
 
 func addDays(date string, n int) string {

@@ -263,6 +263,11 @@ func tokenAllows(scope, method, p string) bool {
 	if scope != "rw" {
 		return false
 	}
+	// PUT /api/transactions/ above is for editing a transaction; nothing
+	// under one (marking it a recurring payment) is reachable with a token.
+	if method == "PUT" && strings.HasPrefix(p, "/api/transactions/") && strings.Count(p, "/") > 3 {
+		return false
+	}
 	for _, wr := range tokenWriteRoutes {
 		if method == wr.method && pathUnder(p, wr.prefix) {
 			return true

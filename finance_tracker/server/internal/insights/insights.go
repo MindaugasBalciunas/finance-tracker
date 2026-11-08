@@ -298,6 +298,9 @@ func DetectRecurring(txs []ledger.Tx, now time.Time) []Recurring {
 	}
 	by := map[string][]hit{}
 	for _, t := range txs {
+		if t.RecurringID != 0 { // marked as an item: counted there, not under the bank's name
+			continue
+		}
 		if t.Kind != "expense" || t.Date < cut {
 			continue
 		}

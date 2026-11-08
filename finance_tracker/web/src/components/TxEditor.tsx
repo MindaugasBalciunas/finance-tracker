@@ -4,11 +4,11 @@ import { api } from '../lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useAccounts, useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
 import { useCats } from '../lib/categories'
-import { dayLabel, eurc, parseNum, shortDate, todayISO } from '../lib/format'
-import type { Kind, Tx } from '../lib/types'
+import { dayLabel, eurc, monthLabel, parseNum, shortDate, todayISO } from '../lib/format'
+import type { Kind, Tx, TxRecurring } from '../lib/types'
 import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
-import { ErrorBox, Field, Segmented, Sheet, Spinner, useToast } from './ui'
+import { ErrorBox, Field, Segmented, Sheet, Spinner, Toggle, useToast } from './ui'
 import { logoName, MerchantMark } from './MerchantLogo'
 import { Icon } from './Icon'
 import { DateInput } from './DateInput'
@@ -115,12 +115,37 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   }, [t.merchant, t.note, t.kind])
 
   const keepTags = (t.tags ?? []).filter((x) => !x.startsWith('trip:') && !x.startsWith('owed:'))
+  // A recurring payment: the item it is marked as (or would match), so Plan →
+  // Recurring counts it as paid for its month. Set after the save, on its own.
+  const { data: recInfo } = useQuery({ queryKey: ['tx-recurring', t.id], queryFn: () => api.get<TxRecurring>(`/transactions/${t.id}/recurring`), enabled: !!t.id })
+  const recKind = t.kind === 'income' ? 'income' : t.kind === 'transfer' ? 'transfer' : 'bill'
+  const recItems = (recInfo?.items ?? []).filter((x) => x.kind === recKind)
+  // "New" only when this merchant has no item of the kind yet (the server would reuse it).
+  const recCanNew = !recItems.some((x) => !!t.merchant && x.merchant.toLowerCase() === t.merchant.trim().toLowerCase())
+  const [rec, setRec] = useState<{ on: boolean; choice: 'new' | number } | null>(null)
+  const recState = rec ?? (recInfo ? { on: recInfo.marked, choice: recInfo.marked ? recInfo.recurring_id : recInfo.match_id || (recCanNew ? 'new' : recItems[0]?.id ?? 'new') } : { on: false, choice: 'new' as const })
   const submit = async () => {
     const value = parseNum(amount) ?? NaN
     if (!(value > 0)) return toast('Enter an amount', 'bad')
     if (!t.category) return toast('Pick a category', 'bad')
     try {
-      await save.mutateAsync({ ...t, amount: value, suppressed_tags: suppressed })
+      const res: unknown = await save.mutateAsync({ ...t, amount: value, suppressed_tags: suppressed })
+      const saved = (res as { transaction?: Tx } | undefined)?.transaction ?? (res as Tx | undefined)
+      const id = saved?.id ?? t.id
+      const was = recInfo?.marked ? recInfo.recurring_id : 0
+      if (id && rec && (rec.on ? (rec.choice === 'new' || rec.choice !== was) : was !== 0)) {
+        // The transaction is saved by now: a refused mark is said and the sheet
+        // closes, so pressing Add again can't enter it twice.
+        try {
+          await api.put(`/transactions/${id}/recurring`, rec.on ? (rec.choice === 'new' ? { create: true } : { recurring_id: rec.choice }) : { recurring_id: 0 })
+        } catch (e) {
+          toast(`${isNew ? 'Added' : 'Saved'} — not marked recurring: ${(e as Error).message}`, 'bad')
+          refresh()
+          onClose()
+          return
+        }
+        refresh()
+      }
       if (makeRule && t.merchant) {
         // One rule per merchant: an earlier one for the same name is updated, not repeated.
         const tags = ruleTags ? keepTags : []
@@ -283,6 +308,24 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             and tag every one {keepTags.map(tagLabel).join(', ')} <span className="text-muted">— only if that's always true</span>
           </label>
         )}
+        <div className="rounded-xl border border-line p-3">
+          <Toggle checked={recState.on} onChange={(on) => setRec({ ...recState, on })} label={<span className="font-medium">Recurring payment</span>} />
+          {recState.on ? (
+            <div className="mt-2 space-y-1.5">
+              <select className="input select-pad h-9 text-sm" aria-label="Which recurring payment" value={String(recState.choice)} onChange={(e) => setRec({ on: true, choice: e.target.value === 'new' ? 'new' : Number(e.target.value) })}>
+                {recItems.map((x) => (
+                  <option key={x.id} value={x.id}>{x.merchant}{x.note ? ` · ${x.note}` : ''} · {x.cadence} {eurc(x.amount)}</option>
+                ))}
+                {recCanNew && <option value="new">New: {t.merchant || t.note || 'this payment'} · monthly{t.date ? ` on day ${Number(t.date.slice(8, 10))}` : ''}{amount ? ` · ${eurc(parseNum(amount) ?? 0)}` : ''}</option>}
+              </select>
+              <div className="text-xs text-muted">Counts as paid for {t.date ? monthLabel(t.date.slice(0, 7), true) : 'its month'} in Plan → Recurring, whatever the bank calls the merchant.</div>
+            </div>
+          ) : recInfo?.match_id ? (
+            <div className="mt-1 text-xs text-muted">Looks like {(() => { const m = recInfo.items.find((x) => x.id === recInfo.match_id); return m ? `${m.merchant}${m.note ? ` · ${m.note}` : ''}` : 'a recurring payment' })()} — {recInfo.match_by === 'habit' ? 'same category, similar amount' : 'counted by name'}. Switch on to tie it for sure.</div>
+          ) : (
+            <div className="mt-1 text-xs text-muted">Track it in Plan → Recurring and see each month whether it was paid.</div>
+          )}
+        </div>
         {t.external_id && <div className="text-xs text-muted">From the bank · {t.external_id}</div>}
         {!isNew && !t.split_of && (
           <div className="rounded-xl border border-line p-3">

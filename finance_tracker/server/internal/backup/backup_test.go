@@ -33,6 +33,15 @@ func seed(t *testing.T, d *sql.DB) {
 	d.Exec(`INSERT INTO goals(id,name,target,created_at,updated_at) VALUES(1,'Sauna',600000,'x','x')`)
 	d.Exec(`INSERT INTO goal_moves(goal_id,month,amount,kind,account_id,created_at) VALUES(1,'2026-09',150000,'manual','swed','x')`)
 	d.Exec(`INSERT INTO trip_history(tag,state,updated_at) VALUES('trip:egypt','done','x')`)
+	// A recurring item and the payment marked as it (Lidl's row, id 1).
+	if _, err := d.Exec(`INSERT INTO recurring_items(id,merchant,category,cadence,amount,next_date,note,kind,from_account,day,created_at,updated_at) VALUES(7,'Lidl','food.groceries','monthly',2345,'','','bill','swed',1,'x','x')`); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := d.Exec(`UPDATE transactions SET recurring_id=7 WHERE merchant='Lidl'`); err != nil {
+		t.Fatal(err)
+	} else if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("marked %d rows", n)
+	}
 	// A decision in the journal: bought, rated.
 	d.Exec(`INSERT INTO decisions(title,amount,category,status,cool_until,decided_on,review_on,worth,note,created_at) VALUES('Bike',89900,'leisure.hobbies','bought','2026-09-01','2026-09-05','2026-11-04','yes','commute','x')`)
 }

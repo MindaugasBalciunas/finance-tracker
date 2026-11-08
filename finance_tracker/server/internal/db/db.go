@@ -197,6 +197,11 @@ CREATE TABLE IF NOT EXISTS trip_history (
     goal_id    INTEGER NOT NULL DEFAULT 0,        -- the wish-list goal saving for it (0 = none)
     created_at TEXT NOT NULL
 );`,
+	// 19: a transaction marked as a recurring payment, so Plan → Recurring
+	// knows it was paid that month even when the bank names the merchant
+	// differently. 0 = not linked (every existing row); no foreign key, so
+	// older backups restore as they are — deleting an item clears its links.
+	`ALTER TABLE transactions ADD COLUMN recurring_id INTEGER NOT NULL DEFAULT 0;  -- recurring_items.id, 0 = none`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

@@ -135,6 +135,8 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro cannot export", tokRO, "GET", "/export/backup.json", nil, 403},
 		{"ro cannot write", tokRO, "POST", "/rules", map[string]any{"pattern": "x", "add_tags": []string{"y"}}, 403},
 		{"rw edits a transaction", tokRW, "PUT", "/transactions/1", map[string]any{"date": "2026-09-01", "amount": 11, "category": "food", "account_id": "swed"}, 200},
+		{"rw cannot mark a payment recurring", tokRW, "PUT", "/transactions/1/recurring", map[string]any{"create": true}, 403},
+		{"ro reads what a payment is", tokRO, "GET", "/transactions/1/recurring", nil, 200},
 		{"rw creates a transaction", tokRW, "POST", "/transactions", map[string]any{"date": "2026-09-02", "amount": 5, "category": "food", "account_id": "swed"}, 200},
 		{"rw adds a rule", tokRW, "POST", "/rules", map[string]any{"pattern": "x", "add_tags": []string{"y"}}, 200},
 		{"rw cannot bulk delete", tokRW, "POST", "/transactions/bulk", map[string]any{"ids": []int{1}, "delete": true}, 403},
@@ -1080,5 +1082,66 @@ func TestFIPlanMonthlyPointsOnlyWhenAsked(t *testing.T) {
 	code, page := c.do("GET", "/wealth/fi-plan?monthly=1", nil)
 	if code != 200 || !bytes.Contains(page, []byte(`"payouts_monthly":[{`)) {
 		t.Fatalf("page read %d: %.200s", code, page)
+	}
+}
+
+// Ticking "recurring payment" on a transaction makes a monthly item from it
+// (merchant, category, amount, account, day) and marks it; a second payment
+// of the same merchant joins that item rather than making another; unticking
+// clears the mark and keeps the item; an unknown item is refused.
+func TestMarkingATransactionRecurring(t *testing.T) {
+	_, c := newServer(t)
+	var octR, novR struct {
+		Transaction ledger.Tx `json:"transaction"`
+	}
+	c.ok("POST", "/transactions", map[string]any{"date": "2026-10-16", "amount": 25, "kind": "expense", "merchant": "Barbara beauty", "category": "health", "account_id": "swed"}, &octR)
+	c.ok("POST", "/transactions", map[string]any{"date": "2026-11-14", "amount": 27, "kind": "expense", "merchant": "Barbara beauty", "category": "health", "account_id": "swed"}, &novR)
+	oct, nov := octR.Transaction, novR.Transaction
+
+	var made struct {
+		RecurringID int64 `json:"recurring_id"`
+		Item        struct {
+			ID       int64   `json:"id"`
+			Merchant string  `json:"merchant"`
+			Cadence  string  `json:"cadence"`
+			Amount   float64 `json:"amount"`
+			Kind     string  `json:"kind"`
+			From     string  `json:"from_account"`
+			Day      int     `json:"day"`
+		} `json:"item"`
+	}
+	c.ok("PUT", "/transactions/"+itoa(oct.ID)+"/recurring", map[string]any{"create": true}, &made)
+	if made.RecurringID == 0 || made.Item.Merchant != "Barbara beauty" || made.Item.Cadence != "monthly" || made.Item.Amount != 25 || made.Item.Kind != "bill" || made.Item.From != "swed" || made.Item.Day != 16 {
+		t.Fatalf("made %+v", made)
+	}
+	var again struct {
+		RecurringID int64 `json:"recurring_id"`
+	}
+	c.ok("PUT", "/transactions/"+itoa(nov.ID)+"/recurring", map[string]any{"create": true}, &again)
+	if again.RecurringID != made.RecurringID {
+		t.Errorf("second payment made a new item %d, want %d", again.RecurringID, made.RecurringID)
+	}
+	var st struct {
+		RecurringID int64            `json:"recurring_id"`
+		Marked      bool             `json:"marked"`
+		Items       []map[string]any `json:"items"`
+	}
+	c.ok("GET", "/transactions/"+itoa(nov.ID)+"/recurring", nil, &st)
+	if st.RecurringID != made.RecurringID || !st.Marked || len(st.Items) != 1 {
+		t.Errorf("state %+v", st)
+	}
+	// Saving the transaction from the editor keeps the mark.
+	c.ok("PUT", "/transactions/"+itoa(nov.ID), map[string]any{"date": "2026-11-14", "amount": 27, "kind": "expense", "merchant": "Barbara beauty", "category": "health", "account_id": "swed", "note": "cut"}, nil)
+	c.ok("GET", "/transactions/"+itoa(nov.ID)+"/recurring", nil, &st)
+	if st.RecurringID != made.RecurringID {
+		t.Errorf("edit dropped the mark: %+v", st)
+	}
+	c.ok("PUT", "/transactions/"+itoa(nov.ID)+"/recurring", map[string]any{"recurring_id": 0}, nil)
+	c.ok("GET", "/transactions/"+itoa(nov.ID)+"/recurring", nil, &st)
+	if st.RecurringID != 0 || len(st.Items) != 1 {
+		t.Errorf("after unmarking %+v", st)
+	}
+	if code, _ := c.do("PUT", "/transactions/"+itoa(nov.ID)+"/recurring", map[string]any{"recurring_id": 999}); code != 400 {
+		t.Errorf("unknown item: %d", code)
 	}
 }

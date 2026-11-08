@@ -46,7 +46,7 @@ func Create(tx *sql.Tx, t *ledger.Tx) ([]string, error) {
 // moved from expense to income flips the direction) — cur's balance effect
 // is reversed and next's applied.
 func Update(tx *sql.Tx, cur ledger.Tx, next *ledger.Tx) error {
-	next.ID, next.ExternalID, next.SplitOf, next.Source, next.Pending = cur.ID, cur.ExternalID, cur.SplitOf, cur.Source, cur.Pending
+	next.ID, next.ExternalID, next.SplitOf, next.Source, next.Pending, next.RecurringID = cur.ID, cur.ExternalID, cur.SplitOf, cur.Source, cur.Pending, cur.RecurringID
 	if err := ledger.Validate(tx, next); err != nil {
 		return err
 	}

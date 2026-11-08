@@ -37,7 +37,7 @@ func SuggestRecurring(txs []ledger.Tx, now time.Time, taken map[string]bool) []R
 	byMerchant := map[string][]ledger.Tx{}
 	noMerchant := map[string][]ledger.Tx{} // by category
 	for _, t := range txs {
-		if t.Kind != "expense" || t.Date < since || t.Amount <= 0 || t.Pending {
+		if t.Kind != "expense" || t.Date < since || t.Amount <= 0 || t.Pending || t.RecurringID != 0 {
 			continue
 		}
 		switch top := ledger.Top(t.Category); {

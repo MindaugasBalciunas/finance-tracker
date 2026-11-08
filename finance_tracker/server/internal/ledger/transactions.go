@@ -28,7 +28,10 @@ type Tx struct {
 	SplitOf     int64       `json:"split_of,omitempty"`
 	Source      string      `json:"source"`
 	Pending     bool        `json:"pending,omitempty"` // a card reservation the bank hasn't booked yet
-	CreatedAt   string      `json:"created_at,omitempty"`
+	// RecurringID: the recurring item this pays (0 = none). Set only through
+	// SetRecurring — edits and bank updates leave it as it is.
+	RecurringID int64  `json:"recurring_id,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
 	// Kinds of the two accounts (filled by the queries here), so totals can
 	// tell money going into wealth from money coming back out of it.
 	FromKind string `json:"-"`
@@ -69,13 +72,13 @@ func (t Tx) Signed() money.Cents {
 	return 0
 }
 
-const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at,
+const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at,recurring_id,
 	COALESCE((SELECT kind FROM accounts WHERE id=transactions.account_id),''),COALESCE((SELECT kind FROM accounts WHERE id=transactions.to_account_id),'')`
 
 func scanTx(s interface{ Scan(...any) error }) (Tx, error) {
 	var t Tx
 	var tags string
-	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt, &t.FromKind, &t.ToKind)
+	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt, &t.RecurringID, &t.FromKind, &t.ToKind)
 	t.Tags = SplitTags(tags)
 	if t.Tags == nil {
 		t.Tags = []string{}
@@ -709,4 +712,18 @@ func SuggestNotes(q querier, merchant, text string, limit int) ([]NoteSuggestion
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// SetRecurring marks a transaction as the payment of a recurring item (0
+// clears it). Only this changes the link, so saving the transaction from
+// the editor, a bulk edit or a bank update never drops it.
+func SetRecurring(e execer, id, recurringID int64) error {
+	res, err := e.Exec(`UPDATE transactions SET recurring_id=?, updated_at=? WHERE id=?`, recurringID, db.Now(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
