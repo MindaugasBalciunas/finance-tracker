@@ -519,6 +519,18 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
             </Field>
           )
         })()}
+        {v.kind === 'pension' && (() => {
+          const d = safeParse(details)
+          return (
+            <Field label="Pillar" hint="The III pillar can be cashed out before retirement, with tax withheld; the II pillar pays out only from retirement age.">
+              <select className="input select-pad" value={d.pillar ?? ''} onChange={(e) => setDetails(JSON.stringify({ ...d, pillar: e.target.value ? Number(e.target.value) : undefined }, null, 2))}>
+                <option value="">From the name</option>
+                <option value="2">II pillar — locked until retirement</option>
+                <option value="3">III pillar — cashable early, taxed</option>
+              </select>
+            </Field>
+          )
+        })()}
         {v.kind === 'loan' && <LoanFields d={safeParse(details)} onChange={(d) => setDetails(JSON.stringify(d, null, 2))} />}
         {['property', 'vehicle'].includes(v.kind ?? '') && (() => {
           const d = safeParse(details)

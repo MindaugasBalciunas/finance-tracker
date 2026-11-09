@@ -48,7 +48,7 @@ describe('independence', () => {
         passive_now: 400, obligations: 1500, essentials: 1500, spending: 3000,
         coast: { age: 55, needed: 380000, date: '2036-05', months: 115, done: false, detail: 'Keep adding until then.' },
         payouts: [{ year: 2026, age: 38, investable: 120000, monthly: 400 }], what_ifs: [{ extra: 100, date: '2047-01', sooner: 1.3 }],
-        savings_rate: 0.25, locked: 18000, notes: [],
+        savings_rate: 0.25, locked: 18000, pillar3: 7000, notes: [],
       },
       '/wealth/milestones': [{ key: 'fi', title: 'Financial independence', detail: '', date: '2048-04', months: 258, done: false }],
     })
@@ -58,6 +58,9 @@ describe('independence', () => {
     expect(screen.getByText(/January 2038 · age 49/)).toBeInTheDocument()
     expect(screen.getByText('May 2036')).toBeInTheDocument()
     expect(screen.getByText('1.3 years sooner')).toBeInTheDocument()
+    // Only the II pillar is locked; the III pillar is named apart.
+    expect(screen.getByText('II pillar (locked)')).toBeInTheDocument()
+    expect(screen.getByText(/III pillar, taxed if early/)).toBeInTheDocument()
   })
 })
 

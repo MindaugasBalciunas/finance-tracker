@@ -509,3 +509,33 @@ func TestAddMonthsCountsFromTheFirst(t *testing.T) {
 		seen[m] = true
 	}
 }
+
+// The III pillar can be cashed out early (tax withheld); the II pillar only
+// from retirement age. Read from details, else the name, else locked.
+func TestPensionPillar(t *testing.T) {
+	for _, c := range []struct {
+		a    ledger.Account
+		want int
+	}{
+		{ledger.Account{Kind: "pension", Name: "Artea (III pillar)"}, 3},
+		{ledger.Account{Kind: "pension", Name: "SEB pension (II pillar)"}, 2},
+		{ledger.Account{Kind: "pension", Name: "Luminor 3rd pillar"}, 3},
+		{ledger.Account{Kind: "pension", Name: "Swedbank III pakopa"}, 3},
+		{ledger.Account{Kind: "pension", Name: "Artea"}, 2},
+		{ledger.Account{Kind: "pension", Name: "Artea", Details: []byte(`{"pillar":3}`)}, 3},
+		{ledger.Account{Kind: "pension", Name: "Artea (III pillar)", Details: []byte(`{"pillar":2}`)}, 2},
+		{ledger.Account{Kind: "pension", Name: "Third pillar"}, 3},
+		{ledger.Account{Kind: "pension", Name: "Pillar-3 fund"}, 3},
+		{ledger.Account{Kind: "pension", Name: "INVL trečiosios pakopos fondas"}, 3},
+		{ledger.Account{Kind: "pension", Name: "3-ioji pakopa"}, 3},
+		{ledger.Account{Kind: "pension", Name: "Papildomas pensijų kaupimas"}, 3},
+		{ledger.Account{Kind: "pension", Name: "Joined 2023 pillar II"}, 2},
+		{ledger.Account{Kind: "pension", Name: "Luminor II pakopa"}, 2},
+		{ledger.Account{Kind: "pension", Name: "SEB", Notes: "III pillar contributions go to Artea"}, 2},
+		{ledger.Account{Kind: "brokerage", Name: "III pillar fund"}, 0},
+	} {
+		if got := c.a.Pillar(); got != c.want {
+			t.Errorf("%s %s: pillar %d, want %d", c.a.Name, c.a.Details, got, c.want)
+		}
+	}
+}

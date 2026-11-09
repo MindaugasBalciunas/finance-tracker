@@ -191,7 +191,7 @@ export type FIPlan = {
   /** Month by month for ten years (the 1–10 year views); only with ?monthly=1. */
   payouts_monthly?: PayoutPoint[]
   what_ifs: { extra: number; date?: string; sooner: number }[]
-  savings_rate: number; locked: number; notes: string[]
+  savings_rate: number; locked: number; pillar3?: number; notes: string[]
 }
 export type Milestone = { key: string; title: string; detail: string; target?: number; current?: number; date?: string; months: number; done: boolean }
 export type FeeLine = { id: string; name: string; kind: 'fund' | 'stock' | 'account'; value: number; ter: number; platform: number; source: 'yours' | 'typical' | 'none' | 'missing'; yearly: number; drag_20y: number; saving_20y: number }

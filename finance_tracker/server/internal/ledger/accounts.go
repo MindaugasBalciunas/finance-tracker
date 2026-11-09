@@ -57,6 +57,38 @@ type AssetDetails struct {
 	PaidOffDate   string  `json:"paid_off_date,omitempty"`
 }
 
+// PensionDetails is the details payload of pension accounts. In Lithuania
+// the III pillar (voluntary) can be cashed out before retirement — tax is
+// withheld on an early withdrawal, giving back the relief — while the II
+// pillar pays out only from retirement age.
+type PensionDetails struct {
+	Pillar int `json:"pillar,omitempty"` // 2 | 3
+}
+
+// Pillar is a pension account's pillar: details.pillar when set (Wealth →
+// edit account), else read from the name ("Artea (III pillar)", "Third
+// pillar", "trečiosios pakopos" → 3), else 2 — locked, the cautious
+// reading. Only the name: free-text notes ("III pillar money goes to
+// Artea") can't decide it. 0 for any other kind.
+func (a Account) Pillar() int {
+	if a.Kind != "pension" {
+		return 0
+	}
+	var d PensionDetails
+	if json.Unmarshal(a.Details, &d) == nil && (d.Pillar == 2 || d.Pillar == 3) {
+		return d.Pillar
+	}
+	if pillar3Re.MatchString(a.Name) {
+		return 3
+	}
+	return 2
+}
+
+// pillar3Re: a "3"/"III"/"third"/"treč…" word right before "pillar" or
+// "pakop…", "pillar 3", "(III)", or the voluntary-pension wording. The
+// number must start a word, so "2023 pillar II" isn't the third.
+var pillar3Re = regexp.MustCompile(`(?i)(^|[^\pL\pN])(iii|3|3rd|third|treč|trec)[\pL\-]*[\s\-.]*(pillar|pakop)|pillar[\s\-]*(iii|3)([^\pL\pN]|$)|\(iii\)|papildom\pL* pensij|savanori\pL* pensij`)
+
 // LoanDetails is the details payload of loan accounts. The balance history
 // lives in balances like every other account; these terms drive the
 // amortisation schedule and the rate-reset reminder.

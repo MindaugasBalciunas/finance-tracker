@@ -95,7 +95,8 @@ type FIPlan struct {
 	PayoutsByMonth []PayoutPoint  `json:"payouts_monthly,omitempty"` // a point a month, 10 years: the 1–10 year views (route: ?monthly=1)
 	WhatIfs        []WhatIf       `json:"what_ifs"`
 	SavingsRate    float64        `json:"savings_rate"` // last 12 months, 0..1
-	Locked         money.Cents    `json:"locked"`       // in pensions: not reachable before retirement age
+	Locked         money.Cents    `json:"locked"`       // II pillar: not reachable before retirement age
+	Pillar3        money.Cents    `json:"pillar3"`      // III pillar: can be cashed out early, tax withheld when it is
 	Notes          []string       `json:"notes"`
 }
 
@@ -258,11 +259,23 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 	}
 
 	// Savings rate over the same 12 complete months as Home and the FI
-	// numbers above; money locked in pensions.
+	// numbers above.
 	p.SavingsRate = insights.Last12(txs, cats, settings.Salary(), now).SavingsRate
-	p.Locked = book.SnapshotAt(now.Format("2006-01-02"), false).ByGroup["pension"]
+	// Only the II pillar is locked until retirement age; the III pillar can
+	// be cashed out any time, with tax withheld on an early withdrawal.
+	for id, v := range book.SnapshotAt(now.Format("2006-01-02"), true).ByAccount {
+		switch book.Accounts[id].Pillar() {
+		case 2:
+			p.Locked += v
+		case 3:
+			p.Pillar3 += v
+		}
+	}
 	if p.Locked > 0 && fi.Investable > 0 {
-		p.Notes = append(p.Notes, fmt.Sprintf("%s of the investable money is in pensions, reachable only from retirement age — the rest has to bridge the years before.", eurN(p.Locked)))
+		p.Notes = append(p.Notes, fmt.Sprintf("%s of the investable money is in the II pillar, reachable only from retirement age — the rest has to bridge the years before.", eurN(p.Locked)))
+	}
+	if p.Pillar3 > 0 && fi.Investable > 0 {
+		p.Notes = append(p.Notes, fmt.Sprintf("%s is in the III pillar: it can be cashed out before retirement, but tax is withheld on an early withdrawal — a reserve to tap last, not spending money.", eurN(p.Pillar3)))
 	}
 	return p, nil
 }

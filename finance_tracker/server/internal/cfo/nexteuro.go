@@ -105,7 +105,7 @@ func NextEuroFor(d *sql.DB, sum money.Cents, now time.Time) (*NextEuro, error) {
 	case ts.Pillar3Before2025 != nil && *ts.Pillar3Before2025 && cap-paid > 0:
 		opts = append(opts, EuroOption{Key: "pillar3", Title: "3rd-pillar pension", Return: pillar3Refund*100 + settings.ExpectedReturn + inflation - investMargin, Sure: false, Room: room(cap - paid),
 			To: pension, ToName: accountName(book, pension), Link: "/wealth/tax",
-			Why: fmt.Sprintf("20%% comes back with the declaration on the next %s (%s of %s paid in %d) — then it grows like any investment, locked until retirement.", eur(cap-paid), eur(paid), eur(cap), year)})
+			Why: fmt.Sprintf("20%% comes back with the declaration on the next %s (%s of %s paid in %d) — then it grows like any investment; cashing it out before retirement is possible, but tax is withheld then (the relief is given back).", eur(cap-paid), eur(paid), eur(cap), year)})
 	case ts.Pillar3Before2025 != nil && *ts.Pillar3Before2025:
 		out.Notes = append(out.Notes, fmt.Sprintf("This year's 3rd-pillar refund room is used: %s paid in %d, and the refund counts up to %s. It opens again in January.", eur(paid), year, eur(cap)))
 	case ts.Pillar3Before2025 == nil && paid > 0:

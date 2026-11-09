@@ -60,7 +60,10 @@ export function FI() {
           <div><div className="text-xs text-muted" title="Income less spending, a month over the last 12 complete months — the projection assumes all of it is invested">Saving now</div><div className="font-semibold tnum">{eur(f.monthly_invested)}/mo</div></div>
           <div><div className="text-xs text-muted">Savings rate, 12 months</div><div className="font-semibold tnum">{pct(f.savings_rate)}</div></div>
           <div><div className="text-xs text-muted">Invested toward FI</div><div className="font-semibold tnum">{eur(f.investable)}</div></div>
-          <div><div className="text-xs text-muted">In pensions (locked)</div><div className="font-semibold tnum">{eur(f.locked)}</div></div>
+          <div>
+            <div className="text-xs text-muted">II pillar (locked)</div><div className="font-semibold tnum">{eur(f.locked)}</div>
+            {(f.pillar3 ?? 0) > 0 && <div className="text-xs text-muted" title="Can be cashed out before retirement; tax is withheld on an early withdrawal">+ {eur(f.pillar3!)} III pillar, taxed if early</div>}
+          </div>
         </div>
       </section>
 

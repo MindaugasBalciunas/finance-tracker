@@ -617,7 +617,7 @@ func New(call Caller) *mcp.Server {
 			b, _ := json.Marshal(a)
 			return text(call("GET", "/forecast", vals("scenario", string(b)), nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_fi_plan", Description: "Financial independence as levels, in today's euros: when the safe payout (withdrawal rate) of investable money covers fixed obligations, then essentials, then full spending, then spending +25% — capital needed, progress and date each; coast FI (when contributions could stop and FI still arrives by the target age); yearly projected payout a month; what +€100/250/500 a month does; savings rate; money locked in pensions."},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_fi_plan", Description: "Financial independence as levels, in today's euros: when the safe payout (withdrawal rate) of investable money covers fixed obligations, then essentials, then full spending, then spending +25% — capital needed, progress and date each; coast FI (when contributions could stop and FI still arrives by the target age); yearly projected payout a month; what +€100/250/500 a month does; savings rate; money locked in the II pillar until retirement, and the III pillar balance (cashable early, tax withheld)."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/wealth/fi-plan", nil, nil))
 		})

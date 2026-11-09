@@ -1,6 +1,7 @@
 package cfo_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +62,38 @@ func TestCashFlowCalendarPutsEachMoneyMoveOnItsDay(t *testing.T) {
 		if len(c.Days[i].Events) == 0 && c.Days[i-1].Balance-c.Days[i].Balance != c.Daily {
 			t.Fatalf("quiet day %s fell by %v, daily %v", c.Days[i].Date, c.Days[i-1].Balance-c.Days[i].Balance, c.Daily)
 		}
+	}
+}
+
+// Only the II pillar is locked: the III pillar can be cashed out early, with
+// tax withheld, so FI names the two apart.
+func TestFIPlanSplitsPensionPillars(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	if _, err := ledger.SaveAccount(d, ledger.Account{ID: "artea", Name: "Artea (III pillar)", Kind: "pension"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ledger.SaveAccount(d, ledger.Account{ID: "seb_pension", Name: "SEB pension (II pillar)", Kind: "pension"}); err != nil {
+		t.Fatal(err)
+	}
+	for m := 1; m <= 12; m++ {
+		day := now.AddDate(0, -m, 0).Format("2006-01") + "-20"
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(5000), Category: "salary", AccountID: "swed"})
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(2000), Category: "food.groceries", AccountID: "swed"})
+	}
+	Bal(t, d, "ibkr", "2026-10-14", 30000)
+	Bal(t, d, "artea", "2026-10-14", 7000)
+	Bal(t, d, "seb_pension", "2026-10-14", 18000)
+	p, err := cfo.BuildFIPlan(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Locked != E(18000) || p.Pillar3 != E(7000) {
+		t.Fatalf("locked %v, III pillar %v", p.Locked, p.Pillar3)
+	}
+	notes := strings.Join(p.Notes, " | ")
+	if !strings.Contains(notes, "in the II pillar, reachable only from retirement age") || !strings.Contains(notes, "tax is withheld on an early withdrawal") {
+		t.Fatal(notes)
 	}
 }
 
