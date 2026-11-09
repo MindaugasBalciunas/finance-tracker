@@ -29,7 +29,8 @@ import (
 // why the v1 savings rate (which counted the whole mortgage as spending)
 // read low.
 
-func isRefund(t *ledger.Tx) bool { return t.Kind == "income" && ledger.Top(t.Category) == "refunds" }
+// IsRefund: money back for something bought — it lowers spending, it isn't income.
+func IsRefund(t *ledger.Tx) bool { return t.Kind == "income" && ledger.Top(t.Category) == "refunds" }
 
 // IsInvesting reports whether a transfer builds wealth (vs shuffling cash).
 func IsInvesting(t *ledger.Tx) bool {
@@ -100,7 +101,7 @@ func CashFlow(txs []ledger.Tx, cats map[string]ledger.Category, granularity stri
 		t := &txs[i]
 		f := get(periodKey(plan.FlowDate(t, salary), granularity))
 		switch {
-		case isRefund(t):
+		case IsRefund(t):
 			f.Spending -= t.Amount
 			f.SpendingBy["refunds"] -= t.Amount
 			f.Refunds += t.Amount
@@ -192,12 +193,12 @@ func Breakdown(txs []ledger.Tx, from, to string) []CategoryStat {
 	var total money.Cents
 	for i := range txs {
 		x := &txs[i]
-		if x.Kind != "expense" && !isRefund(x) {
+		if x.Kind != "expense" && !IsRefund(x) {
 			continue
 		}
 		amt := x.Amount
 		cat := x.Category
-		if isRefund(x) {
+		if IsRefund(x) {
 			amt, cat = -amt, "refunds"
 		}
 		inCur := x.Date >= from && x.Date <= to
@@ -521,11 +522,11 @@ func Pace(txs []ledger.Tx, now time.Time) []PacePoint {
 	byMonthDay := map[string]map[int]money.Cents{}
 	for i := range txs {
 		t := &txs[i]
-		if t.Kind != "expense" && !isRefund(t) {
+		if t.Kind != "expense" && !IsRefund(t) {
 			continue
 		}
 		amt := t.Amount
-		if isRefund(t) {
+		if IsRefund(t) {
 			amt = -amt
 		}
 		m := t.Date[:7]
@@ -572,7 +573,7 @@ func TagTotals(txs []ledger.Tx, from, to string) []NamedCount {
 	m := map[string]*NamedCount{}
 	for i := range txs {
 		t := &txs[i]
-		if t.Date < from || t.Date > to || (t.Kind != "expense" && !isRefund(t)) {
+		if t.Date < from || t.Date > to || (t.Kind != "expense" && !IsRefund(t)) {
 			continue
 		}
 		for _, tag := range t.Tags {
@@ -581,7 +582,7 @@ func TagTotals(txs []ledger.Tx, from, to string) []NamedCount {
 				x = &NamedCount{Name: tag}
 				m[tag] = x
 			}
-			if isRefund(t) {
+			if IsRefund(t) {
 				x.Amount -= t.Amount
 			} else {
 				x.Amount += t.Amount

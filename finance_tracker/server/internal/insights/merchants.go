@@ -108,7 +108,7 @@ func Merchants(txs []ledger.Tx, from, to string, n int) MerchantReport {
 			}
 			continue
 		}
-		refund := isRefund(x)
+		refund := IsRefund(x)
 		if x.Kind != "expense" && !refund {
 			continue
 		}

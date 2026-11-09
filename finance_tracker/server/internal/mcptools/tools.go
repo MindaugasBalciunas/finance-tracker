@@ -697,7 +697,7 @@ func New(call Caller) *mcp.Server {
 		func(ctx context.Context, r *mcp.CallToolRequest, a tickerArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/market/buzz/"+url.PathEscape(strings.ToUpper(a.Ticker)), nil, nil))
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_month_review", Description: "A month's review as the app shows it: income, spending and saving vs the previous month and the six-month average, a verdict, highlights, the net worth change, categories vs their norm, top expenses and income, daily spending, a 12-month trend, the budget brief, money owed to the owner and data checks. Default: the current month."},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_month_review", Description: "A month's review as the app shows it: income, spending and saving vs the previous month and the six-month average, a verdict, highlights, the net worth change, categories vs their norm, top expenses and income, each day's spending net of refunds (negative = more came back that day) and money in by the date it arrived, a 12-month trend, the budget brief, money owed to the owner and data checks. Default: the current month."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/insights/month", vals("month", a.Month), nil))
 		})

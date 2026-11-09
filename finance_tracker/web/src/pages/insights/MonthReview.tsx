@@ -136,7 +136,6 @@ function MonthReviewView() {
   )
 }
 
-/** Daily spending as a month calendar: one hue, lighter → darker with the amount. */
 type Close = { month: string; done: number; closed: boolean; closed_at?: string; steps: { key: string; title: string; detail: string; link: string; done: boolean; manual: boolean }[] }
 
 /** Closing the month: the data first (inbox, categories, balances), then the
@@ -194,23 +193,37 @@ function MonthClose({ month }: { month: string }) {
   )
 }
 
-export function SpendCalendar({ days }: { days: { date: string; spent: number }[] }) {
+/** Daily spending as a month calendar in the spending colour, lighter →
+ *  darker with the amount. A refund comes off its own day (a day with only
+ *  money back reads "+€7" in green); other money in is a green dot, never
+ *  spending. */
+export function SpendCalendar({ days }: { days: { date: string; spent: number; in?: number }[] }) {
   const max = Math.max(...days.map((d) => d.spent), 1)
   const first = new Date(days[0].date + 'T00:00:00').getDay()
   const lead = (first + 6) % 7 // Monday-first
-  const shade = (v: number) => (v <= 0 ? 'rgb(var(--sunken))' : `color-mix(in oklab, var(--s1) ${Math.round(18 + 82 * Math.sqrt(v / max))}%, rgb(var(--surface)))`)
+  const shade = (v: number) => (v <= 0 ? 'rgb(var(--sunken))' : `color-mix(in oklab, var(--hue-spending) ${Math.round(18 + 82 * Math.sqrt(v / max))}%, rgb(var(--surface)))`)
+  const short = (v: number) => (v >= 1000 ? eurk(v) : `€${Math.round(v)}`)
+  const tip = (d: { date: string; spent: number; in?: number }) =>
+    [d.spent > 0 ? `${eurc(d.spent)} spent` : d.spent < 0 ? `${eurc(-d.spent)} back` : 'nothing spent', d.in ? `${eurc(d.in)} in` : ''].filter(Boolean).join(' · ')
+  const anyIn = days.some((d) => (d.in ?? 0) > 0)
   return (
     <div>
       <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted">{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i}>{d}</div>)}</div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {Array.from({ length: lead }).map((_, i) => <div key={'x' + i} />)}
         {days.map((d) => (
-          <div key={d.date} title={`${d.date}: ${eurc(d.spent)}`} className="flex aspect-square flex-col items-center justify-center rounded-md text-[10px]" style={{ background: shade(d.spent), color: d.spent / max > 0.55 ? 'white' : undefined }}>
+          <div key={d.date} title={`${d.date}: ${tip(d)}`} className="relative flex aspect-square flex-col items-center justify-center rounded-md text-[10px]" style={{ background: shade(d.spent), color: d.spent / max > 0.55 ? 'white' : undefined }}>
+            {(d.in ?? 0) > 0 && <span data-in className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-good" />}
             <span>{Number(d.date.slice(8))}</span>
-            {d.spent > 0 && <span className="tnum text-[8px] leading-none sm:text-[10px]">{d.spent >= 1000 ? eurk(d.spent) : `€${Math.round(d.spent)}`}</span>}
+            {d.spent > 0 && <span className="tnum text-[8px] leading-none sm:text-[10px]">{short(d.spent)}</span>}
+            {d.spent < 0 && <span className="tnum text-[8px] leading-none text-good sm:text-[10px]">+{short(-d.spent)}</span>}
           </div>
         ))}
       </div>
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+        <span>Spent each day, refunds taken off</span>
+        {anyIn && <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-good" />money in, on the day it arrived</span>}
+      </p>
     </div>
   )
 }

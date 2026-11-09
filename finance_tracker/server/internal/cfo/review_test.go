@@ -7,6 +7,7 @@ import (
 
 	"ft/internal/cfo"
 	"ft/internal/ledger"
+	"ft/internal/money"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -52,6 +53,46 @@ func TestMonthReview(t *testing.T) {
 	}
 	if !strings.Contains(joined, "above your six-month average") || !strings.Contains(joined, "Food ran") {
 		t.Fatal(joined)
+	}
+}
+
+// The day-by-day calendar: a refund lowers its own day's spending (and a day
+// with only money back is negative), other money in is counted apart — a
+// salary day is not a spending day.
+func TestMonthReviewCalendar(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	Tx(t, d, ledger.Tx{Date: "2026-10-17", Amount: E(100), Category: "food.restaurants", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-17", Amount: E(30), Category: "refunds", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-18", Amount: E(7), Category: "refunds", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-31", Amount: E(10), Category: "other_income", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-01", Amount: E(50), Category: "food.groceries", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-01", Amount: E(20), Category: "refunds", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-01", Amount: E(300), Category: "other_income", AccountID: "swed"})
+	r, err := cfo.BuildMonthReview(d, "2026-10", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := map[string]cfo.DaySpend{}
+	for _, x := range r.Daily {
+		day[x.Date] = x
+	}
+	if day["2026-10-17"].Spent != E(70) || day["2026-10-17"].In != 0 {
+		t.Fatalf("refund nets its day: %+v", day["2026-10-17"])
+	}
+	if day["2026-10-18"].Spent != -E(7) || day["2026-10-18"].In != 0 {
+		t.Fatalf("money back only: %+v", day["2026-10-18"])
+	}
+	if day["2026-10-31"].Spent != 0 || day["2026-10-31"].In != E(10) {
+		t.Fatalf("income is not spending: %+v", day["2026-10-31"])
+	}
+	// November's rows (loaded for late salary) stay out of October's days.
+	var spent, in money.Cents
+	for _, x := range r.Daily {
+		spent, in = spent+x.Spent, in+x.In
+	}
+	if len(r.Daily) != 31 || spent != E(63) || in != E(10) {
+		t.Fatalf("October only: %d days, spent %v, in %v", len(r.Daily), spent, in)
 	}
 }
 

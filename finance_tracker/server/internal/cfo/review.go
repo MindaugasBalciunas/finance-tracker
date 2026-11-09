@@ -64,9 +64,12 @@ type CategoryVsNorm struct {
 	Top      []ledger.Tx `json:"top"`
 }
 
+// DaySpend is one calendar day: what was spent, less refunds that came back
+// that day (negative when more came back), and the other money in.
 type DaySpend struct {
 	Date  string      `json:"date"`
 	Spent money.Cents `json:"spent"`
+	In    money.Cents `json:"in"`
 }
 
 type BudgetBrief struct {
@@ -160,10 +163,23 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	daily := map[string]money.Cents{}
 	sixFrom := sel.AddDate(0, -6, 0).Format("2006-01-02")
 	var monthTx []ledger.Tx
+	moneyIn := map[string]money.Cents{}
 	for _, t := range txs {
 		// The days past the month are loaded only for late salary: a 1 November
 		// subscription is November's, not October's.
-		if t.Kind != "expense" || t.Date > to {
+		if t.Date > to {
+			continue
+		}
+		// The calendar is by the day it happened: a refund lowers that day's
+		// spending, the rest of the money in is shown beside it.
+		if t.Kind == "income" && t.Date >= from {
+			if insights.IsRefund(&t) {
+				daily[t.Date] -= t.Amount
+			} else {
+				moneyIn[t.Date] += t.Amount
+			}
+		}
+		if t.Kind != "expense" {
 			continue
 		}
 		c := ledger.Top(t.Category)
@@ -197,7 +213,7 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	sort.Slice(r.Categories, func(i, j int) bool { return r.Categories[i].Spent > r.Categories[j].Spent })
 	for t := sel; t.Format("2006-01") == month; t = t.AddDate(0, 0, 1) {
 		ds := t.Format("2006-01-02")
-		r.Daily = append(r.Daily, DaySpend{Date: ds, Spent: daily[ds]})
+		r.Daily = append(r.Daily, DaySpend{Date: ds, Spent: daily[ds], In: moneyIn[ds]})
 	}
 	r.TopExpenses = insights.TopExpenses(monthTx, from, to, 8)
 	// Money in follows cash flow's dating, so the list matches the income
