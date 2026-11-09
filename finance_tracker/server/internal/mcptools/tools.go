@@ -230,6 +230,10 @@ type daysArgs struct {
 	Days int `json:"days,omitempty" jsonschema:"7–120, default 60"`
 }
 
+type habitsArgs struct {
+	Months int `json:"months,omitempty" jsonschema:"complete months shown, 1–240, default 24"`
+}
+
 type creepArgs struct {
 	Years int `json:"years,omitempty" jsonschema:"1 (default) or 3"`
 }
@@ -660,6 +664,14 @@ func New(call Caller) *mcp.Server {
 				q.Set("years", fmt.Sprint(a.Years))
 			}
 			return text(call("GET", "/insights/creep", q, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_habits", Description: "Spending habits over complete months, on spending by choice (obligations left out): purchases a month and the usual (median) purchase, buys under €10, days with spending, when in the month (days 1–10 / 11–20 / 21–end) and the week it goes, eating out against groceries, each calendar month's average over three years, and the last three months against the same three a year earlier."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a habitsArgs) (*mcp.CallToolResult, any, error) {
+			q := url.Values{}
+			if a.Months > 0 {
+				q.Set("months", fmt.Sprint(a.Months))
+			}
+			return text(call("GET", "/insights/habits", q, nil))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_price_creep", Description: "Price creep on regular bills: each bill's latest charge against the one about a year earlier (% and € a year), renewals in the next 45 days (yearly ones found over two years), the personal inflation rate (those bills' price change weighted by annual cost) and Lithuania's official HICP rate when available."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {

@@ -13,6 +13,9 @@ export type LedgerQuery = {
   year?: string // YYYY, instead of from/to
   choices?: boolean // leave obligations out (mortgage, alimony…), as "spending by choice" does
   salaryMonth?: boolean // a salary paid early next month counts for the month it pays for
+  min?: number // € inclusive
+  max?: number
+  sort?: 'amount' | '+date'
 }
 
 // The last day of a month (YYYY-MM) as YYYY-MM-DD.
@@ -33,6 +36,9 @@ export function ledgerLink(q: LedgerQuery): string {
   const to = q.month ? monthEnd(q.month) : q.year ? `${q.year}-12-31` : q.to
   if (q.choices) p.set('choices', '1')
   if (q.salaryMonth) p.set('salary', 'month')
+  if (q.min != null) p.set('min', String(q.min))
+  if (q.max != null) p.set('max', String(q.max))
+  if (q.sort) p.set('sort', q.sort)
   if (from) p.set('from', from)
   if (to) p.set('to', to)
   // Without dates the Ledger shows this month; a link means all of it.

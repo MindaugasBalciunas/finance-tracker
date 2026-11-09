@@ -10,6 +10,7 @@ import { Card, Loading, Segmented } from '../../components/ui'
 import { ledgerLink } from '../../lib/links'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { SPANS, spanMonths } from './CashFlow'
+import { Habits } from './Habits'
 
 // ── trends ──────────────────────────────────────────────────────────
 
@@ -76,6 +77,9 @@ export function Trends() {
         <div className="mt-3"><Legend items={all.map((k) => ({ color: color(k), label: label(k) }))} /></div>
         <div className="mt-1 text-xs text-muted">Tap a bar for its transactions.</div>
       </Card>
+      <h2 className="pt-2 text-sm font-semibold text-ink2">Habits — spending by choice, complete months</h2>
+      {/* Complete months: YTD is January to last month (none in January), the rest as many months back. */}
+      <Habits months={months === 'ytd' ? new Date().getMonth() : spanMonths(months)} />
     </div>
   )
 }

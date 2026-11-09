@@ -202,7 +202,7 @@ func TestMCPConnector(t *testing.T) {
 	if slices.Contains(names, "log_decision") || !slices.Contains(names, "get_next_euro") || !slices.Contains(names, "get_ownership_costs") {
 		t.Errorf("read-only planning tools %v", names)
 	}
-	for _, tool := range []string{"get_payday_runbook", "get_lifestyle_creep", "get_price_creep", "get_decisions", "get_ownership_costs"} {
+	for _, tool := range []string{"get_payday_runbook", "get_lifestyle_creep", "get_price_creep", "get_habits", "get_decisions", "get_ownership_costs"} {
 		if res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tool}); err != nil || res.IsError {
 			t.Errorf("%s over a read-only connection: %v %+v", tool, err, res)
 		}

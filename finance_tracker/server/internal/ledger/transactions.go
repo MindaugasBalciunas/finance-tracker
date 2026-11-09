@@ -122,6 +122,27 @@ func Obligation(cat string) bool {
 	return cat == "kids.alimony" || cat == "other.family" || strings.HasPrefix(cat, "housing.mortgage") || Top(cat) == "finance"
 }
 
+// ObligationPayees: merchant keys (merchant.Key) of everyone ever paid an
+// obligation (PaysAPerson) — the same people the "choices" filter leaves
+// out, over all history.
+func ObligationPayees(q querier) (map[string]bool, error) {
+	rows, err := q.Query(`SELECT DISTINCT merchant FROM transactions WHERE kind='expense' AND merchant <> ''
+		AND (category IN ('kids.alimony','other.family') OR category LIKE 'housing.mortgage%')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		out[merchant.Key(m)] = true
+	}
+	return out, rows.Err()
+}
+
 // PaysAPerson: an obligation paid to a person (an ex-partner, family, the
 // mortgage bank) — everything else paid to them isn't a choice either.
 func PaysAPerson(cat string) bool {

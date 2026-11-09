@@ -81,6 +81,7 @@ Planning tools (read-only unless noted), the same in Ask CFO:
 | `get_payday_runbook` | This month's pay-yourself-first steps — each saving line's amount, the accounts it usually moves between, done / partial / todo from the bank |
 | `get_next_euro` | Where a spare sum is best put: buffer, 3rd-pillar refund room, a goal about to miss its date, loan rate vs expected return — ranked and split |
 | `get_lifestyle_creep` | Last 12 months against a year (or `years: 3`) earlier: income vs spending growth, what grew and fell most, new regular bills |
+| `get_habits` | Spending habits by choice over complete months: purchases a month, the usual purchase, buys under €10, when in the month and week, eating out vs groceries, the dear months of the year, and the last three months against a year ago |
 | `get_price_creep` | Regular bills against a year ago, renewals within 45 days, the personal inflation rate and Lithuania's official one |
 | `get_decisions` / `get_decision_impact` | The decision journal and its record; what a purchase would do to the month, buffer, wish list and FI date |
 | `log_decision` | **Writes** (read-write token): a purchase being considered, with its cooling-off date — never decides, rates or deletes |

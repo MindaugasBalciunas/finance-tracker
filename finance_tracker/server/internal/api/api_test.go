@@ -182,6 +182,7 @@ func TestAuthBoundaries(t *testing.T) {
 		{"next euro rejects a negative sum", tokRO, "GET", "/plan/next-euro?amount=-5", nil, 400},
 		{"ro reads lifestyle creep", tokRO, "GET", "/insights/creep", nil, 200},
 		{"ro reads price creep", tokRO, "GET", "/insights/prices", nil, 200},
+		{"ro reads habits", tokRO, "GET", "/insights/habits?months=6", nil, 200},
 		// Merchants (2.60): a read view under /insights, like the breakdown.
 		{"ro reads merchant insights", tokRO, "GET", "/insights/merchants?preset=ytd", nil, 200},
 		{"merchant insights reject a reversed window", tokRO, "GET", "/insights/merchants?from=2026-10-01&to=2026-09-01", nil, 400},

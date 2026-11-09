@@ -190,6 +190,20 @@ func (s *Server) insightRoutes() {
 		}
 		return rows, nil
 	})
+	// Habits: how often, how big, when — spending by choice, complete months.
+	s.handle("GET /api/insights/habits", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		months := min(max(qint(r, "months", 24), 1), 240) // YTD in February is one month
+		now := time.Now()
+		txs, err := ledger.All(s.DB, ledger.Filter{From: insights.HabitsWindow(now, months), Kind: "expense"})
+		if err != nil {
+			return nil, err
+		}
+		people, err := ledger.ObligationPayees(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		return insights.Habits(txs, people, now, months), nil
+	})
 	s.handle("GET /api/insights/month", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.BuildMonthReview(s.DB, r.URL.Query().Get("month"), time.Now())
 	})

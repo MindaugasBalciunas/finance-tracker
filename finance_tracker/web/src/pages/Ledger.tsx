@@ -52,6 +52,7 @@ function Transactions() {
       ...r, q: sp.get('q') || undefined, kind: sp.get('kind') || undefined, category: sp.getAll('category'), account: sp.getAll('account'),
       tag: sp.getAll('tag'), merchant: sp.get('merchant') || undefined, sort: sp.get('sort') || undefined, limit,
       choices: sp.get('choices') || undefined, salary: sp.get('salary') || undefined,
+      min: sp.get('min') || undefined, max: sp.get('max') || undefined,
     }
   }, [sp, period, limit])
   const { data, isLoading, isFetching, error } = useTransactions(filter)
@@ -103,6 +104,8 @@ function Transactions() {
     ...(filter.merchant ? [{ k: 'merchant', label: filter.merchant }] : []),
     ...(filter.choices ? [{ k: 'choices', label: 'obligations left out' }] : []),
     ...(filter.salary ? [{ k: 'salary', label: 'salary in the month it pays for' }] : []),
+    ...(filter.min ? [{ k: 'min', label: `from ${eurc(Number(filter.min))}` }] : []),
+    ...(filter.max ? [{ k: 'max', label: `up to ${eurc(Number(filter.max))}` }] : []),
   ]
   const removeFilter = (f: { k: string; v?: string }) => {
     if (!f.v) return set(f.k, null)

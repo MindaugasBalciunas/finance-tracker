@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { ToastProvider } from '../components/ui'
 import { logoDomain, logoKey } from '../components/MerchantLogo'
 import { FI } from '../pages/insights/FI'
+import { Habits } from '../pages/insights/Habits'
 import { FeesCard } from '../pages/wealth/Fees'
 import { SubscriptionsCard } from '../pages/plan/Subscriptions'
 import { CashCalendarCard } from '../pages/plan/CashCalendar'
@@ -61,6 +62,36 @@ describe('independence', () => {
     // Only the II pillar is locked; the III pillar is named apart.
     expect(screen.getByText('II pillar (locked)')).toBeInTheDocument()
     expect(screen.getByText(/III pillar, taxed if early/)).toBeInTheDocument()
+  })
+})
+
+describe('habits', () => {
+  it('compares the last three months with a year ago and colours only the costly habits', async () => {
+    const month = (m: string) => ({ month: m, spent: 3000, purchases: 55, median: 17.9, small: 16, small_spent: 120, days: 23, early: 1000, mid: 1000, late: 1000, weekend: 1000, eating_out: 200, groceries: 300 })
+    const calls = serve({
+      '/insights/habits': {
+        months: [month('2026-08'), month('2026-09'), month('2026-10')],
+        weekdays: [1, 2, 3, 4, 5, 6, 7].map((day) => ({ day, average: 90 })),
+        season: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, average: 3000, years: 3 })),
+        recent: ['2026-08', '2026-10'], year_ago: ['2025-08', '2025-10'],
+        changes: [{ key: 'spent', now: 3247.34, then: 2700.44 }, { key: 'median', now: 17.9, then: 27.73 }, { key: 'eating_out', now: 180, then: 200 }],
+      },
+    })
+    wrap(<Habits months={3} />)
+    expect(await screen.findByText('Habits now and a year ago')).toBeInTheDocument()
+    expect(calls[0].url).toContain('months=3')
+    const tile = (label: string) => screen.getAllByText(label)[0].parentElement! // the tiles come before the chart legends
+    expect(tile('Spent by choice').textContent).toContain('€3,247/mo')
+    expect(tile('Spent by choice').querySelector('.text-bad')?.textContent).toBe('20%') // more spending reads bad
+    expect(tile('Eating out').querySelector('.text-good')?.textContent).toBe('10%') // less eating out reads good
+    expect(tile('Usual purchase').querySelector('span.text-ink2')?.textContent).toBe('35%') // neither: just shown
+    expect(screen.getByText('How often you buy')).toBeInTheDocument()
+    expect(screen.getByText('Your year')).toBeInTheDocument()
+    // Each tile opens the transactions behind it: those three months, by choice.
+    fireEvent.click(tile('Usual purchase'))
+    await waitFor(() => expect(window.location.hash).toContain('/ledger?'))
+    const q = new URLSearchParams(window.location.hash.split('?')[1])
+    expect([q.get('kind'), q.get('choices'), q.get('from'), q.get('to'), q.get('sort')]).toEqual(['expense', '1', '2026-08-01', '2026-10-31', 'amount'])
   })
 })
 

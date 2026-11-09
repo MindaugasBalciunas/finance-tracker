@@ -229,3 +229,16 @@ export type TxRecurring = {
   items: { id: number; merchant: string; note: string; cadence: string; amount: number; kind: 'bill' | 'income' | 'transfer'; hidden: boolean }[]
   new: { merchant: string; amount: number; day: number; cadence: string; kind: string }
 }
+
+/** /insights/habits: spending by choice, complete months. */
+export type HabitMonth = {
+  month: string; spent: number; purchases: number; median: number; small: number; small_spent: number; days: number
+  early: number; mid: number; late: number; weekend: number; eating_out: number; groceries: number
+}
+export type Habits = {
+  months: HabitMonth[]
+  weekdays: { day: number; average: number }[]
+  season: { month: number; average: number; years: number }[]
+  recent: [string, string]; year_ago: [string, string]
+  changes: { key: 'spent' | 'purchases' | 'median' | 'small' | 'eating_out' | 'weekend' | 'days'; now: number; then: number }[]
+}
