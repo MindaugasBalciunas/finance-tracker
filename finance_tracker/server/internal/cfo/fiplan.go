@@ -125,7 +125,7 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	txs, err := ledger.All(d, ledger.Filter{From: now.AddDate(-1, -1, 0).Format("2006-01-02"), To: now.Format("2006-01-02")})
+	txs, err := ledger.All(d, ledger.Filter{From: ledger.AddMonths(now, -12) + "-01", To: now.Format("2006-01-02")})
 	if err != nil {
 		return nil, err
 	}
@@ -257,22 +257,9 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 		p.WhatIfs = append(p.WhatIfs, w)
 	}
 
-	// Savings rate, last 12 months; money locked in pensions.
-	var inc, spend money.Cents
-	yearAgo := now.AddDate(-1, 0, 0).Format("2006-01-02")
-	var recent []ledger.Tx
-	for _, t := range txs {
-		if t.Date > yearAgo {
-			recent = append(recent, t)
-		}
-	}
-	for _, f := range insights.CashFlow(recent, cats, "year", settings.Salary()) {
-		inc += f.Income
-		spend += f.Spending
-	}
-	if inc > 0 {
-		p.SavingsRate = math.Round((inc-spend).Float()/inc.Float()*1000) / 1000
-	}
+	// Savings rate over the same 12 complete months as Home and the FI
+	// numbers above; money locked in pensions.
+	p.SavingsRate = insights.Last12(txs, cats, settings.Salary(), now).SavingsRate
 	p.Locked = book.SnapshotAt(now.Format("2006-01-02"), false).ByGroup["pension"]
 	if p.Locked > 0 && fi.Investable > 0 {
 		p.Notes = append(p.Notes, fmt.Sprintf("%s of the investable money is in pensions, reachable only from retirement age — the rest has to bridge the years before.", eurN(p.Locked)))

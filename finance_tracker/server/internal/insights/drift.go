@@ -315,14 +315,16 @@ func PriceCreepIn(d *sql.DB, txs []ledger.Tx, now time.Time) (*Prices, error) {
 				out.Excluded++
 				pw.PlanChange = true
 			}
-			if pw.Change >= 5 {
+			// A plan change isn't a price rise either: Argus's €17.88 →
+			// €89.40 was arrears paid in one go, not €858 a year extra.
+			if pw.Change >= 5 && !pw.PlanChange {
 				out.Rising++
 				out.Extra += pw.Extra
 			}
 		}
 		pw.RenewsSoon = r.Cadence != "monthly" && r.Next != "" && r.Next >= today && r.Next <= soon
 		switch {
-		case pw.RenewsSoon && pw.Change >= 5:
+		case pw.RenewsSoon && pw.Change >= 5 && !pw.PlanChange:
 			pw.Advice = fmt.Sprintf("Renews %s and cost %.0f%% more last time — worth getting a quote first.", r.Next, pw.Change)
 		case pw.RenewsSoon:
 			pw.Advice = fmt.Sprintf("Renews %s — a good moment to compare.", r.Next)

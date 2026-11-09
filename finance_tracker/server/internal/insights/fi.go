@@ -10,14 +10,42 @@ import (
 	"ft/internal/wealth"
 )
 
+// Last12 sums cash flow over the last 12 complete months, the window Home's
+// 12-month average uses. A window of the last 365 days cut through a month:
+// on 9 November it dropped November 2025's salary (paid on the 7th) but kept
+// that month's spending, and FI showed €1,437 saved a month against Home's
+// €1,701. txs must reach back to the first of the month a year ago.
+func Last12(txs []ledger.Tx, cats map[string]ledger.Category, salary []plan.SalaryRule, now time.Time) Flow {
+	from, cur := ledger.AddMonths(now, -12), now.Format("2006-01")
+	sum := Flow{Period: from + "/" + ledger.AddMonths(now, -1)}
+	for _, f := range CashFlow(txs, cats, "month", salary) {
+		if f.Period < from || f.Period >= cur {
+			continue
+		}
+		sum.Income += f.Income
+		sum.Spending += f.Spending
+		sum.Essential += f.Essential
+		sum.Discretionary += f.Discretionary
+		sum.Refunds += f.Refunds
+		sum.Invested += f.Invested
+		sum.Principal += f.Principal
+		sum.PayrollPension += f.PayrollPension
+	}
+	sum.Saved = sum.Income - sum.Spending
+	if sum.Income > 0 {
+		sum.SavingsRate = round3(sum.Saved.Float() / sum.Income.Float())
+	}
+	return sum
+}
+
 // FI is progress to financial independence.
 type FI struct {
-	AnnualSpend     money.Cents `json:"annual_spend"` // trailing 12 months, or the target from settings
+	AnnualSpend     money.Cents `json:"annual_spend"` // the last 12 complete months, or the target from settings
 	SpendSource     string      `json:"spend_source"`
 	Target          money.Cents `json:"target"`           // annual spend / withdrawal rate
 	Investable      money.Cents `json:"investable"`       // investments + pension + crypto + cash above the emergency buffer
 	Progress        float64     `json:"progress"`         // investable / target
-	MonthlyInvested money.Cents `json:"monthly_invested"` // trailing 12-month average saved
+	MonthlyInvested money.Cents `json:"monthly_invested"` // average saved a month (income − spending) over the last 12 complete months, all assumed invested
 	ExpectedReturn  float64     `json:"expected_return"`
 	WithdrawalRate  float64     `json:"withdrawal_rate"`
 	YearsToFI       float64     `json:"years_to_fi"` // -1 when not reachable in 60 years
@@ -54,19 +82,8 @@ func growMonths(start, monthly, rateMonthly float64, months int) float64 {
 
 // ComputeFI combines the trailing year of cash flow with today's balances.
 func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Book, s plan.Settings, now time.Time) FI {
-	from := now.AddDate(-1, 0, 0).Format("2006-01-02")
-	var spend, essential, saved money.Cents
-	var recent []ledger.Tx
-	for _, t := range txs {
-		if t.Date > from {
-			recent = append(recent, t)
-		}
-	}
-	for _, f := range CashFlow(recent, cats, "year", s.Salary()) {
-		spend += f.Spending
-		essential += f.Essential
-		saved += f.Saved
-	}
+	last := Last12(txs, cats, s.Salary(), now)
+	spend, essential, saved := last.Spending, last.Essential, last.Saved
 	snap := book.SnapshotAt(now.Format("2006-01-02"), s.EmergencyExcludeCash)
 	cash := snap.ByGroup["cash"]
 	if s.EmergencyExcludeCash { // only money in the bank is the emergency fund

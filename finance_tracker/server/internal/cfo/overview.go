@@ -293,7 +293,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 		case f.Period == lastM:
 			o.LastMonth = f
 		}
-		if f.Period < thisM && f.Period >= now.AddDate(-1, 0, 0).Format("2006-01") {
+		if f.Period < thisM && f.Period >= ledger.AddMonths(now, -12) {
 			avg.Income += f.Income
 			avg.Spending += f.Spending
 			avg.Essential += f.Essential

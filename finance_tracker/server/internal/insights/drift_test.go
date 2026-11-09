@@ -108,3 +108,38 @@ func TestPersonalInflationLeavesPlanChangesOut(t *testing.T) {
 		t.Fatalf("personal %v basket %d excluded %d items %d", fmt.Sprint(*p.Personal), p.Basket, p.Excluded, len(p.Items))
 	}
 }
+
+// A bill flagged as a plan change isn't counted as "costing more": Argus's
+// €17.88 → €89.40 (arrears paid at once) put €858 into "€870 a year extra".
+func TestPriceCreepRisingLeavesPlanChangesOut(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	for m := 1; m <= 14; m++ {
+		day := now.AddDate(0, -m, 0).Format("2006-01") + "-05"
+		yt, sec := 9.99, 17.88
+		if m <= 6 {
+			yt = 10.99
+		}
+		if m == 1 {
+			sec = 89.40
+		}
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(yt), Category: "subscriptions.media", AccountID: "swed", Merchant: "YouTube"})
+		Tx(t, d, ledger.Tx{Date: day, Amount: E(sec), Category: "utilities.security", AccountID: "swed", Merchant: "Argus"})
+	}
+	p, err := insights.PriceCreep(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var argus insights.PriceWatch
+	for _, it := range p.Items {
+		if it.Merchant == "Argus" {
+			argus = it
+		}
+	}
+	if !argus.PlanChange {
+		t.Fatalf("argus not a plan change: %+v", argus)
+	}
+	if p.Rising != 1 || p.Extra != E(12) {
+		t.Fatalf("rising %d extra %v, want YouTube only (1, €12)", p.Rising, p.Extra)
+	}
+}

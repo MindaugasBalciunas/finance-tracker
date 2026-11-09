@@ -57,7 +57,7 @@ export function FI() {
           <AskCFO q="Look at my independence plan: when can I stop adding money, what should I change to get there sooner, and how do my obligations and pensions shape it?" />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div><div className="text-xs text-muted">Investing now</div><div className="font-semibold tnum">{eur(f.monthly_invested)}/mo</div></div>
+          <div><div className="text-xs text-muted" title="Income less spending, a month over the last 12 complete months — the projection assumes all of it is invested">Saving now</div><div className="font-semibold tnum">{eur(f.monthly_invested)}/mo</div></div>
           <div><div className="text-xs text-muted">Savings rate, 12 months</div><div className="font-semibold tnum">{pct(f.savings_rate)}</div></div>
           <div><div className="text-xs text-muted">Invested toward FI</div><div className="font-semibold tnum">{eur(f.investable)}</div></div>
           <div><div className="text-xs text-muted">In pensions (locked)</div><div className="font-semibold tnum">{eur(f.locked)}</div></div>

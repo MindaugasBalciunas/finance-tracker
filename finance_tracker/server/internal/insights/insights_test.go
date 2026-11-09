@@ -162,8 +162,8 @@ func TestComputeFI(t *testing.T) {
 	Bal(t, d, "ibkr", "2026-10-01", 100000)
 	Bal(t, d, "house", "2026-10-01", 400000)
 	var txs []ledger.Tx
-	for i := 0; i < 12; i++ {
-		m := now.AddDate(0, -i, -1).Format("2006-01-02")
+	for i := 1; i <= 12; i++ { // the 12 complete months, Oct 2025 – Sep 2026
+		m := now.AddDate(0, -i, 0).Format("2006-01") + "-15"
 		txs = append(txs, tx(m, "income", "salary", 5000), tx(m, "expense", "food.groceries", 1000), tx(m, "expense", "leisure", 1000))
 	}
 	book, _ := wealth.LoadBook(d)
@@ -180,6 +180,43 @@ func TestComputeFI(t *testing.T) {
 	}
 	if len(f.Projection) != 26 {
 		t.Error(len(f.Projection))
+	}
+}
+
+// FI averages the 12 complete months Home does, not the last 365 days: on
+// 9 November that window dropped November 2025's pay (the 7th) but kept the
+// month's spending and this month's first days, so FI read €3,533 saved a
+// month where every month saved €4,000.
+func TestFIUsesTwelveCompleteMonths(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	var txs []ledger.Tx
+	for i := 1; i <= 12; i++ { // Nov 2025 – Oct 2026
+		m := now.AddDate(0, -i, 0).Format("2006-01")
+		txs = append(txs, tx(m+"-07", "income", "salary", 5000), tx(m+"-20", "expense", "food.groceries", 1000))
+	}
+	txs = append(txs, tx("2025-10-20", "expense", "food.groceries", 1000), tx("2026-11-08", "expense", "food.groceries", 600))
+	book, _ := wealth.LoadBook(d)
+	s := plan.Settings{WithdrawalRate: 4, ExpectedReturn: 5, EmergencyMonths: 3}
+	f := insights.ComputeFI(txs, cats(t), book, s, now)
+	if f.MonthlyInvested != E(4000) || f.AnnualSpend != E(12000) || f.Emergency.MonthlyEssential != E(1000) {
+		t.Fatalf("saved %v/mo, spend %v, essentials %v", f.MonthlyInvested, f.AnnualSpend, f.Emergency.MonthlyEssential)
+	}
+	if l := insights.Last12(txs, cats(t), s.Salary(), now); l.SavingsRate != 0.8 || l.Income != E(60000) {
+		t.Fatalf("last 12: %+v", l)
+	}
+}
+
+// On 29 February "a year ago" by AddDate is 1 March: the window lost
+// February and FI read 11 months over 12.
+func TestLast12OnLeapDay(t *testing.T) {
+	now := time.Date(2028, 2, 29, 12, 0, 0, 0, time.UTC)
+	var txs []ledger.Tx
+	for i := 1; i <= 13; i++ { // Feb 2027 – Feb 2028; the current February is left out
+		txs = append(txs, tx(now.AddDate(0, 0, -28).AddDate(0, -i+1, 0).Format("2006-01")+"-15", "expense", "food.groceries", 100))
+	}
+	if l := insights.Last12(txs, cats(t), nil, now); l.Spending != E(1200) || l.Period != "2027-02/2028-01" {
+		t.Fatalf("%s spent %v", l.Period, l.Spending)
 	}
 }
 

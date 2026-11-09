@@ -44,7 +44,7 @@ func Milestones(d *sql.DB, now time.Time) ([]Milestone, error) {
 	if err != nil {
 		return nil, err
 	}
-	txs, err := ledger.All(d, ledger.Filter{From: now.AddDate(-1, -1, 0).Format("2006-01-02"), To: now.Format("2006-01-02")})
+	txs, err := ledger.All(d, ledger.Filter{From: ledger.AddMonths(now, -12) + "-01", To: now.Format("2006-01-02")})
 	if err != nil {
 		return nil, err
 	}

@@ -86,7 +86,7 @@ func moreActions(d *sql.DB, now time.Time, cur *plan.Report, em *EmergencyPlan) 
 	// Bills about to renew that cost more last time.
 	if p, err := insights.PriceCreepIn(d, slices.Clone(bills), now); berr == nil && err == nil {
 		for _, it := range p.Items {
-			if it.RenewsSoon && it.Change >= 5 {
+			if it.RenewsSoon && it.Change >= 5 && !it.PlanChange { // a plan change isn't a price rise
 				out = append(out, Action{Level: "warn", Kind: "renewal", Text: fmt.Sprintf("%s renews %s — %.0f%% dearer last time", it.Merchant, shortDay(it.Next), it.Change),
 					Detail: "get a quote before it renews", Link: "/insights/drift", Due: it.Next})
 			}
