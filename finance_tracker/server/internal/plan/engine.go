@@ -516,11 +516,11 @@ func IncomeBase(s Settings, income map[string]money.Cents, month, nowYM string) 
 	switch s.IncomeMode {
 	case "manual":
 		if s.ManualIncome > 0 {
-			return money.FromFloat(s.ManualIncome), "manual"
+			return s.ManualIncome, "manual"
 		}
 	case "gross":
 		if g := s.GrossFor(month); g > 0 {
-			return money.FromFloat(LTNetSalary(g, s.MonthlyDeductions)), "gross salary, net of LT taxes"
+			return LTNetSalary(g, s.MonthlyDeductions), "gross salary, net of LT taxes"
 		}
 	}
 	last := addMonths(month, -1)

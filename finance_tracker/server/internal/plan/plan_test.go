@@ -1,7 +1,9 @@
 package plan_test
 
 import (
+	"encoding/json"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -83,7 +85,7 @@ func TestComputeFixedNeverCountsAgainstSpending(t *testing.T) {
 		tx("2026-10-15", "salary", 5000),
 		tx("2026-10-10", "shopping.online", 80),
 	}
-	r := plan.Compute(budgets, txs, "2026-10", now, plan.Settings{IncomeMode: "manual", ManualIncome: 5000})
+	r := plan.Compute(budgets, txs, "2026-10", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)})
 	if k := find(r, "Kids"); k.Spent != E(50) {
 		t.Fatalf("alimony leaked into the Kids envelope: %v", k.Spent)
 	}
@@ -110,7 +112,7 @@ func TestComputeFundCarriesOver(t *testing.T) {
 	vac := line(1, "Vacation", "spending", []string{"travel"}, 300)
 	vac.Fund, vac.StartMonth = true, "2026-10"
 	txs := []ledger.Tx{tx("2026-11-20", "travel.flights", 200), tx("2026-12-02", "travel.lodging", 500)}
-	r := plan.Compute([]plan.Budget{vac}, txs, "2026-12", now, plan.Settings{IncomeMode: "manual", ManualIncome: 1000})
+	r := plan.Compute([]plan.Budget{vac}, txs, "2026-12", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(1000)})
 	l := find(r, "Vacation")
 	// Oct +300, Nov +300 −200, Dec opens at 400, +300, −500 → 200.
 	if l.FundState.Opening != E(400) || l.FundState.Available != E(200) || l.Budgeted != E(700) || l.Spent != E(500) {
@@ -130,7 +132,7 @@ func TestComputeFundCarriesOver(t *testing.T) {
 // to spend instead of vanishing into a November fund (prod, October 2026).
 func TestComputeFundBeforeStart(t *testing.T) {
 	now := time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)
-	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)}
 	car := line(1, "Transport", "spending", []string{"transport"}, 80)
 	car.Fund, car.StartMonth = true, "2026-11"
 	txs := []ledger.Tx{tx("2026-09-12", "transport.car", 600), tx("2026-10-14", "transport.car", 901.37)}
@@ -161,7 +163,7 @@ func TestComputeSavingWithdrawal(t *testing.T) {
 	in.FromKind, in.ToKind = "checking", "pension"
 	out := tx("2025-12-02", "transfer.pension", 17197.92)
 	out.FromKind, out.ToKind = "pension", "checking"
-	r := plan.Compute([]plan.Budget{p}, []ledger.Tx{in, out}, "2025-12", now, plan.Settings{IncomeMode: "manual", ManualIncome: 5000})
+	r := plan.Compute([]plan.Budget{p}, []ledger.Tx{in, out}, "2025-12", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)})
 	if l := find(r, "Pension"); l.Spent != E(200-17197.92) || r.SavedActual != E(200-17197.92) {
 		t.Fatalf("line %v, saved %v", l.Spent, r.SavedActual)
 	}
@@ -173,7 +175,7 @@ func TestComputeSavingWithdrawal(t *testing.T) {
 // already hit those months and isn't counted again.
 func TestComputeFundOverdrawn(t *testing.T) {
 	now := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
-	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)}
 	car := line(1, "Transport", "spending", []string{"transport"}, 80)
 	car.Fund, car.StartMonth = true, "2026-10"
 	txs := []ledger.Tx{tx("2026-10-03", "transport.fuel", 58.33), tx("2026-10-14", "transport.car", 769.25)}
@@ -205,7 +207,7 @@ func TestComputeFundOverdrawn(t *testing.T) {
 // spending, as in cash flow: safe to spend grows by it, income doesn't.
 func TestComputeRefundsReduceSpending(t *testing.T) {
 	now := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
-	set := plan.Settings{IncomeMode: "manual", ManualIncome: 5000}
+	set := plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)}
 	food := line(1, "Food", "spending", []string{"food"}, 500)
 	txs := []ledger.Tx{tx("2026-10-02", "housing.maintenance", 300), tx("2026-10-05", "food.groceries", 100), tx("2026-10-14", "refunds", 184.28), tx("2026-10-09", "salary", 3500)}
 	r := plan.Compute([]plan.Budget{food}, txs, "2026-10", now, set)
@@ -259,13 +261,47 @@ func TestIncomeBaseModes(t *testing.T) {
 	if base != E(5000) {
 		t.Error("median of complete months", base)
 	}
-	base, src := plan.IncomeBase(plan.Settings{IncomeMode: "gross", GrossSalary: 8400, MonthlyDeductions: 30}, inc, "2026-10", "2026-10")
-	if math.Abs(base.Float()-plan.LTNetSalary(8400, 30)) > 0.01 || src == "" {
+	base, src := plan.IncomeBase(plan.Settings{IncomeMode: "gross", GrossSalary: E(8400), MonthlyDeductions: E(30)}, inc, "2026-10", "2026-10")
+	if base != plan.LTNetSalary(E(8400), E(30)) || src == "" {
 		t.Error("gross")
 	}
-	// Lithuanian net: 8400 gross → Sodra 19.5% + GPM 20% (no NPD at this level) − 30.
-	if got := plan.LTNetSalary(8400, 30); math.Abs(got-(8400-1638-1680-30)) > 0.01 {
-		t.Errorf("LT net %v", got)
+}
+
+// Lithuanian net pay, to the cent, in each NPD band.
+func TestLTNetSalary(t *testing.T) {
+	for _, c := range []struct{ gross, ded, want money.Cents }{
+		{E(8400), E(30), E(8400 - 1638 - 1680 - 30)}, // no NPD left: Sodra 19.5% + GPM 20%, less deductions
+		{E(1000), 0, E(754.40)},                      // below MMA: full €747 NPD
+		{E(1500), 0, E(1011.62)},                     // NPD tapering: 747 − 0.49×462
+		{E(1234.57), 0, E(877.05)},                   // odd cents round once, at the end
+		{E(500), 0, E(402.50)},                       // NPD above gross: no GPM
+		{0, 0, 0},
+	} {
+		if got := plan.LTNetSalary(c.gross, c.ded); got != c.want {
+			t.Errorf("LTNetSalary(%v, %v) = %v, want %v", c.gross, c.ded, got, c.want)
+		}
+	}
+}
+
+// The cents version gives what the float one it replaced gave, rounded to
+// the cent, for every salary — so no figure on Plan or Forecast moves.
+func TestLTNetSalaryMatchesFloatVersion(t *testing.T) {
+	old := func(gross, deductions float64) float64 {
+		const sodraRate, gpmRate, mma, npdMax, npdSlope = 0.195, 0.20, 1038.0, 747.0, 0.49
+		npd := npdMax
+		if gross > mma {
+			npd = max(0, npdMax-npdSlope*(gross-mma))
+		}
+		return gross - gross*sodraRate - max(0, (gross-npd)*gpmRate) - deductions
+	}
+	for g := money.Cents(0); g <= E(20000); g += 137 {
+		f := old(g.Float(), 25.5) * 100
+		if math.Abs(f-math.Floor(f)-0.5) < 1e-6 {
+			continue // an exact half cent: float noise picks the side
+		}
+		if got, want := plan.LTNetSalary(g, E(25.5)), money.FromFloat(f/100); got != want {
+			t.Fatalf("gross %v: %v, float version %v", g, got, want)
+		}
 	}
 }
 
@@ -289,9 +325,9 @@ func TestBudgetCRUD(t *testing.T) {
 	if err := plan.Save(d, &plan.Budget{Name: "x", Kind: "nope", Tag: "a"}, ""); err == nil {
 		t.Error("bad kind accepted")
 	}
-	s := plan.Settings{IncomeMode: "gross", GrossSalary: 10000, BirthYear: 1990, TargetAge: 50}
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: E(10000), BirthYear: 1990, TargetAge: 50}
 	plan.SaveSettings(d, s)
-	if got := plan.LoadSettings(d); got.GrossSalary != 10000 || got.WithdrawalRate != 4 || got.EmergencyMonths != 3 {
+	if got := plan.LoadSettings(d); got.GrossSalary != E(10000) || got.WithdrawalRate != 4 || got.EmergencyMonths != 3 {
 		t.Error(got)
 	}
 	plan.Delete(d, b.ID)
@@ -409,31 +445,63 @@ func TestPatchSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, err := plan.PatchSettings(d, []byte(`{"salary_rules":[{"from":"","paid_by_day":3},{"from":"2026-11-01","paid_by_day":10}],"buffers":{"seb":0}}`))
-	if err != nil || st.GrossSalary != 10000 || len(st.SalaryRules) != 2 || st.Buffers["swed"] != 300 || len(st.Buffers) != 1 {
+	if err != nil || st.GrossSalary != E(10000) || len(st.SalaryRules) != 2 || st.Buffers["swed"] != E(300) || len(st.Buffers) != 1 {
 		t.Fatalf("%v %+v", err, st)
 	}
-	for _, bad := range []string{`{"income_mode":"x"}`, `{"buffers":{"nope":1}}`, `{"salary_account":"nope"}`, `{"emergency_months":"x"}`} {
+	for _, bad := range []string{`{"income_mode":"x"}`, `{"buffers":{"nope":1}}`, `{"salary_account":"nope"}`, `{"emergency_months":"x"}`, `{"manual_income":-1}`, `{"gross_salary":1e17}`, `{"monthly_deductions":2e6}`} {
 		if _, err := plan.PatchSettings(d, []byte(bad)); err == nil {
 			t.Errorf("accepted %s", bad)
 		}
 	}
-	if plan.LoadSettings(d).GrossSalary != 10000 {
+	if plan.LoadSettings(d).GrossSalary != E(10000) {
 		t.Error("a rejected patch changed nothing")
+	}
+}
+
+// Settings saved while the money fields were float euros load into cents
+// unchanged, and save back as the same numbers, so neither the stored row
+// nor what the web reads moves. (Every value saved so far has whole cents;
+// a stray third decimal would round to the cent.)
+func TestOldSettingsJSONRoundTrip(t *testing.T) {
+	d := DB(t)
+	old := `{"income_mode":"gross","manual_income":0,"gross_salary":8400,"gross_changes":[{"from":"2026-11","gross":10000.5}],"monthly_deductions":37.5,"target_age":45,"birth_year":1990,"fi_monthly_spend":2150.55,"withdrawal_rate":8,"expected_return":9,"emergency_months":3,"salary_rules":[{"from":"","paid_by_day":3},{"from":"2026-11-01","paid_by_day":10}],"salary_account":"swed","buffers":{"swed":300.5,"seb":0.1}}`
+	if _, err := d.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES('plan',?)`, old); err != nil {
+		t.Fatal(err)
+	}
+	st := plan.LoadSettings(d)
+	if st.GrossSalary != E(8400) || st.GrossChanges[0].Gross != E(10000.5) || st.MonthlyDeductions != E(37.5) || st.FIMonthlySpend != E(2150.55) ||
+		st.ManualIncome != 0 || st.Buffers["swed"] != E(300.5) || st.Buffers["seb"] != E(0.1) || st.WithdrawalRate != 8 || st.ExpectedReturn != 9 || st.EmergencyMonths != 3 {
+		t.Fatalf("loaded %+v", st)
+	}
+	if err := plan.SaveSettings(d, st); err != nil {
+		t.Fatal(err)
+	}
+	var saved string
+	d.QueryRow(`SELECT value FROM settings WHERE key='plan'`).Scan(&saved)
+	// Same keys, same numbers: only the formatting of whole euros differs (8400 → 8400.00).
+	var a, b any
+	json.Unmarshal([]byte(old), &a)
+	json.Unmarshal([]byte(saved), &b)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("stored settings changed:\nold %s\nnew %s", old, saved)
+	}
+	if plan.LoadSettings(d).GrossSalary != E(8400) {
+		t.Error("reload")
 	}
 }
 
 // A planned raise counts from its month: the months before keep the old
 // salary (the past and this month aren't rewritten).
 func TestGrossChangesByMonth(t *testing.T) {
-	s := plan.Settings{IncomeMode: "gross", GrossSalary: 8400, GrossChanges: []plan.GrossChange{{From: "2026-12", Gross: 10000}, {From: "2027-06", Gross: 11000}}}
-	for m, want := range map[string]float64{"2026-04": 8400, "2026-10": 8400, "2026-12": 10000, "2027-03": 10000, "2027-06": 11000} {
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: E(8400), GrossChanges: []plan.GrossChange{{From: "2026-12", Gross: E(10000)}, {From: "2027-06", Gross: E(11000)}}}
+	for m, want := range map[string]money.Cents{"2026-04": E(8400), "2026-10": E(8400), "2026-12": E(10000), "2027-03": E(10000), "2027-06": E(11000)} {
 		if g := s.GrossFor(m); g != want {
 			t.Errorf("%s: %v want %v", m, g, want)
 		}
 	}
 	oct, _ := plan.IncomeBase(s, nil, "2026-10", "2026-10")
 	dec, _ := plan.IncomeBase(s, nil, "2026-12", "2026-10")
-	if oct != money.FromFloat(plan.LTNetSalary(8400, 0)) || dec != money.FromFloat(plan.LTNetSalary(10000, 0)) {
+	if oct != plan.LTNetSalary(E(8400), E(0)) || dec != plan.LTNetSalary(E(10000), E(0)) {
 		t.Errorf("income base oct %v dec %v", oct, dec)
 	}
 }
@@ -443,8 +511,8 @@ func TestGrossChangesByMonth(t *testing.T) {
 // closed: a salary paid by the 10th of the next month (the rule from
 // November 2026) still belongs to the month before.
 func TestFinishedMonthUsesActualSalary(t *testing.T) {
-	s := plan.Settings{IncomeMode: "gross", GrossSalary: 10000, SalaryRules: []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}}
-	setting := money.FromFloat(plan.LTNetSalary(10000, 0))
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: E(10000), SalaryRules: []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}}
+	setting := plan.LTNetSalary(E(10000), E(0))
 	at := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 12, 0, 0, 0, time.UTC) }
 	txs := []ledger.Tx{
 		tx("2026-10-02", "salary", 5000),          // September's, paid on the 2nd
@@ -479,7 +547,7 @@ func TestFinishedMonthUsesActualSalary(t *testing.T) {
 		t.Errorf("a salary on the 15th is not October's: %v", oct.IncomeBase)
 	}
 	// A fixed amount stands for all income; history mode keeps its median.
-	man := plan.Compute(nil, txs, "2026-09", at(2026, 11, 20), plan.Settings{IncomeMode: "manual", ManualIncome: 9000, SalaryRules: s.SalaryRules})
+	man := plan.Compute(nil, txs, "2026-09", at(2026, 11, 20), plan.Settings{IncomeMode: "manual", ManualIncome: E(9000), SalaryRules: s.SalaryRules})
 	if man.IncomeBase != E(5300) {
 		t.Errorf("manual: September's income %v", man.IncomeBase)
 	}
@@ -530,7 +598,7 @@ func TestFixedExpenseLeavesPrincipalToSaving(t *testing.T) {
 		tx("2026-10-09", "salary", 7884.92),
 		tx("2026-10-14", "transport.car", 2077.87),
 	}
-	r := plan.Compute(budgets, txs, "2026-10", now, plan.Settings{IncomeMode: "manual", ManualIncome: 5000})
+	r := plan.Compute(budgets, txs, "2026-10", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(5000)})
 	if r.FixedSpent != E(2361.66) || r.FixedExpense != E(1922.71) || r.SavedActual != E(438.95) || r.DiscretionarySpent != E(2077.87) {
 		t.Fatalf("fixed %v expense %v saved %v spending %v", r.FixedSpent, r.FixedExpense, r.SavedActual, r.DiscretionarySpent)
 	}

@@ -9,6 +9,7 @@ import (
 	"ft/internal/cfo"
 	"ft/internal/goals"
 	"ft/internal/ledger"
+	"ft/internal/money"
 	"ft/internal/plan"
 	"ft/internal/usage"
 )
@@ -247,7 +248,7 @@ func plannedTrips(s *Server) []goals.Goal {
 }
 
 func (s *Server) scenario(r *http.Request, sc *cfo.Scenario) (any, error) {
-	if sc.Gross < 0 || sc.Gross > 1e6 || sc.EverydayPct < -90 || sc.EverydayPct > 300 || len(sc.Purchases) > 50 {
+	if sc.Gross < 0 || sc.Gross > money.FromFloat(1e6) || sc.EverydayPct < -90 || sc.EverydayPct > 300 || len(sc.Purchases) > 50 {
 		return nil, bad("scenario out of range")
 	}
 	return cfo.CompareForecast(s.DB, time.Now(), qint(r, "months", 12), sc)

@@ -21,7 +21,7 @@ func TestCashUntilPayday(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 3000
+	st.IncomeMode, st.ManualIncome = "manual", E(3000)
 	st.SalaryRules = []plan.SalaryRule{{PaidByDay: 20}}
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestPayAlreadyInMovesPaydayToNextMonth(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 6000
+	st.IncomeMode, st.ManualIncome = "manual", E(6000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
@@ -235,7 +235,7 @@ func TestCashPlanCountsObligationEarlyNextMonth(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 11, 5, 15, 0, 0, 0, time.UTC)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 6000
+	st.IncomeMode, st.ManualIncome = "manual", E(6000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	plan.SaveSettings(d, st)
 	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(1000)}

@@ -325,7 +325,7 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 		}
 		ca.Balance, ca.BalanceDate, _ = balance(id)
 		if v, ok := settings.Buffers[id]; ok && v > 0 {
-			ca.Buffer, ca.BufferWhy = money.FromFloat(v), "your setting"
+			ca.Buffer, ca.BufferWhy = v, "your setting"
 		} else {
 			var allowance money.Cents
 			if id == cp.DailyAccount {

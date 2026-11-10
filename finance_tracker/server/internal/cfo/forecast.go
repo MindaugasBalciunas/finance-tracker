@@ -37,7 +37,7 @@ type Forecast struct {
 
 type Assumptions struct {
 	Income   money.Cents `json:"income"`          // per month, net
-	Gross    float64     `json:"gross,omitempty"` // when income comes from a gross salary
+	Gross    money.Cents `json:"gross,omitempty"` // when income comes from a gross salary
 	Fixed    money.Cents `json:"fixed"`           // obligations per month
 	Saving   money.Cents `json:"saving"`          // saving lines per month (leave cash)
 	Everyday money.Cents `json:"everyday"`        // usual everyday spending per month (payments under €250)
@@ -66,7 +66,7 @@ type ForecastItem struct {
 
 // Scenario changes the forecast's inputs. Zero values keep the baseline.
 type Scenario struct {
-	Gross       float64        `json:"gross,omitempty"`        // a new gross salary (net worked out with LT taxes)
+	Gross       money.Cents    `json:"gross,omitempty"`        // a new gross salary (net worked out with LT taxes)
 	Income      *float64       `json:"income,omitempty"`       // or a net income per month
 	Saving      *float64       `json:"saving,omitempty"`       // saving lines per month
 	EverydayPct float64        `json:"everyday_pct,omitempty"` // −20 = everyday spending 20% lower
@@ -231,7 +231,7 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 	incomeFor := func(m string) money.Cents {
 		if settings.IncomeMode == "gross" {
 			if g := settings.GrossFor(m); g > 0 {
-				return money.FromFloat(plan.LTNetSalary(g, settings.MonthlyDeductions))
+				return plan.LTNetSalary(g, settings.MonthlyDeductions)
 			}
 		}
 		return a.Income
@@ -246,7 +246,7 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 		scFrom = sc.From
 		if sc.Gross > 0 {
 			changed.Gross = sc.Gross
-			changed.Income = money.FromFloat(plan.LTNetSalary(sc.Gross, settings.MonthlyDeductions))
+			changed.Income = plan.LTNetSalary(sc.Gross, settings.MonthlyDeductions)
 			scIncome = true
 		}
 		if sc.Income != nil {

@@ -216,20 +216,20 @@ func Delete(d *sql.DB, id int64) error {
 
 // Settings drive the income base the plan measures against.
 type Settings struct {
-	IncomeMode   string  `json:"income_mode"` // median | manual | gross
-	ManualIncome float64 `json:"manual_income"`
-	GrossSalary  float64 `json:"gross_salary"`
+	IncomeMode   string      `json:"income_mode"` // median | manual | gross
+	ManualIncome money.Cents `json:"manual_income"`
+	GrossSalary  money.Cents `json:"gross_salary"`
 	// GrossChanges: a new salary from a month on (a raise, a new job), so a
 	// change planned for December doesn't rewrite October or the past.
 	GrossChanges      []GrossChange `json:"gross_changes,omitempty"`
-	MonthlyDeductions float64       `json:"monthly_deductions"`
+	MonthlyDeductions money.Cents   `json:"monthly_deductions"`
 	// FI planning
-	TargetAge       int     `json:"target_age"`
-	BirthYear       int     `json:"birth_year"`
-	FIMonthlySpend  float64 `json:"fi_monthly_spend"` // target spend in FI; 0 = use trailing 12-month spend
-	WithdrawalRate  float64 `json:"withdrawal_rate"`  // e.g. 4
-	ExpectedReturn  float64 `json:"expected_return"`  // real, % p.a.
-	EmergencyMonths float64 `json:"emergency_months"`
+	TargetAge       int         `json:"target_age"`
+	BirthYear       int         `json:"birth_year"`
+	FIMonthlySpend  money.Cents `json:"fi_monthly_spend"` // target spend in FI; 0 = use trailing 12-month spend
+	WithdrawalRate  float64     `json:"withdrawal_rate"`  // e.g. 4
+	ExpectedReturn  float64     `json:"expected_return"`  // real, % p.a.
+	EmergencyMonths float64     `json:"emergency_months"`
 	// EmergencyExcludeCash: notes and coins (Cash accounts) don't count
 	// toward the emergency fund — only money in the bank does.
 	EmergencyExcludeCash bool `json:"emergency_exclude_cash,omitempty"`
@@ -239,19 +239,19 @@ type Settings struct {
 	SalaryRules []SalaryRule `json:"salary_rules"`
 	// Where salary is paid into ("" = the account the last salary went to).
 	SalaryAccount string `json:"salary_account"`
-	// Buffers: what each everyday account should never drop below, in euros,
-	// by account id. Missing or 0 = worked out from the account's history.
-	Buffers map[string]float64 `json:"buffers,omitempty"`
+	// Buffers: what each everyday account should never drop below, by
+	// account id. Missing or 0 = worked out from the account's history.
+	Buffers map[string]money.Cents `json:"buffers,omitempty"`
 }
 
 type GrossChange struct {
-	From  string  `json:"from"` // YYYY-MM
-	Gross float64 `json:"gross"`
+	From  string      `json:"from"` // YYYY-MM
+	Gross money.Cents `json:"gross"`
 }
 
 // GrossFor is the gross salary for a month: the latest change from that
 // month or before, else GrossSalary.
-func (s Settings) GrossFor(month string) float64 {
+func (s Settings) GrossFor(month string) money.Cents {
 	g, from := s.GrossSalary, ""
 	for _, c := range s.GrossChanges {
 		if c.From <= month && c.From >= from {
@@ -386,22 +386,32 @@ func SaveSettings(e interface {
 }
 
 // LTNetSalary estimates Lithuanian take-home pay (2026 employee rates):
-// Sodra 19.5%, GPM 20% on (gross − NPD), NPD tapering from €747 above MMA.
-func LTNetSalary(gross, deductions float64) float64 {
-	const sodraRate, gpmRate, mma, npdMax, npdSlope = 0.195, 0.20, 1038.0, 747.0, 0.49
-	sodra := gross * sodraRate
-	npd := npdMax
+// Sodra 19.5%, GPM 20% on (gross − NPD), NPD tapering from €747 by 0.49 of
+// each euro above MMA (€1,038).
+//
+// The sum is exact: every rate is a whole number of thousandths, so it is
+// worked in 1/1000-cent units and rounded to the cent once at the end, the
+// way the float version this replaced rounded its result.
+func LTNetSalary(gross, deductions money.Cents) money.Cents {
+	const unit = 1000 // sub-cent units per cent
+	const mma, npdMax = 103800, 74700
+	g := int64(gross) * unit
+	sodra := int64(gross) * 195 // 19.5%
+	npd := int64(npdMax) * unit
 	if gross > mma {
-		npd = npdMax - npdSlope*(gross-mma)
-		if npd < 0 {
-			npd = 0
-		}
+		npd = max(0, npd-int64(gross-mma)*490) // 0.49 per euro above MMA
 	}
-	gpm := (gross - npd) * gpmRate
-	if gpm < 0 {
-		gpm = 0
+	gpm := max(0, (g-npd)/5) // 20%; g−npd is a multiple of 5 (unit and 490 are)
+	net := g - sodra - gpm - int64(deductions)*unit
+	return money.Cents(roundDiv(net, unit))
+}
+
+// roundDiv is n/d rounded half away from zero, like math.Round.
+func roundDiv(n, d int64) int64 {
+	if n < 0 {
+		return -((-n + d/2) / d)
 	}
-	return gross - sodra - gpm - deductions
+	return (n + d/2) / d
 }
 
 func median(v []float64) float64 {

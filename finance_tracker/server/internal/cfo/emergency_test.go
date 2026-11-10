@@ -27,7 +27,7 @@ func TestEmergencyFundComesBeforeTheWishList(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 5000
+	st.IncomeMode, st.ManualIncome = "manual", E(5000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	plan.SaveSettings(d, st)
 	alimony := plan.Budget{Name: "Alimony", Kind: "fixed", Categories: []string{"kids.alimony"}, Amount: E(1000)}

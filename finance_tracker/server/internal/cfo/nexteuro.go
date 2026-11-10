@@ -99,7 +99,7 @@ func NextEuroFor(d *sql.DB, sum money.Cents, now time.Time) (*NextEuro, error) {
 	gross := settings.GrossFor(now.Format("2006-01")) * 12
 	cap := money.FromFloat(pillar3Max)
 	if gross > 0 {
-		cap = min(cap, money.FromFloat(gross*0.25))
+		cap = min(cap, gross/4) // 25% of 12 months = 3 months, exact
 	}
 	switch {
 	case ts.Pillar3Before2025 != nil && *ts.Pillar3Before2025 && cap-paid > 0:

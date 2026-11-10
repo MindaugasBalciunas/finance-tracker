@@ -18,7 +18,7 @@ func TestTaxYear(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.GrossSalary = "gross", 8400
+	st.IncomeMode, st.GrossSalary = "gross", E(8400)
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +107,8 @@ func TestTaxRaisePaidNextMonth(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.GrossSalary = "gross", 8400
-	st.GrossChanges = []plan.GrossChange{{From: "2026-11", Gross: 10000}}
+	st.IncomeMode, st.GrossSalary = "gross", E(8400)
+	st.GrossChanges = []plan.GrossChange{{From: "2026-11", Gross: E(10000)}}
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)

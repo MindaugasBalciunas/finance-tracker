@@ -40,7 +40,7 @@ type TaxItem struct {
 
 // Annual income where the 25% rate starts: 36 average wages (from 2026;
 // before that the next rate started at 60 AW, which this salary is far from).
-var bracket25 = map[int]float64{2026: 83237}
+var bracket25 = map[int]money.Cents{2026: 83237_00}
 
 const (
 	gpmInvest     = 0.15 // interest and investment gains above the exemptions
@@ -88,7 +88,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 		annual, basis := yearGross(txs, settings, year, now)
 		if annual > 0 {
 			if over := annual - limit; over > 0 {
-				due := money.FromFloat(over * 0.05)
+				due := money.FromFloat(over.Float() * 0.05)
 				t.add(TaxItem{Key: "bracket", Kind: "due", Amount: due, Title: "Salary above the 25% bracket", Link: ledger.Link("from", from, "to", to, "category", "salary"),
 					Detail: fmt.Sprintf("€%s of about €%s gross for the year (%s) is above €%s, taxed 25%% instead of 20%%. If your employers withheld 20%%, about %s is left to pay with the declaration.",
 						thousands(over), thousands(annual), basis, thousands(limit), eurS(due))})
@@ -154,7 +154,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 	if pillar > 0 {
 		base := min(pillar, money.FromFloat(pillar3Max))
 		if annual, _ := yearGross(txs, settings, year, now); annual > 0 {
-			base = min(base, money.FromFloat(annual*0.25))
+			base = min(base, money.FromFloat(annual.Float()*0.25))
 		}
 		refund := money.FromFloat(base.Float() * pillar3Refund)
 		it := TaxItem{Key: "pillar3", Title: "3rd-pillar pension contributions", Amount: refund, Link: ledger.Link("from", from, "to", to, "category", "transfer.pension")}
@@ -184,8 +184,8 @@ func (t *TaxYear) add(it TaxItem) {
 	}
 }
 
-func thousands(v float64) string {
-	s := eurS(money.FromFloat(v))
+func thousands(v money.Cents) string {
+	s := eurS(v)
 	return strings.TrimPrefix(s, "€")
 }
 
@@ -199,7 +199,7 @@ const netShare = 0.605
 // employer all count — income tax goes by the date paid), plus the plan's
 // gross for the months still to come. With no salary booked yet it is the
 // plan's gross for every month.
-func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (float64, string) {
+func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (money.Cents, string) {
 	var net money.Cents
 	for i := range txs {
 		t := &txs[i]
@@ -207,7 +207,7 @@ func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (float
 			net += t.Amount
 		}
 	}
-	var ahead float64
+	var ahead money.Cents
 	first := 1
 	if year == now.Year() {
 		first = int(now.Month()) + 1
@@ -217,20 +217,20 @@ func yearGross(txs []ledger.Tx, s plan.Settings, year int, now time.Time) (float
 	// Tax goes by the date paid; each payment is the gross of the month it
 	// pays for (October's salary paid in November is October's gross).
 	rules := s.Salary()
-	paid := func(m int) float64 { return s.GrossFor(plan.PaysFor(fmt.Sprintf("%d-%02d", year, m), rules)) }
+	paid := func(m int) money.Cents { return s.GrossFor(plan.PaysFor(fmt.Sprintf("%d-%02d", year, m), rules)) }
 	for m := first; m <= 12; m++ {
 		ahead += paid(m)
 	}
 	if net == 0 { // nothing booked: the plan's gross for every month
-		var all float64
+		var all money.Cents
 		for m := 1; m <= 12; m++ {
 			all += paid(m)
 		}
 		return all, "the plan's gross salary × 12"
 	}
-	grossPaid := net.Float() / netShare
+	grossPaid := money.FromFloat(net.Float() / netShare) // net share is a rate: the one float step
 	if ahead == 0 {
 		return grossPaid, fmt.Sprintf("%s net paid in %d, grossed up", eurS(net), year)
 	}
-	return grossPaid + ahead, fmt.Sprintf("%s net paid so far, grossed up, plus %s for the months to come", eurS(net), eurS(money.FromFloat(ahead)))
+	return grossPaid + ahead, fmt.Sprintf("%s net paid so far, grossed up, plus %s for the months to come", eurS(net), eurS(ahead))
 }

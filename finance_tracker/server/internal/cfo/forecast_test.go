@@ -1,6 +1,7 @@
 package cfo_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestCashForecast(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 3000
+	st.IncomeMode, st.ManualIncome = "manual", E(3000)
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
 	}
@@ -88,5 +89,15 @@ func TestCashForecast(t *testing.T) {
 	c2, _ := cfo.CompareForecast(d, now, 6, &cfo.Scenario{SkipGoals: []int64{bike.ID}})
 	if len(c2.Scenario.Months[3].Dated) != 0 {
 		t.Errorf("skipped goal still dated: %+v", c2.Scenario.Months[3].Dated)
+	}
+	// A new gross salary arrives as euros on the wire and pays its LT net
+	// from its month on.
+	var sc cfo.Scenario
+	if err := json.Unmarshal([]byte(`{"gross":9000,"from":"2026-11"}`), &sc); err != nil || sc.Gross != E(9000) {
+		t.Fatalf("scenario gross %v %v", sc.Gross, err)
+	}
+	c3, _ := cfo.CompareForecast(d, now, 6, &sc)
+	if c3.Scenario.Months[0].Income != oct.Income || c3.Scenario.Months[1].Income != plan.LTNetSalary(E(9000), 0) {
+		t.Errorf("gross scenario income %v / %v", c3.Scenario.Months[0].Income, c3.Scenario.Months[1].Income)
 	}
 }

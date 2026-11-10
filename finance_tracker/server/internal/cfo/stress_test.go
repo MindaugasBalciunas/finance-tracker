@@ -23,7 +23,7 @@ func stressHousehold(t *testing.T) (*sql.DB, time.Time) {
 	d := DB(t)
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 3000
+	st.IncomeMode, st.ManualIncome = "manual", E(3000)
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
 	}

@@ -101,7 +101,7 @@ func ComputeFI(txs []ledger.Tx, cats map[string]ledger.Category, book *wealth.Bo
 	}
 	out.AnnualSpend, out.SpendSource = spend, "last 12 months' spending"
 	if s.FIMonthlySpend > 0 {
-		out.AnnualSpend, out.SpendSource = money.FromFloat(s.FIMonthlySpend*12), "your FI spending target"
+		out.AnnualSpend, out.SpendSource = s.FIMonthlySpend*12, "your FI spending target"
 	}
 	out.Target = money.FromFloat(out.AnnualSpend.Float() * 100 / s.WithdrawalRate)
 	// Cash beyond the fund is investable either way: leaving notes out of

@@ -9,7 +9,6 @@ import (
 	"ft/internal/cfo"
 	"ft/internal/insights"
 	"ft/internal/ledger"
-	"ft/internal/money"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -47,14 +46,14 @@ func rateOf(f insights.Flow) float64 {
 func TestSalaryStillDueIsCountedInTheSavingsRate(t *testing.T) {
 	d := DB(t)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.GrossSalary = "gross", 8400
-	st.GrossChanges = []plan.GrossChange{{From: "2026-11", Gross: 10000}}
+	st.IncomeMode, st.GrossSalary = "gross", E(8400)
+	st.GrossChanges = []plan.GrossChange{{From: "2026-11", Gross: E(10000)}}
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	if err := plan.SaveSettings(d, st); err != nil {
 		t.Fatal(err)
 	}
-	netNov := money.FromFloat(plan.LTNetSalary(10000, 0))
-	netOct := money.FromFloat(plan.LTNetSalary(8400, 0))
+	netNov := plan.LTNetSalary(E(10000), E(0))
+	netOct := plan.LTNetSalary(E(8400), E(0))
 	Tx(t, d, ledger.Tx{Date: "2026-09-12", Amount: E(300), Category: "food.groceries", AccountID: "swed"})
 	Tx(t, d, ledger.Tx{Date: "2026-10-12", Amount: E(400), Category: "food.groceries", AccountID: "swed"})
 	Tx(t, d, ledger.Tx{Date: "2026-11-02", Kind: "income", Amount: E(100), Category: "other_income", AccountID: "swed"})
@@ -93,7 +92,7 @@ func TestSalaryStillDueIsCountedInTheSavingsRate(t *testing.T) {
 func TestFixedIncomePlanDoesNotCountOtherIncomeTwice(t *testing.T) {
 	d := DB(t)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.ManualIncome = "manual", 6000
+	st.IncomeMode, st.ManualIncome = "manual", E(6000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 10}}
 	plan.SaveSettings(d, st)
 	Tx(t, d, ledger.Tx{Date: "2026-11-02", Kind: "income", Amount: E(2000), Category: "other_income", AccountID: "swed"})
@@ -109,7 +108,7 @@ func TestFixedIncomePlanDoesNotCountOtherIncomeTwice(t *testing.T) {
 func TestMonthReviewCountsPayStillToCome(t *testing.T) {
 	d := DB(t)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.GrossSalary = "gross", 10000
+	st.IncomeMode, st.GrossSalary = "gross", E(10000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10}}
 	plan.SaveSettings(d, st)
 	for _, m := range []string{"2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"} {
@@ -122,7 +121,7 @@ func TestMonthReviewCountsPayStillToCome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	net := money.FromFloat(plan.LTNetSalary(10000, 0))
+	net := plan.LTNetSalary(E(10000), E(0))
 	if r.Flow.ExpectedSalary != net || r.Flow.ExpectedSavingsRate == nil || r.Flow.Income != E(100) {
 		t.Fatalf("flow %+v", r.Flow)
 	}
@@ -140,10 +139,10 @@ func TestMonthReviewCountsPayStillToCome(t *testing.T) {
 func TestPayUnderPlanSettlesTheMonth(t *testing.T) {
 	d := DB(t)
 	st := plan.LoadSettings(d)
-	st.IncomeMode, st.GrossSalary = "gross", 10000
+	st.IncomeMode, st.GrossSalary = "gross", E(10000)
 	st.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}}
 	plan.SaveSettings(d, st)
-	net := money.FromFloat(plan.LTNetSalary(10000, 0))
+	net := plan.LTNetSalary(E(10000), E(0))
 	for _, m := range []string{"2026-07", "2026-08", "2026-09"} {
 		Tx(t, d, ledger.Tx{Date: m + "-20", Amount: E(4000), Category: "food.groceries", AccountID: "swed"})
 		Tx(t, d, ledger.Tx{Date: m + "-30", Kind: "income", Amount: net, Category: "salary", AccountID: "swed"})

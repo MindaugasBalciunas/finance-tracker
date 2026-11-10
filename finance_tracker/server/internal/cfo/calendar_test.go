@@ -157,7 +157,7 @@ func TestFIPlanLevelsCoastAndWhatIfs(t *testing.T) {
 func TestCashFlowCalendarOneSalaryAMonth(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	s := plan.Settings{IncomeMode: "manual", ManualIncome: 5000, WithdrawalRate: 4, ExpectedReturn: 5, EmergencyMonths: 3,
+	s := plan.Settings{IncomeMode: "manual", ManualIncome: E(5000), WithdrawalRate: 4, ExpectedReturn: 5, EmergencyMonths: 3,
 		SalaryRules: []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-10-01", PaidByDay: 10}}}
 	plan.SaveSettings(d, s)
 	Bal(t, d, "swed", "2026-10-29", 3000)

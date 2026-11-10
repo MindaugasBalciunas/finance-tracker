@@ -126,8 +126,13 @@ func ValidateSettings(d *sql.DB, st Settings) error {
 	if err := ValidSalaryRules(st.SalaryRules); err != nil {
 		return err
 	}
+	for _, v := range []money.Cents{st.ManualIncome, st.GrossSalary, st.MonthlyDeductions, st.FIMonthlySpend} {
+		if v < 0 || v > maxSetting {
+			return errors.New("income, deductions and FI spending are between €0 and €1,000,000")
+		}
+	}
 	for _, c := range st.GrossChanges {
-		if _, err := time.Parse("2006-01", c.From); err != nil || c.Gross <= 0 || c.Gross > 1e6 {
+		if _, err := time.Parse("2006-01", c.From); err != nil || c.Gross <= 0 || c.Gross > maxSetting {
 			return errors.New("a salary change needs a month (YYYY-MM) and a gross amount")
 		}
 	}
@@ -145,7 +150,7 @@ func ValidateSettings(d *sql.DB, st Settings) error {
 		if _, err := ledger.GetAccount(d, id); err != nil {
 			return errors.New("unknown account in buffers: " + id)
 		}
-		if v < 0 || v > 1e6 {
+		if v < 0 || v > maxSetting {
 			return errors.New("a buffer is between €0 and €1,000,000")
 		}
 	}
@@ -203,3 +208,6 @@ func TagTrip(d *sql.DB, name string, ids []int64) (string, int, error) {
 	}
 	return tag, n, tx.Commit()
 }
+
+// maxSetting caps a salary or buffer at €1,000,000 — a typo guard.
+const maxSetting = money.Cents(100_000_000)
