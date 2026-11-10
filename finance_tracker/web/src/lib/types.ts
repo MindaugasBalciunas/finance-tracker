@@ -250,13 +250,15 @@ export type Shock = {
   months?: number; income_pct?: number; benefit?: number; everyday_pct?: number; fixed_pct?: number; one_off?: number; rate_pp?: number
   stocks_pct?: number; crypto_pct?: number; pension_pct?: number; property_pct?: number; pause_saving?: boolean; pause_goals?: boolean
 }
-export type StressLevel = 'ok' | 'tight' | 'sell' | 'short'
+export type StressLevel = 'ok' | 'tight' | 'pause' | 'sell' | 'short'
 export type StressResult = {
   id: string; group?: string; name: string; blurb?: string; shock: Shock
   months?: { month: string; income: number; out: number; sold?: number; end: number; base: number }[]
-  level: StressLevel; lowest: number; lowest_on: string; below_floor?: string; cash_out?: string; broke?: string
+  level: StressLevel; lowest: number; lowest_on: string; below_floor?: string; paused_from?: string; saving_cut: number; cash_out?: string; broke?: string
   sold?: { key: string; label: string; amount: number; net: number }[]; sold_total: number; short: number
-  market_hit: number; loan_extra: number; monthly_gap: number; net_worth_end: number; base_net_worth_end: number; cost: number
+  market_hit: number; loan_extra: number; monthly_gap: number; net_worth_end: number; base_net_worth_end: number
+  /** Lost for good against the plan; paper_loss is the drop still held (back if prices recover); locked_in the part of the drop made real by selling. */
+  cost: number; paper_loss: number; locked_in: number
   summary: string[]; levers?: { label: string; amount: number; monthly: boolean }[]
 }
 export type StressReport = {
@@ -264,5 +266,7 @@ export type StressReport = {
   reserves: { key: string; label: string; value: number; net: number }[]; locked: number; real_assets: number
   /** Absent until there is a usual month to go by. */
   runway?: { burn: number; cash_months: number; reserve_months: number }
+  /** The emergency target in months of a usual month's cost, beside the months of essentials it was set to. */
+  floor_months?: number; target_months?: number
   base?: number[]; groups: { id: string; name: string }[]; scenarios: StressResult[]; custom?: StressResult; notes: string[]
 }

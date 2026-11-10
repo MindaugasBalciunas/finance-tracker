@@ -10,6 +10,7 @@ import (
 
 	"ft/internal/ledger"
 	"ft/internal/money"
+	"ft/internal/plan"
 	"ft/internal/wealth"
 )
 
@@ -140,20 +141,25 @@ var StressPresets = []StressPreset{
 // StressReport is every ready-made crisis against the plan, plus one the
 // owner built (Custom).
 type StressReport struct {
-	Start     string         `json:"start"`   // first month (this month)
-	Horizon   int            `json:"horizon"` // months looked at
-	Cash      money.Cents    `json:"cash"`    // checking, savings, cash today
-	Floor     money.Cents    `json:"floor"`   // the emergency target
-	NetWorth  money.Cents    `json:"net_worth"`
-	Reserves  []Reserve      `json:"reserves"` // what could be sold, in the order it would be
-	Locked    money.Cents    `json:"locked"`   // II pillar: no use before retirement
-	RealAsset money.Cents    `json:"real_assets"`
-	Runway    *Runway        `json:"runway,omitempty"` // nil until there is a usual month to go by
-	Base      []money.Cents  `json:"base"`             // cash at each month end at the current plan
-	Groups    []StressGroup  `json:"groups"`
-	Scenarios []StressResult `json:"scenarios"`
-	Custom    *StressResult  `json:"custom,omitempty"`
-	Notes     []string       `json:"notes"`
+	Start     string      `json:"start"`   // first month (this month)
+	Horizon   int         `json:"horizon"` // months looked at
+	Cash      money.Cents `json:"cash"`    // checking, savings, cash today
+	Floor     money.Cents `json:"floor"`   // the emergency target
+	NetWorth  money.Cents `json:"net_worth"`
+	Reserves  []Reserve   `json:"reserves"` // what could be sold, in the order it would be
+	Locked    money.Cents `json:"locked"`   // II pillar: no use before retirement
+	RealAsset money.Cents `json:"real_assets"`
+	Runway    *Runway     `json:"runway,omitempty"` // nil until there is a usual month to go by
+	// The emergency target in months of what a usual month costs (Runway's
+	// burn), beside the months it was meant to be: it is set on essentials,
+	// so it can cover far less of a real month than it says.
+	FloorMonths  float64        `json:"floor_months,omitempty"`
+	TargetMonths float64        `json:"target_months,omitempty"`
+	Base         []money.Cents  `json:"base"` // cash at each month end at the current plan
+	Groups       []StressGroup  `json:"groups"`
+	Scenarios    []StressResult `json:"scenarios"`
+	Custom       *StressResult  `json:"custom,omitempty"`
+	Notes        []string       `json:"notes"`
 }
 
 type StressGroup struct {
@@ -167,6 +173,7 @@ type Reserve struct {
 	Label string      `json:"label"`
 	Value money.Cents `json:"value"` // today, before any tax
 	Net   money.Cents `json:"net"`   // what selling all of it brings in today
+	drop  float64     // the shock's % change on it, to tell what selling locks in
 }
 
 // Runway is how long the money lasts with no income at all and saving
@@ -185,11 +192,13 @@ type StressResult struct {
 	Blurb      string        `json:"blurb,omitempty"`
 	Shock      Shock         `json:"shock"`
 	Months     []StressMonth `json:"months,omitempty"`
-	Level      string        `json:"level"` // ok · tight (under the emergency target) · sell (reserves needed) · short (they run out too)
+	Level      string        `json:"level"` // ok · tight (under the emergency target) · pause (investing less covers it) · sell (reserves needed) · short (they run out too)
 	Lowest     money.Cents   `json:"lowest"`
 	LowestOn   string        `json:"lowest_on"`
 	BelowFloor string        `json:"below_floor,omitempty"` // first month under the emergency target
-	CashOut    string        `json:"cash_out,omitempty"`    // first month cash alone would be gone
+	PausedFrom string        `json:"paused_from,omitempty"` // first month investing is cut to keep cash above zero
+	SavingCut  money.Cents   `json:"saving_cut"`            // invested less than the plan, in all
+	CashOut    string        `json:"cash_out,omitempty"`    // first month cash would be gone even so: selling starts
 	Sold       []Sale        `json:"sold,omitempty"`        // reserves sold to stay above zero
 	SoldTotal  money.Cents   `json:"sold_total"`            // gross value sold
 	Broke      string        `json:"broke,omitempty"`       // first month even the reserves are gone
@@ -199,7 +208,9 @@ type StressResult struct {
 	MonthlyGap money.Cents   `json:"monthly_gap"`           // worst month's net (negative = cash going out)
 	NetWorth   money.Cents   `json:"net_worth_end"`         // at the end of the period
 	BaseWorth  money.Cents   `json:"base_net_worth_end"`    // the same at the current plan
-	Cost       money.Cents   `json:"cost"`                  // net worth lost against the plan
+	Cost       money.Cents   `json:"cost"`                  // lost for good against the plan: pay, extra costs and interest, tax, losses locked in by selling
+	Paper      money.Cents   `json:"paper_loss"`            // value lost at the drop and still held: back if prices recover
+	LockedIn   money.Cents   `json:"locked_in"`             // the part of the drop made real by selling after it
 	Summary    []string      `json:"summary"`
 	Levers     []Lever       `json:"levers,omitempty"`
 }
@@ -240,6 +251,7 @@ type stressBook struct {
 	vehicle  money.Cents
 	loans    []wealth.LoanView
 	nowMonth string
+	target   float64 // emergency target in months of essentials (a plan setting)
 }
 
 // StressTest runs every ready-made crisis over horizon months (default 24)
@@ -265,7 +277,7 @@ func StressTest(d *sql.DB, now time.Time, horizon int, custom *Shock) (*StressRe
 	if err != nil {
 		return nil, err
 	}
-	sb := stressBook{loans: wealth.Loans(book, txs, now), nowMonth: now.Format("2006-01")}
+	sb := stressBook{loans: wealth.Loans(book, txs, now), nowMonth: now.Format("2006-01"), target: plan.LoadSettings(d).EmergencyMonths}
 	snap := book.SnapshotAt(now.Format("2006-01-02"), true)
 	sb.netWorth = snap.NetWorth
 	for id, v := range snap.ByAccount {
@@ -310,6 +322,9 @@ func buildStress(base *Forecast, sb stressBook, horizon int, custom *Shock) *Str
 		}
 		r.Runway.CashMonths = math.Round(max(0, base.Cash.Float())/r.Runway.Burn.Float()*10) / 10
 		r.Runway.ReserveMonths = math.Round(max(0, (base.Cash+net).Float())/r.Runway.Burn.Float()*10) / 10
+		if base.Floor > 0 && sb.target > 0 {
+			r.FloorMonths, r.TargetMonths = math.Round(base.Floor.Float()/burn.Float()*10)/10, sb.target
+		}
 	}
 	for _, p := range StressPresets {
 		res := runShock(base, sb, p.ID, p.Name, p.Blurb, p.Shock)
@@ -322,8 +337,8 @@ func buildStress(base *Forecast, sb stressBook, horizon int, custom *Shock) *Str
 	}
 	r.Notes = []string{
 		"Starts from the cash forecast: the plan's income, obligations and saving, usual everyday spending and the bills already dated.",
-		"Market drops don't recover within the period and investment returns are left out on both sides, so the cost is the crisis alone.",
-		fmt.Sprintf("Reserves are sold only once cash would go below zero: investments first, then crypto, then the III pillar with about %.0f%% tax withheld. The II pillar, property and the car are never sold.", pillar3Tax*100),
+		"Market drops don't recover within the period and investment returns are left out on both sides. A drop counts as lost on paper — back if prices recover — until something is sold after it; then that part is lost for good.",
+		fmt.Sprintf("When cash would go below zero, investing stops first; only then are reserves sold: investments, then crypto, then the III pillar with about %.0f%% tax withheld. The II pillar, property and the car are never sold. Tax on investment gains is not counted.", pillar3Tax*100),
 	}
 	return r
 }
@@ -333,13 +348,13 @@ func reserves(sb stressBook, sh Shock) []Reserve {
 	drop := func(v money.Cents, pct float64) money.Cents { return max(0, money.FromFloat(v.Float()*(1+pct/100))) }
 	out := []Reserve{}
 	if v := drop(sb.stocks, sh.StocksPct); v > 0 {
-		out = append(out, Reserve{Key: "investments", Label: "Investments", Value: v, Net: v})
+		out = append(out, Reserve{Key: "investments", Label: "Investments", Value: v, Net: v, drop: sh.StocksPct})
 	}
 	if v := drop(sb.crypto, sh.CryptoPct); v > 0 {
-		out = append(out, Reserve{Key: "crypto", Label: "Crypto", Value: v, Net: v})
+		out = append(out, Reserve{Key: "crypto", Label: "Crypto", Value: v, Net: v, drop: sh.CryptoPct})
 	}
 	if v := drop(sb.pillar3, sh.PensionPct); v > 0 {
-		out = append(out, Reserve{Key: "pillar3", Label: "III pillar", Value: v, Net: money.FromFloat(v.Float() * (1 - pillar3Tax))})
+		out = append(out, Reserve{Key: "pillar3", Label: "III pillar", Value: v, Net: money.FromFloat(v.Float() * (1 - pillar3Tax)), drop: sh.PensionPct})
 	}
 	return out
 }
@@ -403,6 +418,7 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 
 	cash := base.Cash
 	var saved, gross, deferred money.Cents
+	var locked float64
 	sold := map[string]*Sale{}
 	res.Lowest, res.LowestOn = cash, base.Start
 	gapSet := false
@@ -442,11 +458,24 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 		}
 		out := fixed + saving + everyday + bm.OneOffs + dated
 		net := in - out
-		if i >= 1 && (!gapSet || net < res.MonthlyGap) {
-			res.MonthlyGap, gapSet = net, true
-		}
 		cash += net
 		saved += saving
+		// Short of cash: stop investing before selling anything — nobody
+		// buys and sells the same fund in one month.
+		if cash < 0 && saving > 0 {
+			cut := min(saving, -cash)
+			cash += cut
+			saved -= cut
+			out -= cut
+			res.SavingCut += cut
+			if res.PausedFrom == "" {
+				res.PausedFrom = bm.Month
+			}
+		}
+		// The month as the rows show it: after any cut to investing.
+		if i >= 1 && (!gapSet || in-out < res.MonthlyGap) {
+			res.MonthlyGap, gapSet = in-out, true
+		}
 		if cash < 0 && res.CashOut == "" {
 			res.CashOut = bm.Month
 		}
@@ -468,6 +497,11 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 			}
 			rv.Net -= take
 			rv.Value -= value
+			// Sold below what it was worth before the drop: that much of
+			// the drop can no longer come back.
+			if rv.drop < 0 && rv.drop > -100 {
+				locked += value.Float() * -rv.drop / (100 + rv.drop) // rounded once, at the end
+			}
 			cash += take
 			brought += take
 			gross += value
@@ -496,6 +530,7 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 		}
 	}
 	res.SoldTotal = gross
+	res.LockedIn = money.FromFloat(locked)
 	// The deepest it went, not where it ends: pay coming back can refill
 	// cash after months of owing money.
 	res.Short = max(0, -res.Lowest)
@@ -508,13 +543,22 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 	res.BaseWorth = sb.netWorth + (end - base.Cash) + base.Invested
 	// Goals still put off at the end are spending to come, as in the plan.
 	res.NetWorth = sb.netWorth - res.MarketHit + (cash - base.Cash) + saved - gross - deferred
-	res.Cost = max(0, res.BaseWorth-res.NetWorth)
+	// Split the loss: what is gone for good, and the drop still held,
+	// which comes back if prices do.
+	// A custom crisis can lift one market while another falls: whatever is
+	// still held, gain or loss, is unrealised, so all of it stays out of
+	// what is lost for good.
+	unrealised := res.MarketHit - res.LockedIn
+	res.Paper = max(0, unrealised)
+	res.Cost = max(0, res.BaseWorth-res.NetWorth-unrealised)
 
 	switch {
 	case res.Broke != "":
 		res.Level = "short"
 	case res.CashOut != "":
 		res.Level = "sell"
+	case res.SavingCut > 0:
+		res.Level = "pause"
 	case res.BelowFloor != "":
 		res.Level = "tight"
 	default:
@@ -527,11 +571,25 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 
 func stressSummary(base *Forecast, r StressResult) []string {
 	var s []string
+	paused := ""
+	if r.SavingCut > 0 {
+		paused = fmt.Sprintf(" even with %s less invested", eurS(r.SavingCut))
+	}
+	// The plan can run out of cash on its own; say so rather than blame
+	// the crisis for it.
+	own := func(from string) string {
+		if base.Negative != "" && from != "" && base.Negative <= from {
+			return " — the plan runs short there too"
+		}
+		return ""
+	}
 	switch r.Level {
 	case "short":
-		s = append(s, fmt.Sprintf("Cash runs out in %s and the reserves are gone by %s — %s short at worst.", monthName(r.CashOut), monthName(r.Broke), eurS(r.Short)))
+		s = append(s, fmt.Sprintf("Cash runs out in %s%s and the reserves are gone by %s — %s short at worst.", monthName(r.CashOut), paused, monthName(r.Broke), eurS(r.Short)))
 	case "sell":
-		s = append(s, fmt.Sprintf("Cash runs out in %s; selling %s of reserves gets you through.", monthName(r.CashOut), eurS(r.SoldTotal)))
+		s = append(s, fmt.Sprintf("Cash runs out in %s%s; selling %s of reserves gets you through%s.", monthName(r.CashOut), paused, eurS(r.SoldTotal), own(r.CashOut)))
+	case "pause":
+		s = append(s, fmt.Sprintf("Cash would run short in %s; investing %s less covers it — nothing has to be sold%s.", monthName(r.PausedFrom), eurS(r.SavingCut), own(r.PausedFrom)))
 	case "tight":
 		line := fmt.Sprintf("Cash drops below your %s emergency target in %s (lowest %s in %s) but never runs out", eurS(base.Floor), monthName(r.BelowFloor), eurN(r.Lowest), monthName(r.LowestOn))
 		// The plan may dip under the target on its own; say so rather than
@@ -544,13 +602,22 @@ func stressSummary(base *Forecast, r StressResult) []string {
 		s = append(s, fmt.Sprintf("Cash stays above your %s emergency target throughout — lowest %s in %s.", eurS(base.Floor), eurN(r.Lowest), monthName(r.LowestOn)))
 	}
 	if r.MarketHit > 0 {
-		s = append(s, fmt.Sprintf("What you own loses %s at the drop.", eurS(r.MarketHit)))
+		line := fmt.Sprintf("What you own loses %s at the drop", eurS(r.MarketHit))
+		if r.LockedIn > 0 {
+			line += fmt.Sprintf("; selling after it makes %s of that a real loss", eurS(r.LockedIn))
+		}
+		s = append(s, line+".")
 	}
 	if r.LoanExtra > 0 {
 		s = append(s, fmt.Sprintf("Loan payments go up %s a month.", eurS(r.LoanExtra)))
 	}
-	if r.Cost > 0 {
-		s = append(s, fmt.Sprintf("Over %d months it costs %s of net worth against the plan.", len(r.Months), eurS(r.Cost)))
+	switch {
+	case r.Cost > 0 && r.Paper > 0:
+		s = append(s, fmt.Sprintf("Over %d months it costs %s for good, plus %s on paper that comes back only if prices recover.", len(r.Months), eurS(r.Cost), eurS(r.Paper)))
+	case r.Cost > 0:
+		s = append(s, fmt.Sprintf("Over %d months it costs %s for good.", len(r.Months), eurS(r.Cost)))
+	case r.Paper > 0:
+		s = append(s, fmt.Sprintf("Nothing is lost for good: the %s drop is on paper and comes back if prices recover.", eurS(r.Paper)))
 	}
 	return s
 }
@@ -563,8 +630,10 @@ func stressLevers(base *Forecast, r StressResult, sh Shock) []Lever {
 	}
 	a := base.Assumed
 	var out []Lever
+	// The engine stops investing only once cash is gone; pausing from the
+	// first month keeps that money as cash, so less is sold at a loss.
 	if !sh.PauseSaving && a.Saving > 0 {
-		out = append(out, Lever{Label: "Pause saving and investing", Amount: a.Saving, Monthly: true})
+		out = append(out, Lever{Label: "Pause investing from the start", Amount: a.Saving, Monthly: true})
 	}
 	if sh.EverydayPct > -20 {
 		ev := money.FromFloat(a.Everyday.Float() * (1 + sh.EverydayPct/100))

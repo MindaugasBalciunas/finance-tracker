@@ -397,7 +397,7 @@ function InboxSummary({ r }: { r: InboxRow }) {
   const cats = useCats()
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
-      <MerchantMark merchant={r.merchant || r.raw_payee} category={r.category} transfer={r.kind === 'transfer'} size={32} />
+      <MerchantMark merchant={r.merchant || r.raw_payee} category={r.category} transfer={r.kind === 'transfer'} to={r.to_account_id} size={32} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium">{r.merchant || r.raw_payee || r.note}</span>
@@ -562,7 +562,7 @@ function Tidy() {
           const p = proposal(r)
           return (
             <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
-              <MerchantMark merchant={r.merchant} category={r.category} transfer={r.kind === 'transfer'} size={32} />
+              <MerchantMark merchant={r.merchant} category={r.category} transfer={r.kind === 'transfer'} to={r.to_account_id} size={32} />
               <button className="min-w-0 flex-1 text-left" onClick={() => editor.open(r)}>
                 <div className="truncate text-sm font-medium">{r.merchant || r.note || '—'} <span className="font-normal text-muted tnum">· {eurc(r.amount)}</span></div>
                 <div className="truncate text-xs text-muted">{dayLabel(r.date)} · now {cats.path(r.category)}{p ? <> → <b className="text-ink">{cats.path(p)}</b> <span>({ai[r.id]?.reason || r.why})</span></> : ''}</div>

@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useAccounts } from '../lib/hooks'
 import { catIcon } from '../lib/categories'
 import { accountIcon } from '../lib/brand'
 import { IconTile } from './Icon'
@@ -122,11 +123,17 @@ export function lookOf(img: HTMLImageElement): Look | null {
 }
 
 /** The merchant's logo on a tile in its own colour, or the category icon
- *  (or `fallback`, e.g. a transfer's arrows). */
-export function MerchantMark({ merchant, category = '', size = 36, transfer = false, fallback }: { merchant?: string; category?: string; size?: number; transfer?: boolean; fallback?: ReactNode }) {
+ *  (or `fallback`, e.g. a transfer's arrows). A transfer shows the bank of
+ *  the account it goes to (`to`, an account id) — the III pillar payment
+ *  wears Artea's logo, the same one as the account — and its arrows when
+ *  that account has no bank (cash). */
+export function MerchantMark({ merchant, category = '', size = 36, transfer = false, to, fallback }: { merchant?: string; category?: string; size?: number; transfer?: boolean; to?: string; fallback?: ReactNode }) {
   const { data: index } = useLogoIndex()
+  const { data: accounts } = useAccounts()
   const [icon, color] = catIcon(category)
-  return <LogoTile domain={transfer ? undefined : logoDomain(index, merchant)} size={size} fallback={fallback ?? <IconTile name={icon} color={transfer ? 'var(--s-other)' : color} size={size} round />} />
+  const dest = transfer && to ? accounts?.find((a) => a.id === to) : undefined
+  const domain = transfer ? (dest ? accountLogo(index, dest) : undefined) : logoDomain(index, merchant)
+  return <LogoTile domain={domain} size={size} fallback={fallback ?? <IconTile name={icon} color={transfer ? 'var(--s-other)' : color} size={size} round />} />
 }
 
 /** The bank an account is held at, as a logo domain: its institution, else

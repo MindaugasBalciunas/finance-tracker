@@ -4,6 +4,7 @@ import type { Shock, StressLevel } from './types'
 export const LEVELS: Record<StressLevel, { label: string; tone: 'good' | 'warn' | 'bad'; icon: string }> = {
   ok: { label: 'You get through', tone: 'good', icon: 'check' },
   tight: { label: 'Tight', tone: 'warn', icon: 'alert' },
+  pause: { label: 'Invest less', tone: 'warn', icon: 'alert' },
   sell: { label: 'Must sell', tone: 'warn', icon: 'alert' },
   short: { label: 'Runs short', tone: 'bad', icon: 'alert' },
 }

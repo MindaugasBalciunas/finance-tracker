@@ -19,13 +19,15 @@ import { Icon } from '../../components/Icon'
 
 const toneText = { good: 'text-good', warn: 'text-warn', bad: 'text-bad' } as const
 
-/** The one figure a tile leads with. */
+/** The one figure a tile leads with — an estimate, so whole euros. */
 function headline(r: StressResult): string {
+  const whole = (v: number) => eur(Math.round(v))
   switch (r.level) {
-    case 'short': return `${eur(r.short)} short`
-    case 'sell': return `Sell ${eur(r.sold_total)}`
+    case 'short': return `${whole(r.short)} short`
+    case 'sell': return `Sell ${whole(r.sold_total)}`
+    case 'pause': return `Invest ${whole(r.saving_cut)} less`
     // Cash holds up: the story is what the drop takes, if there is one.
-    default: return r.market_hit > 0 ? `Loses ${eur(r.market_hit)}` : `Lowest ${eur(r.lowest)}`
+    default: return r.market_hit > 0 ? `Loses ${whole(r.market_hit)}` : `Lowest ${whole(r.lowest)}`
   }
 }
 
@@ -89,6 +91,17 @@ export function StressView() {
           ))}
           {!data.reserves.length && <div><div className="text-xs text-muted">Reserves to sell</div><div className="font-semibold tnum">{eur(reserveNet)}</div></div>}
         </div>
+        {/* The target is set on essentials; say when it covers far less of a
+            real month than its name suggests. */}
+        {!!data.floor_months && !!data.target_months && data.floor_months < data.target_months - 0.25 && rw && (
+          <div className="mt-3 flex gap-2 rounded-xl bg-warn/10 p-3 text-sm text-ink">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-warn" />
+            <span>
+              Your <b className="tnum">{eur(data.floor)}</b> emergency target is {data.target_months} months of essentials, but only <b>{data.floor_months.toFixed(1)} months</b> of what a usual month costs ({eur(rw.burn)}).
+              {' '}Covering {data.target_months} real months would take <b className="tnum">{eur(rw.burn * data.target_months)}</b>.
+            </span>
+          </div>
+        )}
         {(data.locked > 0 || data.real_assets > 0) && (
           <p className="mt-3 text-xs text-muted">
             Not counted: {[data.locked > 0 && `${eur(data.locked)} in the II pillar (locked until retirement)`, data.real_assets > 0 && `${eur(data.real_assets)} in property and the car (can't pay next month's bills)`].filter(Boolean).join(' and ')}.
@@ -131,7 +144,8 @@ function Tile({ r, on, pick }: { r: StressResult; on: boolean; pick: () => void 
       </div>
       <div className={clsx('mt-1 truncate text-base font-bold tnum sm:text-lg', toneText[lv.tone])}>{headline(r)}</div>
       <div className={clsx('text-xs font-medium', toneText[lv.tone])}>{lv.label}</div>
-      <div className="truncate text-xs text-muted">{r.cost > 0 ? <>costs <span className="tnum">{eur(r.cost)}</span></> : 'no lasting cost'}</div>
+      <div className="truncate text-xs text-muted">{r.cost > 0 ? <>lose <span className="tnum">{eur(r.cost)}</span> for good</> : r.paper_loss > 0 ? 'nothing for good' : 'no lasting cost'}</div>
+      {r.paper_loss > 0 && <div className="truncate text-xs text-muted"><span className="tnum">{eur(r.paper_loss)}</span> on paper</div>}
     </button>
   )
 }
@@ -175,8 +189,12 @@ function Detail({ r, rep }: { r: StressResult; rep: StressReport }) {
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div><div className="text-xs text-muted">Lasts</div><div className="font-semibold">{lasts(r.shock, rep.horizon)}</div></div>
         <div><div className="text-xs text-muted">Worst month</div><div className={clsx('font-semibold tnum', r.monthly_gap < 0 && 'text-bad')}>{r.monthly_gap < 0 ? '−' : '+'}{eur(Math.abs(r.monthly_gap))}</div></div>
-        <div><div className="text-xs text-muted">Net worth in {rep.horizon} months</div><div className="font-semibold tnum">{eur(r.net_worth_end)}</div></div>
-        <div><div className="text-xs text-muted">At the plan</div><div className="font-semibold tnum text-ink2">{eur(r.base_net_worth_end)}</div></div>
+        <div title="Pay not received, extra costs and interest, tax and losses made real by selling — against the plan, over the whole period">
+          <div className="text-xs text-muted">Lost for good</div><div className={clsx('font-semibold tnum', r.cost > 0 && 'text-bad')}>{eur(r.cost)}</div>
+        </div>
+        <div title="The drop on what you still own: back if prices recover">
+          <div className="text-xs text-muted">On paper</div><div className="font-semibold tnum text-ink2">{eur(r.paper_loss)}</div>
+        </div>
       </div>
 
       {(r.sold?.length || r.levers?.length) ? (

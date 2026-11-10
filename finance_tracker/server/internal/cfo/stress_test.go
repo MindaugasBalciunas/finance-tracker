@@ -115,10 +115,16 @@ func TestDeepRecessionRunsShortAndCountsTheDrop(t *testing.T) {
 	if x.Level != "short" || x.Broke == "" || x.Short <= 0 || x.SoldTotal != E(6500+800) {
 		t.Fatalf("recession %+v", x)
 	}
+	// Everything sold was sold after the drop: €6,500 of stocks worth
+	// €10,000 before and €800 of crypto worth €2,000 make €4,700 of it real;
+	// the pension and house drops stay on paper.
+	if x.LockedIn != E(3500+1200) || x.Paper != E(4000+15000) {
+		t.Fatalf("locked in %v, paper %v", x.LockedIn, x.Paper)
+	}
 	crash := scenario(t, r, "market_crash")
 	// Pay goes on: cash follows the plan (which dips under the target in
 	// October on its own), and the cost is the drop alone.
-	if crash.Level != "tight" || crash.CashOut != "" || crash.Months[5].End != crash.Months[5].Base || !strings.HasSuffix(crash.Summary[0], "the plan dips there too.") || crash.MarketHit != E(4000+1300+5000) || crash.Cost != crash.MarketHit {
+	if crash.Level != "tight" || crash.CashOut != "" || crash.Months[5].End != crash.Months[5].Base || !strings.HasSuffix(crash.Summary[0], "the plan dips there too.") || crash.MarketHit != E(4000+1300+5000) || crash.Cost != 0 || crash.Paper != crash.MarketHit {
 		t.Fatalf("crash %+v", crash)
 	}
 }
@@ -307,5 +313,57 @@ func TestPresetsAreGroupedAndSane(t *testing.T) {
 	job, long, storm := scenario(t, r, "job_loss"), scenario(t, r, "long_search"), scenario(t, r, "perfect_storm")
 	if !(job.Cost < long.Cost && long.Cost < storm.Cost) || storm.Level != "short" {
 		t.Fatalf("costs %v < %v < %v, storm %s", job.Cost, long.Cost, storm.Cost, storm.Level)
+	}
+}
+
+// Short of cash, the plan stops investing before it sells anything: a bill
+// that investing less can cover sells nothing, and a bigger one sells only
+// what pausing doesn't cover. Investing less costs no net worth.
+func TestInvestingStopsBeforeAnythingIsSold(t *testing.T) {
+	h, now := stressHousehold(t)
+	etf := plan.Budget{Name: "ETF", Kind: "saving", Categories: []string{"transfer.invest"}, Amount: E(400)}
+	if err := plan.Save(h, &etf, ""); err != nil {
+		t.Fatal(err)
+	}
+	r, err := cfo.StressTest(h, now, 24, &cfo.Shock{OneOff: 3500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Runway == nil || r.Base[1]-r.Base[0] != E(100) {
+		t.Fatalf("plan: €3,000 in, €2,500 out, €400 invested → +€100 a month; base %v", r.Base[:3])
+	}
+	c := r.Custom
+	// November: €100 left after investing, the bill takes €3,500 → €3,132
+	// of October's cash covers most; investing less covers the rest.
+	if c.Level != "pause" || c.PausedFrom != "2026-11" || c.SoldTotal != 0 || c.CashOut != "" || c.Months[1].End != 0 || c.Months[1].Out != c.Months[1].Income+r.Base[0] {
+		t.Fatalf("custom %+v", c)
+	}
+	if c.SavingCut != E(3500)-r.Base[1] || c.Cost != E(3500) || !strings.Contains(c.Summary[0], "nothing has to be sold") {
+		t.Fatalf("cut %v cost %v %q", c.SavingCut, c.Cost, c.Summary)
+	}
+	big := scenario(t, r, "big_bill")
+	if big.Level != "sell" || big.SavingCut != E(400) || big.SoldTotal != E(10000)-r.Base[1]-E(400) || big.Cost != E(10000) {
+		t.Fatalf("big bill %+v", big)
+	}
+	// Investing goes on in the plan: pausing it from the start is offered.
+	if len(big.Levers) == 0 || big.Levers[0].Label != "Pause investing from the start" || big.Levers[0].Amount != E(400) {
+		t.Fatalf("levers %+v", big.Levers)
+	}
+	// "Worst month" is the month as its row shows it, after the cut.
+	if m := c.Months[1]; c.MonthlyGap != m.Income-m.Out {
+		t.Fatalf("worst month %v, row %v − %v", c.MonthlyGap, m.Income, m.Out)
+	}
+	// The €3,750 target is 3 months of essentials but 1.5 of a €2,500 month.
+	if r.TargetMonths != 3 || r.FloorMonths != 1.5 {
+		t.Fatalf("floor %v months of %v", r.FloorMonths, r.TargetMonths)
+	}
+	// A gain on what is still held doesn't hide a loss made real by selling:
+	// stocks up, crypto down and sold, a year without pay.
+	r, err = cfo.StressTest(h, now, 24, &cfo.Shock{Months: 12, IncomePct: -100, StocksPct: 50, CryptoPct: -80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := r.Custom; c.LockedIn <= 0 || c.Paper != 0 || c.Cost < E(36000)+c.LockedIn {
+		t.Fatalf("locked %v paper %v cost %v", c.LockedIn, c.Paper, c.Cost)
 	}
 }

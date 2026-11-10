@@ -11,15 +11,15 @@ const result = (p: Partial<StressResult>): StressResult => ({
   id: 'job_loss', group: 'income', name: 'Job loss', blurb: 'No pay for 6 months.', shock: { months: 6, income_pct: -100 },
   months: [{ month: '2026-11', income: 0, out: 2500, end: 1000, base: 4000 }, { month: '2026-12', income: 0, out: 2500, sold: 1500, end: 0, base: 4500 }],
   level: 'sell', lowest: 0, lowest_on: '2026-12', cash_out: '2026-12', sold: [{ key: 'investments', label: 'Investments', amount: 1500, net: 1500 }], sold_total: 1500, short: 0,
-  market_hit: 0, loan_extra: 0, monthly_gap: -2500, net_worth_end: 100000, base_net_worth_end: 118000, cost: 18000,
+  market_hit: 0, loan_extra: 0, monthly_gap: -2500, net_worth_end: 100000, base_net_worth_end: 118000, cost: 18000, paper_loss: 0, locked_in: 0, saving_cut: 0,
   summary: ['Cash runs out in Dec 2026; selling €1,500 of reserves gets you through.'], levers: [{ label: 'Cut everyday spending by a fifth', amount: 400, monthly: true }], ...p,
 })
 const report = (p: Partial<StressReport> = {}): StressReport => ({
   start: '2026-10', horizon: 24, cash: 5000, floor: 3750, net_worth: 130000,
   reserves: [{ key: 'investments', label: 'Investments', value: 10000, net: 10000 }, { key: 'pillar3', label: 'III pillar', value: 4000, net: 3400 }],
-  locked: 20000, real_assets: 100000, runway: { burn: 2500, cash_months: 2, reserve_months: 7.4 },
+  locked: 20000, real_assets: 100000, runway: { burn: 2500, cash_months: 2, reserve_months: 7.4 }, floor_months: 1.5, target_months: 3,
   groups: [{ id: 'income', name: 'Losing income' }, { id: 'markets', name: 'Markets falling' }, { id: 'costs', name: 'Costs rising' }],
-  scenarios: [result({}), result({ id: 'market_crash', group: 'markets', name: 'Market crash', level: 'ok', lowest: 3532, cost: 10300, sold: [], levers: [], summary: ['Cash stays above your €3,750 emergency target throughout.'] })],
+  scenarios: [result({}), result({ id: 'rates', group: 'costs', name: 'Rate rise', level: 'pause', saving_cut: 2400, sold_total: 0, sold: [], cost: 6000, summary: ['Cash would run short in Mar 2027; investing €2,400 less covers it — nothing has to be sold.'] }), result({ id: 'market_crash', group: 'markets', name: 'Market crash', level: 'ok', lowest: 3532, cost: 0, paper_loss: 10300, market_hit: 10300, sold: [], levers: [], summary: ['Cash stays above your €3,750 emergency target throughout.'] })],
   notes: ['Starts from the cash forecast.'], ...p,
 })
 
@@ -63,11 +63,34 @@ describe('stress test page', () => {
     expect(screen.getByText("What you'd sell")).toBeInTheDocument()
     // Crises sit under their kind; a kind with none is left out.
     expect(within(screen.getByRole('region', { name: 'Markets falling' })).getByText('Market crash')).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Costs rising' })).not.toBeInTheDocument()
     // Tapping another crisis shows it.
     fireEvent.click(within(screen.getByRole('region', { name: 'Markets falling' })).getByRole('button', { name: /Market crash/ }))
     expect(screen.getByText('Cash stays above your €3,750 emergency target throughout.')).toBeInTheDocument()
     expect(screen.queryByText("What you'd sell")).not.toBeInTheDocument()
+  })
+
+  it('splits what is lost for good from what is on paper, and says when investing less is enough', async () => {
+    serve(report())
+    wrap(<StressView />)
+    await screen.findByText('7.4 months')
+    const markets = within(screen.getByRole('region', { name: 'Markets falling' }))
+    expect(markets.getByText(/nothing for good/)).toBeInTheDocument()
+    expect(markets.getByText('€10,300')).toBeInTheDocument()
+    const costs = within(screen.getByRole('region', { name: 'Costs rising' }))
+    expect(costs.getByText('Invest €2,400 less')).toHaveClass('text-warn')
+    expect(costs.getByText('Invest less')).toBeInTheDocument()
+    fireEvent.click(costs.getByRole('button', { name: /Rate rise/ }))
+    expect(screen.getByText(/nothing has to be sold/)).toBeInTheDocument()
+    expect(screen.getByText('Lost for good')).toBeInTheDocument()
+  })
+
+  it('warns when the emergency target covers fewer real months than meant', async () => {
+    serve(report())
+    wrap(<StressView />)
+    await screen.findByText('7.4 months')
+    // €3,750 is 3 months of essentials but 1.5 of a €2,500 month: 3 real months take €7,500.
+    expect(screen.getByText('1.5 months')).toBeInTheDocument()
+    expect(screen.getByText('€7,500')).toBeInTheDocument()
   })
 
   it('says so when there is no usual month to go by', async () => {

@@ -402,7 +402,7 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t:
           <Icon name="check" size={16} />
         </button>
       ) : (
-        <MerchantMark merchant={logoName(t, accounts)} category={t.category} transfer={t.kind === 'transfer'} size={36} />
+        <MerchantMark merchant={logoName(t, accounts)} category={t.category} transfer={t.kind === 'transfer'} to={t.to_account_id} size={36} />
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-ink">{title}</div>

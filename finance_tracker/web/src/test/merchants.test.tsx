@@ -109,4 +109,21 @@ describe('merchant marks', () => {
     await screen.findByText('arrows')
     await waitFor(() => expect(container.querySelector('img')).toHaveAttribute('src', 'api/logos/telia.lt'))
   })
+
+  it('give a transfer the logo of the account it goes to, and arrows into cash', async () => {
+    serve({
+      '/logos': { artea: 'artea.lt', swedbank: 'swedbank.lt' },
+      '/accounts': [
+        { id: 'artea', name: 'Artea (III pillar)', institution: 'Artea', kind: 'pension', group: 'pension', currency: 'EUR', liquid: true, archived: false, sort: 0, notes: '', details: {} },
+        { id: 'cash', name: 'Cash', institution: '', kind: 'cash', group: 'cash', currency: 'EUR', liquid: true, archived: false, sort: 0, notes: '', details: {} },
+      ],
+    })
+    const { container } = wrap(<>
+      <MerchantMark merchant="Some payee" category="transfer.pension" transfer to="artea" />
+      <MerchantMark merchant="Swedbank" category="transfer.internal" transfer to="cash" fallback={<span>arrows</span>} />
+    </>)
+    await waitFor(() => expect(container.querySelectorAll('img')).toHaveLength(1))
+    expect(container.querySelector('img')).toHaveAttribute('src', 'api/logos/artea.lt')
+    expect(screen.getByText('arrows')).toBeInTheDocument()
+  })
 })
