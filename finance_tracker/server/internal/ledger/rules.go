@@ -229,11 +229,6 @@ func (e *Engine) Apply(t *Tx, guessedCategory bool, suppressed []string) Outcome
 	return out
 }
 
-// Suggest returns the category history suggests for a merchant/kind, or "".
-func (e *Engine) Suggest(kind, m string) string {
-	return e.learned[kind+"|"+strings.ToLower(m)]
-}
-
 // PreviewRule counts and samples the existing transactions a rule would touch.
 func PreviewRule(d *sql.DB, r Rule) (int, []Tx, error) {
 	all, err := All(d, Filter{})

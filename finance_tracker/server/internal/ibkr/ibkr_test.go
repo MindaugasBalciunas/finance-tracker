@@ -24,7 +24,6 @@ import (
 type fakeIBKR struct {
 	mu        sync.Mutex
 	challenge string
-	scope     string
 	access    string
 	revoked   []string
 	tools     []string

@@ -166,15 +166,6 @@ func Fetch(ticker string) (*Quote, error) {
 	return nil, lastErr
 }
 
-// Price is a convenience wrapper returning just the latest price.
-func Price(ticker string) (float64, error) {
-	q, err := Fetch(ticker)
-	if err != nil {
-		return 0, err
-	}
-	return q.Price, nil
-}
-
 // FetchMeta calls Yahoo's v8 chart endpoint for one exact symbol (no suffix
 // fallback, no cache) and returns its meta block.
 func FetchMeta(ticker string) (*Meta, error) {

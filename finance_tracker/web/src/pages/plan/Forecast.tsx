@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
+import type { PlanSettings } from '../../lib/types'
 import { addMonths, eur, eurk, monthLabel, thisMonth } from '../../lib/format'
 import { AskCFO, Card, ErrorBox, Loading, NumberInput, Segmented, useToast } from '../../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
@@ -47,11 +48,11 @@ export function ForecastView() {
   const set = (p: Partial<Scenario>) => setSc((x) => ({ ...x, ...p }))
   const applySalary = async () => {
     try {
-      const cur = (await api.get<any>('/plan/settings')).settings
       // From a month on: a dated change, so this month and the past keep today's salary.
-      await api.put('/plan/settings', sc.from
-        ? { ...cur, income_mode: 'gross', gross_changes: [...(cur.gross_changes ?? []).filter((c: any) => c.from !== sc.from), { from: sc.from, gross: sc.gross }] }
-        : { ...cur, income_mode: 'gross', gross_salary: sc.gross })
+      const changes = sc.from ? (await api.get<{ settings: PlanSettings }>('/plan/settings')).settings.gross_changes ?? [] : []
+      await api.patch('/plan/settings', sc.from
+        ? { income_mode: 'gross', gross_changes: [...changes.filter((c) => c.from !== sc.from), { from: sc.from, gross: sc.gross }] }
+        : { income_mode: 'gross', gross_salary: sc.gross })
       qc.invalidateQueries()
       setSc((x) => ({ ...x, gross: undefined }))
       toast(sc.from ? `${eur(sc.gross!)} gross from ${monthLabel(sc.from, true)} saved` : `Plan income now from ${eur(sc.gross!)} gross`, 'good')

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
-import { useDemo, useRefresh } from '../lib/hooks'
+import { useBankConnections, useDemo, useIBKR, useRefresh } from '../lib/hooks'
+import type { SyncResult } from '../lib/types'
 import { useTxEditor } from './TxEditor'
 import { Spinner, useToast } from './ui'
 import { Icon } from './Icon'
@@ -32,11 +33,11 @@ export function useAutoSync() {
     let alive = true
     const run = () => {
       if (document.visibilityState !== 'visible') return
-      api.post<any>('/sync', { auto: true }).then((r) => {
+      api.post<SyncResult>('/sync', { auto: true }).then((r) => {
         if (!alive || r.skipped) return
         refresh(); qc.invalidateQueries({ queryKey: ['bank-connections'] })
-        const moved: any[] = r.balances ?? []
-        const problems: string[] = r.problems ?? []
+        const moved = r.balances ?? []
+        const problems = r.problems ?? []
         const parts = [
           r.bank?.new ? `${r.bank.new} new from the bank` : '',
           moved.length ? `${moved.length} balance${moved.length === 1 ? '' : 's'} updated` : '',
@@ -64,35 +65,36 @@ function useQuickActions(after?: () => void) {
   const nav = useNavigate()
   const toast = useToast()
   const refresh = useRefresh()
-  const { data: conns, refetch } = useQuery({ queryKey: ['bank-connections'], queryFn: () => api.get<any[]>('/bank/connections'), staleTime: 60_000, retry: false })
+  const { data: conns, refetch } = useBankConnections()
   const [syncing, setSyncing] = useState(false)
   const connected = (conns ?? []).filter((c) => c.status === 'authorized')
-  const last = connected.flatMap((c) => (c.accounts ?? []).map((a: any) => a.last_synced_at as string)).filter(Boolean).sort().pop()
-  const { data: ib } = useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<any>('/ibkr'), staleTime: 60_000, retry: false })
+  const last = connected.flatMap((c) => (c.accounts ?? []).map((a) => a.last_synced_at)).filter(Boolean).sort().pop()
+  const { data: ib } = useIBKR()
   const ibkr = !!ib?.status?.connected
   // One call: banks, Interactive Brokers and crypto prices, each writing
   // today's value only; the answer says which balances moved.
   const sync = async () => {
     if (!connected.length && !ibkr) {
       // No bank or broker yet: still revalue crypto, then offer to connect.
-      try { await api.post<any>('/sync', {}) } catch { /* nothing to sync */ }
+      try { await api.post('/sync', {}) } catch { /* nothing to sync */ }
       refresh()
       return nav('/settings/banks')
     }
     setSyncing(true)
     try {
-      const r = await api.post<any>('/sync', {})
-      const moved: any[] = r.balances ?? []
+      const r = await api.post<SyncResult>('/sync', {})
+      const moved = r.balances ?? []
       const parts = [
         r.bank ? `${r.bank.new} new from the bank` : '',
         moved.length ? `${moved.length} balance${moved.length === 1 ? '' : 's'} updated (${moved.map((b) => b.name).join(', ')})` : 'balances unchanged',
         r.ibkr?.new ? `IBKR: ${r.ibkr.new} trade${r.ibkr.new === 1 ? '' : 's'} to add` : '',
       ].filter(Boolean)
-      toast(parts.join(' · ') + ((r.problems ?? []).length ? ` · ${r.problems.join('; ')}` : ''), (r.problems ?? []).length ? 'bad' : 'good')
+      const problems = r.problems ?? []
+      toast(parts.join(' · ') + (problems.length ? ` · ${problems.join('; ')}` : ''), problems.length ? 'bad' : 'good')
       refresh(); refetch()
       after?.()
-      if (r.bank?.new > 0) nav('/ledger/inbox')
-      else if (r.ibkr?.new > 0 || r.ibkr?.mismatches > 0) nav('/wealth/investments')
+      if ((r.bank?.new ?? 0) > 0) nav('/ledger/inbox')
+      else if ((r.ibkr?.new ?? 0) > 0 || (r.ibkr?.mismatches ?? 0) > 0) nav('/wealth/investments')
     } catch (e) {
       toast((e as Error).message, 'bad')
     } finally {

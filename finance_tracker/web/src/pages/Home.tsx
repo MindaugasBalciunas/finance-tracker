@@ -524,11 +524,8 @@ function BufferEditor({ a }: { a: CashAccount }) {
   const [v, setV] = useState<string | null>(null)
   const save = async (value: number | null) => {
     try {
-      const cur = (await api.get<any>('/plan/settings')).settings
-      const buffers = { ...(cur.buffers ?? {}) }
-      if (value === null) delete buffers[a.id]
-      else buffers[a.id] = value
-      await api.put('/plan/settings', { ...cur, buffers })
+      // Buffers merge per account on the server; 0 puts one back to automatic.
+      await api.patch('/plan/settings', { buffers: { [a.id]: value ?? 0 } })
       setV(null)
       qc.invalidateQueries({ queryKey: ['overview'] }); qc.invalidateQueries({ queryKey: ['plan-settings'] })
       toast(value === null ? 'Buffer back to automatic' : 'Buffer saved', 'good')

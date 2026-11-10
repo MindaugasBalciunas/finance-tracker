@@ -2,13 +2,21 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { byBank } from './brand'
-import type { Account, Category, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
+import type { Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
 // Every picker and list shows Swedbank first, then SEB, Revolut, the rest.
 export const useAccounts = () => useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/accounts'), staleTime: 60_000, select: byBank })
 export const useTags = () => useQuery({ queryKey: ['tags'], queryFn: () => api.get<{ tag: string; count: number; last: string }[]>('/tags'), staleTime: 60_000 })
+// Read by Home's sync button, the bank inbox and Settings → Banks. Local
+// rows only (no call to the bank), so the app's default retry applies: a
+// blip while the add-on restarts mustn't read as "no live bank connection".
+export const useBankConnections = () =>
+  useQuery({ queryKey: ['bank-connections'], queryFn: () => api.get<BankConnection[]>('/bank/connections'), staleTime: 60_000 })
+// No retry: /ibkr may call IBKR, and a lapsed sign-in answers the same each time.
+export const useIBKR = () =>
+  useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<{ status: IBKRStatus; report: IBKRReport | null }>('/ibkr'), staleTime: 60_000, retry: false })
 export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: () => api.get<Rule[]>('/rules') })
 export const useBudgets = () => useQuery({ queryKey: ['budgets'], queryFn: () => api.get<Budget[]>('/budgets', { archived: '1' }) })
 export const usePlan = (month: string) => useQuery({ queryKey: ['plan', month], queryFn: () => api.get<PlanReport>('/plan', { month }) })

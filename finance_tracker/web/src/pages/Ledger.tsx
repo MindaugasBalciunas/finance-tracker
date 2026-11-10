@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api } from '../lib/api'
-import { TxFilter, useInbox, useOverview, useRefresh, useTransactions } from '../lib/hooks'
+import { TxFilter, useBankConnections, useInbox, useOverview, useRefresh, useTransactions } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { dayLabel, eur, eurc } from '../lib/format'
 import { PERIODS, periodRange } from '../lib/periods'
@@ -304,7 +304,7 @@ function Inbox() {
   const [syncing, setSyncing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<InboxRow | null>(null)
-  const { data: conns } = useConnections()
+  const { data: conns } = useBankConnections()
 
   const rows = data ?? []
   const ready = rows.filter((r) => !r.pending && r.verdict !== 'needs_review')
@@ -349,7 +349,7 @@ function Inbox() {
     toast('Linked to your entry', 'good')
     refresh()
   }
-  const live = (conns ?? []).filter((c: any) => c.status === 'authorized')
+  const live = (conns ?? []).filter((c) => c.status === 'authorized')
 
   return (
     <div>
@@ -387,10 +387,6 @@ function Inbox() {
       {edit && <InboxEditor row={edit} onClose={() => setEdit(null)} />}
     </div>
   )
-}
-
-function useConnections() {
-  return useQuery({ queryKey: ['bank-connections'], queryFn: () => api.get<any[]>('/bank/connections'), staleTime: 60_000 })
 }
 
 function InboxSummary({ r }: { r: InboxRow }) {

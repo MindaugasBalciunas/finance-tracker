@@ -270,3 +270,55 @@ export type StressReport = {
   floor_months?: number; target_months?: number
   base?: number[]; groups: { id: string; name: string }[]; scenarios: StressResult[]; custom?: StressResult; notes: string[]
 }
+
+// ── plan: trips and settings ──
+
+/** A trip:<name> tag costed as a whole (/trips). */
+export type Trip = {
+  tag: string; name: string; from: string; to: string; days: number; count: number; total: number; booked_from?: string
+  per_day: number; by_category: { name: string; amount: number }[]; budget?: number; done: boolean
+}
+/** Untagged travel that looks like one trip. */
+export type TripSuggestion = { from: string; to: string; days: number; count: number; total: number; tx_ids: number[]; top: string[] }
+/** A wish-list goal saving for a trip (tagged trip:…). */
+export type PlannedTrip = { id: number; name: string; target: number; saved: number; spent?: number; tag: string; target_date: string }
+export type TripDates = { tag: string; start: string; end: string }
+export type Trips = { trips: Trip[]; suggestions: TripSuggestion[]; planned: PlannedTrip[]; dates: TripDates[] | null }
+
+export type GrossChange = { from: string; gross: number }
+export type SalaryRule = { from: string; paid_by_day: number }
+/** plan.Settings: the income base, salary timing and FI inputs. */
+export type PlanSettings = {
+  income_mode: '' | 'median' | 'manual' | 'gross'; manual_income: number; gross_salary: number; gross_changes?: GrossChange[]; monthly_deductions: number
+  target_age: number; birth_year: number; fi_monthly_spend: number; withdrawal_rate: number; expected_return: number; emergency_months: number
+  emergency_exclude_cash?: boolean; salary_rules: SalaryRule[] | null; salary_account: string; buffers?: Record<string, number>
+}
+
+// ── bank sync ──
+
+export type BankAccount = {
+  id: number; connection_id: number; iban: string; display_name: string; account_id: string; last_synced_at: string; last_tx_date: string
+  bank_balance: number | null; bank_balance_currency: string; bank_balance_date: string; bank_balance_fetched: string; open: number
+}
+/** A bank consent (/bank/connections); status is effective — a lapsed one reads "expired". */
+export type BankConnection = {
+  id: number; aspsp_name: string; aspsp_country: string; status: string; valid_until: string; last_error?: string; days_left: number; accounts: BankAccount[]
+}
+/** POST /sync: banks, IBKR and crypto in one go; skipped when an auto sync ran recently. */
+export type SyncResult = {
+  skipped?: boolean; bank?: { new: number }; ibkr?: { new: number; mismatches: number }
+  balances?: { account: string; name: string; from: number; to: number; source: string }[]; problems?: string[]
+}
+
+// ── Interactive Brokers ──
+
+export type IBKRStatus = { connected: boolean; lapsed?: boolean; sign_in_ends?: string; account: string; scope?: string; connected_at?: string; last_sync?: string; last_error?: string }
+export type IBKRReport = {
+  at: string; account: string; currency: string; net_liquidation: number; cash: number; app_balance?: number; balance_written: boolean
+  positions: { ticker: string; description: string; currency: string; shares: number; app_shares: number; price: number; value: number; avg_price: number; unrealized: number }[]
+  trades: { external_id: string; date: string; action: string; ticker: string; name: string; currency: string; shares: number; price: number; commission: number; recorded: boolean }[]
+  new: number; mismatches: number
+  orders?: IBKROrder[] | null; instructions?: IBKROrder[] | null; orders_error?: string
+  trades_window?: string; trades_error?: string
+}
+export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; remaining?: number; tif?: string; created?: string; expires?: string }

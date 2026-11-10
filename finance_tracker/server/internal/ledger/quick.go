@@ -36,10 +36,10 @@ func Quick(d *sql.DB, now time.Time) (*QuickPicks, error) {
 	today := weekend(now)
 	accounts := map[string]int{}
 	type agg struct {
-		name, cat, acct string
-		amounts         []money.Cents
-		cats, accts     map[string]int
-		n               int
+		name        string
+		amounts     []money.Cents
+		cats, accts map[string]int
+		n           int
 	}
 	by := map[string]*agg{}
 	for _, t := range txs {

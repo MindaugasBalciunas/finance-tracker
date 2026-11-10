@@ -141,14 +141,10 @@ func DeleteRecurringItem(d *sql.DB, id int64) error {
 	return err
 }
 
-// MergeRecurring applies the owner's items to what detection found. Hidden
+// mergeRecurring applies the owner's items to what detection found. Hidden
 // items drop out (returned separately so they can be restored); edits
 // override amount, cadence, category and next date; hand-added items appear
 // even without matching transactions.
-func MergeRecurring(detected []Recurring, items []RecurringItem, now time.Time) (list, hidden []Recurring) {
-	return mergeRecurring(detected, items, now, nil)
-}
-
 func mergeRecurring(detected []Recurring, items []RecurringItem, now time.Time, lastPaid map[int64]string) (list, hidden []Recurring) {
 	byKey := map[string]RecurringItem{} // the item that edits a detection
 	for _, it := range items {

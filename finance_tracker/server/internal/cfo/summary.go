@@ -76,13 +76,10 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	if err != nil {
 		return nil, err
 	}
-	var fixed, spending []plan.Budget
+	var fixed []plan.Budget
 	for _, b := range budgets {
-		switch b.Kind {
-		case "fixed":
+		if b.Kind == "fixed" {
 			fixed = append(fixed, b)
-		case "spending":
-			spending = append(spending, b)
 		}
 	}
 	isFixed := func(t *ledger.Tx) bool {

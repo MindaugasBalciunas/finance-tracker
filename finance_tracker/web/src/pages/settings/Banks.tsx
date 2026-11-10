@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
+import { useBankConnections } from '../../lib/hooks'
 import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, Toggle, useToast } from '../../components/ui'
 import { AccountSelect, SPEND_KINDS } from '../../components/pickers'
@@ -18,7 +19,7 @@ export function Banks() {
   const qc = useQueryClient()
   const toast = useToast()
   const { data: st } = useQuery({ queryKey: ['bank-settings'], queryFn: () => api.get<any>('/bank/settings') })
-  const { data: conns, isLoading } = useQuery({ queryKey: ['bank-connections'], queryFn: () => api.get<any[]>('/bank/connections') })
+  const { data: conns, isLoading } = useBankConnections()
   const [form, setForm] = useState<any>(null)
   const [bank, setBank] = useState('Swedbank')
   const [pasted, setPasted] = useState('')
@@ -96,7 +97,7 @@ export function Banks() {
                   </div>
                   <button className="btn-ghost h-8 text-xs text-bad" onClick={() => disconnect(c.id)}>Disconnect</button>
                 </div>
-                {c.accounts.map((a: any) => (
+                {c.accounts.map((a) => (
                   <div key={a.id} className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2 text-sm">
                     <div className="min-w-0 flex-1">
                       <div className="truncate">{a.display_name} <span className="text-xs text-muted">{a.iban}</span></div>

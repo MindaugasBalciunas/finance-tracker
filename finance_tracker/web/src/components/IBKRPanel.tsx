@@ -1,21 +1,12 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { useAccounts, useIBKR } from '../lib/hooks'
+import type { IBKROrder, IBKRReport } from '../lib/types'
 import { eur, shortDate } from '../lib/format'
 import { Card, Spinner, useToast } from './ui'
 import { Icon } from './Icon'
-
-export type IBKRStatus = { connected: boolean; lapsed?: boolean; sign_in_ends?: string; account: string; scope?: string; connected_at?: string; last_sync?: string; last_error?: string }
-export type IBKRReport = {
-  at: string; account: string; currency: string; net_liquidation: number; cash: number; app_balance?: number; balance_written: boolean
-  positions: { ticker: string; description: string; currency: string; shares: number; app_shares: number; price: number; value: number; avg_price: number; unrealized: number }[]
-  trades: { external_id: string; date: string; action: string; ticker: string; name: string; currency: string; shares: number; price: number; commission: number; recorded: boolean }[]
-  new: number; mismatches: number
-  orders?: IBKROrder[] | null; instructions?: IBKROrder[] | null; orders_error?: string
-  trades_window?: string; trades_error?: string
-}
-export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; remaining?: number; tif?: string; created?: string; expires?: string }
 
 // "REPLACED", "limit", "PreSubmitted", "PENDING_CANCEL" → "Replaced", "Limit", "Pre submitted", "Pending cancel".
 const titleCase = (s?: string) => {
@@ -92,8 +83,6 @@ export function IBKROrders() {
     </Card>
   )
 }
-
-export const useIBKR = () => useQuery({ queryKey: ['ibkr'], queryFn: () => api.get<{ status: IBKRStatus; report: IBKRReport | null }>('/ibkr'), staleTime: 60_000, retry: false })
 
 function ago(iso?: string) {
   if (!iso) return 'never'
@@ -215,7 +204,7 @@ export function IBKRConnection() {
   const qc = useQueryClient()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: () => api.get<any[]>('/accounts') })
+  const { data: accounts } = useAccounts()
   const st = data?.status
   const connect = async () => {
     setBusy(true)

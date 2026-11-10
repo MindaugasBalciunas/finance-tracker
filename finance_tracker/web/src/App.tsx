@@ -6,6 +6,7 @@ import { api, ApiError } from './lib/api'
 import { Icon } from './components/Icon'
 import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
+import type { Overview } from './lib/types'
 import { useExitDemo } from './components/ExitDemo'
 import { NotificationsButton } from './components/Notifications'
 import { QuickActionsButton, useAutoSync } from './components/QuickActions'
@@ -115,7 +116,7 @@ function Shell() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [collapsed])
-  const { data: inbox } = useQuery({ queryKey: ['overview'], queryFn: () => api.get<any>('/overview'), select: (o) => o?.inbox_open ?? 0 })
+  const { data: inbox } = useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview'), select: (o) => o?.inbox_open ?? 0 })
   useEffect(() => {
     window.scrollTo(0, 0)
     trackView(loc.pathname)
@@ -221,7 +222,7 @@ function Shell() {
       {/* Mobile tab bar */}
       <nav className="tabbar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur pb-safe sm:hidden">
         <div className="grid grid-cols-6">
-          {NAV.flatMap((n, i) => [...(i === 2 ? [<QuickActionsButton key="quick" inboxOpen={inbox} />] : []), (
+          {NAV.flatMap((n, i) => [...(i === 2 ? [<QuickActionsButton key="quick" inboxOpen={inbox ?? 0} />] : []), (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}
               className={({ isActive }) => clsx('relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
               {({ isActive }) => (<>

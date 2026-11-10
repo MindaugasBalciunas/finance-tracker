@@ -221,9 +221,9 @@ func Habits(txs []ledger.Tx, people map[string]bool, now time.Time, months int) 
 		return rep // no year to compare with
 	}
 	type sums struct {
-		spent, small, eat, weekend money.Cents
-		purchases, days, smallN    int
-		tickets                    []money.Cents
+		spent, eat, weekend     money.Cents
+		purchases, days, smallN int
+		tickets                 []money.Cents
 	}
 	window := func(back int) sums {
 		var s sums
