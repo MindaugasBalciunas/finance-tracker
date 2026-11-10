@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -41,6 +41,15 @@ function useDebounced<T>(v: T, ms = 400): T {
 export function StressView() {
   const { data, isLoading, error } = useQuery({ queryKey: ['stress'], queryFn: () => api.get<StressReport>('/wealth/stress') })
   const [sel, setSel] = useState('job_loss')
+  const detail = useRef<HTMLDivElement>(null)
+  // On a phone the months sit below fourteen tiles: bring them into view.
+  const pick = (id: string) => {
+    setSel(id)
+    requestAnimationFrame(() => {
+      const el = detail.current
+      if (el && el.getBoundingClientRect().top > window.innerHeight * 0.6) el.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    })
+  }
   const [shock, setShock] = useState<Shock>({ months: 6 })
   const sent = useDebounced(cleanShock(shock))
   const custom = useQuery({
@@ -87,33 +96,43 @@ export function StressView() {
         )}
       </section>
 
-      {/* Every crisis at a glance; tap one for the months. */}
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        {[...data.scenarios, ...(mine ? [mine] : [])].map((r) => {
-          const lv = LEVELS[r.level]
-          return (
-            <button key={r.id} onClick={() => setSel(r.id)} aria-pressed={sel === r.id}
-              className={clsx('card min-h-[44px] p-3 text-left transition', sel === r.id ? 'ring-2 ring-accent' : 'hover:bg-sunken/50')}>
-              <div className="flex items-center gap-2">
-                <Icon name={STRESS_ICONS[r.id] ?? 'alert'} size={16} className="shrink-0 text-ink2" />
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{r.name}</span>
-                <span className={clsx('shrink-0 text-xs font-medium', toneText[lv.tone])}>{lv.label}</span>
-              </div>
-              <div className={clsx('mt-1.5 text-lg font-bold tnum', toneText[lv.tone])}>{headline(r)}</div>
-              <div className="text-xs text-muted">{r.cost > 0 ? <>costs <span className="tnum">{eur(r.cost)}</span> of net worth</> : 'no lasting cost'}</div>
-            </button>
-          )
-        })}
-      </div>
+      {/* Every crisis at a glance, by kind; tap one for the months. */}
+      {[...data.groups.map((g) => ({ ...g, items: data.scenarios.filter((r) => r.group === g.id) })), ...(mine ? [{ id: 'custom', name: 'Yours', items: [mine] }] : [])]
+        .filter((g) => g.items.length > 0).map((g) => (
+          <section key={g.id} aria-label={g.name}>
+            <h3 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted">{g.name}</h3>
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-4">
+              {g.items.map((r) => <Tile key={r.id} r={r} on={sel === r.id} pick={() => pick(r.id)} />)}
+            </div>
+          </section>
+        ))}
 
+      <div ref={detail} className="scroll-mt-20">
       {shown ? <Detail r={shown} rep={data} /> : sel === 'custom' && (
         <Card><div className="text-sm text-muted">{custom.isFetching ? 'Working it out…' : custom.error ? <ErrorBox error={custom.error} /> : 'Set at least one change below to see your crisis.'}</div></Card>
       )}
+      </div>
 
       <Builder shock={shock} set={set} reset={() => { setShock({ months: 6 }); setSel('job_loss') }} rep={data} error={custom.error} />
 
       <ul className="space-y-1 px-1 text-xs text-muted">{data.notes.map((n) => <li key={n}>· {n}</li>)}</ul>
     </div>
+  )
+}
+
+function Tile({ r, on, pick }: { r: StressResult; on: boolean; pick: () => void }) {
+  const lv = LEVELS[r.level]
+  return (
+    <button onClick={pick} aria-pressed={on}
+      className={clsx('card min-h-[44px] min-w-0 p-3 text-left transition', on ? 'ring-2 ring-accent' : 'hover:bg-sunken/50')}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Icon name={STRESS_ICONS[r.id] ?? 'alert'} size={15} className="shrink-0 text-ink2" />
+        <span className="min-w-0 truncate text-sm font-semibold">{r.name}</span>
+      </div>
+      <div className={clsx('mt-1 truncate text-base font-bold tnum sm:text-lg', toneText[lv.tone])}>{headline(r)}</div>
+      <div className={clsx('text-xs font-medium', toneText[lv.tone])}>{lv.label}</div>
+      <div className="truncate text-xs text-muted">{r.cost > 0 ? <>costs <span className="tnum">{eur(r.cost)}</span></> : 'no lasting cost'}</div>
+    </button>
   )
 }
 

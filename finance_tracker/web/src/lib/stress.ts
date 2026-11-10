@@ -9,7 +9,10 @@ export const LEVELS: Record<StressLevel, { label: string; tone: 'good' | 'warn' 
 }
 
 export const STRESS_ICONS: Record<string, string> = {
-  job_loss: 'briefcase', illness: 'heart', market_crash: 'down', recession: 'trend', rates: 'percent', inflation: 'bag', big_bill: 'alert', custom: 'spark',
+  job_loss: 'briefcase', long_search: 'calendar', pay_cut: 'wallet', illness: 'heart', parental: 'baby',
+  market_crash: 'down', crypto_winter: 'bitcoin', housing_slump: 'home',
+  rates: 'percent', inflation: 'bag', big_bill: 'alert',
+  recession: 'trend', stagflation: 'coins', perfect_storm: 'bolt', custom: 'spark',
 }
 
 /** A shock with nothing in it changes nothing — no point asking the server. */

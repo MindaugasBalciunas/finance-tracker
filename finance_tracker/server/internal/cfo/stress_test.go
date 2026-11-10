@@ -263,3 +263,49 @@ func TestNoRunwayWithoutAUsualMonth(t *testing.T) {
 		t.Fatalf("runway %+v", r.Runway)
 	}
 }
+
+// Every ready-made crisis is in a group the page knows, with a unique id
+// and a shock the custom builder would accept; the new ones behave as
+// their names say.
+func TestPresetsAreGroupedAndSane(t *testing.T) {
+	groups := map[string]bool{}
+	for _, g := range cfo.StressGroups {
+		groups[g.ID] = true
+	}
+	seen := map[string]bool{}
+	for _, p := range cfo.StressPresets {
+		if !groups[p.Group] || seen[p.ID] || p.Name == "" || p.Blurb == "" {
+			t.Errorf("preset %+v", p)
+		}
+		seen[p.ID] = true
+		if err := p.Shock.Validate(24); err != nil {
+			t.Errorf("%s: %v", p.ID, err)
+		}
+	}
+	h, now := stressHousehold(t)
+	r, err := cfo.StressTest(h, now, 24, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Groups) != 4 || len(r.Scenarios) != len(cfo.StressPresets) {
+		t.Fatalf("%d groups, %d scenarios", len(r.Groups), len(r.Scenarios))
+	}
+	// A slump takes a quarter of the house; a crypto winter 80% of the coins
+	// and 15% of the stocks; cash follows the plan in both.
+	if x := scenario(t, r, "housing_slump"); x.MarketHit != E(25000) || x.Group != "markets" {
+		t.Fatalf("housing slump %+v", x)
+	}
+	if x := scenario(t, r, "crypto_winter"); x.MarketHit != E(1600+1500) || x.Months[5].End != x.Months[5].Base {
+		t.Fatalf("crypto winter %+v", x)
+	}
+	// A pay cut costs exactly the pay not received: 12 months of €600.
+	if x := scenario(t, r, "pay_cut"); x.Cost != E(7200) || x.CashOut != "" {
+		t.Fatalf("pay cut cost %v, cash out %s", x.Cost, x.CashOut)
+	}
+	// A longer search is worse than a shorter one, and everything at once
+	// worse than either.
+	job, long, storm := scenario(t, r, "job_loss"), scenario(t, r, "long_search"), scenario(t, r, "perfect_storm")
+	if !(job.Cost < long.Cost && long.Cost < storm.Cost) || storm.Level != "short" {
+		t.Fatalf("costs %v < %v < %v, storm %s", job.Cost, long.Cost, storm.Cost, storm.Level)
+	}
+}

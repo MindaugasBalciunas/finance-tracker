@@ -1161,7 +1161,7 @@ func TestStressTestFromThePage(t *testing.T) {
 		Custom    *struct{ ID string }  `json:"custom"`
 	}
 	c.ok("POST", "/wealth/stress", map[string]any{"income_pct": -50, "months": 4}, &rep)
-	if len(rep.Scenarios) != 7 || rep.Custom == nil || rep.Custom.ID != "custom" {
+	if len(rep.Scenarios) != 14 || rep.Custom == nil || rep.Custom.ID != "custom" {
 		t.Fatalf("%+v", rep)
 	}
 	code, raw := c.do("POST", "/wealth/stress", map[string]any{"rate_pp": 50})

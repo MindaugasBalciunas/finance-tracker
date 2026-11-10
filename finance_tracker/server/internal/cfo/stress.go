@@ -73,29 +73,68 @@ const pillar3Tax = 0.15
 // StressPreset is a crisis the page offers ready-made.
 type StressPreset struct {
 	ID    string
+	Group string // income · markets · costs · combined: how the page groups them
 	Name  string
 	Blurb string
 	Shock Shock
 }
 
+// StressGroups name the groups, in page order.
+var StressGroups = []StressGroup{
+	{"income", "Losing income"}, {"markets", "Markets falling"}, {"costs", "Costs rising"}, {"combined", "Several at once"},
+}
+
 // StressPresets are the ready-made crises: each one a thing that happens
-// to households, at a size taken from the last two decades (2008's
-// markets, 2022's prices and rates in Lithuania).
+// to households, at a size taken from the last decades (1970s inflation,
+// 2008's markets and house prices in Lithuania, 2022's prices and rates,
+// crypto's 2018 and 2022 winters).
 var StressPresets = []StressPreset{
-	{"job_loss", "Job loss", "No pay for 6 months while you look for work. Saving and wish-list goals paused. Unemployment benefit isn't counted — add it in Build your own.",
-		Shock{Months: 6, IncomePct: -100, PauseSaving: true, PauseGoals: true}},
-	{"illness", "Long illness", "6 months on sick pay — about 40% less coming in — and €1,500 of treatment. Wish-list goals paused, saving goes on.",
-		Shock{Months: 6, IncomePct: -40, OneOff: 1500, PauseGoals: true}},
-	{"market_crash", "Market crash", "Markets fall like 2008: stocks −40%, crypto −65%, pension funds −25%. Pay goes on, so cash is fine — it is what you own that shrinks.",
-		Shock{StocksPct: -40, CryptoPct: -65, PensionPct: -25}},
-	{"recession", "Deep recession", "The double hit: 9 months without pay while stocks fall 35%, crypto 60%, pensions 20% and house prices 15% — the worst time to sell.",
-		Shock{Months: 9, IncomePct: -100, StocksPct: -35, CryptoPct: -60, PensionPct: -20, PropertyPct: -15, PauseSaving: true, PauseGoals: true}},
-	{"rates", "Rate rise", "Euribor up 3 points: variable-rate loan payments rise from the next reset and stay up.",
-		Shock{RatePP: 3}},
-	{"inflation", "Inflation like 2022", "Everyday prices up 20% for good and Euribor up 2 points, while pay stays where it is.",
-		Shock{EverydayPct: 20, RatePP: 2}},
-	{"big_bill", "Big unexpected bill", "€10,000 due next month — a roof, a car, a health bill.",
-		Shock{OneOff: 10000}},
+	// Losing income
+	{ID: "job_loss", Group: "income", Name: "Job loss",
+		Blurb: "No pay for 6 months while you look for work. Saving and wish-list goals paused. Unemployment benefit isn't counted — add it in Build your own.",
+		Shock: Shock{Months: 6, IncomePct: -100, PauseSaving: true, PauseGoals: true}},
+	{ID: "long_search", Group: "income", Name: "Long job search",
+		Blurb: "A whole year without pay — a senior role in a slow market can take that long. Saving and wish-list goals paused.",
+		Shock: Shock{Months: 12, IncomePct: -100, PauseSaving: true, PauseGoals: true}},
+	{ID: "pay_cut", Group: "income", Name: "Pay cut",
+		Blurb: "20% less pay for a year — short hours, a lost bonus or a lower-paid job. Saving goes on.",
+		Shock: Shock{Months: 12, IncomePct: -20}},
+	{ID: "illness", Group: "income", Name: "Long illness",
+		Blurb: "6 months on sick pay — about 40% less coming in — and €1,500 of treatment. Wish-list goals paused, saving goes on.",
+		Shock: Shock{Months: 6, IncomePct: -40, OneOff: 1500, PauseGoals: true}},
+	{ID: "parental", Group: "income", Name: "Parental leave",
+		Blurb: "A year on parental benefit — about 30% less pay — with everyday costs up 15% and €2,500 for the things a baby needs.",
+		Shock: Shock{Months: 12, IncomePct: -30, EverydayPct: 15, OneOff: 2500, PauseGoals: true}},
+	// Markets falling
+	{ID: "market_crash", Group: "markets", Name: "Market crash",
+		Blurb: "Markets fall like 2008: stocks −40%, crypto −65%, pension funds −25%. Pay goes on, so cash is fine — it is what you own that shrinks.",
+		Shock: Shock{StocksPct: -40, CryptoPct: -65, PensionPct: -25}},
+	{ID: "crypto_winter", Group: "markets", Name: "Crypto winter",
+		Blurb: "Crypto loses 80% as in 2018 and 2022, and stocks slip 15% with it.",
+		Shock: Shock{CryptoPct: -80, StocksPct: -15}},
+	{ID: "housing_slump", Group: "markets", Name: "Housing slump",
+		Blurb: "House prices fall 25%, as in Lithuania after 2008, while Euribor rises 2 points — less equity and dearer loans.",
+		Shock: Shock{PropertyPct: -25, RatePP: 2}},
+	// Costs rising
+	{ID: "rates", Group: "costs", Name: "Rate rise",
+		Blurb: "Euribor up 3 points: variable-rate loan payments rise from the next reset and stay up.",
+		Shock: Shock{RatePP: 3}},
+	{ID: "inflation", Group: "costs", Name: "Inflation like 2022",
+		Blurb: "Everyday prices up 20% for good and Euribor up 2 points, while pay stays where it is.",
+		Shock: Shock{EverydayPct: 20, RatePP: 2}},
+	{ID: "big_bill", Group: "costs", Name: "Big bill",
+		Blurb: "€10,000 due next month — a roof, a car, a health bill.",
+		Shock: Shock{OneOff: 10000}},
+	// Several at once
+	{ID: "recession", Group: "combined", Name: "Deep recession",
+		Blurb: "The double hit: 9 months without pay while stocks fall 35%, crypto 60%, pensions 20% and house prices 15% — the worst time to sell.",
+		Shock: Shock{Months: 9, IncomePct: -100, StocksPct: -35, CryptoPct: -60, PensionPct: -20, PropertyPct: -15, PauseSaving: true, PauseGoals: true}},
+	{ID: "stagflation", Group: "combined", Name: "Stagflation",
+		Blurb: "The 1970s: prices up 15% and Euribor up 4 points while pay falls 10% and stocks lose 30%, pensions 15%.",
+		Shock: Shock{IncomePct: -10, EverydayPct: 15, RatePP: 4, StocksPct: -30, PensionPct: -15}},
+	{ID: "perfect_storm", Group: "combined", Name: "Everything at once",
+		Blurb: "A year without pay, markets like 2008, house prices −20%, Euribor +3 points and a €5,000 bill. Unlikely — but it shows where the floor is.",
+		Shock: Shock{Months: 12, IncomePct: -100, StocksPct: -40, CryptoPct: -70, PensionPct: -25, PropertyPct: -20, RatePP: 3, OneOff: 5000, PauseSaving: true, PauseGoals: true}},
 }
 
 // StressReport is every ready-made crisis against the plan, plus one the
@@ -111,9 +150,15 @@ type StressReport struct {
 	RealAsset money.Cents    `json:"real_assets"`
 	Runway    *Runway        `json:"runway,omitempty"` // nil until there is a usual month to go by
 	Base      []money.Cents  `json:"base"`             // cash at each month end at the current plan
+	Groups    []StressGroup  `json:"groups"`
 	Scenarios []StressResult `json:"scenarios"`
 	Custom    *StressResult  `json:"custom,omitempty"`
 	Notes     []string       `json:"notes"`
+}
+
+type StressGroup struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Reserve is money that could be raised within weeks.
@@ -135,6 +180,7 @@ type Runway struct {
 // StressResult is one crisis played out month by month.
 type StressResult struct {
 	ID         string        `json:"id"`
+	Group      string        `json:"group,omitempty"`
 	Name       string        `json:"name"`
 	Blurb      string        `json:"blurb,omitempty"`
 	Shock      Shock         `json:"shock"`
@@ -249,7 +295,7 @@ func StressTest(d *sql.DB, now time.Time, horizon int, custom *Shock) (*StressRe
 
 // buildStress is the arithmetic, apart from the database.
 func buildStress(base *Forecast, sb stressBook, horizon int, custom *Shock) *StressReport {
-	r := &StressReport{Start: base.Start, Horizon: horizon, Cash: base.Cash, Floor: base.Floor, NetWorth: sb.netWorth,
+	r := &StressReport{Start: base.Start, Groups: StressGroups, Horizon: horizon, Cash: base.Cash, Floor: base.Floor, NetWorth: sb.netWorth,
 		Locked: sb.pillar2, RealAsset: sb.property + sb.vehicle, Base: []money.Cents{}, Scenarios: []StressResult{}}
 	r.Reserves = reserves(sb, Shock{})
 	for _, m := range base.Months {
@@ -266,7 +312,9 @@ func buildStress(base *Forecast, sb stressBook, horizon int, custom *Shock) *Str
 		r.Runway.ReserveMonths = math.Round(max(0, (base.Cash+net).Float())/r.Runway.Burn.Float()*10) / 10
 	}
 	for _, p := range StressPresets {
-		r.Scenarios = append(r.Scenarios, runShock(base, sb, p.ID, p.Name, p.Blurb, p.Shock))
+		res := runShock(base, sb, p.ID, p.Name, p.Blurb, p.Shock)
+		res.Group = p.Group
+		r.Scenarios = append(r.Scenarios, res)
 	}
 	if custom != nil {
 		c := runShock(base, sb, "custom", "Your crisis", "", *custom)

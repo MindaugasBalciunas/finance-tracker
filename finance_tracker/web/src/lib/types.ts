@@ -252,7 +252,7 @@ export type Shock = {
 }
 export type StressLevel = 'ok' | 'tight' | 'sell' | 'short'
 export type StressResult = {
-  id: string; name: string; blurb?: string; shock: Shock
+  id: string; group?: string; name: string; blurb?: string; shock: Shock
   months?: { month: string; income: number; out: number; sold?: number; end: number; base: number }[]
   level: StressLevel; lowest: number; lowest_on: string; below_floor?: string; cash_out?: string; broke?: string
   sold?: { key: string; label: string; amount: number; net: number }[]; sold_total: number; short: number
@@ -264,5 +264,5 @@ export type StressReport = {
   reserves: { key: string; label: string; value: number; net: number }[]; locked: number; real_assets: number
   /** Absent until there is a usual month to go by. */
   runway?: { burn: number; cash_months: number; reserve_months: number }
-  base?: number[]; scenarios: StressResult[]; custom?: StressResult; notes: string[]
+  base?: number[]; groups: { id: string; name: string }[]; scenarios: StressResult[]; custom?: StressResult; notes: string[]
 }

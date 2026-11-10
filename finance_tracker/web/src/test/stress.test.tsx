@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HashRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
@@ -8,7 +8,7 @@ import { cleanShock, lasts, shockEmpty } from '../lib/stress'
 import type { StressReport, StressResult } from '../lib/types'
 
 const result = (p: Partial<StressResult>): StressResult => ({
-  id: 'job_loss', name: 'Job loss', blurb: 'No pay for 6 months.', shock: { months: 6, income_pct: -100 },
+  id: 'job_loss', group: 'income', name: 'Job loss', blurb: 'No pay for 6 months.', shock: { months: 6, income_pct: -100 },
   months: [{ month: '2026-11', income: 0, out: 2500, end: 1000, base: 4000 }, { month: '2026-12', income: 0, out: 2500, sold: 1500, end: 0, base: 4500 }],
   level: 'sell', lowest: 0, lowest_on: '2026-12', cash_out: '2026-12', sold: [{ key: 'investments', label: 'Investments', amount: 1500, net: 1500 }], sold_total: 1500, short: 0,
   market_hit: 0, loan_extra: 0, monthly_gap: -2500, net_worth_end: 100000, base_net_worth_end: 118000, cost: 18000,
@@ -18,7 +18,8 @@ const report = (p: Partial<StressReport> = {}): StressReport => ({
   start: '2026-10', horizon: 24, cash: 5000, floor: 3750, net_worth: 130000,
   reserves: [{ key: 'investments', label: 'Investments', value: 10000, net: 10000 }, { key: 'pillar3', label: 'III pillar', value: 4000, net: 3400 }],
   locked: 20000, real_assets: 100000, runway: { burn: 2500, cash_months: 2, reserve_months: 7.4 },
-  scenarios: [result({}), result({ id: 'market_crash', name: 'Market crash', level: 'ok', lowest: 3532, cost: 10300, sold: [], levers: [], summary: ['Cash stays above your €3,750 emergency target throughout.'] })],
+  groups: [{ id: 'income', name: 'Losing income' }, { id: 'markets', name: 'Markets falling' }, { id: 'costs', name: 'Costs rising' }],
+  scenarios: [result({}), result({ id: 'market_crash', group: 'markets', name: 'Market crash', level: 'ok', lowest: 3532, cost: 10300, sold: [], levers: [], summary: ['Cash stays above your €3,750 emergency target throughout.'] })],
   notes: ['Starts from the cash forecast.'], ...p,
 })
 
@@ -60,8 +61,11 @@ describe('stress test page', () => {
     expect(screen.getByText(/in the II pillar \(locked until retirement\)/)).toBeInTheDocument()
     expect(screen.getByText('Cash runs out in Dec 2026; selling €1,500 of reserves gets you through.').closest('li')).toHaveClass('text-warn')
     expect(screen.getByText("What you'd sell")).toBeInTheDocument()
+    // Crises sit under their kind; a kind with none is left out.
+    expect(within(screen.getByRole('region', { name: 'Markets falling' })).getByText('Market crash')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Costs rising' })).not.toBeInTheDocument()
     // Tapping another crisis shows it.
-    fireEvent.click(screen.getAllByRole('button', { name: /Market crash/ }).find((b) => b.hasAttribute('aria-pressed'))!)
+    fireEvent.click(within(screen.getByRole('region', { name: 'Markets falling' })).getByRole('button', { name: /Market crash/ }))
     expect(screen.getByText('Cash stays above your €3,750 emergency target throughout.')).toBeInTheDocument()
     expect(screen.queryByText("What you'd sell")).not.toBeInTheDocument()
   })
@@ -82,6 +86,7 @@ describe('stress test page', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true), { timeout: 2000 })
     expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ months: 6, one_off: 9000 })
     expect(await screen.findByText('€2,200 short')).toHaveClass('text-bad')
+    expect(within(screen.getByRole('region', { name: 'Yours' })).getByText('Your crisis')).toBeInTheDocument()
     expect(screen.getByText(/€2,200 short at worst/)).toBeInTheDocument()
   })
 })
