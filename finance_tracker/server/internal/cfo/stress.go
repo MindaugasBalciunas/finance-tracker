@@ -92,7 +92,7 @@ var StressGroups = []StressGroup{
 var StressPresets = []StressPreset{
 	// Losing income
 	{ID: "job_loss", Group: "income", Name: "Job loss",
-		Blurb: "No pay for 6 months while you look for work. Saving and wish-list goals paused. Unemployment benefit isn't counted — add it in Build your own.",
+		Blurb: "No pay for 6 months while you look for work. Saving and wish-list goals paused. Unemployment benefit isn't counted — add it as income that still comes in.",
 		Shock: Shock{Months: 6, IncomePct: -100, PauseSaving: true, PauseGoals: true}},
 	{ID: "long_search", Group: "income", Name: "Long job search",
 		Blurb: "A whole year without pay — a senior role in a slow market can take that long. Saving and wish-list goals paused.",
@@ -569,6 +569,8 @@ func runShock(base *Forecast, sb stressBook, id, name, blurb string, sh Shock) S
 	return res
 }
 
+// The page shows cost and paper_loss as figures and drops the last line
+// when either is set, so the cost sentence must stay last.
 func stressSummary(base *Forecast, r StressResult) []string {
 	var s []string
 	paused := ""
@@ -591,7 +593,7 @@ func stressSummary(base *Forecast, r StressResult) []string {
 	case "pause":
 		s = append(s, fmt.Sprintf("Cash would run short in %s; investing %s less covers it — nothing has to be sold%s.", monthName(r.PausedFrom), eurS(r.SavingCut), own(r.PausedFrom)))
 	case "tight":
-		line := fmt.Sprintf("Cash drops below your %s emergency target in %s (lowest %s in %s) but never runs out", eurS(base.Floor), monthName(r.BelowFloor), eurN(r.Lowest), monthName(r.LowestOn))
+		line := fmt.Sprintf("Cash drops below your %s emergency fund in %s (lowest %s in %s) but never runs out", eurS(base.Floor), monthName(r.BelowFloor), eurN(r.Lowest), monthName(r.LowestOn))
 		// The plan may dip under the target on its own; say so rather than
 		// blame the crisis for it.
 		if base.BelowFloor != "" && base.BelowFloor <= r.BelowFloor {
@@ -599,7 +601,7 @@ func stressSummary(base *Forecast, r StressResult) []string {
 		}
 		s = append(s, line+".")
 	default:
-		s = append(s, fmt.Sprintf("Cash stays above your %s emergency target throughout — lowest %s in %s.", eurS(base.Floor), eurN(r.Lowest), monthName(r.LowestOn)))
+		s = append(s, fmt.Sprintf("Cash stays above your %s emergency fund throughout — lowest %s in %s.", eurS(base.Floor), eurN(r.Lowest), monthName(r.LowestOn)))
 	}
 	if r.MarketHit > 0 {
 		line := fmt.Sprintf("What you own loses %s at the drop", eurS(r.MarketHit))
