@@ -162,6 +162,11 @@ func TestAuthBoundaries(t *testing.T) {
 		{"ro cannot list connections", tokRO, "GET", "/oauth/grants", nil, 403},
 		{"rw cannot approve a connection", tokRW, "POST", "/oauth/approve", map[string]any{"allow": true}, 403},
 		{"ro reads the forecast", tokRO, "GET", "/forecast", nil, 200},
+		{"ro runs the stress test", tokRO, "GET", "/wealth/stress?brief=1", nil, 200},
+		{"ro runs its own crisis (computes only)", tokRO, "GET", "/wealth/stress?shock=" + url.QueryEscape(`{"income_pct":-100,"months":3}`), nil, 200},
+		{"ro crisis out of range", tokRO, "GET", "/wealth/stress?shock=" + url.QueryEscape(`{"income_pct":-150}`), nil, 400},
+		{"POST crises stay session-only", tokRW, "POST", "/wealth/stress", map[string]any{"one_off": 1000}, 403},
+		{"ro cannot reach a path under the stress test", tokRO, "GET", "/wealth/stress/x", nil, 403},
 		{"ro reads the tax estimate", tokRO, "GET", "/tax", nil, 200},
 		{"rw cannot change tax answers", tokRW, "PUT", "/tax/settings", map[string]any{"pillar3_before_2025": true}, 403},
 		{"rw cannot change investment targets", tokRW, "PUT", "/portfolio/settings", map[string]any{"core": []string{"X"}}, 403},
@@ -1144,5 +1149,23 @@ func TestMarkingATransactionRecurring(t *testing.T) {
 	}
 	if code, _ := c.do("PUT", "/transactions/"+itoa(nov.ID)+"/recurring", map[string]any{"recurring_id": 999}); code != 400 {
 		t.Errorf("unknown item: %d", code)
+	}
+}
+
+// The page posts the owner's crisis and gets every ready-made one beside
+// it; a shock out of range comes back as a sentence.
+func TestStressTestFromThePage(t *testing.T) {
+	_, c := newServer(t)
+	var rep struct {
+		Scenarios []struct{ ID string } `json:"scenarios"`
+		Custom    *struct{ ID string }  `json:"custom"`
+	}
+	c.ok("POST", "/wealth/stress", map[string]any{"income_pct": -50, "months": 4}, &rep)
+	if len(rep.Scenarios) != 7 || rep.Custom == nil || rep.Custom.ID != "custom" {
+		t.Fatalf("%+v", rep)
+	}
+	code, raw := c.do("POST", "/wealth/stress", map[string]any{"rate_pp": 50})
+	if code != 400 || !strings.Contains(string(raw), "points") {
+		t.Fatalf("%d %s", code, raw)
 	}
 }

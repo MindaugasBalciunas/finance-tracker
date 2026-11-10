@@ -212,6 +212,22 @@ type historyArgs struct {
 	From      string `json:"from,omitempty" jsonschema:"YYYY-MM-DD, optional"`
 }
 
+type stressArgs struct {
+	Months      int     `json:"months,omitempty" jsonschema:"how long the crisis lasts, months (0 = all 24)"`
+	IncomePct   float64 `json:"income_pct,omitempty" jsonschema:"change to pay while it lasts, % (-100 = none)"`
+	Benefit     float64 `json:"benefit,omitempty" jsonschema:"EUR a month coming in on top while it lasts (benefit, sick pay)"`
+	EverydayPct float64 `json:"everyday_pct,omitempty" jsonschema:"change to everyday spending, %"`
+	FixedPct    float64 `json:"fixed_pct,omitempty" jsonschema:"change to obligations, %"`
+	OneOff      float64 `json:"one_off,omitempty" jsonschema:"an unexpected bill next month, EUR"`
+	RatePP      float64 `json:"rate_pp,omitempty" jsonschema:"base rate rise on variable loans, points"`
+	StocksPct   float64 `json:"stocks_pct,omitempty" jsonschema:"brokerage value change, %"`
+	CryptoPct   float64 `json:"crypto_pct,omitempty" jsonschema:"crypto value change, %"`
+	PensionPct  float64 `json:"pension_pct,omitempty" jsonschema:"pension fund change, %"`
+	PropertyPct float64 `json:"property_pct,omitempty" jsonschema:"property value change, %"`
+	PauseSaving bool    `json:"pause_saving,omitempty" jsonschema:"stop saving and investing while it lasts"`
+	PauseGoals  bool    `json:"pause_goals,omitempty" jsonschema:"put off wish-list goals due meanwhile"`
+}
+
 type forecastArgs struct {
 	Gross       float64  `json:"gross,omitempty" jsonschema:"a new gross salary per month, EUR (LT taxes applied)"`
 	Income      *float64 `json:"income,omitempty" jsonschema:"or a net income per month, EUR"`
@@ -620,6 +636,14 @@ func New(call Caller) *mcp.Server {
 			}
 			b, _ := json.Marshal(a)
 			return text(call("GET", "/forecast", vals("scenario", string(b)), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_stress_test", Description: "Crisis stress tests over the next 24 months, from the cash forecast: job loss (6 months no pay), long illness (sick pay, treatment), market crash (2008-size), deep recession (9 months no pay plus falling markets and house prices), Euribor +3 points, inflation like 2022, a €10,000 bill. Each says when cash would run out, which reserves would be sold (investments, crypto, III pillar after ~15% tax — never the II pillar, property or car), whether even those run out, the market loss, the net-worth cost against the plan and levers that help; plus the no-income runway in months. Pass shock fields to test a crisis of your own (it does the arithmetic — use it instead of calculating)."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a stressArgs) (*mcp.CallToolResult, any, error) {
+			if a == (stressArgs{}) {
+				return text(call("GET", "/wealth/stress", vals("brief", "1"), nil))
+			}
+			b, _ := json.Marshal(a)
+			return text(call("GET", "/wealth/stress", vals("brief", "1", "shock", string(b)), nil))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_fi_plan", Description: "Financial independence as levels, in today's euros: when the safe payout (withdrawal rate) of investable money covers fixed obligations, then essentials, then full spending, then spending +25% — capital needed, progress and date each; coast FI (when contributions could stop and FI still arrives by the target age); yearly projected payout a month; what +€100/250/500 a month does; savings rate; money locked in the II pillar until retirement, and the III pillar balance (cashable early, tax withheld)."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {

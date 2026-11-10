@@ -242,3 +242,27 @@ export type Habits = {
   recent: [string, string]; year_ago: [string, string]
   changes: { key: 'spent' | 'purchases' | 'median' | 'small' | 'eating_out' | 'weekend' | 'days'; now: number; then: number }[]
 }
+
+// ── stress test ──
+
+/** One crisis: percentages change the plan's own figures; months is how long it lasts (0 = the whole period). */
+export type Shock = {
+  months?: number; income_pct?: number; benefit?: number; everyday_pct?: number; fixed_pct?: number; one_off?: number; rate_pp?: number
+  stocks_pct?: number; crypto_pct?: number; pension_pct?: number; property_pct?: number; pause_saving?: boolean; pause_goals?: boolean
+}
+export type StressLevel = 'ok' | 'tight' | 'sell' | 'short'
+export type StressResult = {
+  id: string; name: string; blurb?: string; shock: Shock
+  months?: { month: string; income: number; out: number; sold?: number; end: number; base: number }[]
+  level: StressLevel; lowest: number; lowest_on: string; below_floor?: string; cash_out?: string; broke?: string
+  sold?: { key: string; label: string; amount: number; net: number }[]; sold_total: number; short: number
+  market_hit: number; loan_extra: number; monthly_gap: number; net_worth_end: number; base_net_worth_end: number; cost: number
+  summary: string[]; levers?: { label: string; amount: number; monthly: boolean }[]
+}
+export type StressReport = {
+  start: string; horizon: number; cash: number; floor: number; net_worth: number
+  reserves: { key: string; label: string; value: number; net: number }[]; locked: number; real_assets: number
+  /** Absent until there is a usual month to go by. */
+  runway?: { burn: number; cash_months: number; reserve_months: number }
+  base?: number[]; scenarios: StressResult[]; custom?: StressResult; notes: string[]
+}

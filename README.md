@@ -87,6 +87,7 @@ Planning tools (read-only unless noted), the same in Ask CFO:
 | `log_decision` | **Writes** (read-write token): a purchase being considered, with its cooling-off date — never decides, rates or deletes |
 | `get_ownership_costs` | The true yearly cost of each property and vehicle — running costs, interest, value lost, money tied up — against renting or a taxi |
 | `get_fi_plan` | Independence in levels — obligations, essentials, full, comfortable — with capital, progress and date each; when saving could stop (coast); projected payouts; what more saving buys |
+| `get_stress_test` | Crisis stress tests over 24 months — job loss, long illness, market crash, deep recession, rate rise, 2022-style inflation, a big bill, or your own shock: when cash runs out, what would be sold, whether that runs out too, the net-worth cost and what would help; plus the no-income runway |
 | `get_milestones` | Dated milestones at today's pace: emergency fund, the next round figures of liquid wealth, loans paid off, FI |
 | `get_fees` | What investments cost a year and over 20 years, against a 0.2% index fund; funds without a fee are listed as missing |
 | `get_subscriptions` | Cancellable regular charges with yearly cost, new ones, free trials, and your keep / cancel-by verdicts |

@@ -213,7 +213,7 @@ const sessionCookie = "ft_session"
 var tokenReadPrefixes = []string{"/api/health", "/api/overview", "/api/transactions", "/api/categories", "/api/accounts", "/api/tags",
 	"/api/merchants", "/api/rules", "/api/networth", "/api/balances", "/api/loans", "/api/portfolio", "/api/trades", "/api/market",
 	"/api/plan", "/api/forecast", "/api/tax$", "/api/budgets", "/api/trips", "/api/goals", "/api/insights", "/api/bank/inbox", "/api/bank/connections", "/api/ai/context", "/api/ai/notes", "/api/owed", "/api/checks", "/api/ibkr/live$", "/api/wealth/ownership$",
-	"/api/wealth/milestones$", "/api/wealth/fees$", "/api/wealth/fi-plan$"}
+	"/api/wealth/milestones$", "/api/wealth/fees$", "/api/wealth/fi-plan$", "/api/wealth/stress$"}
 
 // Writes a read-write token may make: improve the data and manage the plan,
 // never move money into the ledger from the bank, delete in bulk or touch

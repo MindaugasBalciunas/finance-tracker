@@ -265,6 +265,7 @@ func TestMCPConnector(t *testing.T) {
 		want string
 	}{
 		{"get_forecast", map[string]any{"everyday_pct": -20}, `"scenario"`},
+		{"get_stress_test", map[string]any{"income_pct": -100, "months": 3}, `"custom"`},
 		{"get_account_history", map[string]any{"account_id": "swed", "from": "2026-01-01"}, `[`},
 		{"get_checks", nil, `[`},
 		{"get_month_review", map[string]any{"month": "2026-09"}, `"month":"2026-09"`},

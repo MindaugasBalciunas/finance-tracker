@@ -123,7 +123,7 @@ func (s *Server) actRoutes() {
 
 // ── more planning: milestones, subscriptions, fees, calendar, FI plan, logos
 //
-// Reads: /api/plan/* already, /api/wealth/{milestones,fees,fi-plan} listed
+// Reads: /api/plan/* already, /api/wealth/{milestones,fees,fi-plan,stress} listed
 // exactly. Writes (subscription verdicts, fee figures) are the owner's own,
 // session-only. Logos are session-only too: they trigger outbound fetches.
 
@@ -140,6 +140,23 @@ func (s *Server) moreRoutes() {
 			p.PayoutsByMonth = nil
 		}
 		return p, err
+	})
+	// Crisis stress tests: every ready-made crisis against the plan, and the
+	// owner's own as ?shock=<json> (GET, so read-only tokens can run one —
+	// it only computes) or as a POST body from the page.
+	s.handle("GET /api/wealth/stress", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		sh, err := cfo.ParseShock(r.URL.Query().Get("shock"))
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return s.stress(r, sh)
+	})
+	s.handle("POST /api/wealth/stress", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var sh cfo.Shock
+		if err := decode(r, &sh); err != nil {
+			return nil, err
+		}
+		return s.stress(r, &sh)
 	})
 	s.handle("GET /api/wealth/fees", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.Fees(s.DB, time.Now(), r.URL.Query().Get("live") != "0")
@@ -218,4 +235,21 @@ func (s *Server) moreRoutes() {
 		w.Write(b)
 		return nil, nil
 	})
+}
+
+// stress runs the stress test; ?brief=1 leaves out the month-by-month rows
+// of the ready-made crises, which the assistants don't need. A custom
+// crisis keeps its months: that is the what-if they asked for.
+func (s *Server) stress(r *http.Request, sh *cfo.Shock) (any, error) {
+	rep, err := cfo.StressTest(s.DB, time.Now(), qint(r, "months", 24), sh)
+	if err != nil {
+		return nil, err // a shock out of range says so in a sentence
+	}
+	if r.URL.Query().Get("brief") == "1" {
+		for i := range rep.Scenarios {
+			rep.Scenarios[i].Months = nil
+		}
+		rep.Base = nil
+	}
+	return rep, nil
 }
