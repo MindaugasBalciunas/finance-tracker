@@ -10,11 +10,17 @@ The owner uses the app mostly on a phone, in Firefox, as an installed PWA. Daily
 ## Data
 
 - `src/lib/api.ts`: `api.get/post/put/del<T>(path, …)` — same-origin `api/…`, JSON, throws `ApiError(status, message, data)`; a 401 `locked` dispatches `ft:locked` (app shows the lock). Don't call `fetch` directly.
-- `src/lib/hooks.ts`: shared queries (`useOverview`, `useAccounts`, `useCategories`, `usePlan(month)`, `useInbox`, …). Add a hook there when data is read in more than one place. Reference data gets a `staleTime`.
+- `src/lib/hooks.ts`: shared queries (`useOverview`, `useAccounts`, `useCategories`, `usePlan(month)`, `useInbox`, `useBankConnections`, `useIBKR`, …). Add a hook there when data is read in more than one place — never a second inline `useQuery` on the same `queryKey` in a component: three copies of `['bank-connections']` once ran with three different cache and retry settings. Reference data gets a `staleTime`; `retry: false` only for endpoints that call an outside service (IBKR), not for local reads.
+- Typed responses: `api.get<T>` with `T` from `types.ts`, mirroring the Go JSON. No `api.get<any>` — typing the Plan pages caught a goal without `spent` being compared to 0.
+- Partial writes: change one settings field with `api.patch` (`PATCH /api/plan/settings`), never GET-everything-then-PUT — a tab left open would overwrite a change made elsewhere.
 - Mutations: `useMutation` + `qc.invalidateQueries({ queryKey: [...] })` for **every** view whose numbers change — a new transaction moves `overview`, `plan`, `transactions`, balances. Stale Home numbers are a bug.
 - Server-side prefs (`usePrefs`, `usePeriod(key, …)`) for view choices that should follow the owner across devices; `localStorage` only for per-device trivia.
 - Demo mode: switching resets every query except `['demo']` — never show one database's cache in the other.
 - Types for payloads in `src/lib/types.ts`. Money arrives as euro numbers.
+
+## Size
+
+Keep a page or component file under about 600 lines. When a tab or sheet is self-contained, give it its own file next to its siblings (`pages/plan/Trips.tsx`, `pages/plan/Settings.tsx`) — `Plan.tsx` had grown to 1,181 lines and hid two whole tabs typed as `any`.
 
 ## Building blocks — reuse before writing new
 
@@ -46,6 +52,6 @@ Short, plain, second person, money-first ("€120 left this month"). Provider-ne
 
 ## Done for a UI change
 
-1. `npx tsc --noEmit && npx vitest run` green.
+1. `npx tsc --noEmit && npx eslint . --max-warnings 0 && npx vitest run` green. ESLint (`eslint.config.js`) runs the React hooks rules and bans `any`: type the payload in `types.ts` from the Go struct, and for a chart callback take the narrow shape you read (`(d: { month?: string })`). A deliberate hooks exception gets an `eslint-disable-next-line` with the reason on the line above.
 2. Live check on an isolated copy at **390px and desktop, in Firefox** (light and dark), plus the add/edit transaction and bank-inbox flows if touched — see `ft-live-verify`.
 3. Accessible names on icon buttons (`aria-label`), visible focus, tap targets ≥ 40px.

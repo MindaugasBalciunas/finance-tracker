@@ -36,14 +36,17 @@ export function TooltipBox({ title, rows, footer }: { title: ReactNode; rows: { 
   )
 }
 
+/** One series under the cursor, as Recharts hands it to a tooltip. */
+export type TipItem = { value?: number | string | (number | string)[] | null; name?: string | number; color?: string; fill?: string; stroke?: string; dataKey?: unknown; payload?: unknown }
+
 /** Recharts custom tooltip that lists the hovered payload in money. */
-export function MoneyTooltip({ active, payload, label, labelFormat, total }: any) {
+export function MoneyTooltip({ active, payload, label, labelFormat, total }: { active?: boolean; payload?: TipItem[]; label?: string | number; labelFormat?: (label: string) => ReactNode; total?: boolean }) {
   if (!active || !payload?.length) return null
   const rows = payload
-    .filter((p: any) => p.value != null && p.value !== 0)
-    .map((p: any) => ({ color: p.color || p.fill || p.stroke, label: p.name, value: eurc(p.value) }))
-  const sum = payload.reduce((a: number, p: any) => a + (Number(p.value) || 0), 0)
-  return <TooltipBox title={labelFormat ? labelFormat(label) : label} rows={rows} footer={total ? <div className="flex justify-between"><span>Total</span><span className="tnum text-ink">{eurc(sum)}</span></div> : undefined} />
+    .filter((p) => p.value != null && p.value !== 0)
+    .map((p) => ({ color: p.color || p.fill || p.stroke, label: p.name, value: eurc(Number(p.value)) }))
+  const sum = payload.reduce((a, p) => a + (Number(p.value) || 0), 0)
+  return <TooltipBox title={labelFormat ? labelFormat(String(label ?? '')) : label} rows={rows} footer={total ? <div className="flex justify-between"><span>Total</span><span className="tnum text-ink">{eurc(sum)}</span></div> : undefined} />
 }
 
 export function Legend({ items }: { items: { color: string; label: ReactNode; value?: ReactNode }[] }) {
@@ -111,7 +114,8 @@ export function Donut({ slices, center, sub, height = 200, legend = true, stacke
   const total = slices.reduce((a, s) => a + s.value, 0)
   if (!total) return null
   const on = active != null ? slices[active] : null
-  const label = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  const label = (p: { cx?: number | string; cy?: number | string; midAngle?: number; innerRadius?: number | string; outerRadius?: number | string; percent?: number }) => {
+    const [cx, cy, midAngle, innerRadius, outerRadius, percent] = [Number(p.cx), Number(p.cy), p.midAngle ?? 0, Number(p.innerRadius), Number(p.outerRadius), p.percent ?? 0]
     if (percent < 0.07) return null
     const r = (innerRadius + outerRadius) / 2
     const a = (-midAngle * Math.PI) / 180

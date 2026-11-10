@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
+import type { AuthStatus, Passkey } from '../../lib/types'
 import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, PinInput, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
@@ -12,13 +13,13 @@ import { useDemo } from '../../lib/hooks'
 export function Security() {
   const qc = useQueryClient()
   const toast = useToast()
-  const { data: st } = useQuery({ queryKey: ['auth-status'], queryFn: () => api.get<any>('/auth/status') })
-  const { data: keys } = useQuery({ queryKey: ['passkeys'], queryFn: () => api.get<any[]>('/auth/passkeys'), enabled: !!st })
+  const { data: st } = useQuery({ queryKey: ['auth-status'], queryFn: () => api.get<AuthStatus>('/auth/status') })
+  const { data: keys } = useQuery({ queryKey: ['passkeys'], queryFn: () => api.get<Passkey[]>('/auth/passkeys'), enabled: !!st })
   const [pin, setPin] = useState({ current_pin: '', pin: '' })
   const [token, setToken] = useState('')
   const demo = useDemo()
   const reload = () => { for (const k of ['auth-status', 'passkeys', 'demo']) qc.invalidateQueries({ queryKey: [k] }) }
-  const run = async (fn: () => Promise<any>, ok: string) => {
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
     try {
       await fn()
       toast(ok, 'good')
@@ -66,9 +67,9 @@ export function Security() {
         <div className="mb-2 text-xs text-muted">Read-only tokens see data routes only; read-write tokens may also edit transactions, rules, tags and inbox proposals — never settings, backups or accepting bank rows.</div>
         {token && <div className="mb-2 break-all rounded-xl bg-sunken p-2 font-mono text-xs">{token}<div className="mt-1 font-sans text-warn">Copy it now — it is shown only once.</div></div>}
         <div className="flex flex-wrap gap-2 text-sm">
-          <button className="btn-outline" onClick={async () => setToken((await api.post<any>('/auth/token', { rw: false })).token)}>{st.has_token ? 'Replace' : 'Create'} read-only</button>
+          <button className="btn-outline" onClick={async () => setToken((await api.post<{ token: string }>('/auth/token', { rw: false })).token)}>{st.has_token ? 'Replace' : 'Create'} read-only</button>
           {st.has_token && <button className="btn-danger" onClick={() => run(() => api.del('/auth/token'), 'Revoked')}>Revoke</button>}
-          <button className="btn-outline" onClick={async () => setToken((await api.post<any>('/auth/token', { rw: true })).token)}>{st.has_token_rw ? 'Replace' : 'Create'} read-write</button>
+          <button className="btn-outline" onClick={async () => setToken((await api.post<{ token: string }>('/auth/token', { rw: true })).token)}>{st.has_token_rw ? 'Replace' : 'Create'} read-write</button>
           {st.has_token_rw && <button className="btn-danger" onClick={() => run(() => api.del('/auth/token', { rw: '1' }), 'Revoked')}>Revoke</button>}
         </div>
       </Card>

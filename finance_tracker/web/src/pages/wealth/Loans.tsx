@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
+import type { LoanView } from '../../lib/types'
 import { useAccounts, useNetWorthHistory, useRefresh } from '../../lib/hooks'
 import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../../lib/format'
 import { rangeFrom } from '../../lib/periods'
@@ -114,14 +115,14 @@ function LoanEditor({ id, onClose }: { id: string; onClose: () => void }) {
 
 export function Loans() {
   const [editing, setEditing] = useState<string | null>(null)
-  const { data, isLoading } = useQuery({ queryKey: ['loans'], queryFn: () => api.get<any[]>('/loans') })
+  const { data, isLoading } = useQuery({ queryKey: ['loans'], queryFn: () => api.get<LoanView[]>('/loans') })
   const { data: hist } = useNetWorthHistory(rangeFrom('5y'), 'month', true)
   if (isLoading) return <Loading />
   if (!data?.length) return <Empty title="No loans">Add a loan account to track its balance, interest and payoff.</Empty>
   return (
     <div className="space-y-4">
       {data.map((l) => {
-        const series = (hist ?? []).map((h) => ({ date: h.date, balance: -(h.by_account?.[l.account_id] ?? 0), equity: (h.by_account?.[l.details.asset_id] ?? 0) + (h.by_account?.[l.account_id] ?? 0) })).filter((x) => x.balance > 0)
+        const series = (hist ?? []).map((h) => ({ date: h.date, balance: -(h.by_account?.[l.account_id] ?? 0), equity: (l.details.asset_id ? h.by_account?.[l.details.asset_id] ?? 0 : 0) + (h.by_account?.[l.account_id] ?? 0) })).filter((x) => x.balance > 0)
         return (
           <Card key={l.account_id} title={`${l.name}${l.details.lender ? ` · ${l.details.lender}` : ''}`} action={<button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => setEditing(l.account_id)}><Icon name="edit" size={15} />Edit</button>}>
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
@@ -136,21 +137,21 @@ export function Loans() {
               <div><div className="text-xs text-muted">Last 12 months</div><div className="tnum">{eur(l.paid_interest_12m)} interest · {eur(l.paid_principal_12m)} principal</div></div>
               <div><div className="text-xs text-muted">Interest still to pay</div><div className="tnum">{eur(l.total_interest_left)}</div></div>
             </div>
-            {l.start_principal > 0 && (
+            {(l.start_principal ?? 0) > 0 && (
               <div className="mt-4">
                 <div className="flex items-baseline justify-between text-sm">
                   <span className="text-ink2">Repaid <b className="tnum text-ink">{eurc(l.repaid)}</b> of {eurc(l.start_principal)}</span>
-                  <span className="tnum text-xs text-muted">{pct(l.repaid_pct, 1)} · since {shortDate(l.details.start_date)}</span>
+                  <span className="tnum text-xs text-muted">{pct(l.repaid_pct ?? 0, 1)} · since {shortDate(l.details.start_date ?? '')}</span>
                 </div>
-                <div className="mt-1.5 h-2 rounded-full bg-sunken"><div className="h-full rounded-full bg-good" style={{ width: `${Math.min(100, Math.max(1, l.repaid_pct * 100))}%` }} /></div>
+                <div className="mt-1.5 h-2 rounded-full bg-sunken"><div className="h-full rounded-full bg-good" style={{ width: `${Math.min(100, Math.max(1, (l.repaid_pct ?? 0) * 100))}%` }} /></div>
               </div>
             )}
-            {l.purchase_price > 0 && l.equity > 0 && (() => {
+            {(l.purchase_price ?? 0) > 0 && (l.equity ?? 0) > 0 && (() => {
               // Where the equity came from (the three parts sum to value − owed).
               const parts = [
                 { label: 'Down payment', v: l.down_payment ?? 0, color: 'var(--s1)', hint: `${eurc(l.purchase_price)} purchase − ${eurc(l.start_principal)} borrowed` },
                 { label: 'Principal repaid', v: l.repaid ?? 0, color: 'var(--s6)', hint: 'paid off the loan so far' },
-                { label: l.appreciation >= 0 ? 'Rise in value' : 'Fall in value', v: l.appreciation ?? 0, color: 'var(--s5)', hint: `${eurc(l.purchase_price)} → ${eurc(l.asset_value)}` },
+                { label: (l.appreciation ?? 0) >= 0 ? 'Rise in value' : 'Fall in value', v: l.appreciation ?? 0, color: 'var(--s5)', hint: `${eurc(l.purchase_price)} → ${eurc(l.asset_value)}` },
               ].filter((x) => x.v !== 0)
               const pos = parts.filter((x) => x.v > 0).reduce((a, x) => a + x.v, 0) || 1
               return (
@@ -171,7 +172,7 @@ export function Loans() {
                 </div>
               )
             })()}
-            {l.days_to_reset > 0 && <div className="mt-3 flex items-center gap-1.5 text-sm text-warn"><Icon name="alert" size={16} />Rate resets in {l.days_to_reset} days ({l.details.rate_reset_date})</div>}
+            {(l.days_to_reset ?? 0) > 0 && <div className="mt-3 flex items-center gap-1.5 text-sm text-warn"><Icon name="alert" size={16} />Rate resets in {l.days_to_reset} days ({l.details.rate_reset_date})</div>}
             {series.length > 1 && (
               <div className="mt-4">
                 <div className="h-52">
@@ -180,7 +181,7 @@ export function Loans() {
                       <CartesianGrid {...gridProps} />
                       <XAxis dataKey="date" {...axisProps} minTickGap={40} tickFormatter={(d) => d.slice(0, 4)} />
                       <YAxis {...axisProps} tickFormatter={eurk} width={48} />
-                      <Tooltip content={({ active, payload, label }) => active && payload?.length ? <TooltipBox title={shortDate(label)} rows={payload.map((p: any) => ({ color: p.stroke, label: p.name, value: eur(p.value) }))} /> : null} />
+                      <Tooltip content={({ active, payload, label }) => active && payload?.length ? <TooltipBox title={shortDate(label)} rows={payload.map((p) => ({ color: p.stroke, label: p.name, value: eur(Number(p.value)) }))} /> : null} />
                       <Line dataKey="balance" name="Owed" stroke="var(--s7)" strokeWidth={2} dot={false} isAnimationActive={false} />
                       <Line dataKey="equity" name="Equity" stroke="var(--s3)" strokeWidth={2} dot={false} isAnimationActive={false} />
                     </LineChart>

@@ -25,7 +25,7 @@ export interface Category { id: string; parent?: string; name: string; kind: Kin
 
 export interface Account {
   id: string; name: string; institution: string; kind: string; group: string; currency: string
-  liquid: boolean; archived: boolean; sort: number; notes: string; details: any
+  liquid: boolean; archived: boolean; sort: number; notes: string; details: Record<string, unknown> | null
   balance?: number | null; balance_date?: string; quantity?: number; source?: string
 }
 
@@ -322,3 +322,119 @@ export type IBKRReport = {
   trades_window?: string; trades_error?: string
 }
 export type IBKROrder = { id: string; symbol: string; description?: string; side: string; type: string; status?: string; quantity: number; price?: number; filled?: number; remaining?: number; tif?: string; created?: string; expires?: string }
+
+// ── investments (wealth.Portfolio; amounts are euros in the share's own maths) ──
+
+export type Trade = { id: number; date: string; account_id: string; action: 'buy' | 'sell'; ticker: string; shares: number; price: number; currency: string; notes: string; external_id?: string }
+export type Holding = {
+  accounts?: { account_id: string; shares: number }[]; ticker: string; name?: string; account_id: string; currency: string
+  shares: number; avg_cost: number; cost: number; realized: number; first_buy: string; price?: number; price_as_of?: string
+  value?: number; gain?: number; gain_pct?: number; value_eur?: number; cost_eur?: number; week52_high?: number; week52_low?: number
+  cost_share: number; day_pct?: number; day_change_eur?: number; weight: number; quote_error?: string
+}
+export type Portfolio = { holdings: Holding[]; closed: Holding[]; cost_eur: number; value_eur: number; gain_eur: number; realized_eur: number; usd_per_eur: number; day_change_eur: number; live: boolean }
+export type PerfPoint = { date: string; value_eur: number; cost_eur: number }
+export type Scenarios = {
+  positions: { ticker: string; value_eur: number; low_eur?: number; mean_eur?: number; high_eur?: number; analysts: number; basis: string }[]
+  value_eur: number; low_eur: number; mean_eur: number; high_eur: number; covered: number
+}
+export type PricePoint = { date: string; close: number }
+export type AnalystData = { ticker: string; target_low: number; target_mean: number; target_high: number; recommendation: string; num_analysts: number; currency: string }
+
+// ── settings: security, banks, data ──
+
+export type AuthStatus = { enabled: boolean; unlocked: boolean; passkeys: number; has_token: boolean; has_token_rw: boolean }
+export type Passkey = { id: number; name: string; created_at: string }
+export type BankSettings = {
+  application_id: string; has_key: boolean; environment: string; redirect_url: string; owner_names: string[] | null; consent_days: number
+  configured: boolean; keep_reserved_in_inbox: boolean
+}
+export type Backups = { snapshots: { name: string; size: number; at: string }[]; last_download: string }
+
+// ── ledger and plan odds and ends ──
+
+/** POST /bank/sync. */
+export type BankSyncResult = {
+  accounts: { bank_account_id: number; name: string; bank: string; fetched: number; new: number; from: string; error?: string; skipped?: string }[]
+  fetched: number; new: number; updated: number; duplicates: number; pending: number; superseded: number; released: number
+  auto_linked: number; reserved_added: number; settled: number; failed: number
+}
+/** POST /bank/inbox/commit. */
+export type CommitResult = { imported: number[]; skipped: number; notes?: string[] }
+/** Expenses that look recurring but aren't tracked yet (/insights/recurring). */
+export type RecurringSuggestion = {
+  name: string; merchant?: string; category: string; amount: number; every_days: number; spread_days: number; flexible: boolean
+  count: number; last: string; next: string; notes: string[] | null
+}
+/** Money set aside for (or taken from) a wish-list goal. */
+export type GoalMove = { id: number; goal_id: number; month: string; amount: number; kind: string; note: string; account_id: string; created_at: string }
+
+// ── insights: spending breakdown ──
+
+export type CategoryStat = {
+  category: string; total: number; share: number; count: number; monthly_avg: number; previous: number; change: number
+  top_merchant?: string; children?: CategoryStat[]
+}
+export type NamedCount = { name: string; category: string; amount: number; count: number }
+/** /insights/breakdown: where the money went over a window. */
+export type Breakdown = { from: string; to: string; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; tags: NamedCount[] }
+
+/** /usage/summary: which pages get used, and the ones you had to hunt for. */
+export type UsageSummary = {
+  since: string; sessions: number; views: number
+  pages: { path: string; views: number; avg_sec: number; total_min: number; bounces: number; last_seen: string }[]
+  actions: { path: string; label: string; count: number }[]
+  hunts: { target: string; count: number; avg_hops: number; avg_sec: number; entry: string; typical_path: string[] | null }[]
+  days: { day: string; views: number }[]; unused: string[]; suggestions: string[]; names: Record<string, string>
+}
+
+// ── wealth: balance history ──
+
+export type BalanceReading = { account_id: string; at: string; value: number; source: string }
+export type BalanceCell = { value: number; recorded?: boolean; source?: string; at?: string }
+/** /balances/table: every date a balance was recorded, newest first, paged. */
+export type BalanceTable = {
+  accounts: string[]; rows: { date: string; cells: Record<string, BalanceCell>; readings?: BalanceReading[]; net_worth: number; liquid: number }[]
+  page: number; pages: number; dates: number; size: number
+}
+/** /networth/movement: which accounts drove net worth between two dates. */
+export type AccountMove = { account_id: string; name: string; group: string; start: number; end: number; change: number }
+
+// ── insights: month review ──
+
+/** /insights/month: one month against its own past (cfo.MonthReview). */
+export type MonthReview = {
+  month: string; complete: boolean; final: boolean; flow: Flow; previous: Flow; six_month_avg: Flow; verdict: string; tone: 'good' | 'neutral' | 'bad'
+  highlights: { tone: string; text: string }[]
+  net_worth: { start: number; end: number; change: number; points: { date: string; value: number; liquid: number }[] | null }
+  categories: { category: string; spent: number; average: number; delta: number; count: number; top: Tx[] | null }[]
+  top_expenses: Tx[]; top_income: Tx[]; daily: { date: string; spent: number; in: number }[]; trend: Flow[]
+  budget?: { over: LineBrief[] | null; within_count: number; lines: LineBrief[] | null; safe_to_spend: number }
+  owed_to_you: number; checks: { level: 'warn' | 'info'; text: string; link: string }[]
+}
+
+// ── wealth: loans ──
+
+/** ledger.LoanDetails: a loan account's terms. */
+export type LoanDetails = {
+  lender?: string; asset_id?: string; base_rate: number; base_rate_name?: string; margin: number; rate_reset_date?: string
+  monthly_payment: number; payment_day?: number; end_date?: string; start_date?: string; start_principal?: number
+}
+/** /loans: one loan with its schedule, equity and what's left to pay. */
+export type LoanView = {
+  account_id: string; name: string; details: LoanDetails; balance: number; balance_date: string; rate: number; months_left: number
+  next_interest: number; next_principal: number; total_interest_left: number; payoff_date: string; asset_value?: number; equity?: number
+  ltv?: number; days_to_reset?: number; schedule: { month: string; balance: number; interest: number; principal: number }[] | null
+  paid_principal_12m: number; start_principal?: number; repaid?: number; repaid_pct?: number
+  purchase_price?: number; down_payment?: number; appreciation?: number; paid_interest_12m: number
+}
+/** /insights/review: a calendar year against the one before. */
+export type YearReview = {
+  year: string; flow: Flow; previous: Flow; months: Flow[] | null; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]
+  net_worth_start: number; net_worth_end: number; years: Flow[] | null
+}
+/** /balances?account=: one account's recorded values. */
+export type BalancePoint = { account_id: string; date: string; value: number; quantity?: number; price?: number; source: string; at?: string }
+
+/** /ai/scan and /ai/assist: a transaction drafted from a receipt photo or a sentence. */
+export type AIScan = { date: string; amount: number; kind: Kind; category: string; merchant: string; note: string; account_id: string; tags: string[] | null; remark: string; currency: string }

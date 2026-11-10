@@ -13,6 +13,11 @@ import { AIMemory } from '../components/AIMemory'
 import { axisProps, gridProps, Legend, MoneyTooltip } from '../components/charts'
 import { Icon } from '../components/Icon'
 
+/** POST /ai/chat: the reply to one turn. */
+type ChatResult = { reply: string; tools: string[] | null; unchecked?: string[]; changed: boolean; usage?: { cost_usd?: number } }
+/** A ```chart block the assistant writes: untrusted, so every field is optional. */
+type ChartSpec = { type?: string; title?: string; x?: string; unit?: string; data?: Record<string, string | number>[]; series?: { key: string; name?: string }[] }
+
 type Msg = { id?: number; role: 'user' | 'assistant'; content: string; cost?: number; tools?: string[]; image?: string; unchecked?: string[] }
 
 const SUGGESTIONS = [
@@ -131,14 +136,14 @@ export default function Assistant() {
     setLocal((l) => [...l, { role: 'user', content: content || '(image)', image: preview }])
     setBusy(true)
     try {
-      let r: any
+      let r: ChatResult
       if (image) {
         const fd = new FormData()
         fd.append('text', content)
         fd.append('image', image)
-        r = await api.post('/ai/chat', fd)
-      } else r = await api.post('/ai/chat', { text: content })
-      setLocal((l) => [...l, { role: 'assistant', content: r.reply, cost: r.usage?.cost_usd, tools: r.tools, unchecked: r.unchecked }])
+        r = await api.post<ChatResult>('/ai/chat', fd)
+      } else r = await api.post<ChatResult>('/ai/chat', { text: content })
+      setLocal((l) => [...l, { role: 'assistant', content: r.reply, cost: r.usage?.cost_usd, tools: r.tools ?? undefined, unchecked: r.unchecked }])
       if (r.changed) refresh()
     } catch (e) {
       // The connection dropped (app in the background, network change) or a
@@ -287,7 +292,7 @@ const Bubble = memo(function Bubble({ m }: { m: Msg }) {
 })
 
 const ChatChart = memo(function ChatChart({ spec }: { spec: string }) {
-  let c: any
+  let c: ChartSpec
   try {
     c = JSON.parse(spec)
   } catch {
@@ -305,21 +310,21 @@ const ChatChart = memo(function ChatChart({ spec }: { spec: string }) {
           {c.type === 'pie' ? (
             <PieChart>
               <Pie data={c.data} dataKey={series[0]?.key} nameKey={c.x} innerRadius="55%" outerRadius="85%" stroke="var(--chart-surface)" strokeWidth={2} isAnimationActive={false}>
-                {(c.data ?? []).slice(0, 8).map((_: any, i: number) => <Cell key={i} fill={color(i)} />)}
+                {(c.data ?? []).slice(0, 8).map((_, i) => <Cell key={i} fill={color(i)} />)}
               </Pie>
               <Tooltip content={<MoneyTooltip />} />
             </PieChart>
           ) : c.type === 'line' ? (
-            <LineChart {...common}>{axes}{series.map((s: any, i: number) => <Line key={s.key} dataKey={s.key} name={s.name} stroke={color(i)} strokeWidth={2} dot={false} isAnimationActive={false} />)}</LineChart>
+            <LineChart {...common}>{axes}{series.map((s, i) => <Line key={s.key} dataKey={s.key} name={s.name} stroke={color(i)} strokeWidth={2} dot={false} isAnimationActive={false} />)}</LineChart>
           ) : c.type === 'area' ? (
-            <AreaChart {...common}>{axes}{series.map((s: any, i: number) => <Area key={s.key} dataKey={s.key} name={s.name} stroke={color(i)} fill={color(i)} fillOpacity={0.2} strokeWidth={2} isAnimationActive={false} />)}</AreaChart>
+            <AreaChart {...common}>{axes}{series.map((s, i) => <Area key={s.key} dataKey={s.key} name={s.name} stroke={color(i)} fill={color(i)} fillOpacity={0.2} strokeWidth={2} isAnimationActive={false} />)}</AreaChart>
           ) : (
-            <BarChart {...common}>{axes}{series.map((s: any, i: number) => <Bar key={s.key} dataKey={s.key} name={s.name} fill={color(i)} radius={[4, 4, 0, 0]} isAnimationActive={false} />)}</BarChart>
+            <BarChart {...common}>{axes}{series.map((s, i) => <Bar key={s.key} dataKey={s.key} name={s.name} fill={color(i)} radius={[4, 4, 0, 0]} isAnimationActive={false} />)}</BarChart>
           )}
         </ResponsiveContainer>
       </div>
       <div className={clsx('mt-2', series.length < 2 && c.type !== 'pie' && 'hidden')}>
-        <Legend items={c.type === 'pie' ? (c.data ?? []).slice(0, 8).map((d: any, i: number) => ({ color: color(i), label: d[c.x] })) : series.map((s: any, i: number) => ({ color: color(i), label: s.name }))} />
+        <Legend items={c.type === 'pie' ? (c.data ?? []).slice(0, 8).map((d, i) => ({ color: color(i), label: d[c.x ?? ''] })) : series.map((s, i) => ({ color: color(i), label: s.name }))} />
       </div>
     </div>
   )

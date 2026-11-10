@@ -29,7 +29,7 @@ Read these skill files from the `ft-dev` plugin (path relative to the repo root 
 5. **Tests**: behaviour without a test; a bug fix without a test that fails before it; tests hitting the wall clock or real external services; token-scope change without an allowed + denied case.
 6. **UI**: unlayered custom CSS, hard-coded colours, Recharts without `isAnimationActive={false}`, missing `aria-label` on icon buttons, property/vehicle offered as "paid from", vendor-specific AI wording.
 
-Optionally run `cd finance_tracker/server && go vet ./... && go test ./<touched packages>/...` and `cd finance_tracker/web && npx tsc --noEmit` to confirm a suspicion.
+Optionally run `cd finance_tracker/server && go vet ./... && go test ./<touched packages>/...` and `cd finance_tracker/web && npx tsc --noEmit && npx eslint .` to confirm a suspicion.
 
 ## Report
 

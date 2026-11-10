@@ -22,7 +22,7 @@ A personal CFO for one household, shipped as a Home Assistant add-on: one contai
 ## Layering rules
 
 1. **Domain packages are plain functions over the database.** `ledger.Validate(q querier, t *Tx)`, `ledger.SaveAccount(e execer, a Account)`, `plan.LoadSettings(d)`. No repository/service/interface layers. Accept the narrowest of `querier` / `execer` / `*sql.Tx` / `*sql.DB` so the function works inside a transaction. Only things holding external clients or state are structs (`bank.Service`, `ibkr.Service`, `ai.Assistant`, `auth.Service`).
-2. **Business rules live in the domain package, not the handler.** Handlers decode, call domain functions, return. Invariants (e.g. property/vehicle never "paid from") are enforced in the domain (`ledger.Validate`) *and* mirrored in the UI (`AccountSelect kinds`), never only in the UI. **Every transaction create/edit/delete goes through `entry`** (`entry.Do` + `Create`/`Update`/`Delete`): it validates, writes, moves balances (`wealth.MoveForTx`) and returns bank rows to the inbox in one DB transaction. Never call `ledger.Insert/Update/Delete` plus balance moves by hand — that is how bulk delete left balances wrong.
+2. **Business rules live in the domain package, not the handler.** Handlers decode, call domain functions, return. Invariants (e.g. property/vehicle never "paid from") are enforced in the domain (`ledger.Validate`) *and* mirrored in the UI (`AccountSelect kinds`), never only in the UI. **Every transaction create/edit/delete goes through `entry`** (`entry.Do` + `Create`/`Update`/`Delete`): it validates, writes, moves balances (`wealth.MoveForTx`) and returns bank rows to the inbox in one DB transaction. Never call `ledger.Insert/Update/Delete` plus balance moves by hand — that is how bulk delete left balances wrong. The bank inbox commit goes through `entry.Create` too, so `bank` imports `entry` and `entry` must never import `bank` (returning a deleted bank row to the inbox is `entry`'s own SQL for that reason).
 3. **Cross-domain views go in `cfo`** (Home overview, plan report, cash until payday) or `insights`; they read, they don't write. Computations that depend on "today" take `now time.Time` as a parameter.
 4. **`api` imports domains; domains never import `api`.** `advice` holds assistant rules shared by `ai` and `mcptools` — keep one source of truth.
 5. **Dependencies: stdlib first.** A new module needs a strong reason (security surface, Docker image size, `govulncheck`). Never `go mod tidy` with a newer local toolchain without checking the `go` directive still matches the `toolchain` CI builds with (setup-go reads it from `go.mod`).
@@ -73,6 +73,8 @@ func (s *Server) widgetRoutes() {
 - Comments explain *why* in plain English and name the user-visible effect ("a €769 car service … vanished from the month"). Every package has a doc comment. Match the surrounding density; don't narrate obvious code.
 - Names are short and domain-y (`Tx`, `Bal`, `moveBalances`). Long one-line struct literals are normal here.
 - User-facing wording is short, plain, provider-neutral ("AI", not a vendor name), and uses € with `eur()` formatting.
+- Lists in a response are empty, never `null`: start them as `[]T{}` (or normalise before returning). The web maps over them — a month or window with nothing in it once crashed Month review and Spending.
+- Keep a Go file to one concern and under about 600 lines; split by section in the same package (`bank`: `service.go` consents, `sync.go`, `inbox.go`).
 
 ## Adding a feature end to end
 

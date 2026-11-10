@@ -18,6 +18,7 @@ import (
 	"ft/internal/bank"
 	"ft/internal/bank/openbanking"
 	"ft/internal/db"
+	"ft/internal/entry"
 	"ft/internal/ledger"
 	"ft/internal/money"
 	. "ft/internal/testutil"
@@ -346,10 +347,9 @@ func TestDeletedReservationStaysGoneAndBookingSurvives(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 	txs, _ := ledger.All(d, ledger.Filter{})
-	if err := bank.ReturnToInbox(d, txs[0].ID); err != nil {
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Delete(tx, txs[0].ID) }); err != nil {
 		t.Fatal(err)
 	}
-	ledger.Delete(d, txs[0].ID)
 	// Still reserved at the bank: not re-added.
 	res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
 	if again, _ := ledger.All(d, ledger.Filter{}); len(again) != 0 || res.ReservedAdded != 0 {

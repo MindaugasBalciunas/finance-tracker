@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 import { usePeriod } from '../../lib/hooks'
 import { catColor, catIcon, useCats } from '../../lib/categories'
 import { eur, eurk, pct, shortDate } from '../../lib/format'
-import type { Tx } from '../../lib/types'
+import type { Breakdown, Tx } from '../../lib/types'
 import { Card, Loading } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
@@ -22,12 +22,12 @@ export function Spending() {
   const [open, setOpen] = useState<string | null>(null)
   const cats = useCats()
   const editor = useTxEditor()
-  const { data, isLoading } = useQuery({ queryKey: ['breakdown', preset], queryFn: () => api.get<any>('/insights/breakdown', { preset }) })
+  const { data, isLoading } = useQuery({ queryKey: ['breakdown', preset], queryFn: () => api.get<Breakdown>('/insights/breakdown', { preset }) })
   if (isLoading || !data) return <Loading />
-  const total = data.categories.reduce((a: number, c: any) => a + c.total, 0)
-  const max = Math.max(...data.categories.map((c: any) => c.total), 1)
+  const total = data.categories.reduce((a, c) => a + c.total, 0)
+  const max = Math.max(...data.categories.map((c) => c.total), 1)
   // The header nets refunds off; the donut can only show what was spent.
-  const refunds = data.categories.some((c: any) => c.total < 0)
+  const refunds = data.categories.some((c) => c.total < 0)
   return (
     <div className="space-y-4">
       <div className="no-scrollbar overflow-y-hidden -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -39,7 +39,7 @@ export function Spending() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card pad={false} icon="bag" color="var(--s2)" title="By category" className="lg:col-span-2">
           <div className="divide-y divide-line border-t border-line">
-            {data.categories.map((c: any) => (
+            {data.categories.map((c) => (
               <div key={c.category}>
                 <button className="w-full px-4 py-2.5 text-left hover:bg-sunken/40" onClick={() => setOpen(open === c.category ? null : c.category)}>
                   <div className="flex items-baseline justify-between gap-2">
@@ -54,9 +54,9 @@ export function Spending() {
                   </div>
                   <div className="mt-0.5 text-xs text-muted">{eur(c.monthly_avg)}/mo{c.top_merchant ? ` · mostly ${c.top_merchant}` : ''}</div>
                 </button>
-                {open === c.category && c.children?.length > 0 && (
+                {open === c.category && (c.children?.length ?? 0) > 0 && (
                   <div className="bg-sunken/40 px-4 py-2">
-                    {c.children.map((ch: any) => (
+                    {c.children?.map((ch) => (
                       <a key={ch.category} href={`#/ledger?category=${ch.category}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between py-1 text-sm">
                         <span className="text-ink2">{cats.name(ch.category)}</span>
                         <span className="tnum">{eur(ch.total)} <span className="text-xs text-muted">{ch.previous > 0 ? `${ch.change > 0 ? '+' : ''}${pct(ch.change)}` : ''}</span></span>
@@ -71,11 +71,11 @@ export function Spending() {
         </Card>
         <div className="space-y-4">
           <Card icon="pie" color="var(--s2)" title="Where it went">
-            <Donut slices={foldSlices(data.categories.map((c: any) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub={refunds ? 'before refunds' : 'spent'} stacked />
+            <Donut slices={foldSlices(data.categories.map((c) => ({ key: c.category, label: cats.name(c.category), value: c.total, color: catColor(c.category) })))} sub={refunds ? 'before refunds' : 'spent'} stacked />
           </Card>
           <Card pad={false} icon="utensils" color="var(--s4)" title="Top merchants">
             <div className="divide-y divide-line border-t border-line">
-              {data.merchants.slice(0, 12).map((m: any) => (
+              {data.merchants.slice(0, 12).map((m) => (
                 <a key={m.name} href={`#/ledger?merchant=${encodeURIComponent(m.name)}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-sunken/40">
                   <MerchantMark merchant={m.name} category={m.category} size={26} />
                   <span className="min-w-0 flex-1 truncate">{m.name} <span className="text-xs text-muted">×{m.count}</span></span>
@@ -87,7 +87,7 @@ export function Spending() {
           {data.tags?.length > 0 && (
             <Card pad={false} title="By tag" action={<span className="text-xs text-muted">people · trips · properties</span>}>
               <div className="divide-y divide-line border-t border-line">
-                {data.tags.slice(0, 12).map((t: any) => (
+                {data.tags.slice(0, 12).map((t) => (
                   <a key={t.name} href={`#/ledger?tag=${encodeURIComponent(t.name)}&from=${data.from}&to=${data.to}`} className="flex items-center justify-between px-4 py-2 text-sm hover:bg-sunken/40">
                     <span className="min-w-0 truncate">#{t.name} <span className="text-xs text-muted">×{t.count}</span></span>
                     <span className="tnum">{eur(t.amount)}</span>
@@ -121,7 +121,7 @@ function PaceCard() {
             <XAxis dataKey="day" {...axisProps} interval={4} />
             <YAxis {...axisProps} tickFormatter={eurk} width={48} />
             <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-              <TooltipBox title={`Day ${label}`} rows={payload.filter((p: any) => p.value != null).map((p: any) => ({ color: p.stroke, label: p.name, value: eur(p.value) }))} />) : null} />
+              <TooltipBox title={`Day ${label}`} rows={payload.filter((p) => p.value != null).map((p) => ({ color: p.stroke, label: p.name, value: eur(Number(p.value)) }))} />) : null} />
             <Line dataKey="typical" name="Typical (6-month avg)" stroke="var(--s-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
             <Line dataKey="last_month" name="Last month" stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
             <Line dataKey="current" name="This month" stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />

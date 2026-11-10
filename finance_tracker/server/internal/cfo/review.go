@@ -276,6 +276,26 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	}
 	r.Verdict, r.Tone, r.Highlights = verdict(r)
 	r.Checks = Checks(d, now)
+	// Empty lists, not null: the Month review page maps over them, and a
+	// month with nothing in it (before the first transaction) broke it.
+	if r.Highlights == nil {
+		r.Highlights = []Highlight{}
+	}
+	if r.Categories == nil {
+		r.Categories = []CategoryVsNorm{}
+	}
+	if r.TopExpenses == nil {
+		r.TopExpenses = []ledger.Tx{}
+	}
+	if r.TopIncome == nil {
+		r.TopIncome = []ledger.Tx{}
+	}
+	if r.Daily == nil {
+		r.Daily = []DaySpend{}
+	}
+	if r.Checks == nil {
+		r.Checks = []Check{}
+	}
 	return r, nil
 }
 

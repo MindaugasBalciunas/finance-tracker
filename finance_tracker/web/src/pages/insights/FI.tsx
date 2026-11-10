@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, AreaChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -71,7 +72,7 @@ export function FI() {
       <Card title="Levels of freedom" icon="target" color="var(--hue-good)">
         <ul className="space-y-4">
           {f.levels.map((l) => (
-            <li key={l.key} style={{ ['--lvl' as any]: LEVEL_HUE[l.key] }}>
+            <li key={l.key} style={{ '--lvl': LEVEL_HUE[l.key] } as CSSProperties}>
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <span className="grid h-6 w-6 place-items-center rounded-full text-[11px]" style={{ background: 'color-mix(in oklab, var(--lvl) 18%, transparent)', color: 'var(--lvl)' }}>

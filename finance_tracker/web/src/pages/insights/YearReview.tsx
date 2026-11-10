@@ -5,7 +5,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { eur, eurk, monthLabel, pct, todayISO } from '../../lib/format'
-import type { Flow, Tx } from '../../lib/types'
+import type { Flow, Tx, YearReview as YearReviewData } from '../../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { CountUp, Card, Loading, Stat } from '../../components/ui'
 import { Icon } from '../../components/Icon'
@@ -18,7 +18,7 @@ import { TxRow, useTxEditor } from '../../components/TxEditor'
 
 export function Review() {
   const [year, setYear] = useState(todayISO().slice(0, 4))
-  const { data: r, isLoading } = useQuery({ queryKey: ['review', year], queryFn: () => api.get<any>('/insights/review', { year }) })
+  const { data: r, isLoading } = useQuery({ queryKey: ['review', year], queryFn: () => api.get<YearReviewData>('/insights/review', { year }) })
   const cats = useCats()
   const editor = useTxEditor()
   const nav = useNavigate()
@@ -42,11 +42,11 @@ export function Review() {
       <Card title="Month by month">
         <div className="h-52">
           <ResponsiveContainer>
-            <LineChart data={r.months} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+            <LineChart data={r.months ?? []} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid {...gridProps} />
               <XAxis dataKey="period" {...axisProps} tickFormatter={(m) => monthLabel(m).slice(0, 3)} />
               <YAxis {...axisProps} tickFormatter={eurk} width={48} />
-              <Tooltip content={({ active, payload, label }) => active && payload?.length ? <TooltipBox title={monthLabel(label as string, true)} rows={payload.map((x: any) => ({ color: x.stroke, label: x.name, value: eur(x.value) }))} /> : null} />
+              <Tooltip content={({ active, payload, label }) => active && payload?.length ? <TooltipBox title={monthLabel(label as string, true)} rows={payload.map((x) => ({ color: x.stroke, label: x.name, value: eur(Number(x.value)) }))} /> : null} />
               <Line dataKey="income" name="Income" stroke="var(--s1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
               <Line dataKey="spending" name="Spending" stroke="var(--s2)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
             </LineChart>
@@ -57,7 +57,7 @@ export function Review() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card pad={false} title="Where it went">
           <div className="divide-y divide-line border-t border-line">
-            {r.categories.slice(0, 10).map((c: any) => (
+            {r.categories.slice(0, 10).map((c) => (
               <Link key={c.category} to={ledgerLink({ category: c.category, year })} className="flex items-center justify-between gap-2 px-4 py-2 text-sm hover:bg-sunken/50">
                 <span className="flex min-w-0 flex-1 items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(c.category) }} />{cats.name(c.category)}</span>
                 <span className="tnum">{eur(c.total)} <span className={clsx('text-xs', c.change > 0.1 ? 'text-bad' : c.change < -0.1 ? 'text-good' : 'text-muted')}>{c.previous ? `${c.change > 0 ? '+' : ''}${pct(c.change)}` : ''}</span></span>

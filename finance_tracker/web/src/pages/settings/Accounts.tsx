@@ -30,7 +30,7 @@ export function AccountsVisibility() {
       await api.put(`/accounts/${a.id}`, { ...a, archived: !shown })
       refresh()
       toast(shown ? `${a.name} is back` : a.balance ? `${a.name} hidden and closed at €0 from today` : `${a.name} hidden`, 'good')
-    } catch (e: any) { toast(e?.message ?? 'Failed', 'bad') } finally { setBusy(null) }
+    } catch (e) { toast((e as Error).message || 'Failed', 'bad') } finally { setBusy(null) }
   }
   const close = async (a: Account) => {
     setBusy(a.id)
@@ -38,7 +38,7 @@ export function AccountsVisibility() {
       await api.post(`/accounts/${a.id}/close`)
       refresh()
       toast(`${a.name} closed at €0 from today`, 'good')
-    } catch (e: any) { toast(e?.message ?? 'Failed', 'bad') } finally { setBusy(null) }
+    } catch (e) { toast((e as Error).message || 'Failed', 'bad') } finally { setBusy(null) }
   }
   const groups = GROUPS.map((g) => ({ ...g, items: accounts.filter((a) => a.group === g.id) })).filter((g) => g.items.length)
   const other = accounts.filter((a) => !GROUPS.some((g) => g.id === a.group))

@@ -356,7 +356,7 @@ type AnalystFunc func(ticker string) (low, mean, high float64, analysts int, bas
 // BuildScenarios applies each position's target range to its share count.
 // Positions without targets count at today's value in every scenario.
 func BuildScenarios(p Portfolio, lookup AnalystFunc) Scenarios {
-	var out Scenarios
+	out := Scenarios{Positions: []Scenario{}} // empty, not null, with nothing priced
 	var covered float64
 	for _, h := range p.Holdings {
 		if h.ValueEUR == nil || h.Value == nil || *h.Value == 0 {

@@ -42,7 +42,7 @@ function ShareForAI() {
       const file = new File([await res.blob()], name, { type: 'application/zip' })
       // Phones: the share sheet goes straight to an AI app. Elsewhere: download.
       if (navigator.canShare?.({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'Finances for AI', text: AI_SHARE_TEXT }) } catch (e: any) { if (e?.name !== 'AbortError') throw e }
+        try { await navigator.share({ files: [file], title: 'Finances for AI', text: AI_SHARE_TEXT }) } catch (e) { if ((e as Error).name !== 'AbortError') throw e }
       } else {
         const url = URL.createObjectURL(file)
         const a = Object.assign(document.createElement('a'), { href: url, download: name })
@@ -50,8 +50,8 @@ function ShareForAI() {
         setTimeout(() => URL.revokeObjectURL(url), 10_000)
         toast('Saved — attach it in your AI assistant', 'good')
       }
-    } catch (e: any) {
-      toast(e?.message ?? 'Export failed', 'bad')
+    } catch (e) {
+      toast((e as Error).message || 'Export failed', 'bad')
     } finally { setBusy(false) }
   }
   return (

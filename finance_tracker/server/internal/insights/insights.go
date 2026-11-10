@@ -239,7 +239,7 @@ func Breakdown(txs []ledger.Tx, from, to string) []CategoryStat {
 		}
 		return s
 	}
-	var out []CategoryStat
+	out := []CategoryStat{} // empty, not null, for an empty window
 	for cat, a := range top {
 		if a.total == 0 && a.prev == 0 {
 			continue
@@ -428,7 +428,7 @@ func Anomalies(txs []ledger.Tx, month string, now time.Time) []Anomaly {
 
 // TopExpenses lists the largest single expenses in a window.
 func TopExpenses(txs []ledger.Tx, from, to string, n int) []ledger.Tx {
-	var out []ledger.Tx
+	out := []ledger.Tx{} // empty, not null, for an empty window
 	for _, t := range txs {
 		if t.Kind == "expense" && t.Date >= from && t.Date <= to {
 			out = append(out, t)

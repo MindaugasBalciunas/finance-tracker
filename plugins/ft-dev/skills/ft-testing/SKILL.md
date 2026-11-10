@@ -5,7 +5,7 @@ description: Testing patterns for finance-tracker — Go tests with internal/tes
 
 # Testing patterns
 
-Gate: `make test` from the repo root = `go vet ./... && go test -race ./...` (server) + `npx tsc --noEmit && npx vitest run` (web). CI additionally runs `npm run build` and `test/nginx_gate.sh`. Never call a change done on a red or skipped suite; report failures with their output.
+Gate: `make test` from the repo root = `go vet ./... && go test -race ./...` (server) + `npx tsc --noEmit && npx eslint . --max-warnings 0 && npx vitest run` (web). CI additionally runs `npm run build` and `test/nginx_gate.sh`. Never call a change done on a red or skipped suite; report failures with their output.
 
 Locally the toolchain is pinned in `go.mod`; if `go` complains, run with `GOTOOLCHAIN=<toolchain from go.mod>`.
 
@@ -68,7 +68,7 @@ See `ft-migration`: new tables need rows in the backup round-trip fixtures, data
 - Pure logic in `src/lib` (format, periods, categories) → `lib.test.ts` unit tests; keep money formatting cases (cents kept under €1,000, `—` for null).
 - Components: `render`, `screen`, `fireEvent`/`user-event`, `waitFor`. Assert what the user sees (text, role, `aria-invalid`), and semantic classes (`text-good`, `bg-bad`) when colour carries meaning.
 - Network: `vi.stubGlobal('fetch', vi.fn(async (url, init) => new Response(JSON.stringify(body), { status })))`, record calls to assert request bodies; `afterEach(() => vi.restoreAllMocks())`. Components using queries need a `QueryClientProvider` with `retry: false`.
-- `npx tsc --noEmit` is part of the gate — no `any` sprawl to silence it.
+- `npx tsc --noEmit` and `npx eslint .` are part of the gate — `any` is a lint error, so type the payload instead of silencing it.
 
 ## What a change needs
 

@@ -19,7 +19,7 @@ export function Trends() {
   const [parent, setParent] = useState('')
   const cats = useCats()
   const n = String(spanMonths(months))
-  const { data, isLoading } = useQuery({ queryKey: ['trends', n, parent], queryFn: () => api.get<any[]>('/insights/trends', { months: n, parent }) })
+  const { data, isLoading } = useQuery({ queryKey: ['trends', n, parent], queryFn: () => api.get<({ month: string } & Record<string, number>)[]>('/insights/trends', { months: n, parent }) })
   const keys = useMemo(() => {
     const totals: Record<string, number> = {}
     for (const r of data ?? []) for (const [k, v] of Object.entries(r)) if (k !== 'month') totals[k] = (totals[k] ?? 0) + (v as number)
@@ -36,7 +36,7 @@ export function Trends() {
     return { keys: top, other: keys.slice(7), color: (k: string) => `var(--s${top.indexOf(k) + 1})` }
   }, [keys, parent])
   const rows = useMemo(() => (data ?? []).map((r) => {
-    const row: any = { month: r.month }
+    const row: Record<string, string | number> = { month: r.month }
     for (const k of series.keys) row[k] = r[k] ?? 0
     row.__other = series.other.reduce((a, k) => a + (r[k] ?? 0), 0)
     return row
@@ -44,7 +44,7 @@ export function Trends() {
   const nav = useNavigate()
   // A tap on a bar segment lists that category's month; "Other" lists the
   // categories folded into it.
-  const open = (k: string) => (d: any) => d?.month && nav(ledgerLink({ month: d.month, kind: 'expense', category: k === '__other' ? series.other : k }))
+  const open = (k: string) => (d: { month?: string }) => d?.month && nav(ledgerLink({ month: d.month, kind: 'expense', category: k === '__other' ? series.other : k }))
   if (isLoading) return <Loading />
   const all = [...series.keys, ...(series.other.length ? ['__other'] : [])]
   const label = (k: string) => (k === '__other' ? 'Other' : cats.name(k))
@@ -66,8 +66,8 @@ export function Trends() {
               <XAxis dataKey="month" {...axisProps} tickFormatter={(m) => monthLabel(m)} minTickGap={24} />
               <YAxis {...axisProps} tickFormatter={eurk} width={48} />
               <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload, label: l }) => active && payload?.length ? (
-                <TooltipBox title={monthLabel(l as string, true)} rows={[...payload].reverse().filter((p: any) => p.value).map((p: any) => ({ color: p.fill, label: label(p.dataKey), value: eur(p.value) }))}
-                  footer={<div className="flex justify-between"><span>Total</span><span className="tnum text-ink">{eur(payload.reduce((a: number, p: any) => a + (p.value || 0), 0))}</span></div>} />) : null} />
+                <TooltipBox title={monthLabel(l as string, true)} rows={[...payload].reverse().filter((p) => p.value).map((p) => ({ color: p.fill, label: label(String(p.dataKey)), value: eur(Number(p.value)) }))}
+                  footer={<div className="flex justify-between"><span>Total</span><span className="tnum text-ink">{eur(payload.reduce((a, p) => a + (Number(p.value) || 0), 0))}</span></div>} />) : null} />
               {all.map((k, i) => (
                 <Bar key={k} dataKey={k} stackId="s" fill={color(k)} stroke="var(--chart-surface)" strokeWidth={1} radius={i === all.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive={false} cursor="pointer" onClick={open(k)} />
               ))}

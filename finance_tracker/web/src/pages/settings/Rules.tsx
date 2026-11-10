@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useRefresh, useRules } from '../../lib/hooks'
 import { useCats } from '../../lib/categories'
-import type { Rule, RuleReport, RuleStat } from '../../lib/types'
+import type { Rule, RuleReport, RuleStat, Tx } from '../../lib/types'
 import { Card, Field, Loading, NumberInput, Segmented, Sheet, Spinner, Stat, Toggle, useToast } from '../../components/ui'
 import { pct, shortDate } from '../../lib/format'
 import { CategoryPicker, TagInput, MerchantInput } from '../../components/pickers'
@@ -142,14 +142,14 @@ function RuleEditor({ rule, stat, onClose }: { rule: Partial<Rule>; stat?: RuleS
   const qc = useQueryClient()
   const refresh = useRefresh()
   const toast = useToast()
-  const preview = useQuery({ queryKey: ['rule-preview', r.pattern, r.when_category], queryFn: () => api.post<any>('/rules/preview', r), enabled: !!(r.pattern || r.when_category) })
+  const preview = useQuery({ queryKey: ['rule-preview', r.pattern, r.when_category], queryFn: () => api.post<{ matches: number; sample: Tx[] | null }>('/rules/preview', r), enabled: !!(r.pattern || r.when_category) })
   const save = async (apply: boolean) => {
     // Applying puts the rule's category back on rows you re-filed by hand.
     if (apply && stat && stat.overridden > 0 && r.set_category && !confirm(`${stat.overridden} matching rows were filed elsewhere by hand. Applying to history moves them back to this rule's category. Continue?`)) return
     try {
       const saved = r.id ? await api.put<Rule>(`/rules/${r.id}`, r) : await api.post<Rule>('/rules', r)
       if (apply) {
-        const res = await api.post<any>(`/rules/${saved.id}/apply`)
+        const res = await api.post<{ changed: number }>(`/rules/${saved.id}/apply`)
         toast(`Rule saved · ${res.changed} transactions updated`, 'good')
         refresh()
       } else toast('Rule saved', 'good')
@@ -202,7 +202,7 @@ function RuleEditor({ rule, stat, onClose }: { rule: Partial<Rule>; stat?: RuleS
         <div>
           <div className="label">Matches in your ledger {preview.data && <b className="text-ink">{preview.data.matches}</b>}</div>
           <div className="max-h-96 divide-y divide-line overflow-y-auto rounded-xl border border-line">
-            {preview.isFetching ? <div className="p-4"><Spinner /></div> : (preview.data?.sample ?? []).map((t: any) => <TxRow key={t.id} t={t} showDate />)}
+            {preview.isFetching ? <div className="p-4"><Spinner /></div> : (preview.data?.sample ?? []).map((t) => <TxRow key={t.id} t={t} showDate />)}
           </div>
         </div>
       </div>

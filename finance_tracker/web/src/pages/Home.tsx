@@ -44,8 +44,8 @@ export default function Home() {
   const lo = pick((a, b) => a < b)
   // Keep the label inside the chart near the edges.
   const anchor = (i: number) => (i < spark.length * 0.15 ? 'start' : i > spark.length * 0.85 ? 'end' : 'middle')
-  const dotLabel = (m: { i: number; p: (typeof spark)[number] }, above: boolean) => (props: any) => {
-    const vb = props.viewBox ?? {}
+  const dotLabel = (m: { i: number; p: (typeof spark)[number] }, above: boolean) => (props: { viewBox?: unknown }) => {
+    const vb = (props.viewBox ?? {}) as { x?: number; y?: number; width?: number; height?: number }
     const x = (vb.x ?? 0) + (vb.width ?? 0) / 2
     const y = (vb.y ?? 0) + (above ? -8 : (vb.height ?? 0) + 14)
     return (

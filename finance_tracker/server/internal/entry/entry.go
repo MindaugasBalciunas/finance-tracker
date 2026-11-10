@@ -9,7 +9,7 @@ package entry
 import (
 	"database/sql"
 
-	"ft/internal/bank"
+	"ft/internal/db"
 	"ft/internal/ledger"
 	"ft/internal/money"
 	"ft/internal/wealth"
@@ -93,12 +93,26 @@ func Delete(tx *sql.Tx, id int64) error {
 	} else {
 		cur.SplitOf = 0
 	}
-	if err := bank.ReturnToInbox(tx, id); err != nil {
+	if err := returnToInbox(tx, id); err != nil {
 		return err
 	}
 	if err := ledger.Delete(tx, id); err != nil {
 		return err
 	}
 	_, err = wealth.MoveForTx(tx, cur, -1)
+	return err
+}
+
+// returnToInbox handles a bank-sourced transaction the owner deleted. A booked
+// row goes back to the inbox for review; a reservation is dismissed instead —
+// otherwise the next sync would add it straight back. It lives here, not in
+// bank, so bank's inbox commit can create transactions through Create.
+func returnToInbox(tx *sql.Tx, txID int64) error {
+	if _, err := tx.Exec(`UPDATE bank_inbox SET state='dismissed', imported_tx_id=NULL, matched_tx_id=NULL,
+		verdict_note='removed from the ledger while reserved', last_seen_at=? WHERE imported_tx_id=? AND pending=1`, db.Now(), txID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`UPDATE bank_inbox SET state='open', imported_tx_id=NULL, matched_tx_id=NULL, verdict='new', last_seen_at=?
+		WHERE imported_tx_id=? AND pending=0`, db.Now(), txID)
 	return err
 }

@@ -70,6 +70,8 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
       document.removeEventListener('visibilitychange', offer)
       cancelPasskeyLogin()
     }
+    // Once, as the lock screen opens: bio() only reads refs and sets state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const submit = async (p: string) => {

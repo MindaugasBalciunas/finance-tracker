@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAccounts, useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { dayLabel, eurc, monthLabel, parseNum, shortDate, todayISO } from '../lib/format'
-import type { Kind, Tx, TxRecurring } from '../lib/types'
+import type { AIScan, Kind, Tx, TxRecurring } from '../lib/types'
 import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, Toggle, useToast } from './ui'
@@ -13,7 +13,8 @@ import { logoName, MerchantMark } from './MerchantLogo'
 import { Icon } from './Icon'
 import { DateInput } from './DateInput'
 
-type Draft = Partial<Tx> & { kind: Kind }
+// _remark: what the AI said about a scanned receipt, shown above the form.
+type Draft = Partial<Tx> & { kind: Kind; _remark?: string }
 type Ctx = { open: (t?: Partial<Tx>) => void; scan: () => void }
 const EditorCtx = createContext<Ctx>({ open: () => {}, scan: () => {} })
 export const useTxEditor = () => useContext(EditorCtx)
@@ -40,9 +41,9 @@ export function TxEditorProvider({ children }: { children: ReactNode }) {
     try {
       const fd = new FormData()
       fd.append('image', f)
-      const s = await api.post<any>('/ai/scan', fd)
+      const s = await api.post<AIScan>('/ai/scan', fd)
       setDraft({ ...blank(), date: s.date || todayISO(), kind: s.kind, amount: s.amount, category: s.category, merchant: s.merchant, note: s.note,
-        account_id: s.account_id || '', tags: s.tags ?? [], _remark: s.remark } as any)
+        account_id: s.account_id || '', tags: s.tags ?? [], _remark: s.remark })
     } catch (e) {
       toast((e as Error).message, 'bad')
     } finally {
@@ -97,8 +98,8 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     if (!isNew || touchedCat || !(t.merchant || t.note)) return
     const h = setTimeout(async () => {
       try {
-        const r = await api.post<any>('/transactions/suggest', { kind: t.kind, merchant: t.merchant, note: t.note, tags: t.tags })
-        const s = r.suggestion as Tx
+        const r = await api.post<{ suggestion: Tx }>('/transactions/suggest', { kind: t.kind, merchant: t.merchant, note: t.note, tags: t.tags })
+        const s = r.suggestion
         if (s.category && cats.byId[s.category]?.kind === t.kind) {
           set({ category: s.category })
           setSuggestedCat(s.category)
@@ -168,7 +169,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
   const kinds: { value: Kind; label: string }[] = [
     { value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfer' },
   ]
-  const remark = (draft as any)._remark as string | undefined
+  const remark = draft._remark
   const [splitOpen, setSplitOpen] = useState(false)
   const [describe, setDescribe] = useState('')
   const [assisting, setAssisting] = useState(false)
@@ -197,7 +198,7 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
     if (!describe.trim()) return
     setAssisting(true)
     try {
-      const s = await api.post<any>('/ai/assist', { text: describe })
+      const s = await api.post<AIScan>('/ai/assist', { text: describe })
       set({ kind: s.kind, date: s.date || t.date, category: s.category || t.category, merchant: s.merchant || t.merchant, note: s.note || t.note, account_id: s.account_id || t.account_id, tags: s.tags?.length ? s.tags : t.tags })
       if (s.amount) setAmount(String(s.amount))
       setTouchedCat(true)

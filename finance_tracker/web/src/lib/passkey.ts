@@ -6,6 +6,13 @@ const b64uToBuf = (s: string) => {
   const b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'))
   return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer
 }
+// The options as go-webauthn sends them: buffers arrive as base64url text.
+type CredDescJSON = Omit<PublicKeyCredentialDescriptor, 'id'> & { id: string }
+type RequestJSON = Omit<PublicKeyCredentialRequestOptions, 'challenge' | 'allowCredentials'> & { challenge: string; allowCredentials?: CredDescJSON[] }
+type CreationJSON = Omit<PublicKeyCredentialCreationOptions, 'challenge' | 'user' | 'excludeCredentials'> & {
+  challenge: string; user: Omit<PublicKeyCredentialUserEntity, 'id'> & { id: string }; excludeCredentials?: CredDescJSON[]
+}
+const credDesc = (c: CredDescJSON): PublicKeyCredentialDescriptor => ({ ...c, id: b64uToBuf(c.id) })
 const bufToB64u = (b: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
 /** Can this browser read a passkey at all? */
@@ -37,11 +44,10 @@ export async function passkeyLogin() {
   const ctrl = new AbortController()
   live = ctrl
   try {
-    const opts = await api.post<any>('/auth/passkey/login/begin')
+    const opts = await api.post<{ publicKey: RequestJSON }>('/auth/passkey/login/begin')
     if (ctrl.signal.aborted) throw new DOMException('replaced', 'AbortError')
-    const pk = opts.publicKey
-    pk.challenge = b64uToBuf(pk.challenge)
-    pk.allowCredentials = (pk.allowCredentials ?? []).map((c: any) => ({ ...c, id: b64uToBuf(c.id) }))
+    const j = opts.publicKey
+    const pk: PublicKeyCredentialRequestOptions = { ...j, challenge: b64uToBuf(j.challenge), allowCredentials: (j.allowCredentials ?? []).map(credDesc) }
     const cred = (await navigator.credentials.get({ publicKey: pk, signal: ctrl.signal })) as PublicKeyCredential
     const r = cred.response as AuthenticatorAssertionResponse
     await api.post('/auth/passkey/login/finish', {
@@ -54,11 +60,9 @@ export async function passkeyLogin() {
 }
 
 export async function passkeyRegister(name: string) {
-  const opts = await api.post<any>('/auth/passkey/register/begin')
-  const pk = opts.publicKey
-  pk.challenge = b64uToBuf(pk.challenge)
-  pk.user.id = b64uToBuf(pk.user.id)
-  pk.excludeCredentials = (pk.excludeCredentials ?? []).map((c: any) => ({ ...c, id: b64uToBuf(c.id) }))
+  const opts = await api.post<{ publicKey: CreationJSON }>('/auth/passkey/register/begin')
+  const j = opts.publicKey
+  const pk: PublicKeyCredentialCreationOptions = { ...j, challenge: b64uToBuf(j.challenge), user: { ...j.user, id: b64uToBuf(j.user.id) }, excludeCredentials: (j.excludeCredentials ?? []).map(credDesc) }
   const cred = (await navigator.credentials.create({ publicKey: pk })) as PublicKeyCredential
   const r = cred.response as AuthenticatorAttestationResponse
   await api.post('/auth/passkey/register/finish', {
@@ -66,7 +70,7 @@ export async function passkeyRegister(name: string) {
     // Transports tell a later sign-in whether this passkey lives on this
     // device (Touch ID) or a phone, so the browser offers the right one.
     response: { attestationObject: bufToB64u(r.attestationObject), clientDataJSON: bufToB64u(r.clientDataJSON), transports: r.getTransports?.() ?? [] },
-    authenticatorAttachment: (cred as any).authenticatorAttachment ?? undefined,
+    authenticatorAttachment: cred.authenticatorAttachment ?? undefined,
   }, { name })
 }
 

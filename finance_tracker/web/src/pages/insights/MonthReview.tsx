@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { addMonths, eur, eurc, eurk, monthLabel, pct, thisMonth } from '../../lib/format'
-import type { Flow, Tx } from '../../lib/types'
+import type { Flow, MonthReview as MonthReviewData, Tx } from '../../lib/types'
 import { Card, CountUp, Delta, hue, Loading, Meter, Segmented, Stat } from '../../components/ui'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
@@ -28,20 +28,20 @@ export function ReviewTabs() {
 function MonthReviewView() {
   const [sp] = useSearchParams()
   const [month, setMonth] = useState(sp.get('month') || addMonths(thisMonth(), -1))
-  const { data: r, isLoading } = useQuery({ queryKey: ['month-review', month], queryFn: () => api.get<any>('/insights/month', { month }) })
+  const { data: r, isLoading } = useQuery({ queryKey: ['month-review', month], queryFn: () => api.get<MonthReviewData>('/insights/month', { month }) })
   const cats = useCats()
   const editor = useTxEditor()
   if (isLoading || !r) return <Loading />
-  const f = r.flow as Flow
-  const avg = r.six_month_avg as Flow
-  const prev = r.previous as Flow
+  const f = r.flow
+  const avg = r.six_month_avg
+  const prev = r.previous
   // Pay still to come (salary due by the rule's day) counts, as on Cash flow.
   const due = f.expected_salary ?? 0
   const fRate = f.expected_savings_rate ?? f.savings_rate
   const saved = f.saved + due
   const rate = Math.max(0, Math.min(1, fRate))
   const vs = (cur: number, ref: number, goodUp: boolean) => ref ? <Delta value={cur - ref} goodWhenUp={goodUp} /> : null
-  const maxCat = Math.max(...r.categories.map((c: any) => Math.max(c.spent, c.average)), 1)
+  const maxCat = Math.max(...r.categories.map((c) => Math.max(c.spent, c.average)), 1)
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -66,7 +66,7 @@ function MonthReviewView() {
         )}
         {r.highlights?.length > 0 && (
           <ul className="mt-3 space-y-1.5">
-            {r.highlights.map((h: any) => (
+            {r.highlights.map((h) => (
               <li key={h.text} className="flex items-start gap-2 text-sm">
                 <Icon name={h.tone === 'good' ? 'check' : h.tone === 'bad' ? 'alert' : 'refresh'} size={16} className={clsx('mt-0.5 shrink-0', h.tone === 'good' ? 'text-good' : h.tone === 'bad' ? 'text-bad' : 'text-muted')} />
                 <span>{h.text}</span>
@@ -85,7 +85,7 @@ function MonthReviewView() {
       <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
         <Card title="Where it went" action={<span className="text-xs text-muted">tick = 6-month average</span>}>
           <div className="space-y-2.5">
-            {r.categories.slice(0, 10).map((c: any) => (
+            {r.categories.slice(0, 10).map((c) => (
               <a key={c.category} href={`#/ledger?category=${c.category}&from=${month}-01&to=${month}-31`} className="block">
                 <div className="flex justify-between text-sm"><span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: catColor(c.category) }} />{cats.name(c.category)}</span>
                   <span className="tnum">{eur(c.spent)} <span className={clsx('text-xs', c.delta > 0 ? 'text-bad' : 'text-good')}>{c.average > 0 ? `${c.delta > 0 ? '+' : '−'}${eur(Math.abs(c.delta))}` : 'new'}</span></span></div>
@@ -103,7 +103,7 @@ function MonthReviewView() {
             <div className="mt-4 border-t border-line pt-3">
               <div className="mb-2 text-sm"><b>{r.budget.within_count}</b> budgets within limit{r.budget.over?.length ? <>, <b className="text-bad">{r.budget.over.length}</b> over</> : ''}</div>
               <div className="space-y-2">
-                {r.budget.lines.slice(0, 6).map((l: any) => (
+                {(r.budget.lines ?? []).slice(0, 6).map((l) => (
                   <div key={l.name}><div className="flex justify-between text-xs"><span>{l.name}</span><span className="tnum">{eur(l.spent)} / {eur(l.budgeted)}</span></div><Meter className="mt-1" value={l.spent} max={l.budgeted} /></div>
                 ))}
               </div>

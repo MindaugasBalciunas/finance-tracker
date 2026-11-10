@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from './api'
+import { api, type Query } from './api'
 import { byBank } from './brand'
 import type { Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
 
@@ -82,7 +82,7 @@ export interface TxFilter {
   salary?: string // 'month': a salary counts in the month it pays for
 }
 export const useTransactions = (f: TxFilter) =>
-  useQuery({ queryKey: ['transactions', f], queryFn: () => api.get<TxList>('/transactions', f as any), placeholderData: (p) => p })
+  useQuery({ queryKey: ['transactions', f], queryFn: () => api.get<TxList>('/transactions', f as Query), placeholderData: (p) => p })
 
 // Views a ledger change can't move: settings and security, the chat, price
 // charts and the editor's own suggestions. Everything else is refreshed — a

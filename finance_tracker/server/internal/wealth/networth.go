@@ -487,7 +487,7 @@ func (b *Book) Table(page, size int) BalanceTable {
 	}
 	recorded := map[string]map[string]Point{} // account → date → point
 	dateSet := map[string]bool{}
-	var accounts []string
+	accounts := []string{} // empty, not null: History reads it before any balance is recorded
 	for id, s := range b.series {
 		if len(s) == 0 {
 			continue

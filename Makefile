@@ -26,7 +26,7 @@ test-server:
 	cd finance_tracker/server && go vet ./... && go test -race ./...
 
 test-web:
-	cd finance_tracker/web && npx tsc --noEmit && npx vitest run
+	cd finance_tracker/web && npx tsc --noEmit && npx eslint . --max-warnings 0 && npx vitest run
 
 build:
 	cd finance_tracker/server && go build -o bin/finance-tracker ./cmd/server && go build -o bin/finance-tracker-mcp ./cmd/mcp

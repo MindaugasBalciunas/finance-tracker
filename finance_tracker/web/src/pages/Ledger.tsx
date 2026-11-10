@@ -7,7 +7,7 @@ import { TxFilter, useBankConnections, useInbox, useOverview, useRefresh, useTra
 import { useCats } from '../lib/categories'
 import { dayLabel, eur, eurc } from '../lib/format'
 import { PERIODS, periodRange } from '../lib/periods'
-import type { InboxRow, Tx } from '../lib/types'
+import type { BankSyncResult, CommitResult, InboxRow, Tx } from '../lib/types'
 import { Empty, ErrorBox, Field, hue, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { AccountSelect, CategoryPicker, MerchantInput, NoteInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
@@ -216,7 +216,7 @@ function Owed() {
   )
 }
 
-function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () => void; sp: URLSearchParams; setSp: (s: URLSearchParams, o?: any) => void }) {
+function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () => void; sp: URLSearchParams; setSp: (s: URLSearchParams, o?: { replace?: boolean }) => void }) {
   const [draft, setDraft] = useState(() => new URLSearchParams(sp))
   useEffect(() => {
     setDraft(new URLSearchParams(sp))
@@ -230,7 +230,7 @@ function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () 
       <div className="space-y-4">
         <div>
           <div className="label">Type</div>
-          <Segmented value={(draft.get('kind') || '') as any} onChange={(v) => upd((n) => (v ? n.set('kind', v) : n.delete('kind')))}
+          <Segmented value={draft.get('kind') || ''} onChange={(v) => upd((n) => (v ? n.set('kind', v) : n.delete('kind')))}
             options={[{ value: '', label: 'All' }, { value: 'expense', label: 'Expenses' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfers' }]} />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -251,7 +251,7 @@ function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () 
         </div>
         <div>
           <div className="label">Sort</div>
-          <Segmented value={(draft.get('sort') || '') as any} onChange={(v) => upd((n) => (v ? n.set('sort', v) : n.delete('sort')))}
+          <Segmented value={draft.get('sort') || ''} onChange={(v) => upd((n) => (v ? n.set('sort', v) : n.delete('sort')))}
             options={[{ value: '', label: 'Newest' }, { value: 'amount', label: 'Largest' }, { value: '+date', label: 'Oldest' }]} />
         </div>
       </div>
@@ -319,8 +319,8 @@ function Inbox() {
   const sync = async (days?: number) => {
     setSyncing(true)
     try {
-      const r = await api.post<any>('/bank/sync', {}, days ? { days } : undefined)
-      const failed = r.accounts.filter((a: any) => a.error || a.skipped)
+      const r = await api.post<BankSyncResult>('/bank/sync', {}, days ? { days } : undefined)
+      const failed = r.accounts.filter((a) => a.error || a.skipped)
       toast(`${r.new} new · ${r.auto_linked} linked · ${r.fetched} fetched${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
       refresh()
     } catch (e) {
@@ -332,9 +332,9 @@ function Inbox() {
   const commit = async (ids: number[]) => {
     setBusy(true)
     try {
-      const r = await api.post<any>('/bank/inbox/commit', { ids })
+      const r = await api.post<CommitResult>('/bank/inbox/commit', { ids })
       toast(`${r.imported.length} added${r.skipped ? ` · ${r.skipped} skipped` : ''}`, 'good')
-      if (r.notes?.length) setTimeout(() => toast(r.notes.join(' · ')), 400)
+      if (r.notes?.length) setTimeout(() => toast(r.notes!.join(' · ')), 400)
       refresh()
     } finally {
       setBusy(false)
@@ -479,7 +479,7 @@ function InboxEditor({ row, onClose }: { row: InboxRow; onClose: () => void }) {
           <div className="font-medium text-ink">{r.raw_payee || '—'}</div>
           <div className="break-words">{r.raw_details}</div>
           <div className="mt-1 flex gap-3 text-muted"><span>{r.date}</span><span>{r.raw_currency}</span>{r.pending && <span className="text-warn">reserved</span>}</div>
-          {!raw ? <button className="mt-1 text-accent" onClick={async () => setRaw((await api.get<any>(`/bank/inbox/${r.id}/raw`)).raw)}>Show raw bank data</button>
+          {!raw ? <button className="mt-1 text-accent" onClick={async () => setRaw((await api.get<{ raw: string }>(`/bank/inbox/${r.id}/raw`)).raw)}>Show raw bank data</button>
             : <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-[10px]">{JSON.stringify(JSON.parse(raw || '{}'), null, 2)}</pre>}
         </div>
         <div className="grid grid-cols-2 gap-3">

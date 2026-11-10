@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { catColor, useCats } from '../../lib/categories'
 import { eur, shortDate } from '../../lib/format'
-import type { CategoryUse } from '../../lib/types'
+import type { Category, CategoryUse } from '../../lib/types'
 import { ErrorBox, Field, hue, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 
@@ -17,7 +17,7 @@ export function Categories() {
   const cats = useCats()
   const qc = useQueryClient()
   const toast = useToast()
-  const [edit, setEdit] = useState<any>(null)
+  const [edit, setEdit] = useState<Partial<Category> | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setOpen((o) => { const n = new Set(o); n.has(id) ? n.delete(id) : n.add(id); return n })
   const { data: usage } = useQuery({ queryKey: ['category-usage'], queryFn: () => api.get<Record<string, CategoryUse>>('/categories/usage') })
@@ -26,7 +26,7 @@ export function Categories() {
   const family = (id: string) => Object.values(usage ?? {}).filter((u) => u.category === id || u.category.startsWith(id + '.'))
   const unused = cats.tree.flatMap((p) => p.children).filter((c) => !c.archived && usage && !use(c.id)?.count)
   const save = useMutation({
-    mutationFn: (c: any) => (c.id && cats.byId[c.id] ? api.put(`/categories/${c.id}`, c) : api.post('/categories', c)),
+    mutationFn: (c: Partial<Category>) => (c.id && cats.byId[c.id] ? api.put(`/categories/${c.id}`, c) : api.post('/categories', c)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast('Saved', 'good'); setEdit(null) },
   })
   return (
@@ -93,7 +93,7 @@ export function Categories() {
             })()}
             <Field label="Name"><input className="input" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             {!edit.id && !edit.parent && (
-              <Segmented value={edit.kind} onChange={(k) => setEdit({ ...edit, kind: k })} options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfer' }]} />
+              <Segmented value={edit.kind ?? 'expense'} onChange={(k) => setEdit({ ...edit, kind: k })} options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfer' }]} />
             )}
             <Toggle checked={!!edit.essential} onChange={(v) => setEdit({ ...edit, essential: v })} label="Essential (counts toward the emergency fund and needs-vs-wants)" />
             {edit.id && <Toggle checked={!!edit.archived} onChange={(v) => setEdit({ ...edit, archived: v })} label="Archived (hidden from pickers)" />}

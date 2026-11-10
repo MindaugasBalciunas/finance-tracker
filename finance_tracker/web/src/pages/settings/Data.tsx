@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
+import type { Backups } from '../../lib/types'
 import { shortDate } from '../../lib/format'
 import { applyTheme } from '../../App'
 import { Card, Segmented, useToast } from '../../components/ui'
@@ -12,7 +13,7 @@ import { DemoCard } from './Usage'
 export function Data({ top }: { top?: ReactNode }) {
   const toast = useToast()
   const qc = useQueryClient()
-  const { data: snaps } = useQuery({ queryKey: ['backups'], queryFn: () => api.get<any>('/backups') })
+  const { data: snaps } = useQuery({ queryKey: ['backups'], queryFn: () => api.get<Backups>('/backups') })
   const [busy, setBusy] = useState(false)
   const upload = async (path: string, file: File) => {
     if (!confirm('This REPLACES all data in the app with the file’s contents. A snapshot is taken first. Continue?')) return
@@ -57,7 +58,7 @@ export function Data({ top }: { top?: ReactNode }) {
       <Card icon="calendar" color="var(--s7)" title="Snapshots on the server" action={<button className="btn-ghost h-8 text-xs" onClick={async () => { await api.post('/backups'); qc.invalidateQueries({ queryKey: ['backups'] }); toast('Snapshot taken', 'good') }}>Take one now</button>}>
         <div className="max-h-64 divide-y divide-line overflow-y-auto text-sm">
           <div className="mb-1.5 text-xs text-warn">Snapshots are full copies of the database — including the bank connection, AI key and PIN hash. Keep downloads private. (The IBKR sign-in is left out.)</div>
-          {(snaps?.snapshots ?? []).map((b: any) => (
+          {(snaps?.snapshots ?? []).map((b) => (
             <a key={b.name} href={`api/backups/${b.name}`} className="flex justify-between py-1.5 hover:text-accent"><span className="font-mono text-xs">{b.name}</span><span className="text-xs text-muted">{(b.size / 1e6).toFixed(1)} MB</span></a>
           ))}
         </div>

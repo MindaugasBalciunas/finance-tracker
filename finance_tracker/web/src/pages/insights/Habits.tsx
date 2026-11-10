@@ -54,11 +54,11 @@ export function Habits({ months }: { months: number }) {
   if (!data || data.months.length === 0) return <p className="text-sm text-muted">Habits show once a month of spending is in.</p>
   const rows = data.months.map((m) => ({ ...m, big: m.purchases - m.small }))
   // Bars hand their row to onClick; line charts give the hovered month.
-  const open = (q: Partial<LedgerQuery> = {}) => (d: any) => d?.month && nav(L.month(d.month, q))
-  const openLine = (q: Partial<LedgerQuery> = {}) => (s: any) => s?.activeLabel && nav(L.month(s.activeLabel, q))
-  const part = (from: number, to?: number) => (d: any) => d?.month && nav(L.base(`${d.month}-${String(from).padStart(2, '0')}`, to ? `${d.month}-${to}` : monthEnd(d.month)))
+  const open = (q: Partial<LedgerQuery> = {}) => (d: { month?: string }) => d?.month && nav(L.month(d.month, q))
+  const openLine = (q: Partial<LedgerQuery> = {}) => (s: { activeLabel?: string | number } | null) => s?.activeLabel && nav(L.month(String(s.activeLabel), q))
+  const part = (from: number, to?: number) => (d: { month?: string }) => d?.month && nav(L.base(`${d.month}-${String(from).padStart(2, '0')}`, to ? `${d.month}-${to}` : monthEnd(d.month)))
   // A calendar month opens its latest complete one: last November in November.
-  const seasonOpen = (d: any) => {
+  const seasonOpen = (d: { month?: number }) => {
     if (!d?.month) return
     const now = new Date()
     const y = d.month < now.getMonth() + 1 ? now.getFullYear() : now.getFullYear() - 1
@@ -150,7 +150,7 @@ export function Habits({ months }: { months: number }) {
                 <XAxis dataKey="day" {...axisProps} tickFormatter={(d) => DAYS[d - 1]} />
                 <YAxis {...axisProps} width={44} tickFormatter={eurk} />
                 <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? (
-                  <TooltipBox title={DAYS[(payload[0].payload as any).day - 1]} rows={[{ color: 'var(--s1)', label: 'On average', value: eur((payload[0].payload as any).average), bold: true }]} />) : null} />
+                  <TooltipBox title={DAYS[(payload[0].payload as HabitsData['weekdays'][number]).day - 1]} rows={[{ color: 'var(--s1)', label: 'On average', value: eur((payload[0].payload as HabitsData['weekdays'][number]).average), bold: true }]} />) : null} />
                 <Bar dataKey="average" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                   {data.weekdays.map((w) => <Cell key={w.day} fillOpacity={w.day >= 6 ? 1 : 0.55} />)}
                 </Bar>

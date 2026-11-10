@@ -23,7 +23,7 @@ export function CashFlow() {
   const income = incomeCategories(useCats().tree)
   // A tap on a month's bar lists that month's money in (or out).
   // Money in counts a salary paid early next month for the month it pays for, as the bars do.
-  const openMonth = (kind: 'income' | 'expense') => (d: any) => d?.period && nav(ledgerLink(kind === 'income' ? { kind, category: income, month: d.period, salaryMonth: true } : { kind, month: d.period }))
+  const openMonth = (kind: 'income' | 'expense') => (d: { period?: string }) => d?.period && nav(ledgerLink(kind === 'income' ? { kind, category: income, month: d.period, salaryMonth: true } : { kind, month: d.period }))
   const [span, setSpan] = usePeriod('cashflow', '24', SPANS.map((s) => s.value))
   const from = addMonths(thisMonth(), -spanMonths(span) + 1) + '-01'
   const { data: months, isLoading } = useCashflow(from, todayISO(), 'month')

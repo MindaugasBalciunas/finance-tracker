@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
+import type { GoalMove } from '../../lib/types'
 import { useAccounts, useOverview, useRefresh, useTags } from '../../lib/hooks'
 import { addMonths, eur, monthLabel, shortDate, thisMonth } from '../../lib/format'
 import { AskCFO, Card, Empty, ErrorBox, Field, hue, Loading, Meter, NumberInput, Sheet, Toggle, useToast } from '../../components/ui'
@@ -324,7 +325,7 @@ function GoalSheet({ g, pots, onClose }: { g: Partial<Goal>; pots: Pot[]; onClos
   const inAcct = acct ? (g.held ?? []).find((h) => h.account_id === acct)?.amount ?? 0 : (g.saved ?? 0) - (g.held ?? []).reduce((t, h) => t + h.amount, 0)
   const refresh = useRefresh()
   const toast = useToast()
-  const { data: moves } = useQuery({ queryKey: ['goal-moves', g.id], queryFn: () => api.get<any[]>(`/goals/${g.id}/moves`), enabled: !!g.id })
+  const { data: moves } = useQuery({ queryKey: ['goal-moves', g.id], queryFn: () => api.get<GoalMove[]>(`/goals/${g.id}/moves`), enabled: !!g.id })
   useEffect(() => setV(g), [g])
   const done = (msg: string) => { refresh(); toast(msg, 'good'); onClose() }
   const fail = (e: unknown) => toast((e as Error).message, 'bad')

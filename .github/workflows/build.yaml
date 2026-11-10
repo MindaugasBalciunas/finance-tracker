@@ -69,6 +69,7 @@ jobs:
         run: |
           npm ci
           npx tsc --noEmit
+          npx eslint . --max-warnings 0
           npx vitest run
           npm run build
 

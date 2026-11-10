@@ -463,3 +463,18 @@ func TestPortfolioHistoryLeavesSharedPricesAlone(t *testing.T) {
 		t.Fatalf("shared prices reordered: %+v", shared)
 	}
 }
+
+// Before any balance is recorded, the History table and the scenarios answer
+// with empty lists, not null: the pages read them straight away.
+func TestEmptyBookListsAreNotNil(t *testing.T) {
+	book, err := wealth.LoadBook(DB(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tb := book.Table(1, 50); tb.Accounts == nil || tb.Rows == nil {
+		t.Fatalf("%+v", tb)
+	}
+	if s := wealth.BuildScenarios(wealth.Portfolio{}, nil); s.Positions == nil {
+		t.Fatalf("%+v", s)
+	}
+}

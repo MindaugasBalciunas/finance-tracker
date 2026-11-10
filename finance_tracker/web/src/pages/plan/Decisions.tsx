@@ -134,7 +134,7 @@ export function DecisionRow({ x }: { x: Decision }) {
                 {x.status === 'bought' && (x.worth || reviewDue
           ? <div className="flex items-center gap-2">
               <span className="text-xs text-ink2">{x.worth ? 'Worth it?' : 'Was it worth it?'}</span>
-              <Segmented size="sm" value={x.worth || ('' as any)} onChange={(v) => put.mutate({ worth: v as Decision['worth'] })}
+              <Segmented size="sm" value={x.worth || ''} onChange={(v) => put.mutate({ worth: v as Decision['worth'] })}
                 options={[{ value: 'yes', label: 'Yes' }, { value: 'meh', label: 'Meh' }, { value: 'no', label: 'No' }]} />
             </div>
           : <span className="text-xs text-muted">Ask again {shortDate(x.review_on)}</span>)}

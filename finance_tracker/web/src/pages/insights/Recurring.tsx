@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 import { useRefresh } from '../../lib/hooks'
 import { useCats } from '../../lib/categories'
 import { eur, eurc, parseNum, shortDate } from '../../lib/format'
-import type { Recurring, Subscriptions } from '../../lib/types'
+import type { Recurring, RecurringSuggestion, Subscriptions } from '../../lib/types'
 import { CountUp, Card, Empty, ErrorBox, Field, Loading, Segmented, Sheet, useToast } from '../../components/ui'
 import { AccountSelect, CategoryPicker, SPEND_KINDS, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS, MerchantInput, NoteInput } from '../../components/pickers'
 import { useAccounts } from '../../lib/hooks'
@@ -29,7 +29,7 @@ export function RecurringView() {
   // A bill named for what it is ("Loan interest") shows the bank that charges it.
   const { data: logos } = useLogoIndex()
   const acctName = (id?: string) => (id ? accounts?.find((a) => a.id === id)?.name ?? id : '')
-  const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number; suggestions?: any[] }>('/insights/recurring') })
+  const { data, isLoading } = useQuery({ queryKey: ['recurring'], queryFn: () => api.get<{ items: Recurring[]; hidden: Recurring[]; monthly_total: number; suggestions?: RecurringSuggestion[] }>('/insights/recurring') })
   const { data: subs } = useQuery({ queryKey: ['subscriptions'], queryFn: () => api.get<Subscriptions>('/plan/subscriptions') })
   const cats = useCats()
   const [edit, setEdit] = useState<{ r: Recurring | null; prefill?: Partial<EditorValues> } | null>(null)
@@ -37,7 +37,7 @@ export function RecurringView() {
   const refresh = useRefresh()
   if (isLoading || !data) return <Loading />
   const restore = async (r: Recurring) => { await api.put(`/recurring/${r.id}`, { ...toItem(r), hidden: false }); refresh() }
-  const dismiss = async (s: any) => { await api.post('/recurring', { merchant: s.name, category: s.category, cadence: 'monthly', amount: s.amount, hidden: true }); refresh() }
+  const dismiss = async (s: RecurringSuggestion) => { await api.post('/recurring', { merchant: s.name, category: s.category, cadence: 'monthly', amount: s.amount, hidden: true }); refresh() }
   const suggestions = data.suggestions ?? []
   // Telia phone and Telia internet: the note goes in the title so the two rows differ.
   const sharesMerchant = (r: Recurring) => data.items.filter((x) => x.merchant.toLowerCase() === r.merchant.toLowerCase()).length > 1
@@ -137,7 +137,7 @@ export function RecurringView() {
                   <div className="min-w-0 flex-1 basis-[calc(100%-3rem)]">
                     <div className="truncate text-sm font-medium">{s.name}</div>
                     <div className="truncate text-xs text-muted">{eur(s.amount)} · {s.flexible ? `about every ${s.every_days} days (±${s.spread_days})` : 'monthly'} · {s.count}× · next around {shortDate(s.next)}</div>
-                    {s.notes?.length > 0 && <div className="truncate text-[11px] text-muted">“{s.notes.slice(0, 3).join('”, “')}”</div>}
+                    {(s.notes?.length ?? 0) > 0 && <div className="truncate text-[11px] text-muted">“{(s.notes ?? []).slice(0, 3).join('”, “')}”</div>}
                   </div>
                   <div className="flex w-full justify-end gap-1.5">
                     <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => dismiss(s)}>Not recurring</button>

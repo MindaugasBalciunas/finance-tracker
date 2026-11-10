@@ -65,7 +65,7 @@ export function daysAgo(n: number): string {
 export function parseNum(input: string | number | null | undefined): number | undefined {
   if (input == null) return undefined
   if (typeof input === 'number') return Number.isFinite(input) ? input : undefined
-  let s = input.replace(/[\s €$£]/g, '')
+  let s = input.replace(/[\s\u00a0€$£]/g, '')
   if (!s) return undefined
   const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.')
   if (lastComma >= 0 && lastDot >= 0) {

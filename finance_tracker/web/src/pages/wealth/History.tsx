@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
+import type { BalanceReading, BalanceTable } from '../../lib/types'
 import { useAccounts, usePrefs } from '../../lib/hooks'
 import { LIQUID_GROUPS } from '../../lib/categories'
 import { eurc } from '../../lib/format'
@@ -24,14 +25,14 @@ export function BalanceHistory() {
   const flip = (d: string) => setOpen((o) => { const n = new Set(o); n.has(d) ? n.delete(d) : n.add(d); return n })
   const { data: accounts } = useAccounts()
   const { prefs, set } = usePrefs()
-  const { data: t, isLoading, isFetching } = useQuery({ queryKey: ['balance-table', page], queryFn: () => api.get<any>('/balances/table', { page, size: 50 }), placeholderData: (p) => p })
+  const { data: t, isLoading, isFetching } = useQuery({ queryKey: ['balance-table', page], queryFn: () => api.get<BalanceTable>('/balances/table', { page, size: 50 }), placeholderData: (p) => p })
   if (isLoading || !t) return <Loading />
   const byId = Object.fromEntries((accounts ?? []).map((a) => [a.id, a]))
   const inTable = (accounts ?? []).filter((a) => t.accounts.includes(a.id))
   // Columns you chose to hide; never configured → valuations (house, car, solar)
   // and hidden accounts are off, since they rarely change.
   const hidden = new Set(prefs.history_hidden ?? inTable.filter((a) => a.kind === 'property' || a.kind === 'vehicle' || a.archived).map((a) => a.id))
-  const cols = inTable.filter((a) => !hidden.has(a.id) && t.rows.some((r: any) => r.cells[a.id]))
+  const cols = inTable.filter((a) => !hidden.has(a.id) && t.rows.some((r) => r.cells[a.id]))
   const toggle = (id: string) => { const n = new Set(hidden); n.has(id) ? n.delete(id) : n.add(id); set({ history_hidden: [...n] }) }
   const from = (t.page - 1) * t.size + 1, to = from + t.rows.length - 1
   // Numbered pages: first, last, and two either side of the current one.
@@ -67,13 +68,13 @@ export function BalanceHistory() {
               </tr>
             </thead>
             <tbody>
-              {t.rows.map((r: any, i: number) => {
+              {t.rows.map((r, i) => {
                 const older = t.rows[i + 1]
                 const change = older ? r.net_worth - older.net_worth : null
                 // Readings of the columns on screen (hidden accounts would only
                 // add empty rows).
-                const readings: any[] = (r.readings ?? []).filter((x: any) => cols.some((a) => a.id === x.account_id))
-                const latest = Object.values(r.cells as Record<string, any>).map((c) => c.at).filter(Boolean).sort().pop()
+                const readings = (r.readings ?? []).filter((x) => cols.some((a) => a.id === x.account_id))
+                const latest = Object.values(r.cells).map((c) => c.at).filter(Boolean).sort().pop()
                 const expanded = open.has(r.date)
                 return (
                   <Fragment key={r.date}>
@@ -93,7 +94,7 @@ export function BalanceHistory() {
                       return (
                         <td key={a.id} className={clsx('whitespace-nowrap border-t border-line px-2 py-1.5 text-right', c?.recorded ? 'font-medium text-ink' : 'text-muted/60')}
                           title={c ? `${byId[a.id]?.name}: ${eurc(c.value)} — ${c.recorded ? (c.source || 'recorded') + (c.at ? ` at ${hhmm(c.at)}` : '') : 'carried forward'}` : ''}>
-                          {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source] ?? 'var(--s-other)' }} />}{eurc(c.value)}</span> : ''}
+                          {c ? <span className="inline-flex items-center gap-1">{c.recorded && <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE_COLOR[c.source ?? ''] ?? 'var(--s-other)' }} />}{eurc(c.value)}</span> : ''}
                         </td>
                       )
                     })}
@@ -110,7 +111,7 @@ export function BalanceHistory() {
                     const prevOf = new Map<number, number>()
                     const last: Record<string, number> = {}
                     readings.forEach((x, j) => { if (x.account_id in last) prevOf.set(j, last[x.account_id]); last[x.account_id] = x.value })
-                    const groups: { at: string; items: { x: any; d: number | null }[] }[] = []
+                    const groups: { at: string; items: { x: BalanceReading; d: number | null }[] }[] = []
                     readings.forEach((x, j) => {
                       const key = hhmm(x.at)
                       const g = groups.find((g) => hhmm(g.at) === key)

@@ -139,7 +139,7 @@ function RenameSheet({ edit, onChange, onClose }: { edit: { from: string; to: st
   const refresh = useRefresh()
   const toast = useToast()
   const run = async () => {
-    const r = await api.post<any>('/tags/rename', edit)
+    const r = await api.post<{ changed: number }>('/tags/rename', edit)
     toast(`${r.changed} transactions updated`, 'good')
     refresh()
     onClose()

@@ -1,15 +1,15 @@
 // Thin fetch wrapper. Every call is same-origin (nginx proxies /api).
 export class ApiError extends Error {
   status: number
-  data: any
-  constructor(status: number, message: string, data?: any) {
+  data: unknown
+  constructor(status: number, message: string, data?: unknown) {
     super(message)
     this.status = status
     this.data = data
   }
 }
 
-type Query = Record<string, string | number | boolean | undefined | null | string[]>
+export type Query = Record<string, string | number | boolean | undefined | null | string[]>
 
 export function qs(q?: Query): string {
   if (!q) return ''
@@ -32,15 +32,16 @@ async function request<T>(method: string, path: string, body?: unknown, q?: Quer
   }
   const res = await fetch(`api${path}${qs(q)}`, init)
   const text = await res.text()
-  let data: any = null
+  let data: unknown
   try {
     data = text ? JSON.parse(text) : null
   } catch {
     data = text
   }
   if (!res.ok) {
-    if (res.status === 401 && data?.error === 'locked') window.dispatchEvent(new Event('ft:locked'))
-    throw new ApiError(res.status, data?.error || res.statusText, data)
+    const error = (data as { error?: string } | null)?.error
+    if (res.status === 401 && error === 'locked') window.dispatchEvent(new Event('ft:locked'))
+    throw new ApiError(res.status, error || res.statusText, data)
   }
   return data as T
 }

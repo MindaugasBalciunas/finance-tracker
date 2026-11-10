@@ -30,6 +30,8 @@ export function Logos() {
     // A search looks through every merchant, not only the top ones.
     const pool = f ? [...(merchants ?? [])].sort((a, b) => b.count - a.count).filter((m) => logoKey(m.merchant).includes(f)) : top
     return pool.filter(show === 'none' ? none : show === 'yours' ? yours : () => true).slice(0, 60)
+    // `missing` is one module-wide Set that grows in place; its size is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merchants, top, q, show, index, missing.size])
   return (
     <Card title="Merchant logos" icon="image" color="var(--s1)">

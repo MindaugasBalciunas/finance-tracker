@@ -128,7 +128,7 @@ function Month() {
     const lines = r.lines.filter((l) => l.kind === g.kind)
     return (
       <div key={g.kind} id={`plan-${g.kind}`} className="scroll-mt-16"><Card pad={false} color={KIND_HUE[g.kind]} title={<span>{g.title} <span className="font-normal text-muted">{eur(lines.reduce((a, l) => a + l.monthly_share, 0))}/mo</span></span>}
-        action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ kind: g.kind as any, period: 'monthly', categories: [], tag: '', amount: 0 })}><Icon name="plus" size={14} />Line</button>}>
+        action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setEdit({ kind: g.kind as Budget['kind'], period: 'monthly', categories: [], tag: '', amount: 0 })}><Icon name="plus" size={14} />Line</button>}>
         <div className="px-4 pb-2 -mt-1 text-xs text-muted">{g.hint}</div>
         {g.kind === 'saving' && current && rb && rb.steps.some((x) => x.kind === 'saving') && (() => {
           const steps = rb.steps.filter((x) => x.kind === 'saving')
@@ -719,7 +719,7 @@ export function LineRow({ l, month, onEdit, monthPace, extra }: { l: PlanLine; m
                 <XAxis dataKey="month" tickFormatter={(m) => monthLabel(m).slice(0, 3)} tick={{ fill: 'var(--chart-text)', fontSize: 10 }} tickLine={false} axisLine={false} interval={1} />
                 <Tooltip cursor={{ fill: 'rgb(var(--sunken))' }} content={({ active, payload }) => active && payload?.length ? (
                   <TooltipBox title={monthLabel(payload[0].payload.month, true)} rows={[{ label: 'Spent', value: eurc(payload[0].payload.spent), bold: true }, { label: 'Budget', value: eurc(payload[0].payload.budget) }]} />) : null} />
-                <Bar dataKey="spent" name="Spent" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer" onClick={(d: any) => d?.month && nav(txs(d.month))} />
+                <Bar dataKey="spent" name="Spent" fill="var(--s1)" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer" onClick={(d: { month?: string }) => d?.month && nav(txs(d.month))} />
               </BarChart>
             </ResponsiveContainer>
           </div>

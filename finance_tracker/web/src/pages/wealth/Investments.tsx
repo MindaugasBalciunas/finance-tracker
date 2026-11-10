@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
+import type { AnalystData, Holding, PerfPoint, Portfolio, PricePoint, Scenarios, Trade } from '../../lib/types'
 import { usePeriod, useRefresh, useWide } from '../../lib/hooks'
 import { FeesCard } from './Fees'
 import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
@@ -18,26 +19,27 @@ import { SuggestInput } from '../../components/pickers'
 // ── investments ─────────────────────────────────────────────────────
 
 export function Investments() {
-  const { data: p, isLoading, error } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<any>('/portfolio'), staleTime: 300_000 })
-  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<any[]>('/trades') })
-  const { data: sc } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<any>('/portfolio/scenarios'), staleTime: 3_600_000 })
+  const { data: p, isLoading, error } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio'), staleTime: 300_000 })
+  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<Trade[]>('/trades') })
+  const { data: sc } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<Scenarios>('/portfolio/scenarios'), staleTime: 3_600_000 })
   const [range, setRange] = usePeriod('stocks', '1y', RANGES.map((r) => r.value))
-  const { data: perf, isLoading: perfLoading } = useQuery({ queryKey: ['portfolio-history', range], queryFn: () => api.get<any[]>('/portfolio/history', { range }), staleTime: 600_000 })
+  const { data: perf, isLoading: perfLoading } = useQuery({ queryKey: ['portfolio-history', range], queryFn: () => api.get<PerfPoint[]>('/portfolio/history', { range }), staleTime: 600_000 })
   const [sort, setSort] = usePeriod('stocks-sort', 'value', ['value', 'gain', 'day'])
   const [split, setSplit] = usePeriod('stocks-split', 'positions', ['positions', 'brokers', 'currency'])
   const wide = useWide()
-  const [pos, setPos] = useState<any>(null)
-  const [trade, setTrade] = useState<any>(null)
+  const [pos, setPos] = useState<Holding | null>(null)
+  const [trade, setTrade] = useState<Partial<Trade> | null>(null)
   const [showTrades, setShowTrades] = useState(false)
   const [mode, setMode] = usePeriod('stocks-chart', 'worth', ['worth', 'gain'])
   if (isLoading) return <Loading label="Fetching live prices…" />
   if (error) return <ErrorBox error={error} />
-  const hs: any[] = p.holdings
+  if (!p) return null
+  const hs = p.holdings
   // One colour per position (largest first), shared by the donut and the rows.
   const color: Record<string, string> = {}
   ;[...hs].sort((a, b) => (b.value_eur ?? b.cost_eur ?? 0) - (a.value_eur ?? a.cost_eur ?? 0)).forEach((h, i) => { color[h.ticker] = i < 7 ? `var(--s${i + 1})` : 'var(--s-other)' })
-  const val = (h: any) => h.value_eur ?? h.cost_eur ?? 0
-  const gainEUR = (h: any) => (h.value_eur != null && h.cost_eur != null ? h.value_eur - h.cost_eur : null)
+  const val = (h: Holding) => h.value_eur ?? h.cost_eur ?? 0
+  const gainEUR = (h: Holding) => (h.value_eur != null && h.cost_eur != null ? h.value_eur - h.cost_eur : null)
   const upside: Record<string, number> = {}
   // Only real analyst coverage; ETFs fall back to their 52-week range, which isn't a target.
   for (const x of sc?.positions ?? []) if (x.analysts > 0 && x.mean_eur && x.value_eur) upside[x.ticker] = x.mean_eur / x.value_eur - 1
@@ -84,9 +86,9 @@ export function Investments() {
                     style={{ background: `color-mix(in oklab, ${color[h.ticker]} var(--tint), transparent)`, color: `color-mix(in oklab, ${color[h.ticker]} 80%, rgb(var(--ink)))` }}>{h.ticker.replace(/\..*$/, '').slice(0, 5)}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-1.5"><span className="text-sm font-semibold">{h.ticker}</span><span className="truncate text-xs text-muted">{h.name ?? brokerName(h.account_id)}</span></div>
-                    {h.accounts?.length > 1 && (
+                    {(h.accounts?.length ?? 0) > 1 && (
                       <div className="truncate text-[11px] text-ink2">
-                        {h.accounts.map((a: any, i: number) => <span key={i} className={clsx(!a.account_id && 'text-warn')}>{i > 0 && ' · '}{a.account_id ? brokerName(a.account_id) : 'no account'} {+a.shares.toFixed(4)}</span>)}
+                        {h.accounts?.map((a, i) => <span key={i} className={clsx(!a.account_id && 'text-warn')}>{i > 0 && ' · '}{a.account_id ? brokerName(a.account_id) : 'no account'} {+a.shares.toFixed(4)}</span>)}
                       </div>
                     )}
                     <div className="truncate text-xs text-muted tnum">{+h.shares.toFixed(4)} × {h.price != null ? h.price.toFixed(2) : '—'} {h.currency} · avg {h.avg_cost.toFixed(2)}</div>
@@ -102,8 +104,8 @@ export function Investments() {
                 <div className="mt-2 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 pl-12">
                   <div className="h-1.5 rounded-full bg-sunken"><div className="h-full rounded-full" style={{ width: `${Math.max(2, h.weight * 100)}%`, background: color[h.ticker] }} /></div>
                   <span className="w-24 text-right text-[11px] text-muted tnum">{pct(h.weight, 1)} of book</span>
-                  {h.week52_high > h.week52_low && h.price != null && <Range52 lo={h.week52_low} hi={h.week52_high} price={h.price} avg={h.avg_cost} />}
-                  {h.week52_high > h.week52_low && h.price != null && <span className="w-24 text-right text-[11px] text-muted">{up != null ? <span className={up >= 0 ? 'text-good' : 'text-bad'}>target {up >= 0 ? '+' : '−'}{pct(Math.abs(up), 0)}</span> : '52-week range'}</span>}
+                  {(h.week52_high ?? 0) > (h.week52_low ?? 0) && h.price != null && <Range52 lo={h.week52_low ?? 0} hi={h.week52_high ?? 0} price={h.price} avg={h.avg_cost} />}
+                  {(h.week52_high ?? 0) > (h.week52_low ?? 0) && h.price != null && <span className="w-24 text-right text-[11px] text-muted">{up != null ? <span className={up >= 0 ? 'text-good' : 'text-bad'}>target {up >= 0 ? '+' : '−'}{pct(Math.abs(up), 0)}</span> : '52-week range'}</span>}
                 </div>
               </button>
             )
@@ -115,7 +117,7 @@ export function Investments() {
   const closed = p.closed?.length > 0 && (
     <Card pad={false} icon="check" color="var(--s6)" title="Closed positions" action={<span className="text-xs text-muted">realised {eur(p.realized_eur)}</span>}>
       <div className="divide-y divide-line border-t border-line">
-        {p.closed.map((h: any) => (
+        {p.closed.map((h) => (
           <div key={h.ticker} className="flex items-center justify-between px-4 py-2 text-sm">
             <span><b>{h.ticker}</b> <span className="text-xs text-muted">{brokerName(h.account_id)} · first bought {shortDate(h.first_buy)}</span></span>
             <span className={clsx('tnum', h.realized >= 0 ? 'text-good' : 'text-bad')}>{h.realized >= 0 ? '+' : '−'}{Math.abs(h.realized).toFixed(2)} {h.currency}</span>
@@ -168,7 +170,7 @@ export function Investments() {
         <div className="mt-2 h-56 sm:h-64">
           {perfLoading ? <Loading label="Replaying trades…" /> : !perf?.length ? <div className="grid h-full place-items-center text-sm text-muted">No trades in this period</div> : (
             <ResponsiveContainer>
-              <ComposedChart data={mode === 'gain' ? perf.map((x: any) => ({ ...x, gain: x.value_eur - x.cost_eur, up: Math.max(0, x.value_eur - x.cost_eur), down: Math.min(0, x.value_eur - x.cost_eur) })) : perf} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+              <ComposedChart data={mode === 'gain' ? perf.map((x) => ({ ...x, gain: x.value_eur - x.cost_eur, up: Math.max(0, x.value_eur - x.cost_eur), down: Math.min(0, x.value_eur - x.cost_eur) })) : perf} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
                 <defs><linearGradient id="stk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--s1)" stopOpacity={0.28} /><stop offset="100%" stopColor="var(--s1)" stopOpacity={0.02} /></linearGradient></defs>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="date" {...axisProps} tickFormatter={rangeTick(range)} minTickGap={40} />
@@ -240,7 +242,7 @@ function Range52({ lo, hi, price, avg }: { lo: number; hi: number; price: number
 
 /** The book at analyst low / mean / high targets (52-week range for ETFs). */
 function ScenarioCard() {
-  const { data: s, isLoading } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<any>('/portfolio/scenarios'), staleTime: 3_600_000 })
+  const { data: s, isLoading } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<Scenarios>('/portfolio/scenarios'), staleTime: 3_600_000 })
   if (isLoading) return <Card icon="target" color="var(--s4)" title="Scenarios"><Loading label="Fetching targets…" /></Card>
   if (!s?.value_eur) return null
   // Honest labels: analyst targets where Yahoo has coverage, otherwise each
@@ -267,16 +269,16 @@ function ScenarioCard() {
   )
 }
 
-function PositionSheet({ h, onClose }: { h: any; onClose: () => void }) {
+function PositionSheet({ h, onClose }: { h: Holding; onClose: () => void }) {
   const [range, setRange] = usePeriod('position', '1y', ['1mo', '6mo', 'ytd', '1y', '5y'])
-  const { data: hist } = useQuery({ queryKey: ['hist', h.ticker, range], queryFn: () => api.get<any[]>(`/market/history/${h.ticker}`, { range }) })
-  const { data: an } = useQuery({ queryKey: ['analyst', h.ticker], queryFn: () => api.get<any>(`/market/analyst/${h.ticker}`), retry: false })
+  const { data: hist } = useQuery({ queryKey: ['hist', h.ticker, range], queryFn: () => api.get<PricePoint[]>(`/market/history/${h.ticker}`, { range }) })
+  const { data: an } = useQuery({ queryKey: ['analyst', h.ticker], queryFn: () => api.get<AnalystData>(`/market/analyst/${h.ticker}`), retry: false })
   return (
     <Sheet open onClose={onClose} title={h.ticker} wide>
       <div className="mb-3 grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-xs text-muted">Value</div><div className="font-semibold">{h.value_eur != null ? eur(h.value_eur) : '—'}</div></div>
         <div><div className="text-xs text-muted">Gain</div><div className={clsx('font-semibold', (h.gain ?? 0) >= 0 ? 'text-good' : 'text-bad')}>{h.gain != null ? `${h.gain.toFixed(0)} ${h.currency}` : '—'}</div></div>
-        <div><div className="text-xs text-muted">52-week</div><div className="font-semibold tnum">{h.week52_low ? `${h.week52_low.toFixed(0)}–${h.week52_high.toFixed(0)}` : '—'}</div></div>
+        <div><div className="text-xs text-muted">52-week</div><div className="font-semibold tnum">{h.week52_low ? `${h.week52_low.toFixed(0)}–${(h.week52_high ?? 0).toFixed(0)}` : '—'}</div></div>
       </div>
       <Segmented value={range} onChange={setRange} size="sm" options={[{ value: '1mo', label: '1M' }, { value: '6mo', label: '6M' }, { value: 'ytd', label: 'YTD' }, { value: '1y', label: '1Y' }, { value: '5y', label: '5Y' }]} />
       <div className="mt-2 h-52">
@@ -306,10 +308,10 @@ function PositionSheet({ h, onClose }: { h: any; onClose: () => void }) {
   )
 }
 
-function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
+function TradeEditor({ t: init, onClose }: { t: Partial<Trade>; onClose: () => void }) {
   const [t, setT] = useState(init)
   // Tickers you traded before.
-  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<any[]>('/trades') })
+  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<Trade[]>('/trades') })
   const tickers = Object.entries((trades ?? []).reduce<Record<string, number>>((m, x) => ({ ...m, [x.ticker]: (m[x.ticker] ?? 0) + 1 }), {})).map(([value, count]) => ({ value, count }))
   const refresh = useRefresh()
   const toast = useToast()
@@ -325,10 +327,10 @@ function TradeEditor({ t: init, onClose }: { t: any; onClose: () => void }) {
       <button className="btn-primary" onClick={() => save.mutate()}>Save</button>
     </>}>
       <div className="space-y-4">
-        <Segmented value={t.action} onChange={(a) => setT({ ...t, action: a })} options={[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell' }]} />
+        <Segmented value={t.action ?? 'buy'} onChange={(a) => setT({ ...t, action: a })} options={[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell' }]} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ticker"><SuggestInput className="input uppercase" upper value={t.ticker ?? ''} onChange={(x) => setT({ ...t, ticker: x })} options={tickers} /></Field>
-          <Field label="Date"><DateInput value={t.date} onChange={(v) => setT({ ...t, date: v })} /></Field>
+          <Field label="Date"><DateInput value={t.date ?? todayISO()} onChange={(v) => setT({ ...t, date: v })} /></Field>
           <Field label="Shares"><NumberInput value={t.shares} onChange={(v) => setT({ ...t, shares: v })} /></Field>
           <Field label="Price per share"><NumberInput value={t.price} onChange={(v) => setT({ ...t, price: v })} /></Field>
           <Field label="Currency"><select className="input select-pad" value={t.currency} onChange={(e) => setT({ ...t, currency: e.target.value })}>{['USD', 'EUR', 'GBP'].map((c) => <option key={c}>{c}</option>)}</select></Field>
@@ -402,8 +404,8 @@ function QualityCard() {
 function QualitySettings({ data, onClose }: { data: QualityData; onClose: () => void }) {
   const refresh = useRefresh()
   const toast = useToast()
-  const { data: p } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<any>('/portfolio') })
-  const tickers: string[] = (p?.holdings ?? []).map((h: any) => h.ticker)
+  const { data: p } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio') })
+  const tickers: string[] = (p?.holdings ?? []).map((h) => h.ticker)
   const [core, setCore] = useState<string[]>(data.settings.core ?? [])
   const [bench, setBench] = useState(data.settings.benchmark)
   const [targets, setTargets] = useState<Record<string, number | undefined>>(Object.fromEntries(Object.entries(data.settings.targets ?? {}).map(([k, v]) => [k, Math.round(v * 100)])))

@@ -8,7 +8,7 @@ import { useAccounts, useNetWorthHistory, usePeriod, usePrefs, useRefresh } from
 import { GROUPS, LIQUID_GROUPS } from '../../lib/categories'
 import { eur, eurc, eurk, parseNum, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, rangeTick } from '../../lib/periods'
-import type { Account } from '../../lib/types'
+import type { Account, AccountMove, BalancePoint } from '../../lib/types'
 import { CountUp, Card, Delta, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, Toggle, useToast } from '../../components/ui'
 import { axisProps, Donut, gridProps, Legend, TooltipBox, type Slice } from '../../components/charts'
 import { Icon } from '../../components/Icon'
@@ -39,7 +39,7 @@ export function Overview() {
 
   const groups = liquidOnly ? GROUPS.filter((g) => LIQUID_GROUPS.includes(g.id)) : GROUPS
   const data = useMemo(() => (hist ?? []).map((h) => {
-    const row: any = { date: h.date, net: liquidOnly ? h.liquid : h.net_worth }
+    const row: Record<string, string | number> = { date: h.date, net: liquidOnly ? h.liquid : h.net_worth }
     for (const g of groups) row[g.id] = h.by_group[g.id] ?? 0
     return row
   }), [hist, groups, liquidOnly])
@@ -148,7 +148,8 @@ export function Overview() {
 function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: string; range: string; liquidOnly: boolean; accounts: Account[]; view: string }) {
   const { data: hist, isLoading } = useNetWorthHistory(from, rangeStep(range), true)
   const { prefs, set } = usePrefs()
-  const off = new Set(prefs.hidden_accounts ?? [])
+  // Memoised (with `shown` below): new ones each render made the chart rows recompute every render.
+  const off = useMemo(() => new Set(prefs.hidden_accounts ?? []), [prefs.hidden_accounts])
   // The switchboard repeats the Accounts list below, so it stays folded
   // until you want to leave something out of the chart.
   const [pick, setPick] = useState(false)
@@ -190,7 +191,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   // Amounts count only switched-on accounts, so the total is the same in both views.
   const bal = useMemo(() => Object.fromEntries(eligible.map((a) => [a.id, Math.max(0, a.balance ?? 0)])), [eligible])
   const valueOf = (x: { ids: string[] }) => x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + (bal[id] ?? 0), 0)
-  const shown = series.filter((x) => !x.ids.every((id) => off.has(id)))
+  const shown = useMemo(() => series.filter((x) => !x.ids.every((id) => off.has(id))), [series, off])
   // The table: one block per bank (accounts view) or one block of banks.
   const blocks = useMemo(() => {
     if (view !== 'accounts') { // banks: up to three even blocks, one per column
@@ -207,7 +208,7 @@ function WhereMoneyIs({ from, range, liquidOnly, accounts, view }: { from: strin
   // The stack is drawn steadiest-first (bottom), whatever order the legend uses.
   const stack = [...shown].sort((x, y) => x.jit - y.jit)
   const rows = useMemo(() => (hist ?? []).map((h) => {
-    const row: any = { date: h.date }
+    const row: Record<string, string | number> = { date: h.date }
     for (const x of shown) row[x.key] = x.ids.filter((id) => !off.has(id)).reduce((t, id) => t + Math.max(0, h.by_account?.[id] ?? 0), 0)
     return row
   }), [hist, shown, off])
@@ -298,7 +299,7 @@ const assetBase = (byGroup: Record<string, Account[]>, liquidOnly: boolean) =>
 
 /** Which accounts drove the change over the selected range. */
 function Movement({ from, label }: { from: string; label: string }) {
-  const { data } = useQuery({ queryKey: ['movement', from], queryFn: () => api.get<any[]>('/networth/movement', { from }), enabled: !!from })
+  const { data } = useQuery({ queryKey: ['movement', from], queryFn: () => api.get<AccountMove[]>('/networth/movement', { from }), enabled: !!from })
   if (!data?.length) return null
   const max = Math.max(...data.map((m) => Math.abs(m.change)), 1)
   return (
@@ -361,7 +362,7 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
   const toast = useToast()
   useEffect(() => {
     // Prefill today's BTC price if we can.
-    api.get<any>('/market/quote/BTC-EUR').then((q) => q?.price && setPrice(String(Math.round(q.price)))).catch(() => {})
+    api.get<{ price: number }>('/market/quote/BTC-EUR').then((q) => q?.price && setPrice(String(Math.round(q.price)))).catch(() => {})
   }, [])
   const save = useMutation({
     mutationFn: () => api.post<{ saved: number }>('/balances', {
@@ -427,7 +428,7 @@ function UpdateBalances({ accounts, onClose }: { accounts: Account[]; onClose: (
 }
 
 function AccountSheet({ a, onClose }: { a: Account; onClose: () => void }) {
-  const { data: pts, isLoading } = useQuery({ queryKey: ['balances', a.id], queryFn: () => api.get<any[]>('/balances', { account: a.id }) })
+  const { data: pts, isLoading } = useQuery({ queryKey: ['balances', a.id], queryFn: () => api.get<BalancePoint[]>('/balances', { account: a.id }) })
   const [editing, setEditing] = useState(false)
   const refresh = useRefresh()
   const del = async (date: string) => {
@@ -484,7 +485,7 @@ function AccountEditor({ a, onClose }: { a?: Account; onClose: () => void }) {
   const toast = useToast()
   const save = useMutation({
     mutationFn: () => {
-      let d = {}
+      let d: Record<string, unknown>
       try { d = JSON.parse(details || '{}') } catch { throw new Error('Details must be valid JSON') }
       if (v.kind === 'loan') d = cleanTerms(d)
       const body = { ...v, details: d }

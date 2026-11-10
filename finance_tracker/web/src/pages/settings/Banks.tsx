@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useBankConnections } from '../../lib/hooks'
+import type { BankSettings } from '../../lib/types'
 import { shortDate } from '../../lib/format'
 import { Card, Field, Loading, Toggle, useToast } from '../../components/ui'
 import { AccountSelect, SPEND_KINDS } from '../../components/pickers'
@@ -14,13 +15,16 @@ import { brandColor } from '../../lib/brand'
 
 // ── banks ───────────────────────────────────────────────────────────
 
+// The settings form edits names one per line and takes a new key (empty keeps the stored one).
+type BankForm = Omit<BankSettings, 'owner_names'> & { owner_names: string; private_key_pem: string }
+
 export function Banks() {
   const [sp, setSp] = useSearchParams()
   const qc = useQueryClient()
   const toast = useToast()
-  const { data: st } = useQuery({ queryKey: ['bank-settings'], queryFn: () => api.get<any>('/bank/settings') })
+  const { data: st } = useQuery({ queryKey: ['bank-settings'], queryFn: () => api.get<BankSettings>('/bank/settings') })
   const { data: conns, isLoading } = useBankConnections()
-  const [form, setForm] = useState<any>(null)
+  const [form, setForm] = useState<BankForm | null>(null)
   const [bank, setBank] = useState('Swedbank')
   const [pasted, setPasted] = useState('')
   const [busy, setBusy] = useState(false)
@@ -43,7 +47,7 @@ export function Banks() {
   const connect = async () => {
     setBusy(true)
     try {
-      const r = await api.post<any>('/bank/connect', { bank, country: 'LT' })
+      const r = await api.post<{ connection_id: number; url: string }>('/bank/connect', { bank, country: 'LT' })
       window.location.href = r.url
     } catch (e) {
       toast((e as Error).message, 'bad')
@@ -70,7 +74,7 @@ export function Banks() {
     reload()
   }
   const saveSettings = async () => {
-    await api.put('/bank/settings', { ...form, owner_names: typeof form.owner_names === 'string' ? form.owner_names.split('\n').map((s: string) => s.trim()).filter(Boolean) : form.owner_names })
+    await api.put('/bank/settings', { ...form, owner_names: form!.owner_names.split('\n').map((s) => s.trim()).filter(Boolean) })
     toast('Saved', 'good')
     setForm(null)
     reload()
@@ -131,7 +135,7 @@ export function Banks() {
           label="Add to the ledger right away" />
         <div className="mt-2 text-xs text-muted">Card payments the bank has only reserved go straight into the ledger, marked <span className="text-warn">pending</span>, so today's spending counts today. When the bank books one, the same transaction gets the final amount and date — your category and tags stay. A reservation the bank releases is removed. Off: they wait in the inbox until they book.</div>
       </Card>
-      <Card icon="key" color="var(--s7)" title="Enable Banking application" action={!form && <button className="btn-ghost h-8 text-xs" onClick={() => setForm({ ...st, owner_names: (st?.owner_names ?? []).join('\n'), private_key_pem: '' })}>Edit</button>}>
+      <Card icon="key" color="var(--s7)" title="Enable Banking application" action={!form && <button className="btn-ghost h-8 text-xs" onClick={() => setForm({ ...st!, owner_names: (st?.owner_names ?? []).join('\n'), private_key_pem: '' })}>Edit</button>}>
         {!form ? (
           <div className="space-y-1 text-sm">
             <div><span className="text-muted">Application:</span> {st?.application_id || '—'}</div>
