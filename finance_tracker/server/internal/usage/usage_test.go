@@ -12,7 +12,7 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 	d := DB(t)
 	base := time.Now().Add(-2 * time.Hour).UTC()
 	at := func(sec int) string { return base.Add(time.Duration(sec) * time.Second).Format(time.RFC3339) }
-	x := 0.25
+	x := 0.2504 // read back as 0.25: positions keep 3 decimals
 	evs := []usage.Event{
 		// Session 1: Home, then three quick hops before settling on Balance history.
 		{At: at(0), Kind: "view", Path: "/", DwellMS: 30_000},
@@ -72,9 +72,13 @@ func TestHuntsBouncesAndPrivacy(t *testing.T) {
 	if len(s.Suggestions) == 0 {
 		t.Error("a repeated hunt should produce a suggestion")
 	}
-	raw, _ := usage.Events(d, 30, time.Now())
-	if len(raw) != 13 || raw[5].X == nil || *raw[5].X != 0.25 {
-		t.Errorf("raw events keep click positions: %+v", raw[5])
+	raw, _ := usage.Events(d, 30, 0, time.Now())
+	if len(raw) != 13 || raw[5].X == nil || *raw[5].X != 0.25 || s.Events != 13 {
+		t.Errorf("raw events keep click positions: %+v (summary counts %d)", raw[5], s.Events)
+	}
+	// An AI client asks for the newest few: the tail of the log, still in order.
+	if last, _ := usage.Events(d, 30, 2, time.Now()); len(last) != 2 || last[0].Path != "/wealth/history" || last[1].Path != "/plan/recurring" {
+		t.Errorf("newest two: %+v", last)
 	}
 	usage.Clear(d)
 	if s2, _ := usage.Summarise(d, 30, time.Now()); s2.Views != 0 || s2.Suggestions == nil || s2.Hunts == nil {

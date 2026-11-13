@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -21,6 +22,7 @@ import (
 	"ft/internal/market"
 	"ft/internal/mcptools"
 	. "ft/internal/testutil"
+	"ft/internal/usage"
 )
 
 type bearerRT struct{ tok string }
@@ -63,6 +65,8 @@ func TestMCPConnector(t *testing.T) {
 	a := &auth.Service{DB: s.DB}
 	a.SetupPin("", "1234")
 	Tx(t, s.DB, ledger.Tx{Date: "2026-09-01", Amount: E(10), Category: "food.groceries", AccountID: "swed", Merchant: "Lidl"})
+	ago := func(m int) string { return time.Now().Add(-time.Duration(m) * time.Minute).UTC().Format(time.RFC3339) }
+	usage.Record(s.DB, []usage.Event{{At: ago(10), Kind: "view", Path: "/", DwellMS: 30_000}, {At: ago(9), Kind: "view", Path: "/plan", From: "/", DwellMS: 40_000}})
 
 	raw := func(method, path, ctype string, body io.Reader) (int, http.Header, []byte) {
 		t.Helper()
@@ -202,7 +206,7 @@ func TestMCPConnector(t *testing.T) {
 	if slices.Contains(names, "log_decision") || !slices.Contains(names, "get_next_euro") || !slices.Contains(names, "get_ownership_costs") {
 		t.Errorf("read-only planning tools %v", names)
 	}
-	for _, tool := range []string{"get_payday_runbook", "get_lifestyle_creep", "get_price_creep", "get_habits", "get_decisions", "get_ownership_costs"} {
+	for _, tool := range []string{"get_payday_runbook", "get_lifestyle_creep", "get_price_creep", "get_habits", "get_decisions", "get_ownership_costs", "get_usage"} {
 		if res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tool}); err != nil || res.IsError {
 			t.Errorf("%s over a read-only connection: %v %+v", tool, err, res)
 		}
@@ -277,12 +281,22 @@ func TestMCPConnector(t *testing.T) {
 		{"get_trip_untagged", map[string]any{"tag": "trip:rome"}, `"in_dates"`},
 		{"get_next_euro", map[string]any{"amount": 750}, `"sum":750`},
 		{"get_decision_impact", map[string]any{"amount": 300}, `"lines"`},
+		{"get_usage", nil, `"hunts"`},
 		{"log_decision", map[string]any{"title": "Road bike", "amount": 1200, "category": "leisure.hobbies"}, `"status":"thinking"`},
 	} {
 		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
 		if err != nil || res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, c.want) {
 			t.Errorf("%s: %v %+v", c.tool, err, res)
 		}
+	}
+	// Usage with the raw log: the summary's total plus only the newest event.
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_usage", Arguments: map[string]any{"days": 7, "events": true, "limit": 1}})
+	var u struct {
+		Summary struct{ Events int }
+		Events  []usage.Event
+	}
+	if err != nil || res.IsError || json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &u) != nil || u.Summary.Events != 2 || len(u.Events) != 1 || u.Events[0].Path != "/plan" {
+		t.Errorf("get_usage with events: %v %+v %+v", err, res, u)
 	}
 	cs.Close()
 

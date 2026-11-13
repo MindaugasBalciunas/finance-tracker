@@ -1,6 +1,7 @@
 // Private usage analytics: which pages you open, how long you stay, what you
 // click and where — stored only in this app's own database, for improving the
-// layout later (analysed with the Claude CLI). Off switch: Settings → Usage.
+// layout later; AI apps and API tokens the owner connected can read it (the
+// get_usage MCP tool). Off switch: Settings → Usage.
 
 type Ev = { at: string; kind: 'view' | 'action'; path: string; from?: string; label?: string; dwell_ms?: number; x?: number; y?: number; vw?: number }
 

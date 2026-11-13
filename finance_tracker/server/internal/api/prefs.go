@@ -17,7 +17,8 @@ type Prefs struct {
 	// Columns switched off in Wealth → History. nil = never configured (the
 	// client then hides valuations like house, car and solar by default).
 	HistoryHidden *[]string `json:"history_hidden,omitempty"`
-	// Private usage analytics (on by default; nothing leaves this database).
+	// Private usage analytics (on by default; read only by the owner's session
+	// and the AI apps / API tokens they connected).
 	UsageOff bool `json:"usage_off"`
 }
 

@@ -24,6 +24,7 @@ func TestToolParityWithMCP(t *testing.T) {
 		"get_trades":           "raw trade list for external analysis; Ask CFO uses get_portfolio",
 		"delete_recurring":     "Ask CFO hides a detected item through add_recurring",
 		"get_bank_connections": "bank consent status; Ask CFO sees it in get_overview and get_checks",
+		"get_usage":            "how the app itself is used, for layout work from Claude Code; nothing to do with the money",
 	}
 
 	ctx := context.Background()

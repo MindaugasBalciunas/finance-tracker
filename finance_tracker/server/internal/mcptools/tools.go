@@ -246,6 +246,12 @@ type daysArgs struct {
 	Days int `json:"days,omitempty" jsonschema:"7–120, default 60"`
 }
 
+type usageArgs struct {
+	Days   int  `json:"days,omitempty" jsonschema:"1–180, default 30"`
+	Events bool `json:"events,omitempty" jsonschema:"also return the raw event log, oldest first"`
+	Limit  int  `json:"limit,omitempty" jsonschema:"newest raw events to return, default 500, max 600"`
+}
+
 type habitsArgs struct {
 	Months int `json:"months,omitempty" jsonschema:"complete months shown, 1–240, default 24"`
 }
@@ -728,6 +734,34 @@ func New(call Caller) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_fun_facts", Description: "Fun statistics from the whole history: employers ranked by what they paid, the first pay cheque, lifetime income, most visited shops and where the most money went, little habits added up (coffees, fast food, fuel…), the biggest purchase and day, the big spending weekday, the priciest trips, the biggest spending year. Obligations are left out. Optional from/to limit it to a period."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/insights/fun", vals("from", a.From, "to", a.To), nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_usage", Description: "How the owner uses this app, from its private on-device analytics (180 days kept; off switch in Settings → Usage): sessions, views and raw event total (events), each page's views, average and total time, bounces (opened and left within seconds) and last visit; the most clicked buttons and links per page; hunts (pages reached only after several quick hops, with the usual entry page and path); views per day; known pages never opened (unused); the app's own layout suggestions; names maps each path to its page title. events=true adds the raw log (view: path, from, dwell_ms; action: path, click label with numbers replaced by #, x/y 0–1 on the page, viewport width vw) — the newest `limit` events, total in summary.events. For improving the app's layout and navigation, not about money."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a usageArgs) (*mcp.CallToolResult, any, error) {
+			days := ""
+			if a.Days > 0 {
+				days = fmt.Sprint(min(a.Days, 180))
+			}
+			sum, err := call("GET", "/usage/summary", vals("days", days), nil)
+			if err != nil || !a.Events {
+				return text(sum, err)
+			}
+			limit := 500
+			if a.Limit > 0 {
+				limit = min(a.Limit, 600) // ≤ ~200 B a click: stays under the 200 kB reply cap
+			}
+			if days == "" {
+				days = "30" // the same window as the summary
+			}
+			evs, err := call("GET", "/usage/events", vals("days", days, "limit", fmt.Sprint(limit)), nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Summary first: if the reply cap ever cuts, it cuts the log, not the totals.
+			b, err := json.Marshal(struct {
+				Summary json.RawMessage `json:"summary"`
+				Events  json.RawMessage `json:"events"`
+			}{sum, evs})
+			return text(b, err)
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_market_buzz", Description: "News headlines, public social chatter and Fear & Greed for a ticker. Social chatter is unverified — say so."},
 		func(ctx context.Context, r *mcp.CallToolRequest, a tickerArgs) (*mcp.CallToolResult, any, error) {

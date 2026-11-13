@@ -92,6 +92,7 @@ Planning tools (read-only unless noted), the same in Ask CFO:
 | `get_fees` | What investments cost a year and over 20 years, against a 0.2% index fund; funds without a fee are listed as missing |
 | `get_subscriptions` | Cancellable regular charges with yearly cost, new ones, free trials, and your keep / cancel-by verdicts |
 | `get_cash_calendar` | Cash day by day for the next weeks with every bill, transfer and salary on its date, and the tightest day |
+| `get_usage` | How you use the app itself (Settings → Usage, kept on-device): page views and time, bounces, top clicks, pages you hunted for, pages never opened; optionally the raw event log — for layout ideas, not money |
 
 On connect the server sends Claude the same data model, strategy and trust rules Ask CFO follows in the app (`internal/advice`), and offers four ready-made analyses as prompts — `/` commands in Claude Code, one click in Claude Desktop:
 

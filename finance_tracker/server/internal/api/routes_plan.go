@@ -86,7 +86,8 @@ func (s *Server) planRoutes() {
 		return usage.Summarise(s.DB, usageDays(r, 30), time.Now())
 	})
 	s.handle("GET /api/usage/events", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		return usage.Events(s.DB, usageDays(r, 90), time.Now())
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		return usage.Events(s.DB, usageDays(r, 90), limit, time.Now())
 	})
 	s.handle("DELETE /api/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return map[string]bool{"ok": true}, usage.Clear(s.DB)

@@ -28,7 +28,7 @@ export function UsageView() {
           <Toggle checked={!prefs.usage_off} onChange={(v) => set({ usage_off: !v })} label="Record how I use the app" />
           <Segmented size="sm" value={days} onChange={setDays} options={[{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }]} />
         </div>
-        <div className="mt-2 text-xs text-muted">Pages, time on each, clicks and where they land — kept only in this app's own database (180 days), never sent anywhere. Search terms and amounts are not recorded. Raw events for analysis: <code className="rounded bg-sunken px-1">GET /api/usage/events?days=90</code></div>
+        <div className="mt-2 text-xs text-muted">Pages, time on each, clicks and where they land — kept in this app's own database (180 days). It leaves only when an AI app or API token you connected reads it (get_usage). Search terms and amounts are not recorded. Raw events for analysis: <code className="rounded bg-sunken px-1">GET /api/usage/events?days=90</code></div>
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <div><div className="text-xs text-muted">Visits</div><div className="text-lg font-semibold tnum">{u.sessions}</div></div>
           <div><div className="text-xs text-muted">Page views</div><div className="text-lg font-semibold tnum">{u.views}</div></div>

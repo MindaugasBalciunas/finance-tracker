@@ -381,7 +381,7 @@ export type Breakdown = { from: string; to: string; categories: CategoryStat[]; 
 
 /** /usage/summary: which pages get used, and the ones you had to hunt for. */
 export type UsageSummary = {
-  since: string; sessions: number; views: number
+  since: string; sessions: number; events: number; views: number
   pages: { path: string; views: number; avg_sec: number; total_min: number; bounces: number; last_seen: string }[]
   actions: { path: string; label: string; count: number }[]
   hunts: { target: string; count: number; avg_hops: number; avg_sec: number; entry: string; typical_path: string[] | null }[]

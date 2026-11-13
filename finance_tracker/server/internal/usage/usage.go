@@ -1,6 +1,7 @@
 // Package usage keeps private, on-device analytics of how the app is used:
 // which pages, how long, and — most useful — the detours taken before landing
-// on the page that was wanted. Nothing leaves the owner's database.
+// on the page that was wanted. Kept in the owner's database; only their session
+// and the AI apps / API tokens they connected read it (get_usage).
 package usage
 
 import (
@@ -105,8 +106,10 @@ func Record(d *sql.DB, events []Event) (int, error) {
 }
 
 // Events returns the raw log of the last `days` days (for analysis and heat
-// maps in the Claude CLI).
-func Events(d *sql.DB, days int, now time.Time) ([]Event, error) {
+// maps in the Claude CLI). limit > 0 keeps only the newest that many, still
+// oldest first, so an AI client gets the recent detail without a cut-off
+// mid-reply; Summary.Events says how many there were in all.
+func Events(d *sql.DB, days, limit int, now time.Time) ([]Event, error) {
 	rows, err := d.Query(`SELECT at,kind,path,from_path,label,dwell_ms,x,y,vw FROM usage_events WHERE at >= ? ORDER BY at, id`,
 		now.AddDate(0, 0, -days).UTC().Format(time.RFC3339))
 	if err != nil {
@@ -120,13 +123,21 @@ func Events(d *sql.DB, days int, now time.Time) ([]Event, error) {
 		if err := rows.Scan(&e.At, &e.Kind, &e.Path, &e.From, &e.Label, &e.DwellMS, &x, &y, &e.VW); err != nil {
 			return nil, err
 		}
+		// Same page names as the summary (moved pages under where they live
+		// now), positions to 3 decimals — finer adds bytes, not insight.
+		e.Path, e.From = current(e.Path), current(e.From)
 		if x.Valid {
-			e.X = &x.Float64
+			v := round3(x.Float64)
+			e.X = &v
 		}
 		if y.Valid {
-			e.Y = &y.Float64
+			v := round3(y.Float64)
+			e.Y = &v
 		}
 		out = append(out, e)
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
 	}
 	return out, rows.Err()
 }
@@ -169,6 +180,7 @@ type DayCount struct {
 type Summary struct {
 	Since       string            `json:"since"`
 	Sessions    int               `json:"sessions"`
+	Events      int               `json:"events"` // raw events in the window (views and clicks)
 	Views       int               `json:"views"`
 	Pages       []PageStat        `json:"pages"`
 	Actions     []ActionStat      `json:"actions"`
@@ -243,7 +255,7 @@ func Summarise(d *sql.DB, days int, now time.Time) (*Summary, error) {
 		}
 		byDay[e.At[:10]]++
 	}
-	s.Views = len(views)
+	s.Events, s.Views = len(evs), len(views)
 
 	// Sessions, bounces and hunts from the ordered views.
 	type hop struct {
@@ -437,6 +449,7 @@ func top(m map[string]int) string {
 }
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
+func round3(v float64) float64 { return float64(int64(v*1000+0.5)) / 1000 }
 func plural(n int, w string) string {
 	if n == 1 {
 		return "1 " + w
