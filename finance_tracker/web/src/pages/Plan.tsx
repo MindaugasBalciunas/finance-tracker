@@ -20,7 +20,7 @@ import { ForecastView } from './plan/Forecast'
 import { Trips } from './plan/Trips'
 import { PlanSettings } from './plan/Settings'
 import { RecurringView } from './insights/Recurring'
-import { FreeBudgetCard } from './home/FreeBudget'
+import { FreeMoneyCard } from './home/FreeMoney'
 
 export default function Plan() {
   const loc = useLocation()
@@ -159,8 +159,8 @@ function Month() {
       </div>
       {/* The month's number first, then why and what to change, then the lines; the slower views close the page. */}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
-      {/* Home's spending budget card, for whichever month is open. */}
-      {r.free && <FreeBudgetCard f={r.free} month={monthLabel(month, true)} unreviewed={current ? r.unreviewed : 0} link={false} />}
+      {/* Home's free money card, for whichever month is open. */}
+      {r.free_money && <FreeMoneyCard f={r.free_money} month={monthLabel(month, true)} link={false} />}
       {current && <EmergencyFund />}
       {/* Home's month chart, full width: spending so far against the plan's
           pace through the month's free money, and where this rhythm ends up. */}

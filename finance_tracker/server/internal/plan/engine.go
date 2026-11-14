@@ -124,6 +124,14 @@ type Report struct {
 	// Free is the month's spending lines as needs and wants (see Free);
 	// filled in by cfo.BudgetReports, which can read the category flags.
 	Free *FreeBudget `json:"free,omitempty"`
+	// FreeMoney is the month from the salary's side: free money, what was
+	// spent of it (essential or optional), what is kept in funds and what is
+	// left to spend (see FreeMoneyOf); filled in by cfo.BudgetReports.
+	FreeMoney *FreeMoney `json:"free_money,omitempty"`
+	// SpentByCategory: the month's free spending (expenses no fixed line
+	// claims) by the transaction's own category, before refunds — for the
+	// essential/optional split.
+	SpentByCategory map[string]money.Cents `json:"-"`
 }
 
 // OneOff is the size from which a single payment counts as a one-off rather
@@ -229,6 +237,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		spent[i] = map[string]money.Cents{}
 	}
 	discretionary := map[string]money.Cents{}
+	spentCat := map[string]money.Cents{}
 	freeByDay := map[string]map[int]money.Cents{}
 	everydayByDay := map[string]map[int]money.Cents{}
 	fundSpent := map[string]money.Cents{}
@@ -291,6 +300,9 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		disc := t.Kind == "expense" && !isFixed
 		if disc {
 			discretionary[m] += t.Amount
+			if m == month {
+				spentCat[t.Category] += t.Amount
+			}
 		}
 		covered, fundTx := false, false
 		for j, b := range lines {
@@ -450,6 +462,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		r.Lines = append(r.Lines, l)
 	}
 	r.DiscretionarySpent = discretionary[month]
+	r.SpentByCategory = spentCat
 	r.FundSpent = fundSpent[month]
 	r.FreeSpentByDay = freeByDay
 	r.EverydayByDay = everydayByDay

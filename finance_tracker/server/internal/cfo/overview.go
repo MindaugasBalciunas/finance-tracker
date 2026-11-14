@@ -104,11 +104,14 @@ type PlanPulse struct {
 	UnreviewedCount int         `json:"unreviewed_count,omitempty"`
 	// Free is this month's spending lines — the budget you choose how to
 	// spend, obligations and saving left out — with needs and wants apart.
-	Free     plan.FreeBudget `json:"free"`
-	Over     []LineBrief     `json:"over"`  // spending lines over budget
-	Lines    []LineBrief     `json:"lines"` // busiest spending lines (most of budget used first)
-	Spent    money.Cents     `json:"spent"`
-	Budgeted money.Cents     `json:"budgeted"`
+	Free plan.FreeBudget `json:"free"`
+	// FreeMoney: the same month from the salary's side — free money, spent
+	// (essential/optional), kept in funds, left to spend.
+	FreeMoney *plan.FreeMoney `json:"free_money,omitempty"`
+	Over      []LineBrief     `json:"over"`  // spending lines over budget
+	Lines     []LineBrief     `json:"lines"` // busiest spending lines (most of budget used first)
+	Spent     money.Cents     `json:"spent"`
+	Budgeted  money.Cents     `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
 	IncomeActual  money.Cents `json:"income_actual"`
@@ -244,6 +247,8 @@ func BudgetReports(d *sql.DB, months []string, now time.Time) (map[string]*plan.
 		}
 		free := plan.Free(r, cats)
 		r.Free = &free
+		fm := plan.FreeMoneyOf(r, cats)
+		r.FreeMoney = &fm
 		out[month] = r
 	}
 	return out, nil
@@ -369,6 +374,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
 		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
 		o.Plan.Free = *r.Free
+		o.Plan.FreeMoney = r.FreeMoney
 		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)

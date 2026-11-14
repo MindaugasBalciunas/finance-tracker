@@ -154,3 +154,57 @@ func TestFreeBudgetFundOverspentThisMonthKeepsNothing(t *testing.T) {
 		t.Fatalf("left %v, in funds %v, day-to-day %v, fund spent %v", f.Left, f.InFunds, f.Left-f.InFunds, f.FundSpent)
 	}
 }
+
+// From the income's side: €4,000 income − €700 loan − €500 ETF leaves €2,800
+// free. €380 was spent of it: €150 groceries are essential; the restaurant
+// (under the essential Food line) and the flight paid from the Travel fund
+// are optional (€250); the €20 refund is taken off on its own row. Of the €2,420 not spent, €100 is still kept in the
+// Travel fund and €2,320 is left to spend — exactly Left to spend.
+func TestFreeMoneyFromSalaryAddsUpToLeftToSpend(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	trav := line(4, "Travel", "spending", []string{"travel"}, 300)
+	trav.Fund, trav.StartMonth = true, "2026-11"
+	budgets := []plan.Budget{
+		line(1, "Loan", "fixed", []string{"housing.mortgage"}, 700),
+		line(2, "ETF", "saving", []string{"transfer.invest"}, 500),
+		line(3, "Food", "spending", []string{"food"}, 400),
+		trav,
+	}
+	txs := []ledger.Tx{
+		tx("2026-11-03", "housing.mortgage", 700), tx("2026-11-02", "transfer.invest", 500),
+		tx("2026-11-05", "food.groceries", 150), tx("2026-11-06", "food.restaurants", 50),
+		tx("2026-11-07", "travel.flights", 200), tx("2026-11-08", "refunds", 20),
+	}
+	r := plan.Compute(budgets, txs, "2026-11", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(4000)})
+	c := cats("food", "food.groceries")
+	c["food.restaurants"] = ledger.Category{ID: "food.restaurants"}
+	f := plan.FreeMoneyOf(r, c)
+	if f.Free != E(2800) || f.Spent != E(380) || f.Essential != E(150) || f.Optional != E(250) || f.Refunds != E(20) {
+		t.Fatalf("free %v spent %v essential %v optional %v", f.Free, f.Spent, f.Essential, f.Optional)
+	}
+	if f.LeftToSpend != r.SafeToSpend || f.LeftToSpend != E(2320) || f.InFunds != E(100) {
+		t.Fatalf("left to spend %v (report %v), in funds %v", f.LeftToSpend, r.SafeToSpend, f.InFunds)
+	}
+	if f.Free-f.Spent != f.InFunds+f.LeftToSpend || f.Essential+f.Optional+f.Unreviewed-f.Refunds != f.Spent {
+		t.Fatal("the parts must add up")
+	}
+}
+
+// A fund paying from money saved in earlier months: Travel held €1,100
+// before November, sets aside €100 and pays a €1,200 flight. That money adds
+// to November's, so "in funds" is −€1,100 and Left to spend still adds up.
+func TestFreeMoneyFundPaidFromEarlierMonthsAddsToTheMonth(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	trav := line(1, "Travel", "spending", []string{"travel"}, 100)
+	trav.Fund, trav.StartMonth = true, "2026-01" // Jan–Oct: €1,100 set aside, nothing paid
+	trav.Steps = []plan.Step{{FromMonth: "", Amount: E(110)}, {FromMonth: "2026-11", Amount: E(100)}}
+	r := plan.Compute([]plan.Budget{trav}, []ledger.Tx{tx("2026-11-04", "travel.flights", 1200)}, "2026-11", now,
+		plan.Settings{IncomeMode: "manual", ManualIncome: E(3000)})
+	f := plan.FreeMoneyOf(r, cats())
+	if f.Free != E(3000) || f.Spent != E(1200) || f.Optional != E(1200) || f.InFunds != E(-1100) || f.LeftToSpend != E(2900) {
+		t.Fatalf("%+v", f)
+	}
+	if f.Free-f.Spent != f.InFunds+f.LeftToSpend {
+		t.Fatal("the parts must add up")
+	}
+}

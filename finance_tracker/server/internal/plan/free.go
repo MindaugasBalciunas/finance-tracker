@@ -95,3 +95,48 @@ func Free(r *Report, cats map[string]ledger.Category) FreeBudget {
 	}
 	return f
 }
+
+// FreeMoney is the month read from the income: what is free once fixed
+// obligations and saving are planned, what was spent of it — split into
+// essential and optional by each payment's own category, so a restaurant
+// under the Food line counts as optional and groceries as essential — and
+// what is left, of which some is kept in funds for lumpy costs and the rest
+// is left to spend (the same figure as Left to spend on Home and Plan).
+//
+//	Free = Income − Fixed − Saving
+//	Spent = Essential + Optional + Unreviewed − Refunds
+//	Free − Spent = InFunds + LeftToSpend
+//
+// InFunds is this month's fund set-asides less what funds paid out of them.
+// It goes negative when a fund pays from money saved in earlier months (a
+// €1,200 flight from a Travel fund that held €1,100 before this month): that
+// money adds to this month's, it doesn't come out of it.
+type FreeMoney struct {
+	Income      money.Cents `json:"income"`
+	Fixed       money.Cents `json:"fixed"`
+	Saving      money.Cents `json:"saving"`
+	Free        money.Cents `json:"free"`
+	Spent       money.Cents `json:"spent"`
+	Essential   money.Cents `json:"essential"`
+	Optional    money.Cents `json:"optional"`
+	Refunds     money.Cents `json:"refunds"`       // money back, taken off spent
+	Unreviewed  money.Cents `json:"unreviewed"`    // still in the bank inbox, category not settled
+	InFunds     money.Cents `json:"in_funds"`      // see above; negative = paid from earlier months' fund money
+	LeftToSpend money.Cents `json:"left_to_spend"` // = Report.SafeToSpend
+}
+
+// FreeMoneyOf reads a report from the income's side.
+func FreeMoneyOf(r *Report, cats map[string]ledger.Category) FreeMoney {
+	f := FreeMoney{Income: r.IncomeBase, Fixed: r.FixedPlanned, Saving: r.SavingPlanned,
+		Spent: r.DiscretionarySpent, Refunds: r.Refunds, Unreviewed: r.Unreviewed, LeftToSpend: r.SafeToSpend}
+	f.Free = f.Income - f.Fixed - f.Saving
+	for c, v := range r.SpentByCategory {
+		if cats[c].Essential {
+			f.Essential += v
+		} else {
+			f.Optional += v
+		}
+	}
+	f.InFunds = f.Free - f.Spent - f.LeftToSpend
+	return f
+}

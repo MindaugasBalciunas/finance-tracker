@@ -56,6 +56,11 @@ export interface LineBrief { name: string; spent: number; budgeted: number; rema
 /** One slice of the month's free budget (plan.FreePart): left = budgeted − spent, negative when over. */
 export interface FreePart { budgeted: number; spent: number; left: number; lines: string[] }
 /** The month's spending lines — obligations and saving left out — with needs and wants apart (plan.FreeBudget). */
+/** The month from the income's side (plan.FreeMoney): free = income − fixed − saving;
+ *  spent = essential + optional + unreviewed − refunds; free − spent = in_funds + left_to_spend
+ *  (in_funds < 0: funds paid from earlier months' savings). */
+export interface FreeMoney { income: number; fixed: number; saving: number; free: number; spent: number
+  essential: number; optional: number; refunds?: number; unreviewed: number; in_funds: number; left_to_spend: number }
 export interface FreeBudget extends FreePart { needs: FreePart; wants: FreePart
   /** Part of `left` still held by fund lines; left − in_funds is the day-to-day part. */
   in_funds?: number
@@ -68,7 +73,7 @@ export interface Overview {
   liquid_30d: number; liquid_ytd: number; liquid_12m: number
   spark: { date: string; value: number; liquid: number }[]
   month: Flow; last_month: Flow; avg12: Flow; year: Flow; month_progress: number; usual_saved?: number; usual_rate?: number
-  plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number; free?: FreeBudget
+  plan: { safe_to_spend: number; income_base: number; spent: number; budgeted: number; free?: FreeBudget; free_money?: FreeMoney
     free_spent: number; days_left: number; per_day_left: number; avg_day: number; typical_day: number; typical_one_offs?: number; expected_day: number; expected_rest?: number; projected_left: number; run_out_day?: number
     free_planned?: number; track?: { month: string; left: number; spent: number }[] | null; funds_over?: LineBrief[] | null; unreviewed?: number; unreviewed_count?: number; over: LineBrief[] | null; lines?: LineBrief[] | null
     income_actual: number; fixed_planned: number; fixed_spent: number; saving_planned: number; saved_actual: number; fund_set_aside: number; fund_overdrawn?: number
@@ -120,6 +125,7 @@ export interface PlanReport {
   unbudgeted: { category: string; spent: number; year_spent: number; history: MonthCell[]; suggestion?: Suggestion }[]
   /** The month's spending lines as needs and wants (plan.FreeBudget). */
   free?: FreeBudget
+  free_money?: FreeMoney
 }
 
 export interface Rule { id: number; priority: number; pattern: string; when_category: string; when_kind: string; set_category: string; set_merchant: string; add_tags: string[]; enabled: boolean }

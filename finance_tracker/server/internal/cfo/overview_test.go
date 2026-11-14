@@ -255,6 +255,12 @@ func TestOverviewFreeBudgetShowsSpendingLinesWithWantsApart(t *testing.T) {
 	if f.Needs.Budgeted != E(400) || f.Needs.Spent != E(150) {
 		t.Fatalf("needs %+v", f.Needs)
 	}
+	// The same month from the salary: €4,000 − €700 − €500 = €2,800 free;
+	// groceries essential, the concert optional; the rest left to spend.
+	m := o.Plan.FreeMoney
+	if m == nil || m.Free != E(2800) || m.Essential != E(150) || m.Optional != E(60) || m.LeftToSpend != o.Plan.SafeToSpend {
+		t.Fatalf("free money %+v (left to spend %v)", m, o.Plan.SafeToSpend)
+	}
 }
 
 // Plan shows the spending budget for any month it is turned to, not only

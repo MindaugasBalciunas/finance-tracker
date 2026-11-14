@@ -14,7 +14,7 @@ import { MonthTimeline, typicalShare } from '../components/MonthChart'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { FunTeaser } from './insights/Fun'
-import { FreeBudgetCard } from './home/FreeBudget'
+import { FreeMoneyCard } from './home/FreeMoney'
 import { Icon, IconTile } from '../components/Icon'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 
@@ -121,7 +121,7 @@ export default function Home() {
   )
   const month = <>
     <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
-    {o.plan.free && <FreeBudgetCard f={o.plan.free} month={monthLabel(o.date.slice(0, 7), true)} unreviewed={o.plan.unreviewed} />}
+    {o.plan.free_money && <FreeMoneyCard f={o.plan.free_money} month={monthLabel(o.date.slice(0, 7), true)} />}
     {o.cash && <UntilPayday c={o.cash} />}
   </>
   // Today's entries before the slow numbers: adding and checking transactions is the daily use.
