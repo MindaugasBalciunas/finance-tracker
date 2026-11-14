@@ -190,6 +190,10 @@ func (s *Server) insightRoutes() {
 		}
 		return rows, nil
 	})
+	// Optional spending: where it goes and the patterns that look like leaks.
+	s.handle("GET /api/insights/optional", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return cfo.OptionalInsights(s.DB, time.Now())
+	})
 	// Habits: how often, how big, when — spending by choice, complete months.
 	s.handle("GET /api/insights/habits", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		months := min(max(qint(r, "months", 24), 1), 240) // YTD in February is one month

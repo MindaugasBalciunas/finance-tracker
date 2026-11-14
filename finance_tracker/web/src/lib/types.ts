@@ -61,6 +61,22 @@ export interface FreePart { budgeted: number; spent: number; left: number; lines
  *  (in_funds < 0: funds paid from earlier months' savings). */
 export interface FreeMoney { income: number; fixed: number; saving: number; free: number; spent: number
   essential: number; optional: number; refunds?: number; unreviewed: number; in_funds: number; left_to_spend: number }
+/** Optional spending insights (cfo.OptionalReport). */
+export interface OptTx { id: number; date: string; merchant: string; category: string; amount: number }
+export interface OptLine { key: string; month: number; usual: number; year: number; count: number }
+export interface OptionalReport {
+  month: string; spent: number; usual: number; free: number; year: number
+  months: { month: string; essential: number; optional: number }[]
+  categories: OptLine[]; merchants: OptLine[]
+  leaks: {
+    while_over: { year: number; this_month: number; months: { month: string; from: number; amount: number }[]; items: OptTx[] }
+    small_often: { merchant: string; count: number; spent: number; yearly: number }[]
+    payday?: { after: number; usual: number; extra: number; months: number }
+    creeping: { merchant: string; before: number; now: number; yearly: number }[]
+    convenience?: { convenience: number; groceries: number; yearly: number }
+    one_offs: { year: number; items: OptTx[] }
+  }
+}
 export interface FreeBudget extends FreePart { needs: FreePart; wants: FreePart
   /** Part of `left` still held by fund lines; left − in_funds is the day-to-day part. */
   in_funds?: number

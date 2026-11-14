@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"ft/internal/auth"
+
 	"ft/internal/cfo"
 	"ft/internal/ledger"
 	"ft/internal/plan"
@@ -65,5 +67,23 @@ func TestLedgerNeedFilterMatchesTheFreeMoneySplit(t *testing.T) {
 	c.ok("GET", "/transactions?need=nonsense&from=2026-10-01&to=2026-10-31", nil, &all)
 	if all.Total != 9 {
 		t.Errorf("unknown need value filtered: %d rows", all.Total)
+	}
+}
+
+// The Optional insights page reads one route; on a fresh book every list is
+// empty, never null, and an API token may read it like the other insights.
+func TestOptionalInsightsRoute(t *testing.T) {
+	s, c := newServer(t)
+	Tx(t, s.DB, ledger.Tx{Date: time.Now().Format("2006-01-02"), Amount: E(12), Category: "leisure.events", Merchant: "Cinema", AccountID: "swed"})
+	var r cfo.OptionalReport
+	c.ok("GET", "/insights/optional", nil, &r)
+	if r.Spent != E(12) || r.Leaks.SmallOften == nil || r.Leaks.Creeping == nil || len(r.Merchants) != 1 || r.Leaks.WhileOver.ThisMonth != 0 {
+		t.Fatalf("%+v", r)
+	}
+	a := &auth.Service{DB: s.DB}
+	a.SetupPin("", "1234")
+	ro, _ := a.MintToken(false)
+	if code, _ := c.with("Authorization", "Bearer "+ro).do("GET", "/insights/optional", nil); code != 200 {
+		t.Errorf("read token: %d", code)
 	}
 }
