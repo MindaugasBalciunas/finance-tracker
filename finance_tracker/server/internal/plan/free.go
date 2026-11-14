@@ -24,6 +24,16 @@ type FreeBudget struct {
 	FreePart
 	Needs FreePart `json:"needs"`
 	Wants FreePart `json:"wants"`
+	// InFunds is the part of Left still held by fund lines (Travel, Gifts…):
+	// money set aside for lumpy costs, which Left to spend took out on the
+	// 1st. Left − InFunds is what the day-to-day lines have left, so the
+	// card and Left to spend can be read side by side (a €1,434 budget left
+	// was €791 in funds and €642 day-to-day, beside €810 left to spend).
+	InFunds money.Cents `json:"in_funds"`
+	// FundSpent is what the funds paid this month out of what they held —
+	// in Spent here, but not in Left to spend's "spent so far" (a payment
+	// beyond what a fund held is, so it is left out here too).
+	FundSpent money.Cents `json:"fund_spent"`
 }
 
 func (p *FreePart) add(name string, budgeted, spent money.Cents) {
@@ -71,6 +81,12 @@ func Free(r *Report, cats map[string]ledger.Category) FreeBudget {
 			budgeted, spent = l.MonthlyShare, l.MonthSpent
 		}
 		f.FreePart.add(l.Name, budgeted, spent)
+		if l.FundState != nil {
+			// A fund that paid beyond what it held keeps nothing; the
+			// overdraft is free spending, as in Left to spend (FundOverdrawn).
+			f.InFunds += max(budgeted-spent, 0)
+			f.FundSpent += min(spent, max(budgeted, 0))
+		}
 		if Essential(l.Budget, cats) {
 			f.Needs.add(l.Name, budgeted, spent)
 		} else {

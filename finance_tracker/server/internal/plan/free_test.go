@@ -84,6 +84,11 @@ func TestFreeBudgetCountsFundsAsHeldAndYearlyLinesAsAMonthlyShare(t *testing.T) 
 	if f.Needs.Budgeted != 0 || len(f.Needs.Lines) != 0 || f.Wants.Budgeted != f.Budgeted {
 		t.Fatalf("all wants: %+v", f)
 	}
+	// What is left splits into what the Travel fund still holds and what the
+	// day-to-day (here the yearly gifts share) has left.
+	if f.InFunds != E(200) || f.FundSpent != E(500) || f.Left-f.InFunds != E(60) {
+		t.Fatalf("in funds %v, fund spent %v, day-to-day %v", f.InFunds, f.FundSpent, f.Left-f.InFunds)
+	}
 }
 
 // A month with no spending lines gives zeros and empty lists, never null —
@@ -128,7 +133,24 @@ func TestFreeBudgetDoesNotCarryAFundOverdraftIntoTheMonth(t *testing.T) {
 		t.Fatalf("setup: fund should open at −500, got %v", fs.Opening)
 	}
 	f := plan.Free(r, cats())
-	if f.Budgeted != E(300) || f.Spent != E(100) || f.Left != E(200) || f.Wants.Budgeted != E(300) {
+	if f.Budgeted != E(300) || f.Spent != E(100) || f.Left != E(200) || f.Wants.Budgeted != E(300) || f.InFunds != E(200) {
 		t.Fatalf("free %v / %v / %v, wants %+v", f.Budgeted, f.Spent, f.Left, f.Wants)
+	}
+}
+
+// A fund that pays more this month than it holds keeps nothing, and the
+// overdraft comes out of the day-to-day money — as Left to spend takes it out
+// of free money — instead of making "kept in funds" negative.
+func TestFreeBudgetFundOverspentThisMonthKeepsNothing(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	food := line(1, "Food", "spending", []string{"food"}, 400)
+	trav := line(2, "Travel", "spending", []string{"travel"}, 300)
+	trav.Fund, trav.StartMonth = true, "2026-11"
+	gifts := line(3, "Gifts", "spending", []string{"gifts"}, 1000)
+	gifts.Fund, gifts.StartMonth = true, "2026-11"
+	r := plan.Compute([]plan.Budget{food, trav, gifts}, []ledger.Tx{tx("2026-11-04", "travel.flights", 500)}, "2026-11", now, plan.Settings{})
+	f := plan.Free(r, cats("food"))
+	if f.Left != E(1200) || f.InFunds != E(1000) || f.Left-f.InFunds != E(200) || f.FundSpent != E(300) {
+		t.Fatalf("left %v, in funds %v, day-to-day %v, fund spent %v", f.Left, f.InFunds, f.Left-f.InFunds, f.FundSpent)
 	}
 }

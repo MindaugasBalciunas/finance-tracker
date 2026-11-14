@@ -18,6 +18,8 @@ export function FreeBudgetCard({ f, month, unreviewed = 0, link = true }: { f: F
   if (f.lines.length === 0) return null
   const over = f.left < 0
   const used = f.budgeted > 0 ? Math.min(1, f.spent / f.budgeted) : f.spent > 0 ? 1 : 0
+  const inFunds = f.in_funds ?? 0, fundSpent = f.fund_spent ?? 0
+  const dayToDay = f.left - inFunds
   const body: ReactNode = <>
         <div className="flex items-center gap-3">
           <IconTile name="pie" color={NEEDS} size={32} />
@@ -31,7 +33,15 @@ export function FreeBudgetCard({ f, month, unreviewed = 0, link = true }: { f: F
           {link && <Icon name="chevronR" size={16} className="shrink-0 text-muted" />}
         </div>
         <Bar used={used} over={over} color="rgb(var(--good))" className="mt-2.5" label={`${eur(f.spent)} of ${eur(f.budgeted)} spent`} />
-        <div className="mt-1 text-xs text-muted"><span className="tnum">{eur(f.spent)}</span> spent{f.budgeted > 0 && f.wants.budgeted > 0 && <> · wants are {pct(f.wants.budgeted / f.budgeted)} of the budget</>}{unreviewed > 0.005 && <> · <span className="tnum">{eur(unreviewed)}</span> in the bank inbox, not in these lines yet</>}</div>
+        {/* What is left, as Left to spend sees it: fund money is set aside
+            already, so only the day-to-day part is free to spend. */}
+        {inFunds > 0.005 && !over && (
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg border border-line px-2 py-1.5"><div className="text-muted">Day-to-day</div><div className={clsx('text-sm font-semibold tnum', dayToDay < 0 && 'text-bad')}>{dayToDay < 0 ? `${eur(-dayToDay)} over` : eur(dayToDay)}</div></div>
+            <div className="rounded-lg border border-line px-2 py-1.5"><div className="text-muted">Kept in funds</div><div className="text-sm font-semibold tnum">{eur(inFunds)}</div></div>
+          </div>
+        )}
+        <div className="mt-1.5 text-xs text-muted"><span className="tnum">{eur(f.spent)}</span> spent{fundSpent > 0.005 && <> (<span className="tnum">{eur(fundSpent)}</span> from funds)</>}{f.budgeted > 0 && f.wants.budgeted > 0 && <> · wants are {pct(f.wants.budgeted / f.budgeted)} of the budget</>}{unreviewed > 0.005 && <> · <span className="tnum">{eur(unreviewed)}</span> in the bank inbox, not in these lines yet</>}</div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Part label="Needs" color={NEEDS} p={f.needs} />
           <Part label="Wants" color={WANTS} p={f.wants} />

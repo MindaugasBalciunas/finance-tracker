@@ -56,7 +56,11 @@ export interface LineBrief { name: string; spent: number; budgeted: number; rema
 /** One slice of the month's free budget (plan.FreePart): left = budgeted − spent, negative when over. */
 export interface FreePart { budgeted: number; spent: number; left: number; lines: string[] }
 /** The month's spending lines — obligations and saving left out — with needs and wants apart (plan.FreeBudget). */
-export interface FreeBudget extends FreePart { needs: FreePart; wants: FreePart }
+export interface FreeBudget extends FreePart { needs: FreePart; wants: FreePart
+  /** Part of `left` still held by fund lines; left − in_funds is the day-to-day part. */
+  in_funds?: number
+  /** What funds paid this month (inside `spent`). */
+  fund_spent?: number }
 
 export interface Overview {
   date: string; net_worth: number; liquid: number; debt: number; by_group: Record<string, number>

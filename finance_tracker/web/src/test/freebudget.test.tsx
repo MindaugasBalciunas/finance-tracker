@@ -33,6 +33,27 @@ describe('Home spending budget', () => {
     expect(screen.getByText('€250')).toHaveClass('text-good')
   })
 
+  it('splits what is left into day-to-day and kept in funds, as Left to spend sees it', () => {
+    // Prod, November 2026: €1,433.54 left, €791.33 of it held by funds.
+    show({ ...free(part(1300, 544.59, ['Food']), part(1073.46, 395.33, ['Travel'])), in_funds: 791.33, fund_spent: 302.13 })
+    expect(screen.getByText('Day-to-day').nextSibling).toHaveTextContent('€642.21')
+    expect(screen.getByText('Kept in funds').nextSibling).toHaveTextContent('€791.33')
+    expect(screen.getByText(/from funds/).parentElement).toHaveTextContent('€939.92 spent (€302.13 from funds)')
+  })
+
+  it('marks day-to-day over in red while funds still hold money', () => {
+    show({ ...free(part(400, 700, ['Food']), part(1000, 0, ['Gifts'])), in_funds: 1000, fund_spent: 0 })
+    expect(screen.getByText('Day-to-day').nextSibling).toHaveTextContent('€300 over')
+    expect(screen.getByText('Day-to-day').nextSibling).toHaveClass('text-bad')
+  })
+
+  it('leaves the split out without fund money, or when the budget is over', () => {
+    show({ ...free(), in_funds: 0 })
+    expect(screen.queryByText('Kept in funds')).toBeNull()
+    show({ ...free(part(700, 900, ['Food']), part(300, 450, ['Travel'])), in_funds: 50 })
+    expect(screen.queryByText('Kept in funds')).toBeNull()
+  })
+
   it('reads plainly when the whole budget is over', () => {
     show(free(part(700, 900, ['Food']), part(300, 450, ['Dating'])))
     expect(screen.getByText('€350')).toHaveClass('text-bad')
