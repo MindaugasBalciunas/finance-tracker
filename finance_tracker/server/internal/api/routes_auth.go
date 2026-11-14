@@ -167,4 +167,22 @@ func (s *Server) authRoutes() {
 		}
 		return map[string]bool{"ok": true}, s.Auth.RevokeToken(r.URL.Query().Get("rw") == "1")
 	})
+	// The sync token (see routes_prodsync.go): made and revoked here only,
+	// with the app unlocked, never by an API token (/api/auth/* takes none).
+	s.handle("POST /api/auth/sync-token", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if !s.unlocked(r) {
+			return nil, errLocked
+		}
+		tok, err := s.Auth.MintSyncToken()
+		// The address the script should fetch from: the add-on's public_url
+		// when set — through Home Assistant's own page the browser's address
+		// is HA's, which doesn't serve /sync/backup.json.
+		return map[string]any{"token": tok, "base": s.publicBase(r), "public_url_set": s.PublicURL != ""}, err
+	})
+	s.handle("DELETE /api/auth/sync-token", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if !s.unlocked(r) {
+			return nil, errLocked
+		}
+		return map[string]bool{"ok": true}, s.Auth.RevokeSyncToken()
+	})
 }

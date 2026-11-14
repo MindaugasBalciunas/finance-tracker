@@ -100,4 +100,20 @@ for p in '/mcp/../api/overview' '/oauth/../api/overview' '/oauth/token/../../api
   if [ "$got" = 401 ] || [ "$got" = 400 ] || [ "$got" = 404 ]; then echo "ok   refused without password: $p ($got)"; else echo "FAIL $p got through: $got"; fail=1; fi
 done
 
+echo "— sync download: one exact path skips the password, and only for the app's own token check"
+curl -s -D - -o /dev/null $B/sync/backup.json | grep -qi '^www-authenticate: bearer realm="finance-tracker-sync"' \
+  && echo "ok   /sync/backup.json answers with the app's sync-token challenge" || { echo "FAIL /sync/backup.json did not reach the app"; fail=1; }
+expect 403 "sync download is GET only" -X POST $B/sync/backup.json
+sync_realm() { curl -s -D - -o /dev/null --path-as-is "$1" | grep -qi '^www-authenticate: bearer realm="finance-tracker-sync"'; }
+# Traversals out of the sync path must not reach the API without the password.
+for p in '/sync/backup.json/../../api/overview' '/sync/../api/overview' '/sync/backup.json%2f..%2f..%2fapi%2foverview'; do
+  got=$(code --path-as-is "$B$p")
+  if { [ "$got" = 401 ] || [ "$got" = 400 ] || [ "$got" = 404 ]; } && ! sync_realm "$B$p"; then echo "ok   refused without password: $p ($got)"
+  else echo "FAIL $p got through: $got"; fail=1; fi
+done
+# Neighbours fall to the app shell (open once a passkey exists), never to the sync handler.
+for p in '/sync/other' '/sync/backup.json/x' '/sync/' '/sync/backup.jsonx'; do
+  if sync_realm "$B$p"; then echo "FAIL $p reached the sync handler"; fail=1; else echo "ok   not the sync handler: $p"; fi
+done
+
 [ $fail = 0 ] && echo "nginx gate: all good" || { echo "nginx gate: FAILED"; tail -20 "$T/logs/error.log"; exit 1; }

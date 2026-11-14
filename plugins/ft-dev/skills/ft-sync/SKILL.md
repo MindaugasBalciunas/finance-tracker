@@ -19,32 +19,39 @@ git fetch -q origin && git status -sb | head -1
 - **Ahead:** these are local commits waiting for the owner's "push". Leave them.
 - **Diverged or dirty:** report it and don't touch it. Other sessions may share this folder, so never stash, reset or switch branches.
 
-## 2. Data: get today's production backup
+## 2. Data: fetch today's production backup — on its own
 
-Claude never signs in to production, even when the owner pastes the password or PIN. Prod is not a test host, and entering credentials there is off-limits. The owner downloads the backup:
+```bash
+plugins/ft-dev/skills/ft-sync/scripts/sync-from-prod.sh --fetch
+```
 
-> Prod → Settings → Data → **Download backup** (the plain one, without secrets)
+`--fetch` runs `fetch-prod-backup.sh` first. It reads prod's address and the **sync token** from the macOS Keychain (item `finance-tracker-prod-sync`) and downloads `GET <prod>/sync/backup.json`, the plain backup with no secrets, into `backend/tmp/`. Nothing is asked of the owner. Claude never sees or types the token: it travels from the Keychain to curl on stdin.
 
-The app can't read `~/Downloads` (macOS privacy: Bash, Read and request_directory all get EPERM). A copy run **in the Terminal panel** works (`mcp__terminal__run_in_terminal`, cwd = repo root):
+| fetch exit | Meaning | Do |
+|---|---|---|
+| 6 | no Keychain entry yet | one-time setup, below |
+| 7 | refused or unreachable (token revoked, prod down or still on < 2.78.0) | say so in one line, then fall back to the manual download |
+| 8 | the answer wasn't a plain backup | report it; don't sync |
+
+**One-time setup (the owner):** on prod, Settings → Security → **Create sync token**. Then run the Keychain command the card shows in Terminal and paste the token when it asks. Claude never handles the token itself, in chat or in a command.
+
+**Fallback (manual):** Claude never signs in to production, even when the owner pastes the password or PIN. The owner downloads the backup with Prod → Settings → Data → **Download backup** (the plain one). The app can't read `~/Downloads` (macOS privacy), so copy it **in the Terminal panel** (`mcp__terminal__run_in_terminal`, cwd = repo root):
 
 ```bash
 f=$(ls -t ~/Downloads/finance-backup-*.json | grep -v with-secrets | head -1) && cp -p "$f" finance_tracker/backend/tmp/ && ls -l "finance_tracker/backend/tmp/$(basename "$f")"
 ```
 
-Read `exported_at` from the copy. If it isn't from today, or it is the backup `last-sync.json` already names, ask the owner in one line to download a fresh one and say "done". Wait for that, or for "skip". `backend/tmp/` is git-ignored.
+Then run `sync-from-prod.sh <that file>`. Use it only if it was exported today, or the owner says to use it anyway.
 
 ## 3. Run the sync
 
-```bash
-plugins/ft-dev/skills/ft-sync/scripts/sync-from-prod.sh "finance_tracker/backend/tmp/<backup>.json"
-```
-
-It snapshots local to `backend/backups/pre-prod-sync-<stamp>.db`. Then it restores the backup into a `VACUUM INTO` copy of local, so local-only secrets survive. It does that with a server built from this checkout, on a free port in 8095–8098. It restarts that server so startup migrations run, re-exports, and compares every table on prod's columns. Only when all of them match does it swap the copy into `backend/finance-v2.db` and write `backend/tmp/last-sync.json`. Columns and tables that a newer checkout adds (prod not updated yet) are listed and allowed.
+`sync-from-prod.sh --fetch` (or `sync-from-prod.sh <backup.json>` for a file you already have) snapshots local to `backend/backups/pre-prod-sync-<stamp>.db`. Then it restores the backup into a `VACUUM INTO` copy of local, so local-only secrets survive. It does that with a server built from this checkout, on a free port in 8095–8098. It restarts that server so startup migrations run, re-exports, and compares every table on prod's columns. Only when all of them match does it swap the copy into `backend/finance-v2.db` and write `backend/tmp/last-sync.json`. Columns and tables that a newer checkout adds (prod not updated yet) are listed and allowed.
 
 | Exit | Meaning | Do |
 |---|---|---|
 | 0 | synced | report the line it printed |
 | 2 | not a plain backup (or one with secrets) | ask for the plain download |
+| 6–8 | the fetch failed | see step 2 |
 | 3 | tables differ, or prod's schema is newer than this checkout | local is untouched; pull `main` (step 1) or report the tables, don't force it |
 | 4 | a server holds the local DB | see below |
 | 5 | probe server failed | read the log path it names |

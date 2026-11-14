@@ -62,6 +62,8 @@ The app serves its MCP tools itself at `https://your-host/mcp`, with OAuth sign-
 
 Connections are listed in Settings → Security → AI apps, with when each was last used, and can be disconnected there; they stop working at once. Access tokens last an hour and refresh tokens rotate (30 days from last use); using a refresh token twice ends the connection. Redirects are accepted only to `claude.ai`, `claude.com` or localhost. nginx lets only `/mcp`, `/oauth/authorize|token|register` and the two `/.well-known/oauth-*` documents past the web password; every MCP call checks the connection's own token and scope, exactly like API tokens. A read-only connection isn't offered the write tools at all. The plain API tokens (`ftk_`/`ftkw_`) don't work on `/mcp` — it skips the web password; use the stdio server below for them. With demo mode on, a connection sees the demo data, like API tokens.
 
+**Sync token.** Settings → Security → Sync token creates an `ftsy_` token that downloads the plain backup (no passwords, keys or bank sessions) from `GET https://your-host/sync/backup.json` with `Authorization: Bearer ftsy_…`, so a local copy can follow production without signing in. nginx lets that one path past the web password; the app checks the token on every call, lock on or off, and the token opens nothing else. A download doesn't count as your off-device backup. On a Mac, store it once with `security add-generic-password -U -s finance-tracker-prod-sync -a https://your-host -w` (it prompts for the token); `plugins/ft-dev/skills/ft-sync/scripts/fetch-prod-backup.sh` reads it from there.
+
 ### Stdio server
 
 `finance-tracker-mcp` (built into the image at `/app/finance-tracker-mcp`, or `make mcp`) exposes the API as MCP tools for Claude Desktop / Claude Code:

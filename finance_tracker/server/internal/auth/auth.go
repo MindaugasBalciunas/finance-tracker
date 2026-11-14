@@ -51,6 +51,9 @@ type settings struct {
 	Enabled     bool   `json:"enabled"`
 	TokenHash   string `json:"token_hash"`
 	TokenRWHash string `json:"token_rw_hash"`
+	// TokenSyncHash: the sync token (ftsy_), which downloads the plain
+	// backup at /sync/backup.json and nothing else — see IsSyncToken.
+	TokenSyncHash string `json:"token_sync_hash,omitempty"`
 }
 
 type owner struct{ creds []webauthn.Credential }
@@ -61,11 +64,12 @@ func (u *owner) WebAuthnDisplayName() string                { return "Finance Tr
 func (u *owner) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
 type Status struct {
-	Enabled    bool `json:"enabled"`
-	Unlocked   bool `json:"unlocked"`
-	Passkeys   int  `json:"passkeys"`
-	HasToken   bool `json:"has_token"`
-	HasTokenRW bool `json:"has_token_rw"`
+	Enabled      bool `json:"enabled"`
+	Unlocked     bool `json:"unlocked"`
+	Passkeys     int  `json:"passkeys"`
+	HasToken     bool `json:"has_token"`
+	HasTokenRW   bool `json:"has_token_rw"`
+	HasTokenSync bool `json:"has_token_sync"`
 }
 
 type Service struct {
@@ -116,7 +120,7 @@ func (s *Service) Status(token string) Status {
 	var n int
 	s.DB.QueryRow(`SELECT COUNT(*) FROM webauthn_credentials`).Scan(&n)
 	return Status{Enabled: st.Enabled, Unlocked: !st.Enabled || s.ValidSession(token), Passkeys: n,
-		HasToken: st.TokenHash != "", HasTokenRW: st.TokenRWHash != ""}
+		HasToken: st.TokenHash != "", HasTokenRW: st.TokenRWHash != "", HasTokenSync: st.TokenSyncHash != ""}
 }
 
 func hash(s string) string {
@@ -545,6 +549,45 @@ func (s *Service) RevokeToken(rw bool) error {
 		st.TokenHash = ""
 	}
 	return s.save(st)
+}
+
+// MintSyncToken creates the sync token (ftsy_), replacing any earlier one,
+// stores only its hash and returns the plaintext once. It lets a script on
+// the owner's computer download the plain backup so local copies follow
+// production without anyone signing in. It is deliberately not an API token:
+// TokenScope never accepts it, so it opens no /api route; the one path that
+// takes it (/sync/backup.json) skips the web password, and API tokens must
+// never work on such a path.
+func (s *Service) MintSyncToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	token := "ftsy_" + hex.EncodeToString(raw)
+	st, err := s.load()
+	if err != nil {
+		return "", err
+	}
+	st.TokenSyncHash = hash(token)
+	return token, s.save(st)
+}
+
+func (s *Service) RevokeSyncToken() error {
+	st, err := s.load()
+	if err != nil {
+		return err
+	}
+	st.TokenSyncHash = ""
+	return s.save(st)
+}
+
+// IsSyncToken reports whether token is the current sync token.
+func (s *Service) IsSyncToken(token string) bool {
+	st, err := s.load()
+	if err != nil || st.TokenSyncHash == "" || !strings.HasPrefix(token, "ftsy_") {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hash(token)), []byte(st.TokenSyncHash)) == 1
 }
 
 // TokenScope returns "ro", "rw" or "" for a bearer token.

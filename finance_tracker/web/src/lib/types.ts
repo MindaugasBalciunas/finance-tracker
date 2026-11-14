@@ -349,7 +349,7 @@ export type AnalystData = { ticker: string; target_low: number; target_mean: num
 
 // ── settings: security, banks, data ──
 
-export type AuthStatus = { enabled: boolean; unlocked: boolean; passkeys: number; has_token: boolean; has_token_rw: boolean }
+export type AuthStatus = { enabled: boolean; unlocked: boolean; passkeys: number; has_token: boolean; has_token_rw: boolean; has_token_sync?: boolean }
 export type Passkey = { id: number; name: string; created_at: string }
 export type BankSettings = {
   application_id: string; has_key: boolean; environment: string; redirect_url: string; owner_names: string[] | null; consent_days: number

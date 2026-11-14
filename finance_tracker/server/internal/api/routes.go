@@ -25,4 +25,5 @@ func (s *Server) routes() {
 	s.notifyRoutes()
 	s.dataRoutes()
 	s.mcpRoutes()
+	s.prodSyncRoutes()
 }

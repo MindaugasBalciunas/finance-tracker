@@ -73,7 +73,56 @@ export function Security() {
           {st.has_token_rw && <button className="btn-danger" onClick={() => run(() => api.del('/auth/token', { rw: '1' }), 'Revoked')}>Revoke</button>}
         </div>
       </Card>
+      <SyncToken has={!!st.has_token_sync} />
     </div>
+  )
+}
+
+/** The sync token: lets a script on your computer download the plain backup
+ *  (no passwords or keys) so a local copy follows this one. It opens that one
+ *  download and nothing else. */
+export function SyncToken({ has }: { has: boolean }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [minted, setMinted] = useState<{ token: string; base: string; public_url_set: boolean } | null>(null)
+  const token = minted?.token ?? ''
+  // The Keychain command the fetch script reads; it prompts for the token.
+  // The server names its public address when the add-on's public_url is set.
+  const base = minted?.public_url_set ? minted.base : window.location.origin
+  const cmd = `security add-generic-password -U -s finance-tracker-prod-sync -a ${base} -w`
+  const act = async (fn: () => Promise<void>, ok?: string) => {
+    try {
+      await fn()
+      if (ok) toast(ok, 'good')
+      qc.invalidateQueries({ queryKey: ['auth-status'] })
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    }
+  }
+  const copy = async (v: string) => {
+    try { await navigator.clipboard.writeText(v); toast('Copied', 'good') } catch { toast('Copy it by hand', 'bad') }
+  }
+  return (
+    <Card icon="download" color="var(--s3)" title="Sync token">
+      <div className="mb-2 text-xs text-muted">Lets your computer download a backup of this app on its own — no passwords, keys or bank sign-ins in it — so a local copy stays in step. It opens that download and nothing else. Revoke it here at any time.</div>
+      {token && (
+        <div className="mb-2 space-y-2 rounded-xl bg-sunken p-2 text-xs">
+          <div className="break-all font-mono">{token}</div>
+          <div className="text-warn">Copy it now — it is shown only once.</div>
+          <div>On the computer, run this in Terminal and paste the token when it asks:</div>
+          <div className="break-all font-mono text-ink2">{cmd}</div>
+          {!minted?.public_url_set && <div className="text-muted">The address in it must be the one you open this app at from outside — not through Home Assistant's page.</div>}
+          <div className="flex gap-2">
+            <button className="btn-outline h-8 text-xs" onClick={() => copy(token)}>Copy token</button>
+            <button className="btn-outline h-8 text-xs" onClick={() => copy(cmd)}>Copy command</button>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2 text-sm">
+        <button className="btn-outline" onClick={() => act(async () => setMinted(await api.post<{ token: string; base: string; public_url_set: boolean }>('/auth/sync-token', {})))}>{has ? 'Replace' : 'Create'} sync token</button>
+        {has && <button className="btn-danger" onClick={() => act(async () => { await api.del('/auth/sync-token'); setMinted(null) }, 'Revoked')}>Revoke</button>}
+      </div>
+    </Card>
   )
 }
 

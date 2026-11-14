@@ -2,6 +2,8 @@
 # One-way sync: production → local dev database, from a production backup
 # the owner downloaded (Settings → Data → Download backup, no secrets).
 #
+#   sync-from-prod.sh --fetch            download today's backup with the sync
+#                                        token, then as below
 #   sync-from-prod.sh BACKUP.json        prepare, verify, then swap into local
 #   sync-from-prod.sh --swap PREPARED.db swap an already verified copy
 #
@@ -55,7 +57,14 @@ if [ "${1:-}" = "--swap" ]; then
   exit 0
 fi
 
-BACKUP=${1:?usage: sync-from-prod.sh BACKUP.json | --swap PREPARED.db}
+if [ "${1:-}" = "--fetch" ]; then
+  # Download today's backup with the sync token (see fetch-prod-backup.sh);
+  # its exit code (6–8) says why when it can't.
+  fetched=$("$(dirname "$0")/fetch-prod-backup.sh") || exit $?
+  set -- "$fetched"
+  echo "fetched: $1"
+fi
+BACKUP=${1:?usage: sync-from-prod.sh --fetch | BACKUP.json | --swap PREPARED.db}
 [ -f "$BACKUP" ] || { echo "no such file: $BACKUP" >&2; exit 2; }
 python3 -I - "$BACKUP" <<'EOF' || exit 2
 import json, sys

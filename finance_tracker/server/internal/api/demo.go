@@ -23,7 +23,8 @@ import (
 // demoAlwaysReal are routes the real server answers even in demo mode.
 func demoAlwaysReal(p string) bool {
 	return p == "/api/health" || strings.HasPrefix(p, "/api/auth/") || p == "/api/demo" || strings.HasPrefix(p, "/api/demo/") ||
-		strings.HasPrefix(p, "/api/oauth/") || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/") || p == "/mcp"
+		strings.HasPrefix(p, "/api/oauth/") || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/") || p == "/mcp" ||
+		p == "/sync/backup.json" // the sync token downloads the real data, demo or not
 }
 
 // demoBlocked are routes that touch real files, credentials or money flows.
@@ -46,7 +47,7 @@ func demoLockedAuth(r *http.Request) bool {
 	}
 	p := r.URL.Path
 	return strings.HasPrefix(p, "/api/auth/pin/setup") || strings.HasPrefix(p, "/api/auth/pin/disable") ||
-		strings.HasPrefix(p, "/api/auth/passkey/register") || strings.HasPrefix(p, "/api/auth/passkeys") || p == "/api/auth/token" ||
+		strings.HasPrefix(p, "/api/auth/passkey/register") || strings.HasPrefix(p, "/api/auth/passkeys") || p == "/api/auth/token" || p == "/api/auth/sync-token" ||
 		p == "/api/oauth/approve"
 }
 
