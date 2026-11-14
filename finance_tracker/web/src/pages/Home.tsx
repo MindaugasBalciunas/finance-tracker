@@ -121,7 +121,7 @@ export default function Home() {
   )
   const month = <>
     <LeftToSpend p={o.plan} progress={o.month_progress} month={monthLabel(o.date.slice(0, 7), true)} />
-    {o.plan.free_money && <FreeMoneyCard f={o.plan.free_money} month={monthLabel(o.date.slice(0, 7), true)} />}
+    {o.plan.free_money && <FreeMoneyCard f={o.plan.free_money} ym={o.date.slice(0, 7)} month={monthLabel(o.date.slice(0, 7), true)} />}
     {o.cash && <UntilPayday c={o.cash} />}
   </>
   // Today's entries before the slow numbers: adding and checking transactions is the daily use.

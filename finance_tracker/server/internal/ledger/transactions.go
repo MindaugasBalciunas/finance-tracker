@@ -107,6 +107,22 @@ type Filter struct {
 	// Salary: dates count a salary in the month it pays for under these
 	// rules (paid by day N of the next month), as cash flow does.
 	Salary []SalaryWindow
+	// Need: "essential" or "optional" — expenses whose own category is (or
+	// isn't) marked essential, the split the Free money card shows. A
+	// category the tree doesn't know counts as optional, as there.
+	Need string
+	// NotMatching leaves out rows any of these match (with Need: the fixed
+	// lines, so alimony and the mortgage don't show among the month's
+	// essential choices).
+	NotMatching []Match
+}
+
+// Match is what a budget line claims: rows under one of Categories (or
+// their children), carrying Tag when one is set; a tag-only line claims
+// every row with the tag. The same rule as plan.Budget.Matches.
+type Match struct {
+	Categories []string
+	Tag        string
 }
 
 // SalaryWindow: from date From (YYYY-MM-DD, "" = always), a salary paid on
@@ -194,6 +210,30 @@ func (f Filter) where() (string, []any) {
 	if f.Kind != "" {
 		conds = append(conds, "kind = ?")
 		args = append(args, f.Kind)
+	}
+	switch f.Need {
+	case "essential":
+		conds = append(conds, "kind = 'expense' AND category IN (SELECT id FROM categories WHERE essential = 1)")
+	case "optional":
+		conds = append(conds, "kind = 'expense' AND category NOT IN (SELECT id FROM categories WHERE essential = 1)")
+	}
+	for _, m := range f.NotMatching {
+		var parts []string
+		if tags := NormalizeTags([]string{m.Tag}); m.Tag != "" && len(tags) == 1 {
+			parts = append(parts, "tags LIKE ?")
+			args = append(args, "%,"+tags[0]+",%")
+		}
+		if len(m.Categories) > 0 {
+			var or []string
+			for _, c := range m.Categories {
+				or = append(or, "category = ? OR category LIKE ?")
+				args = append(args, c, c+".%")
+			}
+			parts = append(parts, "("+strings.Join(or, " OR ")+")")
+		}
+		if len(parts) > 0 {
+			conds = append(conds, "NOT ("+strings.Join(parts, " AND ")+")")
+		}
 	}
 	if len(f.Categories) > 0 {
 		var or []string

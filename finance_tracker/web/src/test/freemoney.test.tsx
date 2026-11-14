@@ -6,8 +6,8 @@ import type { FreeMoney } from '../lib/types'
 // Prod, November 2026 (the essential/optional split is made up here).
 const nov: FreeMoney = { income: 6050, fixed: 2361.66, saving: 1200, free: 2488.34, spent: 939.92,
   essential: 600, optional: 339.92, unreviewed: 0, in_funds: 737.87, left_to_spend: 810.55 }
-const show = (f: FreeMoney, link = true) => render(<HashRouter><FreeMoneyCard f={f} month="November 2026" link={link} /></HashRouter>)
-const row = (label: string) => screen.getByText(label).closest('div')!
+const show = (f: FreeMoney, link = true) => render(<HashRouter><FreeMoneyCard f={f} ym="2026-11" month="November 2026" link={link} /></HashRouter>)
+const row = (label: string) => screen.getByText(label).closest('div, a')!
 
 describe('Free money card', () => {
   it('reads from salary to left to spend, with spending split into essential and optional', () => {
@@ -23,7 +23,11 @@ describe('Free money card', () => {
     expect(row('Left to spend')).toHaveTextContent('€810.55')
     expect(row('Left to spend')).toHaveClass('text-good')
     expect(screen.queryByText('Not reviewed yet')).toBeNull()
-    expect(screen.getByRole('link')).toHaveAttribute('href', '#/plan')
+    const links = screen.getAllByRole('link')
+    expect(links[0]).toHaveAttribute('href', '#/plan')
+    // Essential and Optional open the Ledger on those payments for the month.
+    expect(screen.getByText('Optional').closest('a')).toHaveAttribute('href', '#/ledger?need=optional&from=2026-11-01&to=2026-11-30')
+    expect(screen.getByText('Essential').closest('a')).toHaveAttribute('href', '#/ledger?need=essential&from=2026-11-01&to=2026-11-30')
   })
 
   it('shows inbox spending apart, and an overspent month in red', () => {
@@ -48,6 +52,6 @@ describe('Free money card', () => {
     const { container } = show({ ...nov, income: 0, spent: 0 })
     expect(container).toBeEmptyDOMElement()
     show(nov, false)
-    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual(['#/ledger?need=essential&from=2026-11-01&to=2026-11-30', '#/ledger?need=optional&from=2026-11-01&to=2026-11-30'])
   })
 })

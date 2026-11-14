@@ -5,6 +5,7 @@ import type { FreeMoney } from '../../lib/types'
 import { eur, pct } from '../../lib/format'
 import { hue } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
+import { ledgerLink } from '../../lib/links'
 
 const ESSENTIAL = 'var(--s1)'
 const OPTIONAL = 'var(--s7)'
@@ -16,7 +17,7 @@ const FUNDS = 'var(--s3)'
  *  own category — and what is left, of which some is kept in funds and the
  *  rest is Left to spend (the same figure as the card above it). All figures
  *  come from the plan engine (plan.FreeMoneyOf). */
-export function FreeMoneyCard({ f, month, link = true }: { f: FreeMoney; month: string; link?: boolean }) {
+export function FreeMoneyCard({ f, ym, month, link = true }: { f: FreeMoney; ym: string; month: string; link?: boolean }) {
   if (f.income <= 0 && f.spent <= 0) return null
   const over = f.left_to_spend < 0
   const refunds = f.refunds ?? 0
@@ -30,7 +31,9 @@ export function FreeMoneyCard({ f, month, link = true }: { f: FreeMoney; month: 
     { key: 'inbox', v: f.unreviewed, color: INBOX, label: 'Not reviewed' },
     { key: 'funds', v: f.in_funds, color: FUNDS, label: 'Kept in funds', faded: true },
   ].filter((s) => s.v > 0.005)
-  const body = <>
+  // Essential and Optional open the Ledger on those payments for the month.
+  const need = (n: 'essential' | 'optional') => ledgerLink({ month: ym, need: n })
+  const head = <>
     <div className="flex items-center gap-3">
       <IconTile name="wallet" color={ESSENTIAL} size={32} />
       <div className="min-w-0 flex-1">
@@ -47,9 +50,11 @@ export function FreeMoneyCard({ f, month, link = true }: { f: FreeMoney; month: 
       aria-label={`Spent ${eur(f.spent)}: essential ${eur(f.essential)}, optional ${eur(f.optional)}; ${f.in_funds >= 0 ? `kept in funds ${eur(f.in_funds)}` : `${eur(fromEarlier)} from funds saved earlier`}; ${f.left_to_spend < 0 ? `${eur(-f.left_to_spend)} over` : `left to spend ${eur(f.left_to_spend)}`}`}>
       {segs.map((s) => <div key={s.key} className="h-full" style={{ width: `${(s.v / total) * 100}%`, ...(s.faded ? faded(s.color) : { background: s.color }) }} />)}
     </div>
-    <div className="mt-3 space-y-1 text-sm">
-      <Row dot={ESSENTIAL} label="Essential" note={share(f.essential)} v={f.essential} />
-      <Row dot={OPTIONAL} label="Optional" note={share(f.optional)} v={f.optional} />
+  </>
+  const rows = <>
+    <div className="space-y-1 text-sm">
+      <Row dot={ESSENTIAL} label="Essential" note={share(f.essential)} v={f.essential} to={need('essential')} />
+      <Row dot={OPTIONAL} label="Optional" note={share(f.optional)} v={f.optional} to={need('optional')} />
       {refunds > 0.005 && <Row label="Refunds" note="money back" v={refunds} sign="−" />}
       {f.unreviewed > 0.005 && <Row dot={INBOX} label="Not reviewed yet" note="in the bank inbox" v={f.unreviewed} />}
       <Row label="Spent" v={f.spent} strong rule />
@@ -61,20 +66,26 @@ export function FreeMoneyCard({ f, month, link = true }: { f: FreeMoney; month: 
   return (
     <section className="card" style={hue(over ? 'var(--hue-bad)' : 'var(--hue-good)')}>
       {link
-        ? <Link to="/plan" className="block px-4 py-3 hover:bg-sunken/30" title="The month on Plan">{body}</Link>
-        : <div className="px-4 py-3">{body}</div>}
+        ? <Link to="/plan" className="block px-4 pt-3 pb-2 hover:bg-sunken/30" title="The month on Plan">{head}</Link>
+        : <div className="px-4 pt-3 pb-2">{head}</div>}
+      <div className="px-4 pb-3">{rows}</div>
     </section>
   )
 }
 
 const faded = (c: string): CSSProperties => ({ background: `color-mix(in oklab, ${c} 40%, transparent)` })
 
-function Row({ dot, dotFaded, label, note, v, sign, strong, rule, className }: { dot?: string; dotFaded?: boolean; label: ReactNode; note?: string; v: number; sign?: '+' | '−'; strong?: boolean; rule?: boolean; className?: string }) {
-  return (
-    <div className={clsx('flex items-baseline gap-2', rule && 'border-t border-line pt-1', strong && 'font-semibold', className)}>
-      <span className="h-2 w-2 shrink-0 self-center rounded-full" style={dot ? (dotFaded ? faded(dot) : { background: dot }) : undefined} />
-      <span className="min-w-0 flex-1">{label}{note && <span className="pl-1.5 text-xs font-normal text-muted">{note}</span>}</span>
-      <span className="tnum">{sign}{eur(v)}</span>
-    </div>
-  )
+function Row({ dot, dotFaded, label, note, v, sign, strong, rule, className, to }: { dot?: string; dotFaded?: boolean; label: ReactNode; note?: string; v: number; sign?: '+' | '−'; strong?: boolean; rule?: boolean; className?: string; to?: string }) {
+  const inner = <>
+    <span className="h-2 w-2 shrink-0 self-center rounded-full" style={dot ? (dotFaded ? faded(dot) : { background: dot }) : undefined} />
+    <span className="min-w-0 flex-1">{label}{note && <span className="pl-1.5 text-xs font-normal text-muted">{note}</span>}</span>
+    <span className="tnum">{sign}{eur(v)}</span>
+  </>
+  const cls = clsx('flex items-baseline gap-2', rule && 'border-t border-line pt-1', strong && 'font-semibold', className)
+  // A row that opens its transactions: a full-width tap target with a chevron.
+  return to
+    ? <Link to={to} className={clsx(cls, '-mx-2 min-h-10 items-center rounded-lg px-2 hover:bg-sunken/50')} title={`See the ${String(label).toLowerCase()} payments`}>
+        {inner}<Icon name="chevronR" size={14} className="shrink-0 self-center text-muted" />
+      </Link>
+    : <div className={cls}>{inner}</div>
 }

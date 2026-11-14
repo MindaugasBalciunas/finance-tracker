@@ -140,3 +140,17 @@ func FreeMoneyOf(r *Report, cats map[string]ledger.Category) FreeMoney {
 	f.InFunds = f.Free - f.Spent - f.LeftToSpend
 	return f
 }
+
+// FixedMatches are what the fixed lines claim (loan, alimony): rows they
+// match are obligations, never part of the month's free spending, so the
+// Ledger's essential/optional view leaves them out as the Free money card
+// does — categories and tag together, as Budget.Matches reads them.
+func FixedMatches(budgets []Budget) []ledger.Match {
+	out := []ledger.Match{}
+	for _, b := range budgets {
+		if b.Kind == "fixed" && !b.Archived && (len(b.Categories) > 0 || b.Tag != "") {
+			out = append(out, ledger.Match{Categories: b.Categories, Tag: b.Tag})
+		}
+	}
+	return out
+}

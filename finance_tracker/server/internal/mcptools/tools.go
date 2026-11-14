@@ -49,6 +49,7 @@ type searchArgs struct {
 	From       string   `json:"from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
 	To         string   `json:"to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
 	Kind       string   `json:"kind,omitempty" jsonschema:"income | expense | transfer"`
+	Need       string   `json:"need,omitempty" jsonschema:"essential | optional: free-spending expenses by their category's essential flag, fixed lines left out (the Free money card's split)"`
 	Categories []string `json:"categories,omitempty" jsonschema:"category ids; a parent includes its children"`
 	Accounts   []string `json:"accounts,omitempty" jsonschema:"account ids"`
 	Tags       []string `json:"tags,omitempty" jsonschema:"any of these tags"`
@@ -364,7 +365,7 @@ func New(call Caller) *mcp.Server {
 			if a.Limit <= 0 || a.Limit > 500 {
 				a.Limit = 100
 			}
-			q := vals("from", a.From, "to", a.To, "kind", a.Kind, "merchant", a.Merchant, "q", a.Query, "sort", a.Sort, "limit", fmt.Sprint(a.Limit))
+			q := vals("from", a.From, "to", a.To, "kind", a.Kind, "need", a.Need, "merchant", a.Merchant, "q", a.Query, "sort", a.Sort, "limit", fmt.Sprint(a.Limit))
 			if a.Min > 0 {
 				q.Set("min", fmt.Sprint(a.Min))
 			}

@@ -22,7 +22,15 @@ func filterFrom(r *http.Request) ledger.Filter {
 	return ledger.Filter{From: q.Get("from"), To: q.Get("to"), Kind: q.Get("kind"), Categories: qlist(r, "category"), Accounts: qlist(r, "account"),
 		Tags: qlist(r, "tag"), TagsAll: q.Get("tags_all") == "1", Merchant: q.Get("merchant"), Query: q.Get("q"), Source: q.Get("source"),
 		Min: parseCents(q.Get("min")), Max: parseCents(q.Get("max")), Sort: q.Get("sort"), Limit: qint(r, "limit", 100), Offset: qint(r, "offset", 0),
-		Choices: q.Get("choices") == "1"}
+		Choices: q.Get("choices") == "1", Need: need(q.Get("need"))}
+}
+
+// need accepts only the two values the filter knows.
+func need(v string) string {
+	if v == "essential" || v == "optional" {
+		return v
+	}
+	return ""
 }
 
 func parseCents(s string) money.Cents {
@@ -47,6 +55,15 @@ func (s *Server) ledgerRoutes() {
 			for _, w := range plan.LoadSettings(s.DB).Salary() {
 				f.Salary = append(f.Salary, ledger.SalaryWindow{From: w.From, By: w.PaidByDay})
 			}
+		}
+		// The essential/optional split is of free spending: what the fixed
+		// lines claim (loan, alimony) is left out, as on the Free money card.
+		if f.Need != "" {
+			budgets, err := plan.List(s.DB, false)
+			if err != nil {
+				return nil, err
+			}
+			f.NotMatching = plan.FixedMatches(budgets)
 		}
 		return ledger.List(s.DB, f)
 	})

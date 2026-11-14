@@ -160,7 +160,7 @@ function Month() {
       {/* The month's number first, then why and what to change, then the lines; the slower views close the page. */}
       <Summary r={r} current={current} onTrim={(l, amount) => applySuggestion.mutate({ line: l, amount })} />
       {/* Home's free money card, for whichever month is open. */}
-      {r.free_money && <FreeMoneyCard f={r.free_money} month={monthLabel(month, true)} link={false} />}
+      {r.free_money && <FreeMoneyCard f={r.free_money} ym={month} month={monthLabel(month, true)} link={false} />}
       {current && <EmergencyFund />}
       {/* Home's month chart, full width: spending so far against the plan's
           pace through the month's free money, and where this rhythm ends up. */}

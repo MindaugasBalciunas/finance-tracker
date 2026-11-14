@@ -35,6 +35,10 @@ export default function Ledger() {
 }
 
 
+// Only the two values the server knows; anything else is no filter, so the
+// page never claims a split the rows don't have.
+const needParam = (v: string | null) => (v === 'essential' || v === 'optional' ? v : undefined)
+
 function Transactions() {
   const [sp, setSp] = useSearchParams()
   const editor = useTxEditor()
@@ -51,7 +55,7 @@ function Transactions() {
     return {
       ...r, q: sp.get('q') || undefined, kind: sp.get('kind') || undefined, category: sp.getAll('category'), account: sp.getAll('account'),
       tag: sp.getAll('tag'), merchant: sp.get('merchant') || undefined, sort: sp.get('sort') || undefined, limit,
-      choices: sp.get('choices') || undefined, salary: sp.get('salary') || undefined,
+      choices: sp.get('choices') || undefined, salary: sp.get('salary') || undefined, need: needParam(sp.get('need')),
       min: sp.get('min') || undefined, max: sp.get('max') || undefined,
     }
   }, [sp, period, limit])
@@ -103,6 +107,7 @@ function Transactions() {
     ...(filter.tag ?? []).map((t) => ({ k: 'tag', v: t, label: '#' + t })),
     ...(filter.merchant ? [{ k: 'merchant', label: filter.merchant }] : []),
     ...(filter.choices ? [{ k: 'choices', label: 'obligations left out' }] : []),
+    ...(filter.need ? [{ k: 'need', label: filter.need === 'optional' ? 'optional spending' : 'essential spending' }] : []),
     ...(filter.salary ? [{ k: 'salary', label: 'salary in the month it pays for' }] : []),
     ...(filter.min ? [{ k: 'min', label: `from ${eurc(Number(filter.min))}` }] : []),
     ...(filter.max ? [{ k: 'max', label: `up to ${eurc(Number(filter.max))}` }] : []),
@@ -138,7 +143,18 @@ function Transactions() {
       )}
 
       <Owed />
-      {data && (
+      {data && filter.need ? (
+        // Essential or optional spending: one total — the Free money card's
+        // figure for the month — and a switch between the two.
+        <div className="card mb-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2" style={hue(filter.need === 'optional' ? 'var(--s7)' : 'var(--s1)')}>
+          <div>
+            <div className="text-xs text-muted">{filter.need === 'optional' ? 'Optional' : 'Essential'} spending · {data.total} payment{data.total === 1 ? '' : 's'}</div>
+            <div className="tnum text-lg font-semibold">{eur(data.expense)}</div>
+          </div>
+          <Segmented size="sm" value={filter.need} onChange={(v) => set('need', v)}
+            options={[{ value: 'essential', label: 'Essential' }, { value: 'optional', label: 'Optional' }]} />
+        </div>
+      ) : data && (
         <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
           {/* What these rows add up to — every expense, obligations included; Home's
               "spent" is only the day-to-day part of it. */}
@@ -232,6 +248,12 @@ function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () 
           <div className="label">Type</div>
           <Segmented value={draft.get('kind') || ''} onChange={(v) => upd((n) => (v ? n.set('kind', v) : n.delete('kind')))}
             options={[{ value: '', label: 'All' }, { value: 'expense', label: 'Expenses' }, { value: 'income', label: 'Income' }, { value: 'transfer', label: 'Transfers' }]} />
+        </div>
+        <div>
+          <div className="label">Spending</div>
+          {/* The Free money card's split: free-spending expenses by their category's essential flag (Settings → Categories), fixed lines left out. */}
+          <Segmented value={draft.get('need') || ''} onChange={(v) => upd((n) => (v ? n.set('need', v) : n.delete('need')))}
+            options={[{ value: '', label: 'All' }, { value: 'essential', label: 'Essential' }, { value: 'optional', label: 'Optional' }]} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label><span className="label">From</span><DateInput clearable value={draft.get('from') || ''} onChange={(v) => upd((n) => { n.set('from', v); n.delete('period') })} /></label>
