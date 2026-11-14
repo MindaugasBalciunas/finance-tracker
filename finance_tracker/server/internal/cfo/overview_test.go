@@ -256,3 +256,27 @@ func TestOverviewFreeBudgetShowsSpendingLinesWithWantsApart(t *testing.T) {
 		t.Fatalf("needs %+v", f.Needs)
 	}
 }
+
+// Plan shows the spending budget for any month it is turned to, not only
+// the current one: each month's report carries its own needs and wants.
+func TestEveryMonthsPlanReportCarriesItsSpendingBudget(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	for _, b := range []plan.Budget{
+		{Name: "Food", Kind: "spending", Categories: []string{"food"}, Amount: E(400)},
+		{Name: "Leisure", Kind: "spending", Categories: []string{"leisure"}, Amount: E(200)},
+	} {
+		if err := plan.Save(d, &b, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-09-20", Amount: E(90), Category: "leisure.events", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(30), Category: "food.groceries", AccountID: "swed"})
+	r, err := cfo.BudgetReport(d, "2026-09", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Free == nil || r.Free.Spent != E(90) || r.Free.Wants.Spent != E(90) || r.Free.Needs.Spent != 0 || r.Free.Budgeted != E(600) {
+		t.Fatalf("September's spending budget %+v", r.Free)
+	}
+}

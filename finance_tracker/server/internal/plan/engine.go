@@ -121,6 +121,9 @@ type Report struct {
 	// a typical month looks like: a big family dinner shouldn't set the pace.
 	EverydayByDay map[string]map[int]money.Cents `json:"-"`
 	Unbudgeted    []Unbudgeted                   `json:"unbudgeted"`
+	// Free is the month's spending lines as needs and wants (see Free);
+	// filled in by cfo.BudgetReports, which can read the category flags.
+	Free *FreeBudget `json:"free,omitempty"`
 }
 
 // OneOff is the size from which a single payment counts as a one-off rather

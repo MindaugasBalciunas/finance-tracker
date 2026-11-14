@@ -214,6 +214,10 @@ func BudgetReports(d *sql.DB, months []string, now time.Time) (map[string]*plan.
 	if err != nil {
 		return nil, err
 	}
+	cats, err := ledger.CategoryMap(d)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]*plan.Report{}
 	for _, month := range months {
 		w := wins[month]
@@ -238,6 +242,8 @@ func BudgetReports(d *sql.DB, months []string, now time.Time) (map[string]*plan.
 			r.Unreviewed, r.UnreviewedCount = countUnreviewed(d, r, month, now.Format("2006-01-02"))
 			r.DiscretionarySpent += r.Unreviewed
 		}
+		free := plan.Free(r, cats)
+		r.Free = &free
 		out[month] = r
 	}
 	return out, nil
@@ -362,7 +368,7 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
 		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
-		o.Plan.Free = plan.Free(r, cats)
+		o.Plan.Free = *r.Free
 		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)

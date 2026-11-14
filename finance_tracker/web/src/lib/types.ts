@@ -114,6 +114,8 @@ export interface PlanReport {
   lines: PlanLine[]; fixed_planned: number; saving_planned: number; spending_planned: number; fixed_spent: number; fixed_expense?: number; saved_actual: number
   discretionary_spent: number; fund_contributions: number; fund_spent: number; fund_overdrawn?: number; refunds?: number; unreviewed?: number; unreviewed_count?: number; safe_to_spend: number
   unbudgeted: { category: string; spent: number; year_spent: number; history: MonthCell[]; suggestion?: Suggestion }[]
+  /** The month's spending lines as needs and wants (plan.FreeBudget). */
+  free?: FreeBudget
 }
 
 export interface Rule { id: number; priority: number; pattern: string; when_category: string; when_kind: string; set_category: string; set_merchant: string; add_tags: string[]; enabled: boolean }

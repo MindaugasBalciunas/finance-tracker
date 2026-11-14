@@ -170,11 +170,13 @@ export default function Home() {
       <QuickActions inboxOpen={o.inbox_open} />
 
       {wide ? (
-        // Desktop: net worth then today's entries on the left; the month as
-        // one tall column on the right — left to spend, payday, progress.
+        // Desktop: net worth, today's entries and the progress tiles on the
+        // left; the month as one column on the right — left to spend, the
+        // spending budget, payday. The tiles used to sit under the month,
+        // which left the right column twice the height of the left.
         <div className="grid grid-cols-3 items-start gap-4">
-          <div className="col-span-2 space-y-4">{hero}{recent}</div>
-          <div className="space-y-4">{month}{tiles('grid-cols-2', true)}</div>
+          <div className="col-span-2 space-y-4">{hero}{recent}{tiles('grid-cols-3', true)}</div>
+          <div className="space-y-4">{month}</div>
         </div>
       ) : <>
         {hero}
