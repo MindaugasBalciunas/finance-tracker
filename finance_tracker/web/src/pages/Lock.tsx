@@ -82,9 +82,11 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
       await api.post('/auth/pin/login', { pin: p })
       onUnlock()
     } catch (e) {
-      // A 401 that isn't the app's own answer came from the web password
-      // prompt, which PIN unlock still needs.
-      setErr(e instanceof ApiError && e.status === 401 && !e.data ? 'PIN unlock needs your web password' + (passkeys ? ' — or use your fingerprint' : '') : (e as Error).message)
+      // A 401 that isn't the app's own JSON answer came from the web password
+      // gate, which PIN unlock still needs. The gate answers with an HTML
+      // page (and, over HTTP/2, no status text), so "no body" isn't the test.
+      const own = e instanceof ApiError && !!e.data && typeof e.data === 'object' && 'error' in e.data
+      setErr(e instanceof ApiError && e.status === 401 && !own ? 'PIN unlock needs your web password' + (passkeys ? ' — or use your fingerprint' : '') : (e as Error).message)
       setPin('')
     } finally {
       setBusy(false)
@@ -110,7 +112,7 @@ export default function Lock({ onUnlock }: { onUnlock: () => void }) {
       <div className="flex flex-col items-center gap-2">
         <LogoMark size={52} />
         <div className="text-lg font-semibold">Finance is locked</div>
-        <div className={`h-5 text-sm ${err ? 'text-bad' : 'text-muted'}`}>{err || note}</div>
+        <div role="status" className={`min-h-5 max-w-xs text-center text-sm ${err ? 'text-bad' : 'text-muted'}`}>{err || note}</div>
       </div>
       {bioReady && !showPin ? (
         <div className="flex w-full max-w-xs flex-col items-center gap-4">

@@ -27,6 +27,28 @@ describe('lock screen', () => {
     expect(await screen.findByText('wrong PIN')).toBeInTheDocument()
     expect(onUnlock).not.toHaveBeenCalled()
   })
+
+  // On the public address the web password gate answers the PIN call itself:
+  // an HTML page, and over HTTP/2 no status text. That used to leave the lock
+  // screen blank after a correct PIN.
+  it('says the web password is missing when the gate refuses the PIN', async () => {
+    const gate = '<html><head><title>401 Authorization Required</title></head><body>nginx</body></html>'
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.includes('status') ? new Response('{"passkeys":0}') : new Response(gate, { status: 401, statusText: '' })))
+    const onUnlock = vi.fn()
+    render(<Lock onUnlock={onUnlock} />)
+    for (const d of ['1', '2', '2', '4']) fireEvent.click(screen.getByText(d))
+    expect(await screen.findByText('PIN unlock needs your web password')).toBeInTheDocument()
+    expect(onUnlock).not.toHaveBeenCalled()
+  })
+
+  it('says the same when the gate refuses with no body at all', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.includes('status') ? new Response('{"passkeys":0}') : new Response(null, { status: 401, statusText: '' })))
+    render(<Lock onUnlock={vi.fn()} />)
+    for (const d of ['1', '2', '2', '4']) fireEvent.click(screen.getByText(d))
+    expect(await screen.findByText('PIN unlock needs your web password')).toBeInTheDocument()
+  })
 })
 
 describe('fingerprint unlock', () => {
