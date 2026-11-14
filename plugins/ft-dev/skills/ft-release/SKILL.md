@@ -53,11 +53,11 @@ git ls-remote origin refs/heads/main   # must show the commit you pushed
 ```bash
 SHA=$(git rev-parse HEAD)
 # the run can take a few seconds to register — poll until it exists, never use --limit 1
-gh run list --json databaseId,headSha --jq ".[] | select(.headSha==\"$SHA\") | .databaseId"
+gh run list --workflow build.yaml --json databaseId,headSha --jq ".[] | select(.headSha==\"$SHA\") | .databaseId"
 gh run watch <id> --exit-status
 ```
 
-Watching "the latest run" once reported a previous run's green for a broken release. The workflow (`.github/workflows/build.yaml`) is one job: go vet + race tests (Go's compile cache rolls forward between runs), the real-nginx gate test, tsc + eslint + vitest + build, then cross-compiles the arm64 binaries into `finance_tracker/prebuilt/` with the web build, and the Dockerfile only copies those into the nginx image (it no longer compiles anything).
+Filter by `--workflow build.yaml`: a push also starts GitHub's Dependabot dependency-graph run on the same SHA, which finishes first and is green whatever the build does (v2.76.0 nearly got reported from it). Watching "the latest run" once reported a previous run's green for a broken release. The workflow (`.github/workflows/build.yaml`) is one job: go vet + race tests (Go's compile cache rolls forward between runs), the real-nginx gate test, tsc + eslint + vitest + build, then cross-compiles the arm64 binaries into `finance_tracker/prebuilt/` with the web build, and the Dockerfile only copies those into the nginx image (it no longer compiles anything).
 
 ## 5. Verify the image exists
 

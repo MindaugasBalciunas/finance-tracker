@@ -2,10 +2,15 @@
 
 Personal CFO web app shipped as a Home Assistant add-on. Go server in `finance_tracker/server`, React web in `finance_tracker/web`. See `README.md` for the domain model.
 
-The `ft-dev` plugin (`plugins/ft-dev`, enabled in `.claude/settings.json`) holds the working rules. Load the matching skill before the work, not after:
+The `ft-dev` plugin (`plugins/ft-dev`, enabled in `.claude/settings.json`) holds the working rules.
+
+**First step of every task: `ft-dev:ft-sync`.** It brings local `main` to `origin/main` and the local database to the owner's latest production backup, verified before the swap. The owner asked for this to always happen and not to be asked about it each time.
+
+Then load the matching skill before the work, not after:
 
 | Work | Skill |
 |---|---|
+| Start of every task; "sync local and prod" | `ft-dev:ft-sync` |
 | Any feature, endpoint, refactor | `ft-dev:ft-architecture` (+ its feature checklist) |
 | Schema, migration, data fix, backup | `ft-dev:ft-migration` |
 | Auth, tokens, secrets, uploads, release audit | `ft-dev:ft-security` |
@@ -20,6 +25,6 @@ Before shipping a non-trivial change, run the `ft-reviewer` agent on the diff.
 Hard rules:
 - Push only on the owner's command. Commit locally when work is verified, tell the owner it is ready, then wait; when they say "push", run `git push origin main` yourself and watch CI (`ft-dev:ft-release`). Never push without that command.
 - `make test` must be green before anything is called done.
-- Never mutate the owner's live data (local `finance_tracker/backend/*.db`, `:8080`, production). Verify on a `VACUUM INTO` copy on other ports. The plugin's hook asks before risky commands.
+- Never mutate the owner's live data (local `finance_tracker/backend/*.db`, `:8080`, production). Verify on a `VACUUM INTO` copy on other ports. The one exception is the verified prod → local sync (`ft-dev:ft-sync`); nothing is ever written to production. The plugin's hook asks before risky commands.
 - Migrations in `internal/db/db.go` are append-only; new tables go into `backup.tables`.
 - Money is `money.Cents` in Go; new routes are session-only unless deliberately added to the token scope.

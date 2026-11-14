@@ -17,6 +17,8 @@ for p in 8091 8092 8093 5185 5186; do lsof -iTCP:$p -sTCP:LISTEN -n -P >/dev/nul
 
 ## 2. Copy the data
 
+Copy the local DB after `ft-sync` has run this session, so the copy holds production's data rather than days-old rows.
+
 Use `VACUUM INTO` — a plain `cp` leaves the `-wal` file behind and gives silently stale rows.
 
 ```bash
