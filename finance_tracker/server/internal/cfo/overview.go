@@ -102,10 +102,13 @@ type PlanPulse struct {
 	// free spending and safe to spend, so the day you spend moves the day.
 	Unreviewed      money.Cents `json:"unreviewed,omitempty"`
 	UnreviewedCount int         `json:"unreviewed_count,omitempty"`
-	Over            []LineBrief `json:"over"`  // spending lines over budget
-	Lines           []LineBrief `json:"lines"` // busiest spending lines (most of budget used first)
-	Spent           money.Cents `json:"spent"`
-	Budgeted        money.Cents `json:"budgeted"`
+	// Free is this month's spending lines — the budget you choose how to
+	// spend, obligations and saving left out — with needs and wants apart.
+	Free     plan.FreeBudget `json:"free"`
+	Over     []LineBrief     `json:"over"`  // spending lines over budget
+	Lines    []LineBrief     `json:"lines"` // busiest spending lines (most of budget used first)
+	Spent    money.Cents     `json:"spent"`
+	Budgeted money.Cents     `json:"budgeted"`
 	// How safe-to-spend is reached: income base − fixed − saving − fund
 	// set-asides − free spending so far.
 	IncomeActual  money.Cents `json:"income_actual"`
@@ -354,10 +357,12 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 	if month != nil {
 		*month = reports[thisM]
 	}
+	o.Plan.Free = plan.Free(&plan.Report{}, nil) // empty lists, not null, if the engine fails
 	if r := reports[thisM]; rerr == nil {
 		o.Plan = PlanPulse{SafeToSpend: r.SafeToSpend, IncomeBase: r.IncomeBase, IncomeActual: r.IncomeActual,
 			FixedPlanned: r.FixedPlanned, FixedSpent: r.FixedSpent, SavingPlanned: r.SavingPlanned, SavedActual: r.SavedActual, FundSetAside: r.FundContributions, FundOverdrawn: r.FundOverdrawn}
 		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
+		o.Plan.Free = plan.Free(r, cats)
 		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)

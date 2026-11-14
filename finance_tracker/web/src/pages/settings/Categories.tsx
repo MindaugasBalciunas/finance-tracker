@@ -27,7 +27,8 @@ export function Categories() {
   const unused = cats.tree.flatMap((p) => p.children).filter((c) => !c.archived && usage && !use(c.id)?.count)
   const save = useMutation({
     mutationFn: (c: Partial<Category>) => (c.id && cats.byId[c.id] ? api.put(`/categories/${c.id}`, c) : api.post('/categories', c)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast('Saved', 'good'); setEdit(null) },
+    // The essential flag splits Home's free budget into needs and wants.
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); qc.invalidateQueries({ queryKey: ['overview'] }); toast('Saved', 'good'); setEdit(null) },
   })
   return (
     <div className="space-y-3">

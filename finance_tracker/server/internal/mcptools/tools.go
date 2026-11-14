@@ -355,7 +355,7 @@ func New(call Caller) *mcp.Server {
 			n, _ := call("GET", "/ai/notes", nil, nil)
 			return text([]byte(fmt.Sprintf(`{"context":%s,"notes":%s}`, c, orNull(n))), nil)
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_overview", Description: "Today's CFO snapshot: net worth by group, this month vs the trailing average, plan pulse, emergency fund, FI progress, anomalies, upcoming recurring charges, bank inbox size." + model},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_overview", Description: "Today's CFO snapshot: net worth by group, this month vs the trailing average, plan pulse (incl. plan.free: this month's spending lines — budgeted, spent, left — with needs and wants apart, wants = lines with a non-essential category), emergency fund, FI progress, anomalies, upcoming recurring charges, bank inbox size." + model},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/overview", nil, nil))
 		})

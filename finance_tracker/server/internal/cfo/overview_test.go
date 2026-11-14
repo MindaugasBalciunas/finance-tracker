@@ -220,3 +220,39 @@ func TestOverviewYearPrincipal(t *testing.T) {
 		t.Errorf("year %+v", o.Year)
 	}
 }
+
+// Home's free budget is the plan's spending lines for the month, with the
+// loan (fixed) and the ETF (saving) left out, and wants told apart by the
+// seeded category flags: food is essential, leisure and shopping are not.
+func TestOverviewFreeBudgetShowsSpendingLinesWithWantsApart(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	for _, b := range []plan.Budget{
+		{Name: "Loan", Kind: "fixed", Categories: []string{"housing.mortgage"}, Amount: E(700)},
+		{Name: "ETF", Kind: "saving", Categories: []string{"transfer.invest"}, Amount: E(500)},
+		{Name: "Food", Kind: "spending", Categories: []string{"food"}, Amount: E(400)},
+		{Name: "Leisure & shopping", Kind: "spending", Categories: []string{"leisure", "shopping"}, Amount: E(200)},
+	} {
+		if err := plan.Save(d, &b, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Amount: E(4000), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-03", Amount: E(700), Category: "housing.mortgage", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(150), Category: "food.groceries", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-09", Amount: E(60), Category: "leisure.events", AccountID: "swed"})
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := o.Plan.Free
+	if f.Budgeted != E(600) || f.Spent != E(210) || f.Left != E(390) {
+		t.Fatalf("free budget %v / %v / %v", f.Budgeted, f.Spent, f.Left)
+	}
+	if f.Wants.Budgeted != E(200) || f.Wants.Spent != E(60) || len(f.Wants.Lines) != 1 || f.Wants.Lines[0] != "Leisure & shopping" {
+		t.Fatalf("wants %+v", f.Wants)
+	}
+	if f.Needs.Budgeted != E(400) || f.Needs.Spent != E(150) {
+		t.Fatalf("needs %+v", f.Needs)
+	}
+}
