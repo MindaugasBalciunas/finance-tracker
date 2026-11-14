@@ -44,6 +44,10 @@ func seed(t *testing.T, d *sql.DB) {
 	}
 	// A decision in the journal: bought, rated.
 	d.Exec(`INSERT INTO decisions(title,amount,category,status,cool_until,decided_on,review_on,worth,note,created_at) VALUES('Bike',89900,'leisure.hobbies','bought','2026-09-01','2026-09-05','2026-11-04','yes','commute','x')`)
+	// Verdicts on optional spending: a place to cut, a category worth it.
+	if _, err := d.Exec(`INSERT INTO optional_verdicts(kind,key,name,verdict,usual,judged_on,updated_at) VALUES('merchant','wolt','Wolt','cut',12000,'2026-10-02','x'),('category','dating','Dating','worth',31391,'2026-10-02','x')`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // dump renders every table for comparison.
@@ -130,7 +134,7 @@ func TestBackupWithoutSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["transactions"] != 2 || counts["decisions"] != 1 {
+	if counts["transactions"] != 2 || counts["decisions"] != 1 || counts["optional_verdicts"] != 2 {
 		t.Fatal(counts)
 	}
 	var ai, au string

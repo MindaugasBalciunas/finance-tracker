@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HashRouter } from 'react-router-dom'
 import { OptionalView } from '../pages/insights/Optional'
+import { ToastProvider } from '../components/ui'
 import type { OptionalReport } from '../lib/types'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -21,14 +22,25 @@ const report: OptionalReport = {
     convenience: { convenience: 60, groceries: 350, yearly: 720 },
     one_offs: { year: 900, items: [{ id: 9, date: '2026-03-15', merchant: 'Apple', category: 'shopping.electronics', amount: 900 }] },
   },
+  judge: {
+    worth: 360, cut: 600, unsure: 0, open: 632,
+    items: [
+      { kind: 'merchant', key: 'CAFFEINE', name: 'Caffeine', year: 32, usual: 5.33, month: 0, suggest: 'cut', why: 'small and often' },
+      { kind: 'merchant', key: 'BISTRO', name: 'Bistro', year: 600, usual: 100, month: 40, verdict: 'cut' },
+    ],
+    cutting: [{ kind: 'merchant', key: 'BISTRO', name: 'Bistro', usual: 100, this_month: 40, last_month: 60, judged_on: '2026-09-02' }],
+  },
 }
+const calls: { method: string; url: string; body: unknown }[] = []
 const show = (r: OptionalReport) => {
   stubResize()
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  calls.length = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ method: init?.method ?? 'GET', url, body: init?.body ? JSON.parse(init.body as string) : null })
     const path = url.replace(/^.*?api/, '').split('?')[0]
-    return new Response(JSON.stringify(path === '/insights/optional' ? r : path === '/categories' ? [] : {}), { status: 200 })
+    return new Response(JSON.stringify(path === '/insights/optional' ? r : path === '/categories' ? [] : { ok: true }), { status: 200 })
   }))
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HashRouter><OptionalView /></HashRouter></QueryClientProvider>)
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><HashRouter><OptionalView /></HashRouter></ToastProvider></QueryClientProvider>)
 }
 
 describe('Optional spending insights', () => {
@@ -41,9 +53,27 @@ describe('Optional spending insights', () => {
       expect(screen.getByText(t)).toBeInTheDocument()
     }
     expect(screen.getByText('≈ €446/yr')).toBeInTheDocument()
-    expect(screen.getByText('Caffeine').closest('a')!.getAttribute('href')).toMatch(/^#\/ledger\?merchant=Caffeine&need=optional&max=14\.99&from=/)
+    expect(screen.getAllByText('Caffeine').map((e) => e.closest('a')).find(Boolean)!.getAttribute('href')).toMatch(/^#\/ledger\?merchant=Caffeine&need=optional&max=14\.99&from=/)
     expect(screen.getByText('October 2026').closest('a')).toHaveAttribute('href', '#/ledger?need=optional&from=2026-10-11&to=2026-10-31')
     expect(screen.getByText('€10 → €60 a month')).toBeInTheDocument()
+  })
+
+  it('lets you judge a place, shows what the data suggests, and follows up a cut', async () => {
+    show(report)
+    expect(await screen.findByText('Worth it or a leak?')).toBeInTheDocument()
+    expect(screen.getByText('Looks like a leak — small and often')).toHaveClass('text-warn')
+    // Bistro is already a cut: its Cut button is on; tapping it clears the verdict.
+    const bistro = screen.getByRole('group', { name: 'Your verdict on Bistro' })
+    const cut = [...bistro.querySelectorAll('button')].find((b) => b.textContent === 'Cut')!
+    expect(cut).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(cut)
+    await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('insights/optional/verdicts') && c.url.includes('key=BISTRO'))).toBe(true))
+    const caffeine = screen.getByRole('group', { name: 'Your verdict on Caffeine' })
+    fireEvent.click([...caffeine.querySelectorAll('button')].find((b) => b.textContent === 'Worth it')!)
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ kind: 'merchant', key: 'CAFFEINE', verdict: 'worth' }))
+    // Cutting back: Bistro was €100 a month, €60 last month.
+    expect(screen.getByText('Cutting back')).toBeInTheDocument()
+    expect(screen.getByText('(−40%)')).toHaveClass('text-good')
   })
 
   it('says so when nothing looks like a leak', async () => {

@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 
 	"ft/internal/cfo"
 	"ft/internal/ledger"
+	"ft/internal/merchant"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -85,5 +87,48 @@ func TestOptionalInsightsRoute(t *testing.T) {
 	ro, _ := a.MintToken(false)
 	if code, _ := c.with("Authorization", "Bearer "+ro).do("GET", "/insights/optional", nil); code != 200 {
 		t.Errorf("read token: %d", code)
+	}
+}
+
+// Verdicts: set with a session, changed, cleared; the server fills the name
+// and usual month itself; a read token can see them but never set one.
+func TestOptionalVerdictsAreTheOwnersToSet(t *testing.T) {
+	s, c := newServer(t)
+	for i := 0; i < 4; i++ {
+		Tx(t, s.DB, ledger.Tx{Date: time.Now().AddDate(0, -1-i, 0).Format("2006-01") + "-10", Amount: E(30), Category: "leisure.going_out", Merchant: "Bar Nr 1", AccountID: "swed"})
+	}
+	key := merchant.Key("Bar Nr 1")
+	c.ok("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "cut", "name": "spoofed"}, nil)
+	var r cfo.OptionalReport
+	c.ok("GET", "/insights/optional", nil, &r)
+	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].Name != "Bar Nr 1" || r.Judge.Cutting[0].Usual != E(20) {
+		t.Fatalf("cutting %+v", r.Judge.Cutting) // 4 × €30 over the last six months = €20 a month
+	}
+	if code, _ := c.do("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "maybe"}); code != 400 {
+		t.Errorf("unknown verdict: %d", code)
+	}
+	if code, _ := c.do("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": "NOWHERE", "verdict": "cut"}); code != 400 {
+		t.Errorf("a place not in the report: %d", code)
+	}
+	c.ok("DELETE", "/insights/optional/verdicts?kind=merchant&key="+url.QueryEscape(key), nil, nil)
+	c.ok("GET", "/insights/optional", nil, &r)
+	if len(r.Judge.Cutting) != 0 || r.Judge.Open != E(120) {
+		t.Fatalf("after clearing: %+v", r.Judge)
+	}
+
+	a := &auth.Service{DB: s.DB}
+	a.SetupPin("", "1234")
+	ro, _ := a.MintToken(false)
+	rw, _ := a.MintToken(true)
+	for _, tok := range []string{ro, rw} {
+		if code, _ := c.with("Authorization", "Bearer "+tok).do("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "worth"}); code != 403 {
+			t.Errorf("token set a verdict: %d", code)
+		}
+		if code, _ := c.with("Authorization", "Bearer "+tok).do("DELETE", "/insights/optional/verdicts?kind=merchant&key="+url.QueryEscape(key), nil); code != 403 {
+			t.Errorf("token cleared a verdict: %d", code)
+		}
+	}
+	if code, _ := c.with("Authorization", "Bearer "+ro).do("GET", "/insights/optional", nil); code != 200 {
+		t.Errorf("read token can't read: %d", code)
 	}
 }

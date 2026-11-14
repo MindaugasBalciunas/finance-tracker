@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"ft/internal/cfo"
+	"ft/internal/insights"
 	"ft/internal/ledger"
+	"ft/internal/merchant"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -190,5 +192,110 @@ func TestOptionalPaydayAcrossMonthEndAndSplitReceipts(t *testing.T) {
 		if m.Key == "Caffeine" && m.Count != 3 {
 			t.Errorf("Caffeine counted %d payments", m.Count)
 		}
+	}
+}
+
+// Judging: the owner said Bistro is a cut (in September, at €100 a month),
+// the gym worth it, and Dating worth it. The page sums the twelve months by
+// verdict, suggests one for what isn't judged — the coffee habit leans
+// "cut", the gym paid every month and the fund-paid flights lean "worth" —
+// and follows the cut up: €40 so far this month, €100 last month.
+func TestOptionalJudgeSumsVerdictsSuggestsAndFollowsUpCuts(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	plan.SaveSettings(d, plan.Settings{IncomeMode: "manual", ManualIncome: E(1000)})
+	trav := plan.Budget{Name: "Travel", Kind: "spending", Categories: []string{"travel"}, Amount: E(100), Fund: true, StartMonth: "2026-01"}
+	if err := plan.Save(d, &trav, ""); err != nil {
+		t.Fatal(err)
+	}
+	tx := func(date, cat, merchant string, eur float64) {
+		Tx(t, d, ledger.Tx{Date: date, Amount: E(eur), Category: cat, Merchant: merchant, AccountID: "swed"})
+	}
+	for i := 0; i < 12; i++ {
+		tx(time.Date(2025, 11+time.Month(i), 4, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), "health.fitness", "Gym+", 30)
+	}
+	for _, m := range []string{"2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"} {
+		tx(m+"-05", "food.restaurants", "Bistro", 100)
+	}
+	for _, m := range []string{"2026-03", "2026-06", "2026-09"} {
+		tx(m+"-20", "travel.flights", "airBaltic", 200)
+	}
+	for day := 1; day <= 8; day++ {
+		tx(fmt.Sprintf("2026-10-%02d", day), "food.coffee", "Caffeine", 4)
+	}
+	tx("2026-11-03", "food.restaurants", "Bistro", 40)
+	tx("2026-10-15", "food.restaurants", "Pizza", 50)
+	judged := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	for _, v := range []insights.Verdict{
+		{Kind: "merchant", Key: merchant.Key("Bistro"), Name: "Bistro", Verdict: "cut", Usual: E(100)},
+		{Kind: "merchant", Key: merchant.Key("Gym+"), Name: "Gym+", Verdict: "worth", Usual: E(30)},
+		{Kind: "category", Key: "dating", Name: "dating", Verdict: "worth"},
+		// Restaurants as a category are worth it — Bistro's own "cut" wins for
+		// Bistro, Pizza takes the category's. "Food" covers only payments
+		// filed as plain food, never the coffee under food.coffee.
+		{Kind: "category", Key: "food.restaurants", Name: "food.restaurants", Verdict: "worth"},
+		{Kind: "category", Key: "food", Name: "food", Verdict: "worth"},
+	} {
+		if err := insights.SaveVerdict(d, v, judged); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := insights.SaveVerdict(d, insights.Verdict{Kind: "merchant", Key: "x", Verdict: "maybe"}, now); err == nil {
+		t.Error("an unknown verdict must be refused")
+	}
+
+	r, err := cfo.OptionalInsights(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := r.Judge
+	if j.Worth != E(360+50) || j.Cut != E(600) || j.Open != E(632) || j.Unsure != 0 {
+		t.Fatalf("worth %v cut %v open %v unsure %v", j.Worth, j.Cut, j.Open, j.Unsure)
+	}
+	got := map[string]cfo.JudgeItem{}
+	for _, it := range j.Items {
+		got[it.Kind+":"+it.Key] = it
+	}
+	mk := func(m string) string { return "merchant:" + merchant.Key(m) }
+	for key, want := range map[string][3]string{
+		mk("Caffeine"):    {"", "cut", "small and often"},
+		mk("Gym+"):        {"worth", "worth", "a steady part of your months"},
+		mk("airBaltic"):   {"", "worth", "planned — paid from a fund"},
+		mk("Bistro"):      {"cut", "", ""},
+		"category:dating": {"worth", "", ""},
+		"category:food":   {"worth", "", ""},
+	} {
+		it, ok := got[key]
+		if !ok || it.Verdict != want[0] || it.Suggest != want[1] || it.Why != want[2] {
+			t.Errorf("%s: %+v", key, it)
+		}
+	}
+	if len(j.Cutting) != 1 {
+		t.Fatalf("cutting %+v", j.Cutting)
+	}
+	f := j.Cutting[0]
+	if f.Name != "Bistro" || f.Usual != E(100) || f.ThisMonth != E(40) || f.LastMonth == nil || *f.LastMonth != E(100) || f.JudgedOn != "2026-09-02" {
+		t.Errorf("follow-up %+v", f)
+	}
+}
+
+// A cut decided this month counts only what came after it: the €100 lunch
+// on the 2nd was before the owner said cut on the 10th; the €15 on the 12th
+// is after.
+func TestOptionalFollowUpCountsFromTheVerdictWithinItsMonth(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	for _, m := range []string{"2026-08", "2026-09", "2026-10"} {
+		Tx(t, d, ledger.Tx{Date: m + "-05", Amount: E(60), Category: "food.restaurants", Merchant: "Bistro", AccountID: "swed"})
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-11-02", Amount: E(100), Category: "food.restaurants", Merchant: "Bistro", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-11-12", Amount: E(15), Category: "food.restaurants", Merchant: "Bistro", AccountID: "swed"})
+	insights.SaveVerdict(d, insights.Verdict{Kind: "merchant", Key: merchant.Key("Bistro"), Name: "Bistro", Verdict: "cut", Usual: E(30)}, time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC))
+	r, err := cfo.OptionalInsights(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].ThisMonth != E(15) || r.Judge.Cutting[0].LastMonth != nil {
+		t.Fatalf("%+v", r.Judge.Cutting)
 	}
 }

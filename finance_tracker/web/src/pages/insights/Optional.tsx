@@ -12,6 +12,7 @@ import { Card, Empty, ErrorBox, Loading } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { MerchantMark } from '../../components/MerchantLogo'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
+import { CuttingCard, JudgeCard } from './Judge'
 
 const ESSENTIAL = 'var(--s1)'
 const OPTIONAL = 'var(--s7)'
@@ -33,10 +34,12 @@ export function OptionalView() {
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
       <div className="space-y-4">
         <Headline r={r} />
+        <JudgeCard r={r} />
         <MonthsChart r={r} />
         <WhereItGoes r={r} from={from} to={to} />
       </div>
       <div className="space-y-4">
+        <CuttingCard r={r} />
         <Leaks r={r} />
         <div className="px-1 text-xs text-muted">
           Optional means an expense no fixed line covers, under a category not marked essential — change which are essential in{' '}

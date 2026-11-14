@@ -202,6 +202,20 @@ CREATE TABLE IF NOT EXISTS trip_history (
 	// differently. 0 = not linked (every existing row); no foreign key, so
 	// older backups restore as they are — deleting an item clears its links.
 	`ALTER TABLE transactions ADD COLUMN recurring_id INTEGER NOT NULL DEFAULT 0;  -- recurring_items.id, 0 = none`,
+	// 20: Insights → Optional: the owner's verdict on a regular optional
+	// place or category — worth it, cut, or not sure — and what it cost a
+	// month when judged, so a "cut" can be followed up. New table; nothing
+	// existing changes.
+	`CREATE TABLE IF NOT EXISTS optional_verdicts (
+    kind       TEXT NOT NULL CHECK (kind IN ('merchant','category')),
+    key        TEXT NOT NULL,                     -- merchant key (merchant.Key) or category id
+    name       TEXT NOT NULL DEFAULT '',          -- how it was shown when judged
+    verdict    TEXT NOT NULL CHECK (verdict IN ('worth','cut','unsure')),
+    usual      INTEGER NOT NULL DEFAULT 0,        -- cents: a month on average when judged
+    judged_on  TEXT NOT NULL,                     -- YYYY-MM-DD
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

@@ -64,6 +64,8 @@ export interface FreeMoney { income: number; fixed: number; saving: number; free
 /** Optional spending insights (cfo.OptionalReport). */
 export interface OptTx { id: number; date: string; merchant: string; category: string; amount: number }
 export interface OptLine { key: string; month: number; usual: number; year: number; count: number }
+export interface JudgeItem { kind: 'merchant' | 'category'; key: string; name: string; year: number; usual: number; month: number
+  verdict?: 'worth' | 'cut' | 'unsure'; suggest?: 'worth' | 'cut'; why?: string }
 export interface OptionalReport {
   month: string; spent: number; usual: number; free: number; year: number
   months: { month: string; essential: number; optional: number }[]
@@ -76,6 +78,8 @@ export interface OptionalReport {
     convenience?: { convenience: number; groceries: number; yearly: number }
     one_offs: { year: number; items: OptTx[] }
   }
+  judge: { worth: number; cut: number; unsure: number; open: number; items: JudgeItem[]
+    cutting: { kind: 'merchant' | 'category'; key: string; name: string; usual: number; this_month: number; last_month?: number; judged_on: string }[] }
 }
 export interface FreeBudget extends FreePart { needs: FreePart; wants: FreePart
   /** Part of `left` still held by fund lines; left − in_funds is the day-to-day part. */

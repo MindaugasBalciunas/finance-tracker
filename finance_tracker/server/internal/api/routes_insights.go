@@ -194,6 +194,39 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/insights/optional", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.OptionalInsights(s.DB, time.Now())
 	})
+	// The owner's verdict on a place or category: worth it, cut, not sure.
+	// Session only (not in the token write list). The name and the usual
+	// month it is followed up against come from the server's own figures,
+	// never from the request.
+	s.handle("PUT /api/insights/optional/verdicts", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var in struct{ Kind, Key, Verdict string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		rep, err := cfo.OptionalInsights(s.DB, now)
+		if err != nil {
+			return nil, err
+		}
+		v := insights.Verdict{Kind: in.Kind, Key: in.Key, Verdict: in.Verdict}
+		found := false
+		for _, it := range rep.Judge.Items {
+			if it.Kind == in.Kind && it.Key == in.Key {
+				v.Name, v.Usual, found = it.Name, it.Usual, true
+			}
+		}
+		if !found {
+			return nil, bad("that place or category isn't among your optional spending")
+		}
+		if err := insights.SaveVerdict(s.DB, v, now); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+	})
+	s.handle("DELETE /api/insights/optional/verdicts", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		q := r.URL.Query()
+		return map[string]bool{"ok": true}, insights.DeleteVerdict(s.DB, q.Get("kind"), q.Get("key"))
+	})
 	// Habits: how often, how big, when — spending by choice, complete months.
 	s.handle("GET /api/insights/habits", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		months := min(max(qint(r, "months", 24), 1), 240) // YTD in February is one month

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/merchant"
 	"ft/internal/money"
@@ -123,6 +124,7 @@ type OptionalReport struct {
 	Categories []OptLine   `json:"categories"`
 	Merchants  []OptLine   `json:"merchants"`
 	Leaks      Leaks       `json:"leaks"`
+	Judge      Judge       `json:"judge"`
 }
 
 // optRow is an expense with what the insights need to know about it.
@@ -133,6 +135,7 @@ type optRow struct {
 	optional bool // not essential, not claimed by a fixed line
 	free     bool // not claimed by a fixed line
 	fund     bool // paid by a fund that month
+	over     bool // paid after the month's free money ran out (set by whileOver)
 }
 
 // OptionalInsights reads the last twelve complete months and this one.
@@ -159,10 +162,14 @@ func OptionalInsights(d *sql.DB, now time.Time) (*OptionalReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return optionalReport(txs, budgets, cats, reports, months, now), nil
+	verdicts, err := insights.Verdicts(d)
+	if err != nil {
+		return nil, err
+	}
+	return optionalReport(txs, budgets, cats, reports, months, verdicts, now), nil
 }
 
-func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledger.Category, reports map[string]*plan.Report, months []string, now time.Time) *OptionalReport {
+func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledger.Category, reports map[string]*plan.Report, months []string, verdicts map[string]insights.Verdict, now time.Time) *OptionalReport {
 	thisM := months[len(months)-1]
 	complete := months[:len(months)-1]
 	r := &OptionalReport{Month: thisM, Months: []OptMonth{}, Categories: []OptLine{}, Merchants: []OptLine{},
@@ -291,6 +298,7 @@ func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledg
 	r.Leaks.Creeping = creeping(rows, merName, complete)
 	r.Leaks.Convenience = convenience(rows, complete)
 	r.Leaks.OneOffs = oneOffs(rows, thisM, complete)
+	r.Judge = judge(rows, r, verdicts, merName, complete, thisM)
 	return r
 }
 
@@ -319,7 +327,7 @@ func topItems(items []optRow, n int) []TxBrief {
 // whileOver finds, each month, the first day free spending passed the free
 // money planned for day-to-day (income − fixed − saving − fund set-asides),
 // and adds up the optional payments made after it.
-func whileOver(rows []optRow, reports map[string]*plan.Report, months []string, thisM string) WhileOver {
+func whileOver(rows []optRow, reports map[string]*plan.Report, months []string, thisM string) WhileOver { // marks rows[i].over
 	w := WhileOver{Months: []WhileOverDays{}, Items: []TxBrief{}}
 	var items []optRow
 	for _, m := range months {
@@ -343,10 +351,11 @@ func whileOver(rows []optRow, reports map[string]*plan.Report, months []string, 
 			continue
 		}
 		var amt money.Cents
-		for _, o := range rows {
+		for i, o := range rows {
 			if o.month == m && o.optional && !o.fund && o.day > ran {
 				amt += o.Amount
 				items = append(items, o)
+				rows[i].over = true
 			}
 		}
 		if amt == 0 {
