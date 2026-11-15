@@ -208,3 +208,34 @@ func TestFreeMoneyFundPaidFromEarlierMonthsAddsToTheMonth(t *testing.T) {
 		t.Fatal("the parts must add up")
 	}
 }
+
+// A payment's own mark wins over its category on the Free money card:
+// groceries marked optional and a restaurant marked a must swap sides, an
+// unmarked row follows its category, and a marked row from last month or
+// one a fixed line claims changes nothing. The parts still add up.
+func TestFreeMoneyFollowsThePaymentsOwnMark(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	marked := func(date, cat string, eur float64, need string) ledger.Tx {
+		x := tx(date, cat, eur)
+		x.Need = need
+		return x
+	}
+	budgets := []plan.Budget{line(1, "Loan", "fixed", []string{"housing.mortgage"}, 700), line(2, "Food", "spending", []string{"food"}, 400)}
+	txs := []ledger.Tx{
+		marked("2026-11-03", "housing.mortgage", 700, "optional"), // an obligation: in neither half
+		marked("2026-10-20", "food.restaurants", 99, "must"),      // last month
+		marked("2026-11-05", "food.groceries", 150, "optional"),
+		marked("2026-11-06", "food.restaurants", 50, "must"),
+		tx("2026-11-07", "food.groceries", 40), tx("2026-11-08", "food.restaurants", 25), tx("2026-11-09", "refunds", 20),
+	}
+	r := plan.Compute(budgets, txs, "2026-11", now, plan.Settings{IncomeMode: "manual", ManualIncome: E(4000)})
+	c := cats("food", "food.groceries")
+	c["food.restaurants"] = ledger.Category{ID: "food.restaurants"}
+	f := plan.FreeMoneyOf(r, c)
+	if f.Essential != E(90) || f.Optional != E(175) {
+		t.Fatalf("essential %v optional %v, want 90 / 175", f.Essential, f.Optional)
+	}
+	if f.Essential+f.Optional+f.Unreviewed-f.Refunds != f.Spent || f.Free-f.Spent != f.InFunds+f.LeftToSpend {
+		t.Fatal("the parts must add up")
+	}
+}

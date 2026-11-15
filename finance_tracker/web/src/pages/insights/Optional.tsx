@@ -42,7 +42,7 @@ export function OptionalView() {
         <CuttingCard r={r} />
         <Leaks r={r} />
         <div className="px-1 text-xs text-muted">
-          Optional means an expense no fixed line covers, under a category not marked essential — change which are essential in{' '}
+          Optional means an expense no fixed line covers that you marked Optional in the <Link to="/ledger" className="text-accent">Ledger</Link> (swipe a row) — or, when you haven't marked it, one under a category not marked essential. Change which categories are essential in{' '}
           <Link to="/settings/categories" className="text-accent">Settings → Categories</Link>. Yearly figures are estimates at the recent pace.
         </div>
       </div>

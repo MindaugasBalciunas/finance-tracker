@@ -99,7 +99,8 @@ func Free(r *Report, cats map[string]ledger.Category) FreeBudget {
 // FreeMoney is the month read from the income: what is free once fixed
 // obligations and saving are planned, what was spent of it — split into
 // essential and optional by each payment's own category, so a restaurant
-// under the Food line counts as optional and groceries as essential — and
+// under the Food line counts as optional and groceries as essential, unless
+// the owner marked the payment itself a must or optional — and
 // what is left, of which some is kept in funds for lumpy costs and the rest
 // is left to spend (the same figure as Left to spend on Home and Plan).
 //
@@ -130,6 +131,7 @@ func FreeMoneyOf(r *Report, cats map[string]ledger.Category) FreeMoney {
 	f := FreeMoney{Income: r.IncomeBase, Fixed: r.FixedPlanned, Saving: r.SavingPlanned,
 		Spent: r.DiscretionarySpent, Refunds: r.Refunds, Unreviewed: r.Unreviewed, LeftToSpend: r.SafeToSpend}
 	f.Free = f.Income - f.Fixed - f.Saving
+	f.Essential, f.Optional = r.SpentMust, r.SpentOptional
 	for c, v := range r.SpentByCategory {
 		if cats[c].Essential {
 			f.Essential += v
@@ -153,4 +155,18 @@ func FixedMatches(budgets []Budget) []ledger.Match {
 		}
 	}
 	return out
+}
+
+// FixedClaims reports whether an expense is an obligation a fixed line
+// claims — the rows FixedMatches leaves out of the essential/optional split.
+func FixedClaims(budgets []Budget, t *ledger.Tx) bool {
+	if t.Kind != "expense" {
+		return false
+	}
+	for _, b := range budgets {
+		if b.Kind == "fixed" && !b.Archived && b.Matches(t) {
+			return true
+		}
+	}
+	return false
 }

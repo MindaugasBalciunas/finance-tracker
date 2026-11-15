@@ -216,6 +216,10 @@ CREATE TABLE IF NOT EXISTS trip_history (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (kind, key)
 );`,
+	// 21: the owner's own call on one payment, set from the Ledger row: a
+	// must or optional. '' = not marked (every existing row), and the
+	// payment then follows its category's essential flag as before.
+	`ALTER TABLE transactions ADD COLUMN need TEXT NOT NULL DEFAULT '' CHECK (need IN ('','must','optional'));`,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

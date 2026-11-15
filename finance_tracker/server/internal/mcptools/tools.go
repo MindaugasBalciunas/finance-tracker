@@ -49,7 +49,7 @@ type searchArgs struct {
 	From       string   `json:"from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
 	To         string   `json:"to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
 	Kind       string   `json:"kind,omitempty" jsonschema:"income | expense | transfer"`
-	Need       string   `json:"need,omitempty" jsonschema:"essential | optional: free-spending expenses by their category's essential flag, fixed lines left out (the Free money card's split)"`
+	Need       string   `json:"need,omitempty" jsonschema:"essential | optional: free-spending expenses by the owner's own mark on the payment (the row's need: must | optional), else their category's essential flag; fixed lines left out (the Free money card's split)"`
 	Categories []string `json:"categories,omitempty" jsonschema:"category ids; a parent includes its children"`
 	Accounts   []string `json:"accounts,omitempty" jsonschema:"account ids"`
 	Tags       []string `json:"tags,omitempty" jsonschema:"any of these tags"`
@@ -356,7 +356,7 @@ func New(call Caller) *mcp.Server {
 			n, _ := call("GET", "/ai/notes", nil, nil)
 			return text([]byte(fmt.Sprintf(`{"context":%s,"notes":%s}`, c, orNull(n))), nil)
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "get_overview", Description: "Today's CFO snapshot: net worth by group, this month vs the trailing average, plan pulse (incl. plan.free_money: the month from the income — free = income − fixed − saving; spent = essential + optional + unreviewed − refunds (essential/optional by each payment's category); free − spent = in_funds + left_to_spend (= safe_to_spend), where in_funds is this month's fund set-asides less what funds paid, negative when funds paid from earlier months' savings; plan.free: the spending lines' budgeted/spent/left with needs and wants apart, its in_funds being the fund balances still held incl. carry-over), emergency fund, FI progress, anomalies, upcoming recurring charges, bank inbox size." + model},
+	mcp.AddTool(s, &mcp.Tool{Name: "get_overview", Description: "Today's CFO snapshot: net worth by group, this month vs the trailing average, plan pulse (incl. plan.free_money: the month from the income — free = income − fixed − saving; spent = essential + optional + unreviewed − refunds (essential/optional by the owner's mark on each payment, else its category); free − spent = in_funds + left_to_spend (= safe_to_spend), where in_funds is this month's fund set-asides less what funds paid, negative when funds paid from earlier months' savings; plan.free: the spending lines' budgeted/spent/left with needs and wants apart, its in_funds being the fund balances still held incl. carry-over), emergency fund, FI progress, anomalies, upcoming recurring charges, bank inbox size." + model},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/overview", nil, nil))
 		})

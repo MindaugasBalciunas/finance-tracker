@@ -41,17 +41,26 @@ func Create(tx *sql.Tx, t *ledger.Tx) ([]string, error) {
 }
 
 // Update rewrites cur with next's editable fields. Server-owned fields (id,
-// bank id, split parent, source) are kept from cur, never taken from next.
+// bank id, split parent, source, the must/optional mark) are kept from cur,
+// never taken from next.
 // When the money side changes — date, amount, accounts or kind (a category
 // moved from expense to income flips the direction) — cur's balance effect
 // is reversed and next's applied.
 func Update(tx *sql.Tx, cur ledger.Tx, next *ledger.Tx) error {
-	next.ID, next.ExternalID, next.SplitOf, next.Source, next.Pending, next.RecurringID = cur.ID, cur.ExternalID, cur.SplitOf, cur.Source, cur.Pending, cur.RecurringID
+	next.ID, next.ExternalID, next.SplitOf, next.Source, next.Pending, next.RecurringID, next.Need = cur.ID, cur.ExternalID, cur.SplitOf, cur.Source, cur.Pending, cur.RecurringID, cur.Need
 	if err := ledger.Validate(tx, next); err != nil {
 		return err
 	}
 	if err := ledger.Update(tx, next); err != nil {
 		return err
+	}
+	// Only an expense is a must or optional: a row re-filed as income or a
+	// transfer drops its mark, rather than keeping one nothing can clear.
+	if next.Kind != "expense" && cur.Need != "" {
+		next.Need = ""
+		if _, err := tx.Exec(`UPDATE transactions SET need='' WHERE id=?`, next.ID); err != nil {
+			return err
+		}
 	}
 	if cur.Date == next.Date && cur.Amount == next.Amount && cur.AccountID == next.AccountID && cur.ToAccountID == next.ToAccountID && cur.Kind == next.Kind {
 		return nil

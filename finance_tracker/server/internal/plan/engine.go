@@ -132,6 +132,11 @@ type Report struct {
 	// claims) by the transaction's own category, before refunds — for the
 	// essential/optional split.
 	SpentByCategory map[string]money.Cents `json:"-"`
+	// SpentMust / SpentOptional: the part of the month's free spending the
+	// owner marked a must or optional payment by payment (ledger.Tx.Need).
+	// It is not in SpentByCategory: the mark wins over the category.
+	SpentMust     money.Cents `json:"-"`
+	SpentOptional money.Cents `json:"-"`
 }
 
 // OneOff is the size from which a single payment counts as a one-off rather
@@ -301,7 +306,14 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 		if disc {
 			discretionary[m] += t.Amount
 			if m == month {
-				spentCat[t.Category] += t.Amount
+				switch t.Need {
+				case "must":
+					r.SpentMust += t.Amount
+				case "optional":
+					r.SpentOptional += t.Amount
+				default:
+					spentCat[t.Category] += t.Amount
+				}
 			}
 		}
 		covered, fundTx := false, false

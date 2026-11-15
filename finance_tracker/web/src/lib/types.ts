@@ -17,7 +17,13 @@ export interface Tx {
   recurring_id?: number
   source: string
   pending?: boolean
+  /** Your own call on an expense (Ledger swipe); '' or missing = it follows its category. */
+  need?: Need
+  /** A fixed line of the plan claims this expense: neither essential nor optional (Ledger list only). */
+  fixed?: boolean
 }
+
+export type Need = '' | 'must' | 'optional'
 
 export interface TxList { items: Tx[]; total: number; income: number; expense: number; transfer: number }
 

@@ -30,8 +30,18 @@ type Tx struct {
 	Pending     bool        `json:"pending,omitempty"` // a card reservation the bank hasn't booked yet
 	// RecurringID: the recurring item this pays (0 = none). Set only through
 	// SetRecurring — edits and bank updates leave it as it is.
-	RecurringID int64  `json:"recurring_id,omitempty"`
-	CreatedAt   string `json:"created_at,omitempty"`
+	RecurringID int64 `json:"recurring_id,omitempty"`
+	// Need: the owner's own call on an expense — "must" or "optional" —
+	// which wins over its category's essential flag in the split of free
+	// spending (Free money card, Ledger filter, Insights → Optional; cash
+	// flow's essential figure stays by category); "" = not marked. Set
+	// only through SetNeed, so edits and bank updates leave it as it is.
+	Need string `json:"need,omitempty"`
+	// Fixed: a fixed line of the plan claims this expense (the loan,
+	// alimony), so it is in neither half of the essential/optional split.
+	// Not stored — the Ledger list fills it in for the row.
+	Fixed     bool   `json:"fixed,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
 	// Kinds of the two accounts (filled by the queries here), so totals can
 	// tell money going into wealth from money coming back out of it.
 	FromKind string `json:"-"`
@@ -72,13 +82,13 @@ func (t Tx) Signed() money.Cents {
 	return 0
 }
 
-const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at,recurring_id,
+const txCols = `id,date,kind,amount,COALESCE(account_id,''),COALESCE(to_account_id,''),category,merchant,note,tags,COALESCE(external_id,''),COALESCE(split_of,0),source,pending,created_at,recurring_id,need,
 	COALESCE((SELECT kind FROM accounts WHERE id=transactions.account_id),''),COALESCE((SELECT kind FROM accounts WHERE id=transactions.to_account_id),'')`
 
 func scanTx(s interface{ Scan(...any) error }) (Tx, error) {
 	var t Tx
 	var tags string
-	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt, &t.RecurringID, &t.FromKind, &t.ToKind)
+	err := s.Scan(&t.ID, &t.Date, &t.Kind, &t.Amount, &t.AccountID, &t.ToAccountID, &t.Category, &t.Merchant, &t.Note, &tags, &t.ExternalID, &t.SplitOf, &t.Source, &t.Pending, &t.CreatedAt, &t.RecurringID, &t.Need, &t.FromKind, &t.ToKind)
 	t.Tags = SplitTags(tags)
 	if t.Tags == nil {
 		t.Tags = []string{}
@@ -107,9 +117,10 @@ type Filter struct {
 	// Salary: dates count a salary in the month it pays for under these
 	// rules (paid by day N of the next month), as cash flow does.
 	Salary []SalaryWindow
-	// Need: "essential" or "optional" — expenses whose own category is (or
-	// isn't) marked essential, the split the Free money card shows. A
-	// category the tree doesn't know counts as optional, as there.
+	// Need: "essential" or "optional" — expenses the owner marked a must or
+	// optional (Tx.Need), and unmarked ones whose own category is (or isn't)
+	// marked essential: the split the Free money card shows. A category the
+	// tree doesn't know counts as optional, as there.
 	Need string
 	// NotMatching leaves out rows any of these match (with Need: the fixed
 	// lines, so alimony and the mortgage don't show among the month's
@@ -213,9 +224,9 @@ func (f Filter) where() (string, []any) {
 	}
 	switch f.Need {
 	case "essential":
-		conds = append(conds, "kind = 'expense' AND category IN (SELECT id FROM categories WHERE essential = 1)")
+		conds = append(conds, "kind = 'expense' AND (need = 'must' OR (need = '' AND category IN (SELECT id FROM categories WHERE essential = 1)))")
 	case "optional":
-		conds = append(conds, "kind = 'expense' AND category NOT IN (SELECT id FROM categories WHERE essential = 1)")
+		conds = append(conds, "kind = 'expense' AND (need = 'optional' OR (need = '' AND category NOT IN (SELECT id FROM categories WHERE essential = 1)))")
 	}
 	for _, m := range f.NotMatching {
 		var parts []string
@@ -511,7 +522,9 @@ func OwedTag(person string) string {
 	return "owed:" + p
 }
 
-// Split carves parts off a transaction. The parent keeps the remainder, so
+// Split carves parts off a transaction. A part starts without a must/optional
+// mark of its own (it may be filed under another category); the parent keeps
+// its mark. The parent keeps the remainder, so
 // the total — and every balance — is unchanged; each part is a normal row
 // that reports and budgets see without knowing splits exist.
 func Split(d *sql.DB, id int64, parts []SplitPart) ([]Tx, error) {
@@ -785,6 +798,44 @@ func SetRecurring(e execer, id, recurringID int64) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// Essential reports whether an expense counts as a must: the owner's own
+// mark on the payment when there is one, else its category's essential flag
+// (a category the tree doesn't know is optional). One rule for the Free
+// money card, the Ledger's Spending filter and Insights → Optional.
+func (t Tx) Essential(cats map[string]Category) bool {
+	switch t.Need {
+	case "must":
+		return true
+	case "optional":
+		return false
+	}
+	return cats[t.Category].Essential
+}
+
+// SetNeed marks an expense a must or optional ("" clears the mark, back to
+// its category's flag). Only this changes the mark, so saving the
+// transaction from the editor, a bulk edit or a bank update never drops it.
+func SetNeed(e interface {
+	execer
+	querier
+}, id int64, need string) error {
+	if need != "" && need != "must" && need != "optional" {
+		return errors.New("mark it must or optional")
+	}
+	res, err := e.Exec(`UPDATE transactions SET need=?, updated_at=? WHERE id=? AND kind='expense'`, need, db.Now(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		var kind string
+		if err := e.QueryRow(`SELECT kind FROM transactions WHERE id=?`, id).Scan(&kind); err != nil {
+			return sql.ErrNoRows
+		}
+		return errors.New("only an expense can be a must or optional")
 	}
 	return nil
 }

@@ -52,6 +52,22 @@ func TestLedgerNeedFilterMatchesTheFreeMoneySplit(t *testing.T) {
 	if ess.Total != 2 || ess.Expense != E(180) || opt.Total != 2 || opt.Expense != E(75) {
 		t.Fatalf("essential %d rows %v, optional %d rows %v", ess.Total, ess.Expense, opt.Total, opt.Expense)
 	}
+	// The list says which rows a fixed line claims, so the Ledger offers no
+	// must/optional mark on them: the four obligations, nothing else.
+	var month ledger.ListResult
+	c.ok("GET", "/transactions?from=2026-10-01&to=2026-10-31", nil, &month)
+	claimed := 0
+	for _, x := range month.Items {
+		if x.Fixed {
+			claimed++
+		}
+		if x.Fixed != (x.Category == "kids.alimony" || x.Category == "subscriptions.media" || x.Category == "transport.car_fees" || x.Category == "leisure.hobbies") {
+			t.Errorf("%s fixed=%v", x.Category, x.Fixed)
+		}
+	}
+	if claimed != 4 {
+		t.Errorf("%d rows claimed by fixed lines, want 4", claimed)
+	}
 	for _, x := range append(ess.Items, opt.Items...) {
 		if x.Category == "kids.alimony" || x.Category == "subscriptions.media" || x.Category == "transport.car_fees" || x.Category == "leisure.hobbies" || x.Kind != "expense" {
 			t.Errorf("%s shouldn't be in the split", x.Category)
@@ -130,5 +146,96 @@ func TestOptionalVerdictsAreTheOwnersToSet(t *testing.T) {
 	}
 	if code, _ := c.with("Authorization", "Bearer "+ro).do("GET", "/insights/optional", nil); code != 200 {
 		t.Errorf("read token can't read: %d", code)
+	}
+}
+
+// A mark on one payment wins over its category everywhere the split is
+// shown: a restaurant marked a must moves from optional to essential in the
+// Ledger filter, on the Free money card and in Insights → Optional, and
+// groceries marked optional move the other way — the three still agree to
+// the cent. Clearing the mark puts the payment back under its category.
+// Editing the transaction keeps the mark; only an expense can carry one,
+// and an API token can never set it.
+func TestMarkingAPaymentMustOrOptionalMovesItInEverySplit(t *testing.T) {
+	s, c := newServer(t)
+	now := time.Now()
+	day := now.Format("2006-01") + "-01"
+	from, to := day, now.Format("2006-01")+"-31"
+	groceries := Tx(t, s.DB, ledger.Tx{Date: day, Amount: E(120), Category: "food.groceries", Merchant: "Lidl", AccountID: "swed"})
+	dinner := Tx(t, s.DB, ledger.Tx{Date: day, Amount: E(45), Category: "food.restaurants", Merchant: "Work lunch", AccountID: "swed"})
+	Tx(t, s.DB, ledger.Tx{Date: day, Amount: E(30), Category: "leisure.events", Merchant: "Cinema", AccountID: "swed"})
+	move := Tx(t, s.DB, ledger.Tx{Date: day, Amount: E(20), Category: "transfer.internal", AccountID: "swed", ToAccountID: "seb"})
+
+	check := func(when string, essential, optional float64) {
+		t.Helper()
+		var ess, opt ledger.ListResult
+		c.ok("GET", "/transactions?need=essential&from="+from+"&to="+to, nil, &ess)
+		c.ok("GET", "/transactions?need=optional&from="+from+"&to="+to, nil, &opt)
+		if ess.Expense != E(essential) || opt.Expense != E(optional) {
+			t.Fatalf("%s: ledger essential %v optional %v, want %v / %v", when, ess.Expense, opt.Expense, essential, optional)
+		}
+		r, err := cfo.BudgetReport(s.DB, now.Format("2006-01"), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.FreeMoney.Essential != ess.Expense || r.FreeMoney.Optional != opt.Expense {
+			t.Fatalf("%s: card essential %v optional %v ≠ ledger %v / %v", when, r.FreeMoney.Essential, r.FreeMoney.Optional, ess.Expense, opt.Expense)
+		}
+		var o cfo.OptionalReport
+		c.ok("GET", "/insights/optional", nil, &o)
+		last := o.Months[len(o.Months)-1]
+		if o.Spent != opt.Expense || last.Optional != opt.Expense || last.Essential != ess.Expense {
+			t.Fatalf("%s: insights spent %v, month %+v ≠ ledger %v / %v", when, o.Spent, last, ess.Expense, opt.Expense)
+		}
+	}
+	check("unmarked", 120, 75)
+
+	var got ledger.Tx
+	c.ok("PUT", "/transactions/"+itoa(dinner.ID)+"/need", map[string]string{"need": "must"}, &got)
+	if got.Need != "must" {
+		t.Fatalf("mark not returned: %+v", got)
+	}
+	check("dinner a must", 165, 30)
+	c.ok("PUT", "/transactions/"+itoa(groceries.ID)+"/need", map[string]string{"need": "optional"}, nil)
+	check("groceries optional", 45, 150)
+
+	// Saving the transaction from the editor keeps the mark.
+	got.Note, got.Need = "with the team", ""
+	c.ok("PUT", "/transactions/"+itoa(dinner.ID), got, &got)
+	if after, _ := ledger.Get(s.DB, dinner.ID); after.Need != "must" || after.Note != "with the team" || got.Need != "must" {
+		t.Fatalf("edit dropped the mark: stored %+v, returned %+v", after, got)
+	}
+
+	c.ok("PUT", "/transactions/"+itoa(dinner.ID)+"/need", map[string]string{"need": ""}, nil)
+	c.ok("PUT", "/transactions/"+itoa(groceries.ID)+"/need", map[string]string{"need": ""}, nil)
+	check("cleared", 120, 75)
+
+	if code, _ := c.do("PUT", "/transactions/"+itoa(dinner.ID)+"/need", map[string]string{"need": "maybe"}); code != 400 {
+		t.Errorf("unknown mark: %d", code)
+	}
+	if code, _ := c.do("PUT", "/transactions/"+itoa(move.ID)+"/need", map[string]string{"need": "must"}); code != 400 {
+		t.Errorf("a transfer marked: %d", code)
+	}
+	if code, _ := c.do("PUT", "/transactions/999999/need", map[string]string{"need": "must"}); code != 404 {
+		t.Errorf("missing transaction: %d", code)
+	}
+
+	a := &auth.Service{DB: s.DB}
+	a.SetupPin("", "1234")
+	ro, _ := a.MintToken(false)
+	rw, _ := a.MintToken(true)
+	for _, tok := range []string{ro, rw} {
+		if code, _ := c.with("Authorization", "Bearer "+tok).do("PUT", "/transactions/"+itoa(dinner.ID)+"/need", map[string]string{"need": "must"}); code != 403 {
+			t.Errorf("token marked a payment: %d", code)
+		}
+	}
+	// The neighbour that is allowed: a read-write token edits the
+	// transaction itself, and can't slip a mark in with the edit.
+	got.Need = "optional"
+	if code, _ := c.with("Authorization", "Bearer "+rw).do("PUT", "/transactions/"+itoa(dinner.ID), got); code != 200 {
+		t.Errorf("rw token edit: %d", code)
+	}
+	if after, _ := ledger.Get(s.DB, dinner.ID); after.Need != "" {
+		t.Errorf("an edit set the mark: %q", after.Need)
 	}
 }

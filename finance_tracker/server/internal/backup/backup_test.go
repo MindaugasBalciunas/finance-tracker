@@ -42,6 +42,10 @@ func seed(t *testing.T, d *sql.DB) {
 	} else if n, _ := res.RowsAffected(); n != 1 {
 		t.Fatalf("marked %d rows", n)
 	}
+	// The same payment marked a must by the owner (Ledger swipe).
+	if _, err := d.Exec(`UPDATE transactions SET need='must' WHERE merchant='Lidl'`); err != nil {
+		t.Fatal(err)
+	}
 	// A decision in the journal: bought, rated.
 	d.Exec(`INSERT INTO decisions(title,amount,category,status,cool_until,decided_on,review_on,worth,note,created_at) VALUES('Bike',89900,'leisure.hobbies','bought','2026-09-01','2026-09-05','2026-11-04','yes','commute','x')`)
 	// Verdicts on optional spending: a place to cut, a category worth it.

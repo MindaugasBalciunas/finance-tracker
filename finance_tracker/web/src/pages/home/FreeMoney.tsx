@@ -13,7 +13,7 @@ const INBOX = 'var(--s-other)'
 const FUNDS = 'var(--s3)'
 
 /** The month from the salary's side: what is free once bills and saving are
- *  planned, what was spent of it — essential or optional, by each payment's
+ *  planned, what was spent of it — essential or optional, by your mark on each payment, else its
  *  own category — and what is left, of which some is kept in funds and the
  *  rest is Left to spend (the same figure as the card above it). All figures
  *  come from the plan engine (plan.FreeMoneyOf). */

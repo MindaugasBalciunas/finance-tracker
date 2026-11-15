@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Query } from './api'
 import { byBank } from './brand'
-import type { Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
+import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
@@ -111,6 +111,12 @@ export function useSaveTx() {
       t.id ? api.put<Tx>(`/transactions/${t.id}`, t) : api.post<Tx>('/transactions', t),
     onSuccess: refresh,
   })
+}
+/** Mark one expense a must or optional ('' clears it). Moves the Free money
+ *  card, the Ledger's Spending filter and Insights → Optional. */
+export function useSetNeed() {
+  const refresh = useRefresh()
+  return useMutation({ mutationFn: ({ id, need }: { id: number; need: Need }) => api.put<Tx>(`/transactions/${id}/need`, { need }), onSuccess: refresh })
 }
 export function useDeleteTx() {
   const refresh = useRefresh()

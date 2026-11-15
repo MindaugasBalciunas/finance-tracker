@@ -58,14 +58,24 @@ func (s *Server) ledgerRoutes() {
 		}
 		// The essential/optional split is of free spending: what the fixed
 		// lines claim (loan, alimony) is left out, as on the Free money card.
+		budgets, err := plan.List(s.DB, false)
+		if err != nil {
+			return nil, err
+		}
 		if f.Need != "" {
-			budgets, err := plan.List(s.DB, false)
-			if err != nil {
-				return nil, err
-			}
 			f.NotMatching = plan.FixedMatches(budgets)
 		}
-		return ledger.List(s.DB, f)
+		res, err := ledger.List(s.DB, f)
+		if err != nil {
+			return nil, err
+		}
+		// Tell the row which expenses a fixed line claims: they are in
+		// neither half of the split, so the Ledger offers no must/optional
+		// mark on them.
+		for i := range res.Items {
+			res.Items[i].Fixed = plan.FixedClaims(budgets, &res.Items[i])
+		}
+		return res, nil
 	})
 	// What a new expense most likely is: one tap and an amount.
 	s.handle("GET /api/transactions/quick", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -130,6 +140,24 @@ func (s *Server) ledgerRoutes() {
 		}
 		return map[string]any{"recurring_id": link, "item": item}, nil
 	})
+	// The owner's call on one payment: must, optional, or "" to go back to
+	// its category's flag. Session-only, like the recurring mark.
+	s.handle("PUT /api/transactions/{id}/need", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			return nil, err
+		}
+		var in struct {
+			Need string `json:"need"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if err := ledger.SetNeed(s.DB, id, in.Need); err != nil {
+			return nil, err
+		}
+		return ledger.Get(s.DB, id)
+	})
 	s.handle("GET /api/transactions/{id}", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := idParam(r, "id")
 		if err != nil {
@@ -154,7 +182,7 @@ func (s *Server) ledgerRoutes() {
 			return nil, err
 		}
 		t := in.Tx
-		t.ID, t.ExternalID, t.SplitOf, t.Pending, t.RecurringID = 0, "", 0, false, 0
+		t.ID, t.ExternalID, t.SplitOf, t.Pending, t.RecurringID, t.Need = 0, "", 0, false, 0, ""
 		// Bank and import rows only come from sync and conversion; a client
 		// claiming either would skip the balance move a hand entry makes.
 		if t.Source == "" || t.Source == "bank" || t.Source == "import" {

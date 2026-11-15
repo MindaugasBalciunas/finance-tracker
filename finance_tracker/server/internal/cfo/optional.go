@@ -16,7 +16,8 @@ import (
 // Optional spending insights: where the money for things you could do
 // without goes, and the patterns that usually mean it leaks rather than buys
 // a better life. "Optional" is the Free money card's split — an expense no
-// fixed line claims, under a category not marked essential — so every figure
+// fixed line claims, that the owner marked optional in the Ledger or, when
+// not marked, under a category not marked essential — so every figure
 // here is a slice of the card's Optional and the Ledger's need=optional view.
 
 // Thresholds, named so the page can say them.
@@ -132,7 +133,7 @@ type optRow struct {
 	*ledger.Tx
 	month    string
 	day      int
-	optional bool // not essential, not claimed by a fixed line
+	optional bool // not a must (the owner's mark, else the category), not claimed by a fixed line
 	free     bool // not claimed by a fixed line
 	fund     bool // paid by a fund that month
 	over     bool // paid after the month's free money ran out (set by whileOver)
@@ -200,7 +201,7 @@ func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledg
 				o.fund = true
 			}
 		}
-		o.optional = o.free && !cats[t.Category].Essential
+		o.optional = o.free && !t.Essential(cats)
 		rows = append(rows, o)
 	}
 

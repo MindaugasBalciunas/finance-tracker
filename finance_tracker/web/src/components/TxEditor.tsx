@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAccounts, useDeleteTx, useSaveTx, useRefresh, useTags } from '../lib/hooks'
 import { useCats } from '../lib/categories'
 import { dayLabel, eurc, monthLabel, parseNum, shortDate, todayISO } from '../lib/format'
-import type { AIScan, Kind, Tx, TxRecurring } from '../lib/types'
+import type { Need, AIScan, Kind, Tx, TxRecurring } from '../lib/types'
 import { AccountSelect, CategoryChips, CategoryPicker, type CatHint, MerchantInput, NoteInput, SPEND_KINDS, SuggestInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from './pickers'
 import { tagLabel, tagStyle, tint, tripName } from '../lib/tags'
 import { ErrorBox, Field, Segmented, Sheet, Spinner, Toggle, useToast } from './ui'
@@ -133,6 +133,19 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
       const res: unknown = await save.mutateAsync({ ...t, amount: value, suppressed_tags: suppressed })
       const saved = (res as { transaction?: Tx } | undefined)?.transaction ?? (res as Tx | undefined)
       const id = saved?.id ?? t.id
+      // Must or Optional is the row's own mark, set on its own after the save
+      // (like the recurring mark): only when it differs from what is stored.
+      if (id && t.kind === 'expense' && (t.need ?? '') !== (isNew ? '' : draft.need ?? '')) {
+        try {
+          await api.put(`/transactions/${id}/need`, { need: t.need ?? '' })
+          refresh()
+        } catch (e) {
+          toast(`${isNew ? 'Added' : 'Saved'} — not marked ${t.need || 'by category'}: ${(e as Error).message}`, 'bad')
+          refresh()
+          onClose()
+          return
+        }
+      }
       const was = recInfo?.marked ? recInfo.recurring_id : 0
       if (id && rec && (rec.on ? (rec.choice === 'new' || rec.choice !== was) : was !== 0)) {
         // The transaction is saved by now: a refused mark is said and the sheet
@@ -263,6 +276,17 @@ function Editor({ draft, onClose }: { draft: Draft; onClose: () => void }) {
             onChange={(id, kind) => { set({ category: id, kind }); setTouchedCat(true) }} />
           <CategoryChips value={t.category ?? ''} hints={catHints} onPick={(id) => { set({ category: id, kind: cats.byId[id]?.kind ?? t.kind }); setTouchedCat(true) }} />
         </Field>
+        {t.kind === 'expense' && !t.fixed && (
+          // Your own call on this payment; "By category" follows the category's
+          // essential flag, shown so the choice is never a guess.
+          // Not a Field: a <label> around three buttons would name them all the same.
+          <div role="group" aria-label="Must or optional">
+            <div className="label">Must or optional</div>
+            <Segmented<Need> value={t.need ?? ''} onChange={(need) => set({ need })}
+              options={[{ value: '', label: `By category${t.category ? ` · ${cats.byId[t.category]?.essential ? 'Must' : 'Optional'}` : ''}` }, { value: 'must', label: 'Must' }, { value: 'optional', label: 'Optional' }]} />
+            <div className="mt-1 text-xs text-muted">Counts on the Free money card and in Insights → Optional</div>
+          </div>
+        )}
         <div className={clsx('grid gap-3', t.kind === 'transfer' ? 'grid-cols-2' : 'grid-cols-1')}>
           <Field label={t.kind === 'income' ? 'Into account' : t.kind === 'transfer' ? 'From account' : 'Paid from'}>
             <AccountSelect value={t.account_id ?? ''} onChange={(v) => set({ account_id: v })} kinds={t.kind === 'transfer' ? TRANSFER_FROM_KINDS : SPEND_KINDS} placeholder={t.kind === 'transfer' ? 'Outside / payroll' : 'Not tracked'} />
@@ -390,7 +414,7 @@ function SplitSheet({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDo
 }
 
 /** One ledger row. */
-export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t: Tx; onClick?: () => void; selected?: boolean; onSelect?: () => void; showDate?: boolean }) {
+export function TxRow({ t, onClick, selected, onSelect, showDate = false, mark }: { t: Tx; onClick?: () => void; selected?: boolean; onSelect?: () => void; showDate?: boolean; mark?: React.ReactNode }) {
   const cats = useCats()
   const accounts = useAccounts().data
   const sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : ''
@@ -407,7 +431,7 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false }: { t:
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-ink">{title}</div>
-        <div className="truncate text-xs text-muted">{sub}</div>
+        <div className="flex items-center gap-1.5 text-xs text-muted">{mark}<span className="truncate">{sub}</span></div>
       </div>
       <div className="shrink-0 text-right">
         <div className={clsx('tnum text-sm font-semibold', t.kind === 'income' ? 'text-good' : t.kind === 'transfer' ? 'text-ink2' : 'text-ink')}>{sign}{eurc(t.amount).replace('€', '€')}</div>

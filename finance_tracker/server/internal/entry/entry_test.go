@@ -210,3 +210,44 @@ func TestEditKeepsValuationsOfUnmovedAccounts(t *testing.T) {
 		t.Fatalf("cash %v", got)
 	}
 }
+
+// The must/optional mark belongs to an expense: an edit keeps it (the editor
+// never sends it), and re-filing the row as income drops it, so no hidden
+// mark comes back if the row is later an expense again.
+func TestEditKeepsTheNeedMarkAndAKindChangeDropsIt(t *testing.T) {
+	d := DB(t)
+	tx := create(t, d, ledger.Tx{Date: "2026-09-05", Amount: E(30), Category: "food.restaurants", AccountID: "swed"})
+	if err := ledger.SetNeed(d, tx.ID, "must"); err != nil {
+		t.Fatal(err)
+	}
+	edit := func(category string) ledger.Tx {
+		t.Helper()
+		next := ledger.Tx{Date: "2026-09-05", Amount: E(30), Category: category, AccountID: "swed", Need: "optional"} // a client's own value is ignored
+		if err := entry.Do(d, func(sq *sql.Tx) error {
+			cur, err := ledger.Get(sq, tx.ID)
+			if err != nil {
+				return err
+			}
+			return entry.Update(sq, cur, &next)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := ledger.Get(d, tx.ID)
+		if got.Need != next.Need {
+			t.Fatalf("returned %q, stored %q", next.Need, got.Need)
+		}
+		return got
+	}
+	if got := edit("food.groceries"); got.Need != "must" {
+		t.Fatalf("an edit changed the mark: %q", got.Need)
+	}
+	if got := edit("refunds"); got.Need != "" || got.Kind != "income" {
+		t.Fatalf("income kept a mark: %+v", got)
+	}
+	if got := edit("food.restaurants"); got.Need != "" {
+		t.Fatalf("the mark came back: %q", got.Need)
+	}
+	if err := ledger.SetNeed(d, tx.ID, "sometimes"); err == nil {
+		t.Fatal("an unknown mark was stored")
+	}
+}

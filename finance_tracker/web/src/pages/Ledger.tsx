@@ -9,7 +9,8 @@ import { dayLabel, eur, eurc } from '../lib/format'
 import { PERIODS, periodRange } from '../lib/periods'
 import type { BankSyncResult, CommitResult, InboxRow, Tx } from '../lib/types'
 import { Empty, ErrorBox, Field, hue, Loading, NumberInput, PageHeader, Segmented, Sheet, Spinner, Tabs, useToast } from '../components/ui'
-import { TxRow, useTxEditor } from '../components/TxEditor'
+import { useTxEditor } from '../components/TxEditor'
+import { NeedRow } from './ledger/NeedRow'
 import { AccountSelect, CategoryPicker, MerchantInput, NoteInput, TagInput, TRANSFER_FROM_KINDS, TRANSFER_TO_KINDS } from '../components/pickers'
 import { Icon } from '../components/Icon'
 import { MerchantMark } from '../components/MerchantLogo'
@@ -179,7 +180,7 @@ function Transactions() {
               )}
               <div className="divide-y divide-line">
                 {g.items.map((t) => (
-                  <TxRow key={t.id} t={t} showDate={!!filter.sort} selected={selected.has(t.id)}
+                  <NeedRow key={t.id} t={t} showDate={!!filter.sort} selected={selected.has(t.id)}
                     onSelect={selected.size ? () => toggle(t.id) : undefined}
                     onClick={() => (selected.size ? toggle(t.id) : editor.open(t))} />
                 ))}
@@ -251,7 +252,7 @@ function FilterSheet({ open, onClose, sp, setSp }: { open: boolean; onClose: () 
         </div>
         <div>
           <div className="label">Spending</div>
-          {/* The Free money card's split: free-spending expenses by their category's essential flag (Settings → Categories), fixed lines left out. */}
+          {/* The Free money card's split: free-spending expenses by your own mark on the row, else their category's essential flag (Settings → Categories); fixed lines left out. */}
           <Segmented value={draft.get('need') || ''} onChange={(v) => upd((n) => (v ? n.set('need', v) : n.delete('need')))}
             options={[{ value: '', label: 'All' }, { value: 'essential', label: 'Essential' }, { value: 'optional', label: 'Optional' }]} />
         </div>
