@@ -399,10 +399,10 @@ export type Backups = { snapshots: { name: string; size: number; at: string }[];
 export type BankSyncResult = {
   accounts: { bank_account_id: number; name: string; bank: string; fetched: number; new: number; from: string; error?: string; skipped?: string }[]
   fetched: number; new: number; updated: number; duplicates: number; pending: number; superseded: number; released: number
-  auto_linked: number; reserved_added: number; settled: number; failed: number
+  auto_linked: number; merged: number; reserved_added: number; settled: number; failed: number
 }
 /** POST /bank/inbox/commit. */
-export type CommitResult = { imported: number[]; skipped: number; notes?: string[] }
+export type CommitResult = { imported: number[]; skipped: number; merged: number; notes?: string[] }
 /** Expenses that look recurring but aren't tracked yet (/insights/recurring). */
 export type RecurringSuggestion = {
   name: string; merchant?: string; category: string; amount: number; every_days: number; spread_days: number; flexible: boolean

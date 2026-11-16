@@ -31,6 +31,7 @@ type SyncResult struct {
 	Superseded    int           `json:"superseded"`
 	Released      int           `json:"released"`
 	AutoLinked    int           `json:"auto_linked"`
+	Merged        int           `json:"merged"`         // transfers both banks reported, kept as one
 	ReservedAdded int           `json:"reserved_added"` // card reservations put straight into the ledger
 	Settled       int           `json:"settled"`        // ledger reservations the bank has now booked
 	Balances      []BalanceSet  `json:"balances"`
@@ -114,6 +115,9 @@ func (s *Service) SyncAll(ctx context.Context, psu openbanking.PSU, days int, on
 		}
 	}
 	res.Balances = s.applyBankBalances(synced)
+	// Before anything else looks at the inbox: a transfer both banks report
+	// is one transaction, whichever side arrived first.
+	res.Merged = s.linkMirrors() + s.mergeMirrored()
 	res.AutoLinked = s.autoLink()
 	res.ReservedAdded = s.addReservations()
 	return res, nil

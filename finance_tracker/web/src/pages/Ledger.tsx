@@ -16,6 +16,9 @@ import { Icon } from '../components/Icon'
 import { MerchantMark } from '../components/MerchantLogo'
 import { DateInput } from '../components/DateInput'
 
+// A transfer between two synced banks arrives twice, once from each; the app keeps one.
+const mergedText = (n: number) => `${n} transfer${n === 1 ? '' : 's'} merged (both banks reported ${n === 1 ? 'it' : 'them'})`
+
 export default function Ledger() {
   const loc = useLocation()
   const nav = useNavigate()
@@ -344,7 +347,7 @@ function Inbox() {
     try {
       const r = await api.post<BankSyncResult>('/bank/sync', {}, days ? { days } : undefined)
       const failed = r.accounts.filter((a) => a.error || a.skipped)
-      toast(`${r.new} new · ${r.auto_linked} linked · ${r.fetched} fetched${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
+      toast(`${r.new} new · ${r.auto_linked} linked${r.merged ? ` · ${mergedText(r.merged)}` : ''} · ${r.fetched} fetched${failed.length ? ` · ${failed.length} account(s) need attention` : ''}`, failed.length ? 'bad' : 'good')
       refresh()
     } catch (e) {
       toast((e as Error).message, 'bad')
@@ -356,7 +359,7 @@ function Inbox() {
     setBusy(true)
     try {
       const r = await api.post<CommitResult>('/bank/inbox/commit', { ids })
-      toast(`${r.imported.length} added${r.skipped ? ` · ${r.skipped} skipped` : ''}`, 'good')
+      toast(`${r.imported.length} added${r.merged ? ` · ${mergedText(r.merged)}` : ''}${r.skipped ? ` · ${r.skipped} skipped` : ''}`, 'good')
       if (r.notes?.length) setTimeout(() => toast(r.notes!.join(' · ')), 400)
       refresh()
     } finally {

@@ -178,7 +178,13 @@ func (s *Service) Link(inboxID, txID int64) error {
 	if err := saveInbox(tx, &r); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Now that the transfer carries one bank's id, the other bank's row for
+	// it can be recognised.
+	s.linkMirrors()
+	return nil
 }
 
 // Unlink reverses Link: the ledger row loses the bank id and the bank row
@@ -188,8 +194,14 @@ func (s *Service) Unlink(inboxID int64) error {
 	if err != nil || r.ImportedTxID == 0 {
 		return errors.New("this row is not linked")
 	}
-	var source string
-	s.DB.QueryRow(`SELECT source FROM transactions WHERE id=?`, r.ImportedTxID).Scan(&source)
+	var source, ext string
+	s.DB.QueryRow(`SELECT source, COALESCE(external_id,'') FROM transactions WHERE id=?`, r.ImportedTxID).Scan(&source, &ext)
+	// The other bank's side of a transfer, folded into it: the transfer is
+	// untouched, the row comes back and is never folded again.
+	if ext != r.ExternalID && r.VerdictNote == mirrorNote {
+		r.State, r.ImportedTxID, r.MatchedTxID, r.Verdict, r.VerdictNote, r.Edited = "open", 0, 0, "new", apartNote, true
+		return saveInbox(s.DB, &r)
+	}
 	if source == "bank" {
 		return errors.New("this row was added from the bank, not linked — delete the transaction instead")
 	}
@@ -267,6 +279,7 @@ func (s *Service) Update(id int64, e Edit) (InboxRow, error) {
 type CommitResult struct {
 	Imported []int64  `json:"imported"`
 	Skipped  int      `json:"skipped"`
+	Merged   int      `json:"merged"` // the other bank's side of a transfer already in the ledger
 	Notes    []string `json:"notes,omitempty"`
 }
 
@@ -278,6 +291,10 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
+	feed, err := feeds(tx)
+	if err != nil {
+		return nil, err
+	}
 	for _, id := range ids {
 		r, err := getInbox(tx, id)
 		if err != nil {
@@ -296,6 +313,19 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 			saveInbox(tx, &r)
 			res.Skipped++
 			res.Notes = append(res.Notes, label+" is already in your ledger")
+			continue
+		}
+		// The other bank's side of a transfer that is already in the ledger
+		// (or was added a moment ago, in this same batch) joins it.
+		if mirror, err := findMirror(tx, &r, feed); err != nil {
+			return nil, err
+		} else if mirror > 0 {
+			if err := absorb(tx, &r, mirror); err != nil {
+				res.Skipped++
+				res.Notes = append(res.Notes, label+": "+err.Error())
+				continue
+			}
+			res.Merged++
 			continue
 		}
 		// A reservation enters as pending; the booking settles it later.
@@ -320,7 +350,12 @@ func (s *Service) Commit(ids []int64) (*CommitResult, error) {
 		}
 		res.Imported = append(res.Imported, t.ID)
 	}
-	return res, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	// A transfer just added may be the one another open row mirrors.
+	res.Merged += s.linkMirrors()
+	return res, nil
 }
 
 // SetState dismisses or restores rows.
