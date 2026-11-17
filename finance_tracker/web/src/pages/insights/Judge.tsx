@@ -10,6 +10,24 @@ import { Icon } from '../../components/Icon'
 import { MerchantMark } from '../../components/MerchantLogo'
 
 const eur0 = (v: number) => eur(Math.round(v))
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+/** The twelve complete months every "last 12 months" figure covers, e.g. "Nov '25 – Oct '26". */
+export function yearRange(r: OptionalReport): string {
+  const last = r.months[r.months.length - 2]?.month
+  return last ? `${monthLabel(r.months[0].month)} – ${monthLabel(last)}` : monthLabel(r.months[0].month)
+}
+
+/** How a place or category was paid over the twelve months: how often, and
+ *  a monthly figure (the 12 months over 12) only when it really is
+ *  monthly-ish, paid in six or more of the months — "€54/mo" beside four
+ *  payments a year says nothing. */
+export function paceLine(l: { usual: number; count: number; months: number; month: number }): string {
+  const parts = [l.count === 0 ? 'only this month' : l.months >= 6 || l.count === 1 ? plural(l.count, 'payment') : `${plural(l.count, 'payment')} in ${plural(l.months, 'month')}`]
+  if (l.months >= 6) parts.push(`${eur(l.usual)} a month on average`)
+  if (l.month > 0) parts.push(`${eur(l.month)} this month`)
+  return parts.join(' · ')
+}
 type V = 'worth' | 'cut' | 'unsure'
 const VERDICTS: { v: V; label: string; icon: string; on: string }[] = [
   { v: 'worth', label: 'Worth it', icon: 'check', on: 'bg-good/15 text-good border-good/40' },
@@ -48,7 +66,7 @@ export function JudgeCard({ r }: { r: OptionalReport }) {
   return (
     <Card pad={false} icon="check" color="var(--s7)" title="Worth it or a leak?">
       <div className="px-4 pb-3">
-        <div className="text-xs text-muted">Your call on each regular place and big category. A payment takes its place's verdict, else its own category's. Last 12 months:</div>
+        <div className="text-xs text-muted">Your call on the places you keep going back to (3 or more payments outside trips) and your biggest categories. A payment takes its place's verdict, else its own category's. All optional spending, {yearRange(r)}:</div>
         <div className="mt-2 flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-line" role="img"
           aria-label={`Worth it ${eur0(j.worth)}, to cut ${eur0(j.cut)}, not sure ${eur0(j.unsure)}, not judged ${eur0(j.open)}`}>
           {parts.filter((p) => p.v > 0.005).map((p) => <div key={p.k} className="h-full" style={{ width: `${(p.v / total) * 100}%`, background: p.color }} />)}
@@ -82,7 +100,7 @@ function JudgeRow({ it }: { it: JudgeItem }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm">{name}</span>
-          <span className="block truncate text-xs text-muted">{eur0(it.year)} a year · {eur(it.usual)}/mo · {eur(it.month)} this month</span>
+          <span className="block text-xs text-muted">{eur0(it.year)} in 12 months · {paceLine(it)}</span>
         </span>
       </div>
       {!it.verdict && it.suggest && (

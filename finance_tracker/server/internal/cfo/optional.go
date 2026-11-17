@@ -34,14 +34,17 @@ type OptMonth struct {
 	Optional  money.Cents `json:"optional"`
 }
 
-// OptLine is a category or merchant: this month, a usual month (average of
-// the last six complete ones) and the last twelve complete months.
+// OptLine is a category or merchant: this month so far, and the last twelve
+// complete months — their total, that total a month (Year / 12, so the two
+// always agree: a €4,328 year once sat beside "€54/mo", the last six months'
+// average), and how many payments in how many of the months.
 type OptLine struct {
-	Key   string      `json:"key"`
-	Month money.Cents `json:"month"`
-	Usual money.Cents `json:"usual"`
-	Year  money.Cents `json:"year"`
-	Count int         `json:"count"` // payments in the twelve months
+	Key    string      `json:"key"`
+	Month  money.Cents `json:"month"`
+	Usual  money.Cents `json:"usual"` // Year / 12
+	Year   money.Cents `json:"year"`
+	Count  int         `json:"count"`  // payments in the twelve months
+	Months int         `json:"months"` // of the twelve, the months with a payment
 }
 
 type TxBrief struct {
@@ -50,10 +53,16 @@ type TxBrief struct {
 	Merchant string      `json:"merchant"`
 	Category string      `json:"category"`
 	Amount   money.Cents `json:"amount"`
+	Note     string      `json:"note,omitempty"` // names the payment when it has no merchant
+	// Over: also paid after its month's free money ran out, so the page can
+	// say when one payment sits in two leak cards.
+	Over bool `json:"over,omitempty"`
 }
 
 // WhileOver: optional spending after the day a month had used up its free
 // money — money the month didn't have. Paid-from-fund rows don't count.
+// Year is the twelve complete months, as every "last 12 months" figure on
+// the page; this month so far stands apart.
 type WhileOver struct {
 	Year      money.Cents     `json:"year"`
 	ThisMonth money.Cents     `json:"this_month"`
@@ -101,9 +110,15 @@ type Convenience struct {
 	Yearly      money.Cents `json:"yearly"`
 }
 
+// OneOffs: every optional payment of OneOffMin or more that no fund or trip
+// covered — the whole list, biggest first, so the total can be checked
+// against it. Year and Count are the twelve complete months; this month's
+// are in Items too and add up to ThisMonth.
 type OneOffs struct {
-	Year  money.Cents `json:"year"` // since the first of the twelve months, this month included
-	Items []TxBrief   `json:"items"`
+	Year      money.Cents `json:"year"`
+	Count     int         `json:"count"`
+	ThisMonth money.Cents `json:"this_month"`
+	Items     []TxBrief   `json:"items"`
 }
 
 type Leaks struct {
@@ -120,7 +135,7 @@ type OptionalReport struct {
 	Spent      money.Cents `json:"spent"` // optional so far this month (before refunds, as the card)
 	Usual      money.Cents `json:"usual"` // median of the last six complete months
 	Free       money.Cents `json:"free"`  // this month's free money (income − fixed − saving)
-	Year       money.Cents `json:"year"`  // last twelve complete months
+	Year       money.Cents `json:"year"`  // last twelve complete months (this month left out)
 	Months     []OptMonth  `json:"months"`
 	Categories []OptLine   `json:"categories"`
 	Merchants  []OptLine   `json:"merchants"`
@@ -235,19 +250,16 @@ func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledg
 	r.Usual = medianCents(last6)
 
 	// Where it goes: categories and merchants.
-	recent6 := map[string]bool{}
-	for _, m := range complete[max(0, len(complete)-6):] {
-		recent6[m] = true
-	}
 	cat, mer := map[string]*OptLine{}, map[string]*OptLine{}
 	merName := map[string]string{}
 	counted := map[*OptLine]map[int64]bool{} // purchases already counted per line
+	paidIn := map[*OptLine]map[string]bool{} // months with a payment per line
 	add := func(set map[string]*OptLine, key string, o optRow) {
 		l := set[key]
 		if l == nil {
 			l = &OptLine{Key: key}
 			set[key] = l
-			counted[l] = map[int64]bool{}
+			counted[l], paidIn[l] = map[int64]bool{}, map[string]bool{}
 		}
 		switch {
 		case o.month == thisM:
@@ -258,9 +270,7 @@ func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledg
 				counted[l][o.purchase()] = true
 				l.Count++
 			}
-			if recent6[o.month] {
-				l.Usual += o.Amount
-			}
+			paidIn[l][o.month] = true
 		}
 	}
 	for _, o := range rows {
@@ -278,7 +288,7 @@ func optionalReport(txs []ledger.Tx, budgets []plan.Budget, cats map[string]ledg
 	top := func(set map[string]*OptLine, n int, name func(string) string) []OptLine {
 		out := []OptLine{}
 		for _, l := range set {
-			l.Usual /= 6
+			l.Usual, l.Months = l.Year/12, len(paidIn[l])
 			l.Key = name(l.Key)
 			out = append(out, *l)
 		}
@@ -313,7 +323,7 @@ func (o optRow) purchase() int64 {
 }
 
 func brief(o optRow) TxBrief {
-	return TxBrief{ID: o.ID, Date: o.Date, Merchant: o.Merchant, Category: o.Category, Amount: o.Amount}
+	return TxBrief{ID: o.ID, Date: o.Date, Merchant: o.Merchant, Category: o.Category, Amount: o.Amount, Note: o.Note, Over: o.over}
 }
 
 func topItems(items []optRow, n int) []TxBrief {
@@ -355,8 +365,8 @@ func whileOver(rows []optRow, reports map[string]*plan.Report, months []string, 
 		for i, o := range rows {
 			if o.month == m && o.optional && !o.fund && o.day > ran {
 				amt += o.Amount
-				items = append(items, o)
 				rows[i].over = true
+				items = append(items, rows[i])
 			}
 		}
 		if amt == 0 {
@@ -553,14 +563,23 @@ func oneOffs(rows []optRow, thisM string, complete []string) OneOffs {
 	}
 	var items []optRow
 	o := OneOffs{Items: []TxBrief{}}
+	buys := map[int64]bool{} // the parts of a split receipt are one payment, as elsewhere on the page
 	for _, r := range rows {
 		if !in[r.month] || !r.optional || r.fund || r.Amount < OneOffMin || hasTrip(r.Tags) {
 			continue
 		}
 		items = append(items, r)
-		o.Year += r.Amount // the twelve months and this one, like the list
+		if r.month == thisM {
+			o.ThisMonth += r.Amount
+		} else {
+			o.Year += r.Amount
+			if !buys[r.purchase()] {
+				buys[r.purchase()] = true
+				o.Count++
+			}
+		}
 	}
-	o.Items = topItems(items, 6)
+	o.Items = topItems(items, len(items))
 	return o
 }
 

@@ -117,8 +117,8 @@ func TestOptionalVerdictsAreTheOwnersToSet(t *testing.T) {
 	c.ok("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "cut", "name": "spoofed"}, nil)
 	var r cfo.OptionalReport
 	c.ok("GET", "/insights/optional", nil, &r)
-	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].Name != "Bar Nr 1" || r.Judge.Cutting[0].Usual != E(20) {
-		t.Fatalf("cutting %+v", r.Judge.Cutting) // 4 × €30 over the last six months = €20 a month
+	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].Name != "Bar Nr 1" || r.Judge.Cutting[0].Usual != E(10) {
+		t.Fatalf("cutting %+v", r.Judge.Cutting) // 4 × €30 in the twelve months = €10 a month
 	}
 	if code, _ := c.do("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "maybe"}); code != 400 {
 		t.Errorf("unknown verdict: %d", code)

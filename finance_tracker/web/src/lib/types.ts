@@ -68,9 +68,11 @@ export interface FreePart { budgeted: number; spent: number; left: number; lines
 export interface FreeMoney { income: number; fixed: number; saving: number; free: number; spent: number
   essential: number; optional: number; refunds?: number; unreviewed: number; in_funds: number; left_to_spend: number }
 /** Optional spending insights (cfo.OptionalReport). */
-export interface OptTx { id: number; date: string; merchant: string; category: string; amount: number }
-export interface OptLine { key: string; month: number; usual: number; year: number; count: number }
-export interface JudgeItem { kind: 'merchant' | 'category'; key: string; name: string; year: number; usual: number; month: number
+/** `note` names a payment without a merchant; `over`: also paid after its month's free money ran out. */
+export interface OptTx { id: number; date: string; merchant: string; category: string; amount: number; note?: string; over?: boolean }
+/** `year` is the twelve complete months, `usual` that over 12, `months` how many of them had a payment. */
+export interface OptLine { key: string; month: number; usual: number; year: number; count: number; months: number }
+export interface JudgeItem { kind: 'merchant' | 'category'; key: string; name: string; year: number; usual: number; month: number; count: number; months: number
   verdict?: 'worth' | 'cut' | 'unsure'; suggest?: 'worth' | 'cut'; why?: string }
 export interface OptionalReport {
   month: string; spent: number; usual: number; free: number; year: number
@@ -82,7 +84,8 @@ export interface OptionalReport {
     payday?: { after: number; usual: number; extra: number; months: number }
     creeping: { merchant: string; before: number; now: number; yearly: number }[]
     convenience?: { convenience: number; groceries: number; yearly: number }
-    one_offs: { year: number; items: OptTx[] }
+    /** `year`/`count`: the twelve complete months; this month's are in `items` too and add up to `this_month`. */
+    one_offs: { year: number; count: number; this_month: number; items: OptTx[] }
   }
   judge: { worth: number; cut: number; unsure: number; open: number; items: JudgeItem[]
     cutting: { kind: 'merchant' | 'category'; key: string; name: string; usual: number; this_month: number; last_month?: number; judged_on: string }[] }

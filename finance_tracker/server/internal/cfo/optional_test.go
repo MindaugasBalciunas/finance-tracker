@@ -9,6 +9,7 @@ import (
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/merchant"
+	"ft/internal/money"
 	"ft/internal/plan"
 	. "ft/internal/testutil"
 )
@@ -297,5 +298,87 @@ func TestOptionalFollowUpCountsFromTheVerdictWithinItsMonth(t *testing.T) {
 	}
 	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].ThisMonth != E(15) || r.Judge.Cutting[0].LastMonth != nil {
 		t.Fatalf("%+v", r.Judge.Cutting)
+	}
+}
+
+// The page's figures must agree with each other. A place's monthly figure is
+// its twelve-month total over twelve (a €1,200 year once sat beside "€0/mo"
+// because the months were the last six only). The places to judge are the
+// ones the owner keeps going back to: a single hotel bill and a tour
+// operator's trip-tagged instalments are not, and stay under their
+// categories. Every leak total covers the twelve complete months, with this
+// month apart, and a payment that sits in two leak cards says so.
+func TestOptionalFiguresAgreeWithEachOther(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	plan.SaveSettings(d, plan.Settings{IncomeMode: "manual", ManualIncome: E(1000)})
+	tx := func(date, cat, merchant, note string, eur float64, tags ...string) {
+		Tx(t, d, ledger.Tx{Date: date, Amount: E(eur), Category: cat, Merchant: merchant, Note: note, Tags: tags, AccountID: "swed"})
+	}
+	// Four TVs-and-fridges payments early in the window, none in the last six months.
+	for _, day := range []string{"2025-12-08", "2025-12-09", "2026-01-29", "2026-02-03"} {
+		tx(day, "shopping.electronics", "bigbox", "", 300)
+	}
+	tx("2026-10-21", "travel.lodging", "Red Sea Hotel", "", 258)
+	for _, day := range []string{"2026-08-17", "2026-09-21", "2026-10-02"} {
+		tx(day, "travel.trip", "Novaturas", "", 400, "trip:egypt")
+	}
+	// October: €1,000 free, gone on the 2nd; the dinner on the 26th is both a
+	// big one-off and money the month didn't have.
+	tx("2026-10-01", "shopping.clothing", "", "", 700)
+	tx("2026-10-26", "food.restaurants", "", "Family reunion dinner", 1100)
+	tx("2026-11-03", "shopping.electronics", "", "Phone", 500)
+	// A €600 sofa receipt split in two: two rows, one payment.
+	sofa := Tx(t, d, ledger.Tx{Date: "2026-03-10", Amount: E(300), Category: "housing.furnishing", Note: "Sofa", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-03-10", Amount: E(300), Category: "housing.furnishing", Note: "Sofa", AccountID: "swed", SplitOf: sofa.ID})
+
+	r, err := cfo.OptionalInsights(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := map[string]cfo.JudgeItem{}
+	for _, it := range r.Judge.Items {
+		items[it.Kind+":"+it.Name] = it
+	}
+	big := items["merchant:bigbox"]
+	if big.Year != E(1200) || big.Usual != E(100) || big.Count != 4 || big.Months != 3 {
+		t.Errorf("bigbox: %+v", big)
+	}
+	for _, name := range []string{"Red Sea Hotel", "Novaturas"} {
+		if _, ok := items["merchant:"+name]; ok {
+			t.Errorf("%s is not a place you keep going back to", name)
+		}
+	}
+	if it := items["category:travel.trip"]; it.Year != E(1200) || it.Usual != E(100) {
+		t.Errorf("the trip is still judged by its category: %+v", it)
+	}
+	for _, l := range append(r.Categories, r.Merchants...) {
+		if l.Usual != l.Year/12 || (l.Year > 0) != (l.Months > 0) {
+			t.Errorf("%s: %v a month beside %v a year in %d months", l.Key, l.Usual, l.Year, l.Months)
+		}
+	}
+
+	one := r.Leaks.OneOffs
+	if one.Year != E(4*300+258+700+1100+600) || one.Count != 8 || one.ThisMonth != E(500) || len(one.Items) != 10 {
+		t.Fatalf("one-offs %+v", one)
+	}
+	var listed money.Cents
+	for _, it := range one.Items {
+		listed += it.Amount
+	}
+	if listed != one.Year+one.ThisMonth {
+		t.Errorf("the list adds up to %v, the totals to %v", listed, one.Year+one.ThisMonth)
+	}
+	dinner := one.Items[0]
+	if dinner.Note != "Family reunion dinner" || !dinner.Over {
+		t.Errorf("the dinner names itself and says it is also in the other card: %+v", dinner)
+	}
+	if over := r.Leaks.WhileOver; len(over.Items) == 0 || over.Items[0].ID != dinner.ID || !over.Items[0].Over {
+		t.Errorf("while over %+v", over)
+	}
+	for _, it := range one.Items[1:] {
+		if it.Note == "Phone" && it.Over {
+			t.Errorf("this month has not run out: %+v", it)
+		}
 	}
 }

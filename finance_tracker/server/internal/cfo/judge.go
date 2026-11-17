@@ -9,7 +9,7 @@ import (
 	"ft/internal/money"
 )
 
-// Judging optional spending: the regular places and the biggest categories,
+// Judging optional spending: the places the owner keeps going back to and the biggest categories,
 // each with the owner's verdict (worth it / cut / not sure), a suggestion
 // from what the data shows, and — for what the owner said to cut — how it
 // has gone since.
@@ -18,9 +18,11 @@ type JudgeItem struct {
 	Kind    string      `json:"kind"` // merchant | category
 	Key     string      `json:"key"`
 	Name    string      `json:"name"`
-	Year    money.Cents `json:"year"`  // last twelve complete months
-	Usual   money.Cents `json:"usual"` // a month, average of the last six complete
-	Month   money.Cents `json:"month"` // this month so far
+	Year    money.Cents `json:"year"`   // last twelve complete months
+	Usual   money.Cents `json:"usual"`  // a month: Year / 12, so it always agrees with Year
+	Month   money.Cents `json:"month"`  // this month so far
+	Count   int         `json:"count"`  // payments in the twelve months
+	Months  int         `json:"months"` // of the twelve, the months with a payment
 	Verdict string      `json:"verdict,omitempty"`
 	Suggest string      `json:"suggest,omitempty"` // worth | cut, when the data leans one way
 	Why     string      `json:"why,omitempty"`
@@ -50,17 +52,17 @@ type Judge struct {
 	Cutting []FollowUp  `json:"cutting"`
 }
 
-// A regular place: three purchases or €100 in the twelve months.
-const regularMin = money.Cents(100 * 100)
+// A regular place: three purchases in the twelve months, trips left out. One
+// €258 hotel bill or a tour operator's instalments are not somewhere you
+// keep going back to — nothing to "cut" there; a trip's payments are judged
+// with their category (flights, lodging, the trip itself).
+const regularBuys = 3
 
 func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdict, merName map[string]string, complete []string, thisM string) Judge {
 	j := Judge{Items: []JudgeItem{}, Cutting: []FollowUp{}}
-	inYear, recent6 := map[string]bool{}, map[string]bool{}
-	for i, m := range complete {
+	inYear := map[string]bool{}
+	for _, m := range complete {
 		inYear[m] = true
-		if i >= len(complete)-6 {
-			recent6[m] = true
-		}
 	}
 	lastComplete := ""
 	if len(complete) > 0 {
@@ -109,6 +111,7 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 		in := match(kind, key)
 		var over, oneOff, fund, trip money.Cents
 		months := map[string]bool{}
+		buys := map[int64]bool{}
 		for _, o := range rows {
 			if !o.optional || !in(o) {
 				continue
@@ -122,9 +125,7 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 			}
 			it.Year += o.Amount
 			months[o.month] = true
-			if recent6[o.month] {
-				it.Usual += o.Amount
-			}
+			buys[o.purchase()] = true
 			if o.over {
 				over += o.Amount
 			}
@@ -138,7 +139,7 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 				trip += o.Amount
 			}
 		}
-		it.Usual /= 6
+		it.Usual, it.Count, it.Months = it.Year/12, len(buys), len(months)
 		share := func(v money.Cents) bool { return it.Year > 0 && v*10 >= it.Year*3 } // ≥ 30%
 		most := func(v money.Cents) bool { return it.Year > 0 && v*2 >= it.Year }     // ≥ 50%
 		switch {
@@ -172,7 +173,7 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 	places := map[string]*agg{}
 	for _, o := range rows {
 		k := merchant.Key(o.Merchant)
-		if !o.optional || k == "" || !inYear[o.month] {
+		if !o.optional || k == "" || !inYear[o.month] || hasTrip(o.Tags) {
 			continue
 		}
 		if places[k] == nil {
@@ -183,7 +184,7 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 	}
 	var keys []string
 	for k, a := range places {
-		if len(a.buys) >= 3 || a.year >= regularMin {
+		if len(a.buys) >= regularBuys {
 			keys = append(keys, k)
 		}
 	}

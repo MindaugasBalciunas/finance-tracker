@@ -68,7 +68,8 @@ const swipe = (el: Element, from: [number, number], to: [number, number]) => {
 // when marked. Obligations and income carry no pill.
 it('shows must or optional on each free expense and nothing on the rest', async () => {
   setup()
-  expect(await screen.findByRole('button', { name: 'Optional, from its category. Change' })).toBeInTheDocument() // Bistro: restaurants aren't essential
+  // The Ledger's first render takes ~3 s when the suite runs on a busy machine; the default 1 s wait failed there.
+  expect(await screen.findByRole('button', { name: 'Optional, from its category. Change' }, { timeout: 5000 })).toBeInTheDocument() // Bistro: restaurants aren't essential
   expect(screen.getByRole('button', { name: 'Optional. Change' })).toBeInTheDocument() // Lidl: marked, though groceries are essential
   expect(screen.getAllByRole('button', { name: /Change$/ })).toHaveLength(2)
 })

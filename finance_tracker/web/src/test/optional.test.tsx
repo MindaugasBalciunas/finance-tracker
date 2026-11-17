@@ -12,21 +12,22 @@ const stubResize = () => vi.stubGlobal('ResizeObserver', class { observe() {} un
 const months = Array.from({ length: 13 }, (_, i) => ({ month: `2026-${String(i + 1).padStart(2, '0')}`.replace('2026-13', '2026-12'), essential: 500, optional: 200 }))
 const report: OptionalReport = {
   month: '2026-11', spent: 250, usual: 200, free: 2488, year: 2400, months,
-  categories: [{ key: 'food.restaurants', month: 50, usual: 100, year: 1200, count: 24 }],
-  merchants: [{ key: 'Wolt', month: 60, usual: 40, year: 480, count: 12 }],
+  categories: [{ key: 'food.restaurants', month: 50, usual: 100, year: 1200, count: 24, months: 12 }],
+  merchants: [{ key: 'Wolt', month: 60, usual: 40, year: 480, count: 12, months: 9 }],
   leaks: {
-    while_over: { year: 160, this_month: 0, months: [{ month: '2026-10', from: 11, amount: 100 }], items: [{ id: 7, date: '2026-10-20', merchant: 'Concert', category: 'leisure.events', amount: 40 }] },
+    while_over: { year: 160, this_month: 25, months: [{ month: '2026-05', from: 20, amount: 10 }, { month: '2026-06', from: 20, amount: 10 }, { month: '2026-07', from: 20, amount: 10 }, { month: '2026-08', from: 20, amount: 10 }, { month: '2026-09', from: 20, amount: 20 }, { month: '2026-10', from: 11, amount: 100 }, { month: '2026-11', from: 9, amount: 25 }],
+      items: [{ id: 7, date: '2026-10-20', merchant: '', note: 'Reunion dinner', category: 'food.restaurants', amount: 40, over: true }] },
     small_often: [{ merchant: 'Caffeine', count: 8, spent: 32, yearly: 129.77 }],
     payday: { after: 60, usual: 22.8, extra: 446.4, months: 6 },
     creeping: [{ merchant: 'Wolt', before: 10, now: 60, yearly: 600 }],
     convenience: { convenience: 60, groceries: 350, yearly: 720 },
-    one_offs: { year: 900, items: [{ id: 9, date: '2026-03-15', merchant: 'Apple', category: 'shopping.electronics', amount: 900 }] },
+    one_offs: { year: 1200, count: 2, this_month: 0, items: [{ id: 9, date: '2026-03-15', merchant: 'Apple', category: 'shopping.electronics', amount: 900 }, { id: 10, date: '2026-10-20', merchant: 'Sofa Shop', category: 'housing.furnishing', amount: 300, over: true }] },
   },
   judge: {
     worth: 360, cut: 600, unsure: 0, open: 632,
     items: [
-      { kind: 'merchant', key: 'CAFFEINE', name: 'Caffeine', year: 32, usual: 5.33, month: 0, suggest: 'cut', why: 'small and often' },
-      { kind: 'merchant', key: 'BISTRO', name: 'Bistro', year: 600, usual: 100, month: 40, verdict: 'cut' },
+      { kind: 'merchant', key: 'CAFFEINE', name: 'Caffeine', year: 32, usual: 2.67, month: 0, count: 8, months: 1, suggest: 'cut', why: 'small and often' },
+      { kind: 'merchant', key: 'BISTRO', name: 'Bistro', year: 600, usual: 50, month: 40, count: 6, months: 6, verdict: 'cut' },
     ],
     cutting: [{ kind: 'merchant', key: 'BISTRO', name: 'Bistro', usual: 100, this_month: 40, last_month: 60, judged_on: '2026-09-02' }],
   },
@@ -76,8 +77,44 @@ describe('Optional spending insights', () => {
     expect(screen.getByText('(−40%)')).toHaveClass('text-good')
   })
 
+  // Every figure says what it covers and agrees with its neighbours: a
+  // monthly pace only for what is paid most months, the leak cards' totals
+  // are the twelve complete months with this month apart, their lists add
+  // up to them, and a payment in two cards says so.
+  it('keeps the figures consistent and traceable', async () => {
+    show(report)
+    expect(await screen.findByText('€2,400')).toBeInTheDocument()
+    expect(screen.getByText('€200 a month')).toBeInTheDocument()
+    expect(screen.getByText(/Last 12 months is Jan .* – Dec .*, this month left out/)).toBeInTheDocument()
+    // Bistro: monthly-ish, so a pace; Caffeine: eight payments in one month, so none.
+    expect(screen.getByText('€600 in 12 months · 6 payments · €50 a month on average · €40 this month')).toBeInTheDocument()
+    expect(screen.getByText('€32 in 12 months · 8 payments in 1 month')).toBeInTheDocument()
+    // After the money ran out: €160 is the six complete months; November stands apart.
+    expect(screen.getByText('November 2026 so far')).toBeInTheDocument()
+    expect(screen.queryByText('May 2026')).toBeNull()
+    fireEvent.click(screen.getByText('Show all 6 months'))
+    expect(screen.getByText('May 2026')).toBeInTheDocument()
+    // A payment without a merchant goes by its note and opens itself in the Ledger.
+    expect(screen.getByText('Reunion dinner').closest('a')).toHaveAttribute('href', '#/ledger?need=optional&min=40&max=40&from=2026-10-20&to=2026-10-20')
+    // Big one-offs: both listed, the one that is also in the other card marked.
+    expect(screen.getByText(/^2 optional payments of €250 or more in the last 12 months/)).toBeInTheDocument()
+    expect(screen.getAllByText('· after the money ran out').length).toBe(1)
+    expect(screen.getByText(/don't add them up/)).toBeInTheDocument()
+  })
+
+  // A new book: only this month ran out or had a big one — the cards show
+  // this month's figure, never "€0 last 12 months" above a list.
+  it('headlines this month when the twelve months had nothing', async () => {
+    const l = report.leaks
+    show({ ...report, leaks: { ...l, while_over: { ...l.while_over, year: 0, months: [{ month: '2026-11', from: 9, amount: 25 }] }, one_offs: { year: 0, count: 0, this_month: 300, items: [{ id: 11, date: '2026-11-05', merchant: 'Sofa Shop', category: 'housing.furnishing', amount: 300 }] } } })
+    expect(await screen.findByText('November 2026 so far')).toBeInTheDocument()
+    expect(screen.getAllByText('so far this month')).toHaveLength(2)
+    expect(screen.queryByText(/of the last 12 months\./)).toBeNull()
+    expect(screen.getByText(/^Optional payments of €250 or more that no fund/)).toBeInTheDocument()
+  })
+
   it('says so when nothing looks like a leak', async () => {
-    show({ ...report, leaks: { while_over: { year: 0, this_month: 0, months: [], items: [] }, small_often: [], creeping: [], one_offs: { year: 0, items: [] } } })
+    show({ ...report, leaks: { while_over: { year: 0, this_month: 0, months: [], items: [] }, small_often: [], creeping: [], one_offs: { year: 0, count: 0, this_month: 0, items: [] } } })
     expect(await screen.findByText('No leak signals')).toBeInTheDocument()
     expect(screen.queryByText('Payday splurge')).toBeNull()
   })

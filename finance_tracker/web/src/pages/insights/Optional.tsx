@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -12,7 +12,7 @@ import { Card, Empty, ErrorBox, Loading } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { MerchantMark } from '../../components/MerchantLogo'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
-import { CuttingCard, JudgeCard } from './Judge'
+import { CuttingCard, JudgeCard, paceLine, yearRange } from './Judge'
 
 const ESSENTIAL = 'var(--s1)'
 const OPTIONAL = 'var(--s7)'
@@ -43,7 +43,7 @@ export function OptionalView() {
         <Leaks r={r} />
         <div className="px-1 text-xs text-muted">
           Optional means an expense no fixed line covers that you marked Optional in the <Link to="/ledger" className="text-accent">Ledger</Link> (swipe a row) — or, when you haven't marked it, one under a category not marked essential. Change which categories are essential in{' '}
-          <Link to="/settings/categories" className="text-accent">Settings → Categories</Link>. Yearly figures are estimates at the recent pace.
+          <Link to="/settings/categories" className="text-accent">Settings → Categories</Link>. “Last 12 months” is always the twelve complete months, {yearRange(r)}; this month is shown apart. Figures marked ≈ …/yr are estimates of a year at the recent pace.
         </div>
       </div>
     </div>
@@ -61,9 +61,10 @@ function Headline({ r }: { r: OptionalReport }) {
         </div>
       </Link>
       <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-        <div className="rounded-lg border border-line px-2.5 py-1.5"><div className="text-xs text-muted">Usual month</div><div className="font-semibold tnum">{eur(r.usual)}{r.usual > 0 && r.spent > 0 && <span className={clsx('pl-1.5 text-xs font-normal', vs > 0 ? 'text-warn' : 'text-muted')}>{vs > 0 ? `${pct(vs)} over so far` : 'not reached yet'}</span>}</div></div>
-        <div className="rounded-lg border border-line px-2.5 py-1.5"><div className="text-xs text-muted">Last 12 months</div><div className="font-semibold tnum">{eur0(r.year)}</div></div>
+        <div className="rounded-lg border border-line px-2.5 py-1.5"><div className="text-xs text-muted">Usual whole month</div><div className="font-semibold tnum">{eur(r.usual)}{r.usual > 0 && r.spent > 0 && <span className={clsx('pl-1.5 text-xs font-normal', vs > 0 ? 'text-warn' : 'text-muted')}>{vs > 0 ? `${pct(vs)} over so far` : `${pct(r.spent / r.usual)} of it so far`}</span>}</div></div>
+        <div className="rounded-lg border border-line px-2.5 py-1.5"><div className="text-xs text-muted">Last 12 months</div><div className="font-semibold tnum">{eur0(r.year)}<span className="pl-1.5 text-xs font-normal text-muted">{eur0(r.year / 12)} a month</span></div></div>
       </div>
+      <div className="mt-2 text-xs text-muted">Usual is the middle one of the last six whole months. Last 12 months is {yearRange(r)}, this month left out.</div>
     </Card>
   )
 }
@@ -99,7 +100,7 @@ function WhereItGoes({ r, from, to }: { r: OptionalReport; from: string; to: str
       <div className="divide-y divide-line border-t border-line">
         {r.categories.map((c) => (
           <LinkRow key={'c' + c.key} to={ledgerLink({ category: c.key, need: 'optional', from, to })} lead={<span className="h-2 w-2 rounded-full" style={{ background: OPTIONAL }} />}
-            label={cats.path(c.key)} sub={`${eur(c.usual)}/mo on average · ${eur(c.month)} this month`} value={eur0(c.year)} />
+            label={cats.path(c.key)} sub={paceLine(c)} value={eur0(c.year)} />
         ))}
       </div>
       {r.merchants.length > 0 && <>
@@ -107,7 +108,7 @@ function WhereItGoes({ r, from, to }: { r: OptionalReport; from: string; to: str
         <div className="divide-y divide-line">
           {r.merchants.map((m) => (
             <LinkRow key={'m' + m.key} to={ledgerLink({ merchant: m.key, need: 'optional', from, to })} lead={<MerchantMark merchant={m.key} size={28} />}
-              label={m.key} sub={`${m.count} payment${m.count === 1 ? '' : 's'} · ${eur(m.month)} this month`} value={eur0(m.year)} />
+              label={m.key} sub={paceLine(m)} value={eur0(m.year)} />
           ))}
         </div>
       </>}
@@ -120,17 +121,7 @@ function Leaks({ r }: { r: OptionalReport }) {
   const ninety = new Date(Date.now() - 90 * 86400000).toLocaleDateString('sv')
   const lastComplete = r.months[r.months.length - 2]?.month
   const cards: ReactNode[] = []
-  if (l.while_over.months.length) cards.push(
-    <Leak key="over" icon="alert" title="Spent after the money ran out" figure={eur0(l.while_over.year + l.while_over.this_month)} figureNote={`since ${monthLabel(r.months[0].month)}`}
-      why="Optional payments after the day a month had used up its free money — money that month didn't have. Costs paid from a fund don't count here, though each month's list in the Ledger shows them too.">
-      {/* Newest first; six months say enough. */}
-      {[...l.while_over.months].reverse().slice(0, 6).map((m) => (
-        <LinkRow key={m.month} to={ledgerLink({ need: 'optional', from: `${m.month}-${String(m.from).padStart(2, '0')}`, to: monthEnd(m.month) })}
-          label={monthLabel(m.month, true)} sub={`from the ${ordinal(m.from)}`} value={eur(m.amount)} />
-      ))}
-      {l.while_over.months.length > 6 && <div className="px-4 py-2 text-xs text-muted">and {l.while_over.months.length - 6} earlier month{l.while_over.months.length === 7 ? '' : 's'}</div>}
-      <Items items={l.while_over.items} />
-    </Leak>)
+  if (l.while_over.months.length) cards.push(<WhileOverCard key="over" r={r} />)
   if (l.small_often.length) cards.push(
     <Leak key="small" icon="coins" title="Small and often" figure={`≈ ${eur0(l.small_often.reduce((a, s) => a + s.yearly, 0))}/yr`}
       why="Under €15, six or more times in 90 days at one place. Each one is nothing; a year of them isn't.">
@@ -157,15 +148,15 @@ function Leaks({ r }: { r: OptionalReport }) {
         label="See the payments" value="" />
     </Leak>)
   if (l.one_offs.items.length) cards.push(
-    <Leak key="big" icon="bag" title="Big one-offs" figure={eur0(l.one_offs.year)} figureNote={`since ${monthLabel(r.months[0].month)}`}
-      why="Optional payments of €250 or more that no fund or trip covered — worth a second look before the next one.">
-      <Items items={l.one_offs.items} />
+    <Leak key="big" icon="bag" title="Big one-offs" {...yearOrMonth(l.one_offs.year, l.one_offs.this_month)}
+      why={`${l.one_offs.count > 0 ? `${l.one_offs.count} optional payment${l.one_offs.count === 1 ? '' : 's'} of €250 or more in the last 12 months` : 'Optional payments of €250 or more'} that no fund or trip covered${l.one_offs.count > 0 && l.one_offs.this_month > 0 ? `, and ${eur(l.one_offs.this_month)} more so far this month` : ''} — worth a second look before the next one.`}>
+      <Items items={l.one_offs.items} first={6} markOver />
     </Leak>)
   return (
     <div className="space-y-4">
       <div className="px-1">
         <div className="text-sm font-semibold">Possible leaks</div>
-        <div className="text-xs text-muted">Patterns that often mean money slipping away rather than buying a better life. Only you can say which is which.</div>
+        <div className="text-xs text-muted">Patterns that often mean money slipping away rather than buying a better life. Only you can say which is which. One payment can fit several patterns, so the cards overlap — don't add them up.</div>
       </div>
       {cards.length ? cards : <Card><Empty title="No leak signals" icon="check">Nothing here looks like money slipping away.</Empty></Card>}
     </div>
@@ -187,7 +178,7 @@ function LinkRow({ to, lead, label, sub, value }: { to: string; lead?: ReactNode
       {lead && <span className="grid w-7 shrink-0 place-items-center">{lead}</span>}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm">{label}</span>
-        {sub && <span className="block truncate text-xs text-muted">{sub}</span>}
+        {sub && <span className="block text-xs text-muted">{sub}</span>}
       </span>
       {value && <span className="shrink-0 tnum text-sm font-semibold">{value}</span>}
       <Icon name="chevronR" size={14} className="shrink-0 text-muted" />
@@ -195,18 +186,59 @@ function LinkRow({ to, lead, label, sub, value }: { to: string; lead?: ReactNode
   )
 }
 
-function Items({ items }: { items: OptTx[] }) {
+/** The month-by-month list adds up to the card's figure: every complete
+ *  month is there (four showing, the rest behind "Show all"), this month
+ *  apart at the top. */
+function WhileOverCard({ r }: { r: OptionalReport }) {
+  const w = r.leaks.while_over
+  const [all, setAll] = useState(false)
+  const row = (m: { month: string; from: number; amount: number }, label: string) => (
+    <LinkRow key={m.month} to={ledgerLink({ need: 'optional', from: `${m.month}-${String(m.from).padStart(2, '0')}`, to: monthEnd(m.month) })}
+      label={label} sub={`from the ${ordinal(m.from)}`} value={eur(m.amount)} />)
+  const now = w.months.find((m) => m.month === r.month)
+  const past = w.months.filter((m) => m.month !== r.month).reverse() // newest first
+  return (
+    <Leak icon="alert" title="Spent after the money ran out" {...yearOrMonth(w.year, w.this_month)}
+      why={`Optional payments after the day a month had used up its free money — money that month didn't have.${past.length ? ` That happened in ${past.length} of the last 12 months.` : ''} Costs paid from a fund don't count here, though each month's list in the Ledger shows them too.`}>
+      {now && row(now, `${monthLabel(now.month, true)} so far`)}
+      {(all ? past : past.slice(0, 4)).map((m) => row(m, monthLabel(m.month, true)))}
+      {past.length > 4 && <More all={all} set={setAll} label={`Show all ${past.length} months`} />}
+      {w.items.length > 0 && <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-muted">The biggest of them</div>}
+      <Items items={w.items} />
+    </Leak>
+  )
+}
+
+/** A leak card's headline: the twelve complete months, or — when only this
+ *  month has any — this month, so it never reads "€0" above a list. */
+const yearOrMonth = (year: number, thisMonth: number) =>
+  year > 0 || thisMonth <= 0 ? { figure: eur0(year), figureNote: 'last 12 months' } : { figure: eur0(thisMonth), figureNote: 'so far this month' }
+
+function More({ all, set, label }: { all: boolean; set: (v: boolean) => void; label: string }) {
+  return <button type="button" className="min-h-10 w-full px-4 py-2 text-center text-sm text-accent hover:bg-sunken/40" onClick={() => set(!all)}>{all ? 'Show fewer' : label}</button>
+}
+
+/** Single payments, each a link to itself in the Ledger. One without a
+ *  merchant goes by its note ("Family reunion dinner"), not just its
+ *  category. `markOver` says when a payment is also in the "after the money
+ *  ran out" card. */
+function Items({ items, first, markOver }: { items: OptTx[]; first?: number; markOver?: boolean }) {
   const cats = useCats()
-  return <>{items.map((t) => (
-    <div key={t.id} className="flex items-center gap-3 px-4 py-2">
-      <MerchantMark merchant={t.merchant} category={t.category} size={28} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{t.merchant || cats.name(t.category)}</span>
-        <span className="block truncate text-xs text-muted">{shortDate(t.date)} · {cats.path(t.category)}</span>
-      </span>
-      <span className="shrink-0 tnum text-sm">{eur(t.amount)}</span>
-    </div>
-  ))}</>
+  const [all, setAll] = useState(false)
+  const shown = first && !all ? items.slice(0, first) : items
+  return <>
+    {shown.map((t) => (
+      <Link key={t.id} to={ledgerLink({ need: 'optional', from: t.date, to: t.date, min: t.amount, max: t.amount })} className="flex items-center gap-3 px-4 py-2 hover:bg-sunken/40">
+        <MerchantMark merchant={t.merchant} category={t.category} size={28} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{t.merchant || t.note || cats.name(t.category)}</span>
+          <span className="block truncate text-xs text-muted">{shortDate(t.date)} · {cats.path(t.category)}{markOver && t.over && <span className="text-warn"> · after the money ran out</span>}</span>
+        </span>
+        <span className="shrink-0 tnum text-sm">{eur(t.amount)}</span>
+      </Link>
+    ))}
+    {first != null && items.length > first && <More all={all} set={setAll} label={`Show all ${items.length}`} />}
+  </>
 }
 
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`
