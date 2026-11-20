@@ -14,6 +14,7 @@ import (
 
 	"ft/internal/bank/openbanking"
 	"ft/internal/db"
+	"ft/internal/entry"
 	"ft/internal/ledger"
 	"ft/internal/money"
 	"ft/internal/wealth"
@@ -350,7 +351,7 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 			// The reservation is already in the ledger: settle that transaction
 			// with the bank's final amount instead of adding a second one.
 			if claimed != nil && claimed.State == "imported" && claimed.ImportedTxID > 0 {
-				settled, err := ledger.SettleReservation(tx, claimed.ImportedTxID, r.Amount, r.Date, r.ExternalID)
+				settled, err := entry.Settle(tx, claimed.ImportedTxID, r.Amount, r.Date, r.ExternalID)
 				if err != nil {
 					return 0, err
 				}
@@ -405,7 +406,7 @@ func (s *Service) stage(txs []openbanking.Transaction, a *BankAccount, from time
 		}
 		if h.State == "imported" && h.ImportedTxID > 0 {
 			// Added while reserved, never booked: take it back out.
-			if _, err := ledger.DropReservation(tx, h.ImportedTxID); err != nil {
+			if _, err := entry.Release(tx, h.ImportedTxID); err != nil {
 				return 0, err
 			}
 		}

@@ -124,6 +124,11 @@ export function Banks() {
                 </details>
               )
             })()}
+            {(conns ?? []).some((c) => /REDIRECT_URI_NOT_ALLOWED/i.test(c.last_error ?? '')) && <RedirectFix redirect={st?.redirect_url} />}
+            <details className="rounded-xl border border-line px-3 py-2 text-sm">
+              <summary className="cursor-pointer text-muted">Adding another bank (Revolut, …)</summary>
+              <AddBankGuide redirect={st?.redirect_url} />
+            </details>
             {!(conns ?? []).some((c) => c.status === 'authorized') && <div className="text-sm text-muted">No live connection — press Connect and approve access in your bank.</div>}
             <div className="text-xs text-muted">If the bank's redirect cannot reach this app (LAN or Tailscale), paste the address you landed on:</div>
             <div className="flex gap-2"><input className="input" placeholder="https://…?code=…&state=…" value={pasted} onChange={(e) => setPasted(e.target.value)} /><button className="btn-outline" onClick={finishPasted} disabled={!pasted}>Finish</button></div>
@@ -153,6 +158,33 @@ export function Banks() {
         )}
       </Card>
     </div>
+  )
+}
+
+// The redirect list lives at Enable Banking, not in this app: a bank refused
+// with REDIRECT_URI_NOT_ALLOWED (Revolut, twice) needs a change there.
+function RedirectFix({ redirect }: { redirect?: string }) {
+  return (
+    <div className="rounded-xl border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
+      <div className="font-medium">Enable Banking refused the redirect address</div>
+      <div className="mt-1 text-xs text-ink2">
+        That list is kept at Enable Banking, not here. Sign in at <b>enablebanking.com</b>, open your application, and add{' '}
+        <code className="rounded bg-sunken px-1 break-all">{redirect || '(the Redirect URL below)'}</code> to its allowed redirect URLs —
+        exactly, with <code>https</code>, the port and the last <code>/</code>. Then remove the failed attempt and press <b>Connect</b> again.
+      </div>
+    </div>
+  )
+}
+
+function AddBankGuide({ redirect }: { redirect?: string }) {
+  return (
+    <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-ink2">
+      <li>Press <b>Connect</b> above and pick the bank. It uses the same Enable Banking application — nothing new to set up here.</li>
+      <li>If the bank sends you back with <i>Redirect URI not allowed</i>, add{' '}
+        <code className="rounded bg-sunken px-1 break-all">{redirect || '(the Redirect URL below)'}</code> to the application's allowed redirect URLs at <b>enablebanking.com</b> (it must match exactly), then try again.</li>
+      <li>If Enable Banking still refuses the bank, your application may not have it enabled yet — its control panel or support says which banks it can reach.</li>
+      <li>Once approved, map the new bank account to its ledger account (e.g. Revolut). Its balance then comes from the bank on every sync.</li>
+    </ol>
   )
 }
 

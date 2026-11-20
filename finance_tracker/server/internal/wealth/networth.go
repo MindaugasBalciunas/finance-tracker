@@ -356,13 +356,16 @@ func MoveForTx(d interface {
 }
 
 // balanceMoves is what a transaction does to balances. Hand-entered rows
-// move both sides; a bank row only matters when it is a booked transfer
-// touching an account the bank doesn't sync (ApplyDelta never touches
-// synced ones — the bank states their balance on every sync). Imports and
-// split parts never move balances: a split carves the parent, whose own
-// amount plus its parts is what left the account.
+// move both sides; a bank row only matters when it is a transfer touching
+// an account the bank doesn't sync (ApplyDelta never touches synced ones —
+// the bank states their balance on every sync). That holds while it is
+// still reserved too: a Revolut top-up or a loan instalment the bank lists
+// as pending has already left, and waiting for the booking left Revolut
+// and the mortgage unchanged for good, since settling never moved them.
+// Imports and split parts never move balances: a split carves the parent,
+// whose own amount plus its parts is what left the account.
 func balanceMoves(t ledger.Tx) map[string]money.Cents {
-	if t.Source == "import" || t.SplitOf != 0 || (t.Source == "bank" && (t.Kind != "transfer" || t.Pending)) {
+	if t.Source == "import" || t.SplitOf != 0 || (t.Source == "bank" && t.Kind != "transfer") {
 		return nil
 	}
 	return TxDeltas(t.Kind, t.AccountID, t.ToAccountID, t.Amount)
@@ -421,6 +424,73 @@ func MoveForEdit(d interface {
 			}
 		}
 		if _, err := ApplyDelta(d, acct, date, now[acct]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// HoldsMoveSince is when bank reservations began moving balances (v2.85.0).
+// One added before it moved nothing, and the owner set those balances by
+// hand, so deleting, editing or releasing it must not take anything back.
+var HoldsMoveSince = "2026-11-21T00:00:00Z"
+
+// OldHold reports a reservation from before HoldsMoveSince.
+func OldHold(t ledger.Tx) bool {
+	return t.Source == "bank" && t.Pending && t.CreatedAt != "" && t.CreatedAt < HoldsMoveSince
+}
+
+// applyLatest moves an account on date, or on its latest recorded day when
+// that is later: a correction to money already counted (a release, a
+// booking for a different amount) must not vanish because the owner
+// recorded the account since — ApplyDelta skips any date before that.
+func applyLatest(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, account, date string, delta money.Cents) error {
+	var last string
+	d.QueryRow(`SELECT date FROM balances WHERE account_id=? ORDER BY date DESC LIMIT 1`, account).Scan(&last)
+	if last > date {
+		date = last
+	}
+	_, err := ApplyDelta(d, account, date, delta)
+	return err
+}
+
+// MoveForSettle moves balances for a reservation the bank booked, from cur
+// (pending) to next (booked): only by what the booking changed. The
+// reservation already moved them when it arrived; one from before that
+// rule moved nothing, and the owner set those balances by hand, so an
+// unchanged amount changes nothing either way.
+func MoveForSettle(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, cur, next ledger.Tx) error {
+	diff := map[string]money.Cents{}
+	for a, v := range balanceMoves(next) {
+		diff[a] += v
+	}
+	for a, v := range balanceMoves(cur) {
+		diff[a] -= v
+	}
+	for acct, delta := range diff {
+		if err := applyLatest(d, acct, next.Date, delta); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MoveForRelease gives back what a reservation the bank released had moved.
+func MoveForRelease(d interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+}, t ledger.Tx) error {
+	if OldHold(t) {
+		return nil
+	}
+	for acct, delta := range balanceMoves(t) {
+		if err := applyLatest(d, acct, t.Date, -delta); err != nil {
 			return err
 		}
 	}

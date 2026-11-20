@@ -445,3 +445,171 @@ func TestBookingSettlesReservationDespiteNewPayeeText(t *testing.T) {
 		t.Fatalf("split parts must still add up to the charge: parent %v total %v", parent.Amount, total)
 	}
 }
+
+// A top-up the bank lists as reserved has already left: the unsynced
+// account it went to (Revolut, the mortgage) moves at once. The booking
+// then moves it only by what changed, and a release gives it back. Settling
+// used to skip balances entirely, so the owner had to fix Revolut and the
+// mortgage by hand after every top-up and instalment.
+func TestReservedTransferMovesUnsyncedAccountOnce(t *testing.T) {
+	newHolds(t)
+	d, s, fb := setup(t)
+	Bal(t, d, "revolut", today(-5), 100)
+	revolut := func() money.Cents {
+		book, _ := wealth.LoadBook(d)
+		p, _ := book.At("revolut", "2099-12-31")
+		return p.Value
+	}
+	fb.pending["u1"] = []openbanking.Transaction{card("hold-a", "PDNG", today(-2), "40.00", "REVOLUT"), card("hold-b", "PDNG", today(-2), "25.00", "REVOLUT")}
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.ReservedAdded != 2 {
+		t.Fatalf("%+v", res)
+	}
+	txs, _ := ledger.All(d, ledger.Filter{})
+	for _, cur := range txs {
+		next := cur
+		next.Kind, next.Category, next.ToAccountID = "transfer", "transfer.internal", "revolut"
+		if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Update(tx, cur, &next) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := revolut(); got != E(165) {
+		t.Fatalf("reserved top-ups should reach Revolut at once: %v", got)
+	}
+	// €40 books unchanged, €25 is released.
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{card("book-a", "BOOK", today(-1), "40.00", "REVOLUT")}
+	res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	if res.Settled != 1 || res.Released != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if got := revolut(); got != E(140) {
+		t.Fatalf("booking must not count the top-up twice, release gives back: %v", got)
+	}
+}
+
+// A booking for a different amount moves the account by the difference.
+func TestSettledTransferMovesByTheDifference(t *testing.T) {
+	newHolds(t)
+	d, s, fb := setup(t)
+	Bal(t, d, "revolut", today(-5), 100)
+	fb.pending["u1"] = []openbanking.Transaction{card("hold-c", "PDNG", today(-2), "40.00", "REVOLUT")}
+	s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	txs, _ := ledger.All(d, ledger.Filter{})
+	next := txs[0]
+	next.Kind, next.Category, next.ToAccountID = "transfer", "transfer.internal", "revolut"
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Update(tx, txs[0], &next) }); err != nil {
+		t.Fatal(err)
+	}
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{card("book-c", "BOOK", today(-1), "40.20", "REVOLUT")}
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.Settled != 1 {
+		t.Fatalf("%+v", res)
+	}
+	book, _ := wealth.LoadBook(d)
+	if p, _ := book.At("revolut", "2099-12-31"); p.Value != E(140.20) {
+		t.Fatalf("Revolut should hold €140.20: %+v", p)
+	}
+}
+
+// A reservation added before reservations moved balances moved nothing,
+// and the owner set the balance by hand. Its booking must leave that alone.
+func TestSettlingAnOldReservationKeepsTheHandSetBalance(t *testing.T) {
+	d, s, fb := setup(t)
+	fb.pending["u1"] = []openbanking.Transaction{card("hold-d", "PDNG", today(-2), "110.00", "REVOLUT")}
+	s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	txs, _ := ledger.All(d, ledger.Filter{})
+	// As the old code left it: re-filed as a transfer straight in the table.
+	if _, err := d.Exec(`UPDATE transactions SET kind='transfer', category='transfer.internal', to_account_id='revolut' WHERE id=?`, txs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	Bal(t, d, "revolut", today(-2), 26.07)
+	fb.pending["u1"] = nil
+	fb.booked["u1"] = []openbanking.Transaction{card("book-d", "BOOK", today(-1), "110.00", "REVOLUT")}
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.Settled != 1 {
+		t.Fatalf("%+v", res)
+	}
+	book, _ := wealth.LoadBook(d)
+	if p, _ := book.At("revolut", "2099-12-31"); p.Value != E(26.07) {
+		t.Fatalf("the hand-set €26.07 must stay: %+v", p)
+	}
+}
+
+// newHolds runs a test as after HoldsMoveSince, whatever today's date.
+func newHolds(t *testing.T) {
+	old := wealth.HoldsMoveSince
+	wealth.HoldsMoveSince = "2000-01-01T00:00:00Z"
+	t.Cleanup(func() { wealth.HoldsMoveSince = old })
+}
+
+// heldTopUp syncs one €40 reservation and files it as a top-up to Revolut.
+func heldTopUp(t *testing.T, d *sql.DB, s *bank.Service, fb *fakeBank, ref string) ledger.Tx {
+	t.Helper()
+	fb.pending["u1"] = []openbanking.Transaction{card(ref, "PDNG", today(-3), "40.00", "REVOLUT")}
+	s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0)
+	txs, _ := ledger.All(d, ledger.Filter{})
+	next := txs[0]
+	next.Kind, next.Category, next.ToAccountID = "transfer", "transfer.internal", "revolut"
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Update(tx, txs[0], &next) }); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := ledger.Get(d, next.ID)
+	return got
+}
+
+func revolutNow(d *sql.DB) money.Cents {
+	book, _ := wealth.LoadBook(d)
+	p, _ := book.At("revolut", "2099-12-31")
+	return p.Value
+}
+
+// A release gives the money back even when Revolut was recorded after the
+// reservation's day — the reversal used to be skipped then.
+func TestReleaseAfterALaterBalanceGivesBack(t *testing.T) {
+	newHolds(t)
+	d, s, fb := setup(t)
+	Bal(t, d, "revolut", today(-5), 100)
+	heldTopUp(t, d, s, fb, "hold-r")
+	Bal(t, d, "revolut", today(-1), 130) // the owner records it later (€10 spent meanwhile)
+	fb.pending["u1"] = nil
+	if res, _ := s.SyncAll(context.Background(), openbanking.PSU{}, 7, 0); res.Released != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if got := revolutNow(d); got != E(90) {
+		t.Fatalf("the €40 never arrived: want €90, got %v", got)
+	}
+}
+
+// Deleting a reserved top-up gives back what it moved; deleting or editing
+// one from before reservations moved balances leaves the hand-set value.
+func TestDeletingHoldsNewAndOld(t *testing.T) {
+	newHolds(t)
+	d, s, fb := setup(t)
+	Bal(t, d, "revolut", today(-5), 100)
+	hold := heldTopUp(t, d, s, fb, "hold-x")
+	if got := revolutNow(d); got != E(140) {
+		t.Fatalf("reserved top-up: %v", got)
+	}
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Delete(tx, hold.ID) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := revolutNow(d); got != E(100) {
+		t.Fatalf("delete gives it back: %v", got)
+	}
+
+	old := heldTopUp(t, d, s, fb, "hold-y") // moves Revolut to €140
+	d.Exec(`UPDATE transactions SET created_at='2026-01-01T00:00:00Z' WHERE id=?`, old.ID)
+	wealth.HoldsMoveSince = "2026-11-21T00:00:00Z"
+	Bal(t, d, "revolut", today(0), 77) // the owner's own figure
+	old, _ = ledger.Get(d, old.ID)
+	next := old
+	next.Amount = E(45)
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Update(tx, old, &next) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := entry.Do(d, func(tx *sql.Tx) error { return entry.Delete(tx, old.ID) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := revolutNow(d); got != E(77) {
+		t.Fatalf("an old reservation must leave the hand-set €77: %v", got)
+	}
+}

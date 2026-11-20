@@ -8,6 +8,7 @@ package entry
 
 import (
 	"database/sql"
+	"errors"
 
 	"ft/internal/db"
 	"ft/internal/ledger"
@@ -67,6 +68,11 @@ func Update(tx *sql.Tx, cur ledger.Tx, next *ledger.Tx) error {
 	}
 	// A part counts on its own here, as when it is deleted: the parent holds
 	// only what the parts left, so a part's change is real money.
+	// A reservation from before they moved balances: the owner keeps those
+	// balances by hand, as before.
+	if wealth.OldHold(cur) {
+		return nil
+	}
 	was, now := cur, *next
 	if cur.SplitOf != 0 {
 		was.SplitOf, now.SplitOf = 0, 0
@@ -108,8 +114,55 @@ func Delete(tx *sql.Tx, id int64) error {
 	if err := ledger.Delete(tx, id); err != nil {
 		return err
 	}
+	if wealth.OldHold(cur) {
+		return nil // it never moved anything
+	}
 	_, err = wealth.MoveForTx(tx, cur, -1)
 	return err
+}
+
+// Settle books a reservation already in the ledger with the bank's final
+// amount, date and id, and moves balances by whatever the booking changed.
+// Reports false when there was no pending transaction to settle.
+func Settle(tx *sql.Tx, id int64, amount money.Cents, date, externalID string) (bool, error) {
+	cur, err := ledger.Get(tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil || !cur.Pending {
+		return false, err
+	}
+	ok, err := ledger.SettleReservation(tx, id, amount, date, externalID)
+	if err != nil || !ok {
+		return ok, err
+	}
+	next, err := ledger.Get(tx, id)
+	if err != nil {
+		return false, err
+	}
+	return true, wealth.MoveForSettle(tx, cur, next)
+}
+
+// Release takes out a reservation the bank dropped without booking it, and
+// gives back what it moved — the whole amount, parts included, as Delete.
+func Release(tx *sql.Tx, id int64) (bool, error) {
+	cur, err := ledger.Get(tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil || !cur.Pending {
+		return false, err
+	}
+	var parts int64
+	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM transactions WHERE split_of=?`, id).Scan(&parts); err != nil {
+		return false, err
+	}
+	cur.Amount += money.Cents(parts)
+	ok, err := ledger.DropReservation(tx, id)
+	if err != nil || !ok {
+		return ok, err
+	}
+	return true, wealth.MoveForRelease(tx, cur)
 }
 
 // returnToInbox handles a bank-sourced transaction the owner deleted. A booked

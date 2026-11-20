@@ -74,33 +74,36 @@ it('shows must or optional on each free expense and nothing on the rest', async 
   expect(screen.getAllByRole('button', { name: /Change$/ })).toHaveLength(2)
 })
 
-// A swipe to the left reveals Must / Optional; choosing one saves the mark,
-// the pill turns solid, and the list is asked again (so Insights and the
-// card follow). The swipe never opens the editor.
-it('marks a payment a must with a swipe', async () => {
+// One swipe marks it: right is Must, left Optional. The pill turns solid,
+// the list is asked again (so Insights and the card follow), and the swipe
+// never opens the editor. Swiping toward the mark a row already has clears it.
+it('marks a payment with one swipe and clears it the same way', async () => {
   const calls = setup()
   const row = (await screen.findByText('Bistro')).closest('[style*="touch-action"]')!
-  expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument()
-  swipe(row, [300, 100], [180, 104])
+  const before = calls.filter((c) => c.path === '/transactions').length
+  swipe(row, [100, 100], [220, 104])
   fireEvent.click(screen.getByText('Bistro')) // the click a swipe may still send
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  const before = calls.filter((c) => c.path === '/transactions').length
-  fireEvent.click(screen.getByRole('button', { name: 'Mark a must' }))
   await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/transactions/1/need', body: { need: 'must' } }))
   expect(await screen.findByRole('button', { name: 'Must. Change' })).toBeInTheDocument()
   await waitFor(() => expect(calls.filter((c) => c.path === '/transactions').length).toBeGreaterThan(before))
-  expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument() // closed again
+  expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument() // no tray left open
+
+  const lidl = screen.getByText('Lidl').closest('[style*="touch-action"]')!
+  swipe(lidl, [300, 100], [180, 100]) // left on a row already marked Optional
+  await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.path === '/transactions/2/need')).toMatchObject({ body: { need: '' } }))
 })
 
-// Scrolling the page over a row, or a short nudge, reveals nothing.
+// Scrolling the page over a row, or a short nudge, marks nothing.
 it('leaves vertical scrolling and small nudges alone', async () => {
-  setup()
+  const calls = setup()
   const row = (await screen.findByText('Bistro')).closest('[style*="touch-action"]')!
   swipe(row, [300, 100], [280, 220])
-  expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument()
-  swipe(row, [300, 100], [270, 100])
-  expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument()
-  swipe(row, [100, 100], [260, 100]) // to the right on a closed row
+  swipe(row, [300, 100], [276, 100])
+  swipe(row, [100, 100], [124, 100])
+  swipe(row, [100, 100], [200, 170]) // a slanted scroll, even a long one
+  await new Promise((r) => setTimeout(r, 50))
+  expect(calls.some((c) => c.method === 'PUT')).toBe(false)
   expect(screen.queryByRole('button', { name: 'Mark a must' })).not.toBeInTheDocument()
 })
 
