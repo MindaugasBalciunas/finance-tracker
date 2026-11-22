@@ -271,6 +271,14 @@ func (s *Server) insightRoutes() {
 		}
 		return insights.Pace(txs, time.Now()), nil
 	})
+	// The same pace with investing on top of spending (Spending → "with investments").
+	s.handle("GET /api/insights/pace-out", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(time.Now(), -7) + "-01"})
+		if err != nil {
+			return nil, err
+		}
+		return insights.PaceOut(txs, time.Now()), nil
+	})
 	s.handle("GET /api/insights/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-2, 0, 0).Format("2006-01-02")})
 		if err != nil {

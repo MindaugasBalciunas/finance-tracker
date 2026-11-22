@@ -6,7 +6,7 @@ import { api } from '../../lib/api'
 import { usePeriod } from '../../lib/hooks'
 import { catColor, catIcon, useCats } from '../../lib/categories'
 import { eur, eurk, pct, shortDate } from '../../lib/format'
-import type { Breakdown, Tx } from '../../lib/types'
+import type { Breakdown, OutPacePoint, PacePoint, Tx } from '../../lib/types'
 import { Card, Loading } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
@@ -34,7 +34,9 @@ export function Spending() {
         {PRESETS.map((p) => <button key={p.value} className={preset === p.value ? 'chip-on' : 'chip'} onClick={() => setPreset(p.value)}>{p.label}</button>)}
       </div>
       {/* The pace card is always about the month you're in: beside a past period it read as that period's. */}
-      {preset !== 'last_month' && preset !== 'last_year' && <PaceCard />}
+      {preset !== 'last_month' && preset !== 'last_year' && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PaceCard /><OutPaceCard /></div>
+      )}
       <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the period before</div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card pad={false} icon="bag" color="var(--s2)" title="By category" className="lg:col-span-2">
@@ -108,7 +110,7 @@ export function Spending() {
 }
 
 function PaceCard() {
-  const { data } = useQuery({ queryKey: ['pace'], queryFn: () => api.get<{ day: number; current?: number; last_month: number; typical: number }[]>('/insights/pace') })
+  const { data } = useQuery({ queryKey: ['pace'], queryFn: () => api.get<PacePoint[]>('/insights/pace') })
   if (!data) return null
   const today = data.filter((p) => p.current != null).pop()
   const ahead = today ? today.current! - today.typical : 0
@@ -129,6 +131,45 @@ function PaceCard() {
         </ResponsiveContainer>
       </div>
       <div className="mt-2"><Legend items={[{ color: 'var(--s1)', label: 'This month' }, { color: 'var(--s2)', label: 'Last month' }, { color: 'var(--s-other)', label: 'Typical (6-month avg)' }]} /></div>
+    </Card>
+  )
+}
+
+const PACE_LINES = [{ key: 'current', color: 'var(--s1)', label: 'This month' }, { key: 'last_month', color: 'var(--s2)', label: 'Last month' }, { key: 'typical', color: 'var(--s-other)', label: 'Typical (6-month avg)' }] as const
+
+/** The pace chart with everything that went out on purpose: spending plus
+ *  net investing (investments, pension, loan principal, assets; payouts back
+ *  to cash count against it). Same lines as the spending one, so they compare. */
+export function OutPaceCard() {
+  const { data } = useQuery({ queryKey: ['pace-out'], queryFn: () => api.get<OutPacePoint[]>('/insights/pace-out') })
+  if (!data) return null
+  const today = data.filter((p) => p.current != null).pop()
+  const invested = today?.current_invested ?? 0
+  return (
+    <Card title="This month so far, with investing" action={today && <span className="text-sm tnum text-muted"><b className="text-ink">{eur(today.current! - invested)}</b> spent · <b className="text-ink">{eur(invested)}</b> invested</span>}>
+      <div className="h-48">
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="day" {...axisProps} interval={4} />
+            <YAxis {...axisProps} tickFormatter={eurk} width={48} />
+            <Tooltip content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null
+              const p = payload[0].payload as OutPacePoint
+              const inv = { current: p.current_invested, last_month: p.last_month_invested, typical: p.typical_invested }
+              return <TooltipBox title={`Day ${label}`} rows={PACE_LINES.filter((l) => p[l.key] != null).flatMap((l) => [
+                { color: l.color, label: l.label, value: eur(p[l.key]!), bold: true },
+                { label: <span className="pl-3 text-muted">spent · invested</span>, value: <span className="text-muted">{eur(p[l.key]! - (inv[l.key] ?? 0))} · {eur(inv[l.key] ?? 0)}</span> },
+              ])} />
+            }} />
+            <Line dataKey="typical" name="Typical (6-month avg)" stroke="var(--s-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="last_month" name="Last month" stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="current" name="This month" stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2"><Legend items={PACE_LINES.map((l) => ({ color: l.color, label: l.label }))} /></div>
+      <div className="mt-1 text-xs text-muted">Spending plus what went into investments, pension and loan principal. Money taken back out counts against it.</div>
     </Card>
   )
 }

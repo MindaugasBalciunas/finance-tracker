@@ -421,6 +421,10 @@ export type CategoryStat = {
   top_merchant?: string; children?: CategoryStat[]
 }
 export type NamedCount = { name: string; category: string; amount: number; count: number }
+/** Cumulative spending by day of month (insights.PacePoint); current only up to today. */
+export type PacePoint = { day: number; current?: number; last_month: number; typical: number }
+/** Spending + net invested by day (insights.OutPacePoint); *_invested is the invested part of each line. */
+export type OutPacePoint = PacePoint & { current_invested?: number; last_month_invested: number; typical_invested: number }
 /** /insights/breakdown: where the money went over a window. */
 export type Breakdown = { from: string; to: string; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; tags: NamedCount[] }
 
