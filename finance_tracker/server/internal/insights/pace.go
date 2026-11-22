@@ -2,6 +2,8 @@ package insights
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"ft/internal/ledger"
@@ -109,5 +111,86 @@ func pace(txs []ledger.Tx, now time.Time, amt func(*ledger.Tx) money.Cents) []Pa
 		}
 		out = append(out, p)
 	}
+	return out
+}
+
+// IncomeUse is how this month's income was used so far: spent, invested
+// (by the wealth account it went into or came back out of) and what is
+// left. Income, spending and invested are the month's cash-flow figures,
+// so they match Cash flow; pay still due for the month (ExpectedSalary)
+// counts toward what's left, as Cash flow's lighter bars do.
+type IncomeUse struct {
+	Month          string       `json:"month"`
+	Income         money.Cents  `json:"income"`
+	ExpectedSalary money.Cents  `json:"expected_salary"`
+	Spent          money.Cents  `json:"spent"`
+	Invested       money.Cents  `json:"invested"`
+	PayrollPension money.Cents  `json:"payroll_pension"` // pension paid by payroll: never part of income, shown apart
+	Left           money.Cents  `json:"left"`
+	Into           []InvestedTo `json:"into"`
+}
+
+// InvestedTo is the month's net invested into one wealth account; negative
+// when more came back out of it than went in.
+type InvestedTo struct {
+	AccountID string      `json:"account_id"` // "" for a payout whose wealth account the bank row doesn't name
+	Name      string      `json:"name"`
+	Kind      string      `json:"kind"`
+	Amount    money.Cents `json:"amount"`
+}
+
+// MonthIncomeUse splits f (this month's cash flow, with ExpectedSalary
+// filled) by account. names maps account id → account for display.
+func MonthIncomeUse(f Flow, txs []ledger.Tx, names map[string]ledger.Account) IncomeUse {
+	out := IncomeUse{Month: f.Period, Income: f.Income, ExpectedSalary: f.ExpectedSalary, Spent: f.Spending, Invested: f.Invested,
+		PayrollPension: f.PayrollPension, Into: []InvestedTo{}}
+	out.Left = f.Income + f.ExpectedSalary - f.Spending - f.Invested
+	by := map[string]*InvestedTo{}
+	for i := range txs {
+		t := &txs[i]
+		if !strings.HasPrefix(t.Date, f.Period) {
+			continue
+		}
+		amt := investedAmount(t)
+		if amt == 0 {
+			continue
+		}
+		// Money in is credited to where it went; a payout to where it came from.
+		// A bank row may name no wealth account at all: money in and money
+		// out then stay apart, so neither hides inside the other.
+		id, kind := t.ToAccountID, t.ToKind
+		if amt < 0 {
+			id, kind = t.AccountID, t.FromKind
+		}
+		key := id
+		if id == "" {
+			key = fmt.Sprintf("|%t", amt > 0)
+		}
+		x := by[key]
+		if x == nil {
+			x = &InvestedTo{AccountID: id, Kind: kind, Name: names[id].Name}
+			switch {
+			case id == "" && amt > 0:
+				x.Name = "Not linked to an account"
+			case id == "":
+				x.Name = "Paid back out"
+			case x.Name == "":
+				x.Name = "Removed account" // rows kept after the account was deleted
+			}
+			by[key] = x
+		}
+		x.Amount += amt
+	}
+	for _, x := range by {
+		if x.Amount != 0 {
+			out.Into = append(out.Into, *x)
+		}
+	}
+	sort.Slice(out.Into, func(i, j int) bool {
+		if out.Into[i].Amount != out.Into[j].Amount {
+			return out.Into[i].Amount > out.Into[j].Amount
+		}
+		return out.Into[i].Name < out.Into[j].Name
+	})
 	return out
 }

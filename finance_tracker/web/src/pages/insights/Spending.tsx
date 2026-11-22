@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
-import { usePeriod } from '../../lib/hooks'
+import { usePaceOut, usePeriod } from '../../lib/hooks'
 import { catColor, catIcon, useCats } from '../../lib/categories'
-import { eur, eurk, pct, shortDate } from '../../lib/format'
+import { eur, eurk, monthLabel, pct, shortDate } from '../../lib/format'
+import { ledgerLink } from '../../lib/links'
 import type { Breakdown, OutPacePoint, PacePoint, Tx } from '../../lib/types'
 import { Card, Loading } from '../../components/ui'
 import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox } from '../../components/charts'
@@ -35,7 +36,10 @@ export function Spending() {
       </div>
       {/* The pace card is always about the month you're in: beside a past period it read as that period's. */}
       {preset !== 'last_month' && preset !== 'last_year' && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PaceCard /><OutPaceCard /></div>
+        <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PaceCard /><OutPaceCard /></div>
+          <IncomeUsedCard />
+        </>
       )}
       <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the period before</div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -131,6 +135,7 @@ function PaceCard() {
         </ResponsiveContainer>
       </div>
       <div className="mt-2"><Legend items={[{ color: 'var(--s1)', label: 'This month' }, { color: 'var(--s2)', label: 'Last month' }, { color: 'var(--s-other)', label: 'Typical (6-month avg)' }]} /></div>
+      <div className="mt-1 text-xs text-muted">Spending only, net of refunds, against the same day of last month and of a typical month.</div>
     </Card>
   )
 }
@@ -141,8 +146,9 @@ const PACE_LINES = [{ key: 'current', color: 'var(--s1)', label: 'This month' },
  *  net investing (investments, pension, loan principal, assets; payouts back
  *  to cash count against it). Same lines as the spending one, so they compare. */
 export function OutPaceCard() {
-  const { data } = useQuery({ queryKey: ['pace-out'], queryFn: () => api.get<OutPacePoint[]>('/insights/pace-out') })
-  if (!data) return null
+  const { data: res } = usePaceOut()
+  if (!res) return null
+  const data = res.points
   const today = data.filter((p) => p.current != null).pop()
   const invested = today?.current_invested ?? 0
   return (
@@ -170,6 +176,61 @@ export function OutPaceCard() {
       </div>
       <div className="mt-2"><Legend items={PACE_LINES.map((l) => ({ color: l.color, label: l.label }))} /></div>
       <div className="mt-1 text-xs text-muted">Spending plus what went into investments, pension and loan principal. Money taken back out counts against it.</div>
+    </Card>
+  )
+}
+
+/** What a wealth account's money is, beside its name. */
+const INTO_HINT: Record<string, string> = { loan: 'principal', pension: 'pension', brokerage: 'investing', crypto: 'crypto', property: 'asset', vehicle: 'asset' }
+
+/** How this month's income was used: spent, invested by account, left.
+ *  Its own card under the two charts: inside the investing chart it made
+ *  that card twice the height of its neighbour on desktop. */
+export function IncomeUsedCard() {
+  const { data } = usePaceOut()
+  if (!data) return null
+  const u = data.month
+  const income = u.income + u.expected_salary
+  const base = Math.max(income, u.spent + Math.max(u.invested, 0), 1)
+  const seg = (v: number) => `${(Math.max(v, 0) / base) * 100}%`
+  const row = 'flex items-baseline justify-between gap-3 py-1.5 text-sm'
+  const dot = (c: string) => <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: c }} />
+  return (
+    <Card icon="piggy" color="var(--s7)" title={`Where ${monthLabel(u.month)}'s income went`}>
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-sunken" aria-hidden>
+        <div style={{ width: seg(u.spent), background: 'var(--s4)' }} />
+        <div style={{ width: seg(u.invested), background: 'var(--s7)' }} />
+      </div>
+      {/* Phone: income, spent, invested, left. Desktop: invested in its own column. */}
+      <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 lg:gap-x-8">
+        <div className="divide-y divide-line">
+          <div className={row}>
+            <span>Income</span>
+            <span className="tnum text-right"><b>{eur(income)}</b>{u.expected_salary > 0 && <span className="block text-xs text-muted">incl. {eur(u.expected_salary)} still to come</span>}</span>
+          </div>
+          <a className={row} href={'#' + ledgerLink({ kind: 'expense', month: u.month })}>
+            <span className="flex items-center gap-2">{dot('var(--s4)')}Spent</span>
+            <b className="tnum">{eur(u.spent)}</b>
+          </a>
+        </div>
+        <div className="border-t border-line py-1.5 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:border-t-0">
+          <a className="flex items-baseline justify-between gap-3 text-sm" href={'#' + ledgerLink({ category: ['transfer.invest', 'transfer.pension', 'transfer.debt', 'transfer.asset'], month: u.month })}>
+            <span className="flex items-center gap-2">{dot('var(--s7)')}Invested</span>
+            <b className="tnum">{eur(u.invested)}</b>
+          </a>
+          {u.into.map((x) => {
+            const body = <><span className="min-w-0 truncate text-ink2">{x.name}{INTO_HINT[x.kind] ? <span className="text-muted"> · {INTO_HINT[x.kind]}</span> : null}</span><span className={clsx('tnum', x.amount < 0 && 'text-bad')}>{eur(x.amount)}</span></>
+            const cls = 'flex items-baseline justify-between gap-3 py-1 pl-4 text-sm'
+            return x.account_id ? <a key={x.account_id} className={cls} href={'#' + ledgerLink({ account: x.account_id, month: u.month })}>{body}</a> : <div key={x.name} className={cls}>{body}</div>
+          })}
+          {u.into.length === 0 && <div className="py-1 pl-4 text-sm text-muted">Nothing put away yet this month</div>}
+          {u.payroll_pension > 0 && <div className="flex items-baseline justify-between gap-3 py-1 pl-4 text-sm text-muted"><span>Pension via payroll · not from your pay</span><span className="tnum">{eur(u.payroll_pension)}</span></div>}
+        </div>
+        <div className={clsx(row, 'border-t border-line lg:col-start-1')}>
+          <span className="flex items-center gap-2">{dot('rgb(var(--sunken))')}{u.expected_salary > 0 ? 'Left, once the pay is in' : 'Left'}</span>
+          <b className={clsx('tnum', u.left < 0 && 'text-bad')}>{eur(u.left)}</b>
+        </div>
+      </div>
     </Card>
   )
 }

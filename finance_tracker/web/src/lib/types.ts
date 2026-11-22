@@ -425,6 +425,12 @@ export type NamedCount = { name: string; category: string; amount: number; count
 export type PacePoint = { day: number; current?: number; last_month: number; typical: number }
 /** Spending + net invested by day (insights.OutPacePoint); *_invested is the invested part of each line. */
 export type OutPacePoint = PacePoint & { current_invested?: number; last_month_invested: number; typical_invested: number }
+/** Net invested into one wealth account this month (insights.InvestedTo); negative when more came back out. */
+export type InvestedTo = { account_id: string; name: string; kind: string; amount: number }
+/** How this month's income was used so far (insights.IncomeUse); left counts pay still to come. */
+export type IncomeUse = { month: string; income: number; expected_salary: number; spent: number; invested: number; payroll_pension: number; left: number; into: InvestedTo[] }
+/** /insights/pace-out */
+export type PaceOut = { points: OutPacePoint[]; month: IncomeUse }
 /** /insights/breakdown: where the money went over a window. */
 export type Breakdown = { from: string; to: string; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; tags: NamedCount[] }
 

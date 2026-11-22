@@ -271,13 +271,32 @@ func (s *Server) insightRoutes() {
 		}
 		return insights.Pace(txs, time.Now()), nil
 	})
-	// The same pace with investing on top of spending (Spending → "with investments").
+	// The same pace with investing on top of spending (Spending → "with
+	// investing"), plus how this month's income was used, by account.
 	s.handle("GET /api/insights/pace-out", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(time.Now(), -7) + "-01"})
+		now := time.Now()
+		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(now, -7) + "-01"})
 		if err != nil {
 			return nil, err
 		}
-		return insights.PaceOut(txs, time.Now()), nil
+		cats, _ := ledger.CategoryMap(s.DB)
+		month := now.Format("2006-01")
+		flows := insights.CashFlowRange(txs, cats, "month", month+"-01", month+"-01", plan.LoadSettings(s.DB).Salary())
+		if len(flows) == 0 {
+			flows = []insights.Flow{{Period: month}}
+		}
+		if err := cfo.ExpectSalary(s.DB, flows, now); err != nil {
+			return nil, err
+		}
+		accts, err := ledger.ListAccounts(s.DB)
+		if err != nil {
+			return nil, err
+		}
+		names := map[string]ledger.Account{}
+		for _, a := range accts {
+			names[a.ID] = a
+		}
+		return map[string]any{"points": insights.PaceOut(txs, now), "month": insights.MonthIncomeUse(flows[0], txs, names)}, nil
 	})
 	s.handle("GET /api/insights/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-2, 0, 0).Format("2006-01-02")})

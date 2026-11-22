@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Query } from './api'
 import { byBank } from './brand'
-import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport } from './types'
+import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport, PaceOut } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
@@ -23,6 +23,8 @@ export const usePlan = (month: string) => useQuery({ queryKey: ['plan', month], 
 export const useInbox = (state = 'open') => useQuery({ queryKey: ['inbox', state], queryFn: () => api.get<InboxRow[]>('/bank/inbox', { state }) })
 export const useNetWorthHistory = (from: string, step = 'month', accounts = false) =>
   useQuery({ queryKey: ['nw-history', from, step, accounts], queryFn: () => api.get<Snapshot[]>('/networth/history', { from, step, accounts }) })
+/** Spending + investing pace and how this month's income was used (two Spending cards). */
+export const usePaceOut = () => useQuery({ queryKey: ['pace-out'], queryFn: () => api.get<PaceOut>('/insights/pace-out') })
 export const useCashflow = (from: string, to: string, granularity: 'month' | 'year') =>
   useQuery({ queryKey: ['cashflow', from, to, granularity], queryFn: () => api.get<Flow[]>('/insights/cashflow', { from, to, granularity }) })
 export const useMerchants = () =>
