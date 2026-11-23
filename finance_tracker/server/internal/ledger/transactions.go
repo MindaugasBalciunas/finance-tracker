@@ -302,11 +302,18 @@ func (f Filter) where() (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
+// refundSQL: an income row that is a refund (insights.IsRefund in SQL).
+const refundSQL = `(category = 'refunds' OR category LIKE 'refunds.%')`
+
 // ListResult is a page of transactions plus totals over the whole filter.
 type ListResult struct {
-	Items    []Tx        `json:"items"`
-	Total    int         `json:"total"`
+	Items []Tx `json:"items"`
+	Total int  `json:"total"`
+	// Income leaves refunds out: everywhere else they are money back on
+	// spending, not income (October read €244 more income in the Ledger than
+	// in Cash flow, Review and Plan). Refunds holds them.
 	Income   money.Cents `json:"income"`
+	Refunds  money.Cents `json:"refunds"`
 	Expense  money.Cents `json:"expense"`
 	Transfer money.Cents `json:"transfer"`
 }
@@ -315,10 +322,11 @@ func List(q querier, f Filter) (ListResult, error) {
 	where, args := f.where()
 	var res ListResult
 	err := q.QueryRow(`SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN kind='income' THEN amount END),0),
+		COALESCE(SUM(CASE WHEN kind='income' AND NOT `+refundSQL+` THEN amount END),0),
+		COALESCE(SUM(CASE WHEN kind='income' AND `+refundSQL+` THEN amount END),0),
 		COALESCE(SUM(CASE WHEN kind='expense' THEN amount END),0),
 		COALESCE(SUM(CASE WHEN kind='transfer' THEN amount END),0)
-		FROM transactions`+where, args...).Scan(&res.Total, &res.Income, &res.Expense, &res.Transfer)
+		FROM transactions`+where, args...).Scan(&res.Total, &res.Income, &res.Refunds, &res.Expense, &res.Transfer)
 	if err != nil {
 		return res, err
 	}

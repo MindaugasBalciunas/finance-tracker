@@ -67,9 +67,11 @@ function NotificationsPanel({ actions, isNew, onClose }: { actions: Action[]; is
   const nav = useNavigate()
   const go = (a: Action) => {
     onClose()
-    if (a.link === 'cash') {
-      nav('/')
-      // After Home renders (the panel is gone by then, so not an effect here).
+    // "cash" is what saved notifications from before the runbook moved to
+    // Plan → Cash still carry.
+    if (a.link === 'cash' || a.link === '/plan/cash') {
+      nav('/plan/cash')
+      // After the page renders (the panel is gone by then, so not an effect here).
       setTimeout(() => document.getElementById('cash')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400)
     } else if (a.link) nav(a.link)
   }

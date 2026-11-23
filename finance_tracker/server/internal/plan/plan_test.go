@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -604,5 +605,97 @@ func TestFixedExpenseLeavesPrincipalToSaving(t *testing.T) {
 	}
 	if left := r.IncomeActual - r.FixedExpense - r.SavedActual - r.DiscretionarySpent; left != E(3445.39) {
 		t.Errorf("left over %v", left)
+	}
+}
+
+// Pay on the 5th–10th counted in the month it arrives: the rule keeps its
+// payday (cash until payday needs it) but moves nothing to the month before.
+func TestSalaryInTheMonthItArrives(t *testing.T) {
+	rules := []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10, InMonth: true}}
+	sal := func(d string) *ledger.Tx { return &ledger.Tx{Date: d, Kind: "income", Category: "salary"} }
+	for in, want := range map[string]string{
+		"2026-10-01": "2026-09-30", // the old rule still counts early-October pay for September
+		"2026-11-05": "2026-11-05", // Vialet's first pay: November's
+		"2026-12-02": "2026-12-02", // even on the 2nd: in-month wins over the day
+	} {
+		if got := plan.FlowDate(sal(in), rules); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
+	}
+	if plan.MaxSalaryDays(rules) != 3 {
+		t.Error("no extra load window for in-month pay")
+	}
+	if got := plan.PaysFor("2026-12", rules); got != "2026-12" {
+		t.Errorf("December's pay is for %s", got)
+	}
+	at := func(d string) time.Time { x, _ := time.Parse("2006-01-02", d); return x }
+	if plan.SalaryDue("2026-11", rules) != "2026-11-30" || !plan.SalarySettled("2026-11", rules, at("2026-12-01")) {
+		t.Error("November closes with the month")
+	}
+}
+
+// The switch month says why it reads low; others say nothing.
+func TestSalaryChangeNote(t *testing.T) {
+	rules := []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10, InMonth: true}}
+	if n := plan.SalaryChangeNote("2026-10", rules); !strings.Contains(n, "from November pay counts in the month it arrives") {
+		t.Errorf("October: %q", n)
+	}
+	for _, m := range []string{"2026-09", "2026-11", "2026-12"} {
+		if n := plan.SalaryChangeNote(m, rules); n != "" {
+			t.Errorf("%s: %q", m, n)
+		}
+	}
+	if !plan.PayInMonth("2026-11", rules) || plan.PayInMonth("2026-10", rules) {
+		t.Error("PayInMonth")
+	}
+}
+
+// Pay counted in the month it arrives: once this month's pay is in, the
+// month is measured against it — the first, partial pay after a job change
+// left €6,050 "to spend" when €4,125 had come.
+func TestThisMonthUsesPayThatArrived(t *testing.T) {
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: E(10000), SalaryRules: []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10, InMonth: true}}}
+	setting := plan.LTNetSalary(E(10000), E(0))
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	// Before payday: the setting stands in.
+	if r := plan.Compute(nil, nil, "2026-11", now, s); r.IncomeBase != setting {
+		t.Errorf("no pay yet: %v", r.IncomeBase)
+	}
+	short := []ledger.Tx{tx("2026-11-05", "salary", 4125)}
+	if r := plan.Compute(nil, short, "2026-11", now, s); r.IncomeBase != E(4125) || r.IncomeBaseSource != "salary received this month" || r.IncomePlanned != setting {
+		t.Errorf("partial pay in: %v (%s)", r.IncomeBase, r.IncomeBaseSource)
+	}
+	// An advance under half the plan: the rest is still to come.
+	adv := []ledger.Tx{tx("2026-11-05", "salary", 1000)}
+	if r := plan.Compute(nil, adv, "2026-11", now, s); r.IncomeBase != setting {
+		t.Errorf("advance: %v", r.IncomeBase)
+	}
+	// The old rule (pay for the month before) keeps the setting this month.
+	old := plan.Settings{IncomeMode: "gross", GrossSalary: E(10000), SalaryRules: []plan.SalaryRule{{PaidByDay: 10}}}
+	if r := plan.Compute(nil, []ledger.Tx{tx("2026-11-15", "salary", 4125)}, "2026-11", now, old); r.IncomeBase != setting {
+		t.Errorf("earned-month rule: %v", r.IncomeBase)
+	}
+	if r := plan.Compute(nil, nil, "2026-10", now, s); r.SalaryNote == "" {
+		t.Error("October carries the change note")
+	}
+}
+
+// "New job" dates the rule today: a rule starting mid-month still covers
+// that month's first pay, and the note lands on the month before.
+func TestInMonthRuleStartingMidMonth(t *testing.T) {
+	rules := []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-05", PaidByDay: 10, InMonth: true}}
+	if !plan.PayInMonth("2026-11", rules) || plan.PayInMonth("2026-10", rules) {
+		t.Error("PayInMonth by the rule at month end")
+	}
+	if n := plan.SalaryChangeNote("2026-10", rules); !strings.Contains(n, "from November") {
+		t.Errorf("October: %q", n)
+	}
+	if n := plan.SalaryChangeNote("2026-11", rules); n != "" {
+		t.Errorf("November: %q", n)
+	}
+	s := plan.Settings{IncomeMode: "gross", GrossSalary: E(10000), SalaryRules: rules}
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	if r := plan.Compute(nil, []ledger.Tx{tx("2026-11-05", "salary", 4125)}, "2026-11", now, s); r.IncomeBase != E(4125) {
+		t.Errorf("first pay of a mid-month rule: %v", r.IncomeBase)
 	}
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Query } from './api'
 import { byBank } from './brand'
-import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport, PaceOut } from './types'
+import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport, PaceOut, CashCalendar } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
@@ -24,7 +24,9 @@ export const useInbox = (state = 'open') => useQuery({ queryKey: ['inbox', state
 export const useNetWorthHistory = (from: string, step = 'month', accounts = false) =>
   useQuery({ queryKey: ['nw-history', from, step, accounts], queryFn: () => api.get<Snapshot[]>('/networth/history', { from, step, accounts }) })
 /** Spending + investing pace and how this month's income was used (two Spending cards). */
-export const usePaceOut = () => useQuery({ queryKey: ['pace-out'], queryFn: () => api.get<PaceOut>('/insights/pace-out') })
+/** Spending with investing, day by day, and where the month's income went:
+ *  this month (no month) or a finished one (YYYY-MM). */
+export const usePaceOut = (month?: string) => useQuery({ queryKey: ['pace-out', month ?? 'now'], queryFn: () => api.get<PaceOut>('/insights/pace-out', month ? { month } : undefined) })
 export const useCashflow = (from: string, to: string, granularity: 'month' | 'year') =>
   useQuery({ queryKey: ['cashflow', from, to, granularity], queryFn: () => api.get<Flow[]>('/insights/cashflow', { from, to, granularity }) })
 export const useMerchants = () =>
@@ -36,6 +38,11 @@ export const useMerchantInsights = (preset: string) =>
 export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[]; history_hidden?: string[]; usage_off?: boolean }
 
 /** View choices stored on the server so they follow the owner across devices. */
+/** The next 60 days of cash, day by day — Plan → Cash and Home's payday strip. */
+export function useCashCalendar() {
+  return useQuery({ queryKey: ['calendar'], queryFn: () => api.get<CashCalendar>('/plan/calendar?days=60') })
+}
+
 export function usePrefs() {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['prefs'], queryFn: () => api.get<Prefs>('/prefs'), staleTime: Infinity })

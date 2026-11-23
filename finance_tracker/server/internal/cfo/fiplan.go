@@ -188,10 +188,10 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 	targetAge := settings.TargetAge
 	if targetAge <= 0 {
 		targetAge = 60
-		p.Notes = append(p.Notes, "No target age set — coast is measured to age 60 (Plan → Income & goals).")
+		p.Notes = append(p.Notes, "No target age set — coast is measured to age 60 (Wealth → Independence).")
 	}
 	if settings.BirthYear <= 0 {
-		p.Coast = Coast{Age: targetAge, Detail: "Set your birth year in Plan → Income & goals to see when you could stop adding money."}
+		p.Coast = Coast{Age: targetAge, Detail: "Set your birth year in Wealth → Independence to see when you could stop adding money."}
 	} else {
 		toAge := func(a int) int { return (settings.BirthYear+a-now.Year())*12 - int(now.Month()) + 12 }
 		c := Coast{Age: targetAge}

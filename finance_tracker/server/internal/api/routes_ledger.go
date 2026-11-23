@@ -53,7 +53,7 @@ func (s *Server) ledgerRoutes() {
 		// salary=month: a salary counts in the month it pays for, as in cash flow.
 		if r.URL.Query().Get("salary") == "month" {
 			for _, w := range plan.LoadSettings(s.DB).Salary() {
-				f.Salary = append(f.Salary, ledger.SalaryWindow{From: w.From, By: w.PaidByDay})
+				f.Salary = append(f.Salary, ledger.SalaryWindow{From: w.From, By: w.Shift()})
 			}
 		}
 		// The essential/optional split is of free spending: what the fixed

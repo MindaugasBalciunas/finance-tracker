@@ -296,9 +296,16 @@ func buildCashPlan(d *sql.DB, txs []ledger.Tx, p *PlanPulse, fixedCats [][]strin
 		}
 	}
 	// 3. Day-to-day spending at the plan's daily allowance, from the account
-	// most of it comes from.
-	if p.PerDayLeft > 0 && everyday(cp.DailyAccount) {
-		cp.Daily = p.PerDayLeft
+	// most of it comes from. A month already over budget has no allowance
+	// left, but you still eat until payday: plan cash with your usual day
+	// then. Planning €0 a day (November's short first pay after a job change)
+	// made the top-ups too small, while the 60-day calendar spent €54 a day.
+	daily := p.PerDayLeft
+	if daily <= 0 {
+		daily = p.TypicalDay
+	}
+	if daily > 0 && everyday(cp.DailyAccount) {
+		cp.Daily = daily
 	}
 
 	var spentToday money.Cents

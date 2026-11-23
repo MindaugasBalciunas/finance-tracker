@@ -375,7 +375,9 @@ func buildOverview(d *sql.DB, now time.Time, inboxOpen int, month **plan.Report)
 		o.Plan.Unreviewed, o.Plan.UnreviewedCount = r.Unreviewed, r.UnreviewedCount
 		o.Plan.Free = *r.Free
 		o.Plan.FreeMoney = r.FreeMoney
-		o.Plan.FreePlanned = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions
+		// The plan's usual month (its income setting), not this month's: a
+		// short first pay after a job change made "the plan leaves −€477".
+		o.Plan.FreePlanned = r.IncomePlanned - r.FixedPlanned - r.SavingPlanned - r.FundContributions
 		o.Plan.fillDaily(r.FreeSpentByMonth, r.EverydayByDay, now)
 		o.Plan.fillTimeline(r.FreeSpentByDay, r.EverydayByDay, now)
 		for _, l := range r.Lines {

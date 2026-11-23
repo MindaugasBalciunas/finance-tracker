@@ -68,7 +68,22 @@ await b.close()
 
 Routes use the hash (`#/plan`, `#/settings/data`). Read the screenshots; check paddings, sheet footers, tab bars, numbers not truncated, no horizontal scroll, no console errors. Exercise the flow you changed (open the sheet, save a transaction) with `p.click`/`p.fill`, not just the landing view.
 
-## 5. Clean up
+## 5. Regression against the raw data (before every release)
+
+Two scripts in `scripts/` check everything, not just what changed:
+
+```bash
+python3 plugins/ft-dev/skills/ft-live-verify/scripts/regress_raw.py --db $S/finance-v2.db --api http://127.0.0.1:8091/api
+cp plugins/ft-dev/skills/ft-live-verify/scripts/ui_regress.mjs $S/ && (cd $S && node ui_regress.mjs http://127.0.0.1:5185 http://127.0.0.1:8091/api $S/ui)
+```
+
+- `regress_raw.py` recomputes income, spending, refunds, invested, essentials, net worth, the 12-month averages, the emergency fund, the calendar and the forecast from the raw tables, using rules written there from their meaning, not the app's code. It compares them with every view (Cash flow, Review, Year, Plan, Ledger, Spending cards, Home, Summary) for all months. About 1,700 checks.
+- `ui_regress.mjs` opens every page at 390px and 1440px, light and dark. It fails on console errors, NaN, sideways scroll, a missing page header, a sub-view row that isn't the shared control, and headline figures that differ from the API.
+- A salary-rule change: run both on two copies, one per setting ("month it arrives" / "month before").
+- If a check fails, decide whether the app or the rule in the script is wrong, and fix that one. Never loosen a check to make it pass.
+- Then read the screenshots in `$S/ui` of what changed, including each chart at today (bar vs its label, line vs its legend).
+
+## 6. Clean up
 
 ```bash
 for p in 8091 5185; do kill $(lsof -t -iTCP:$p -sTCP:LISTEN) 2>/dev/null; done

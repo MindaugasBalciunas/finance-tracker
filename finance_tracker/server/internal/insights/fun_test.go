@@ -1,6 +1,7 @@
 package insights_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -199,4 +200,25 @@ func TestFunFactsWindowCountsLikeTheMonthReview(t *testing.T) {
 			t.Errorf("employers in September %q", f.Detail)
 		}
 	}
+}
+
+// Who paid you the most shows the top six and always the current employer,
+// even when a new job's first partial pay ranks lower.
+func TestFunFactsShowCurrentEmployer(t *testing.T) {
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	var txs []ledger.Tx
+	for i, name := range []string{"A", "B", "C", "D", "E", "F"} {
+		txs = append(txs, ledger.Tx{Date: fmt.Sprintf("20%02d-03-10", 10+i), Kind: "income", Category: "salary", Merchant: name, Amount: money.FromFloat(float64(10000 * (i + 1)))})
+	}
+	txs = append(txs, ledger.Tx{Date: "2026-11-05", Kind: "income", Category: "salary", Merchant: "Vialet", Amount: money.FromFloat(4125)})
+	for _, f := range insights.FunFacts(txs, nil, now, "", "", nil) {
+		if f.Key != "employers" {
+			continue
+		}
+		if len(f.Items) != 7 || f.Items[6].Label != "Vialet" {
+			t.Fatalf("items %+v", f.Items)
+		}
+		return
+	}
+	t.Fatal("no employers fact")
 }

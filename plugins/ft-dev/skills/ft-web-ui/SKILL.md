@@ -5,6 +5,8 @@ description: Front-end conventions for finance-tracker/web — api wrapper and T
 
 # Web UI conventions
 
+**Read `docs/design-system.md` first:** what each section is for, page anatomy (header, tabs, `SubNav`, filters), which control for which job, colour, numbers, charts and copy. Product decisions behind it are in `docs/decisions.md`; add one when you make a choice a later refactor would re-argue. `src/test/design-rules.test.ts` enforces the hard rules.
+
 The owner uses the app mostly on a phone, in Firefox, as an installed PWA. Daily transaction entry is the most-used path and must stay fast and logical.
 
 ## Data

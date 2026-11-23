@@ -264,24 +264,38 @@ func (s *Server) insightRoutes() {
 	s.handle("GET /api/checks", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		return cfo.Checks(s.DB, time.Now()), nil
 	})
+	// ?month=YYYY-MM shows a finished month the same way (the whole month
+	// against the one before it and the six before that), so "Last month"
+	// on Spending has the same cards as "This month". Default: this month.
 	s.handle("GET /api/insights/pace", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(time.Now(), -7) + "-01"})
+		at, err := paceAt(r.URL.Query().Get("month"), time.Now())
 		if err != nil {
 			return nil, err
 		}
-		return insights.Pace(txs, time.Now()), nil
+		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(at, -7) + "-01", To: at.Format("2006-01-02")})
+		if err != nil {
+			return nil, err
+		}
+		return insights.Pace(txs, at), nil
 	})
 	// The same pace with investing on top of spending (Spending → "with
-	// investing"), plus how this month's income was used, by account.
+	// investing"), plus how the month's income was used, by account.
 	s.handle("GET /api/insights/pace-out", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		now := time.Now()
-		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(now, -7) + "-01"})
+		at, err := paceAt(r.URL.Query().Get("month"), now)
+		if err != nil {
+			return nil, err
+		}
+		salary := plan.LoadSettings(s.DB).Salary()
+		// Salary paid early next month may still count for this one.
+		to := at.AddDate(0, 0, plan.MaxSalaryDays(salary)).Format("2006-01-02")
+		txs, err := ledger.All(s.DB, ledger.Filter{From: ledger.AddMonths(at, -7) + "-01", To: to})
 		if err != nil {
 			return nil, err
 		}
 		cats, _ := ledger.CategoryMap(s.DB)
-		month := now.Format("2006-01")
-		flows := insights.CashFlowRange(txs, cats, "month", month+"-01", month+"-01", plan.LoadSettings(s.DB).Salary())
+		month := at.Format("2006-01")
+		flows := insights.CashFlowRange(txs, cats, "month", month+"-01", month+"-01", salary)
 		if len(flows) == 0 {
 			flows = []insights.Flow{{Period: month}}
 		}
@@ -296,7 +310,13 @@ func (s *Server) insightRoutes() {
 		for _, a := range accts {
 			names[a.ID] = a
 		}
-		return map[string]any{"points": insights.PaceOut(txs, now), "month": insights.MonthIncomeUse(flows[0], txs, names)}, nil
+		upto := make([]ledger.Tx, 0, len(txs))
+		for _, t := range txs {
+			if t.Date <= at.Format("2006-01-02") {
+				upto = append(upto, t)
+			}
+		}
+		return map[string]any{"points": insights.PaceOut(upto, at), "month": insights.MonthIncomeUse(flows[0], txs, names)}, nil
 	})
 	s.handle("GET /api/insights/recurring", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		txs, err := ledger.All(s.DB, ledger.Filter{From: time.Now().AddDate(-2, 0, 0).Format("2006-01-02")})
@@ -375,4 +395,17 @@ func (s *Server) insightRoutes() {
 		}
 		return s.yearReview(year)
 	})
+}
+
+// paceAt is the day the pace charts run to: today for this month (or no
+// month given), the last day of a finished month. A month ahead is refused.
+func paceAt(month string, now time.Time) (time.Time, error) {
+	if month == "" || month == now.Format("2006-01") {
+		return now, nil
+	}
+	t, err := time.Parse("2006-01", month)
+	if err != nil || month > now.Format("2006-01") {
+		return now, bad("month must be YYYY-MM, this month or earlier")
+	}
+	return t.AddDate(0, 1, -1), nil
 }

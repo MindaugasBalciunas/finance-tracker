@@ -13,6 +13,7 @@ The owner's rules:
 ## 1. Gate
 
 - `make test` (repo root) green.
+- **Raw-data regression** on a probe copy (`ft-live-verify` → Regression): `regress_raw.py` and `ui_regress.mjs` both 0 failed. For a change to salary rules, run it under both salary settings.
 - UI change: live check in Firefox at 390px + desktop (`ft-live-verify`).
 - Schema change: backup round-trip (`ft-migration`).
 - Security pass (`ft-security` → "Release security pass"): `govulncheck`, `npm audit`.
@@ -21,6 +22,8 @@ The owner's rules:
 ## 2. Version
 
 `finance_tracker/config.yaml` → `version: "X.Y.Z"` is the release version (CI tags the image from it; the server gets it via `-X main.version`). `fix` → patch, `feat` → minor, breaking data/rollback change → discuss first. `web/package.json`'s version is not used for releases.
+
+**Changelog:** add the version's entry at the top of `finance_tracker/CHANGELOG.md` in the same commit. Home Assistant shows that file on the add-on's Changelog tab and in the update notice, so it is what the owner reads before updating. Write it in user terms, grouped by page: what changed, and anything to do after updating (a setting to choose, a bank to reconnect). Since 2.88.0.
 
 ## 3. Commit
 

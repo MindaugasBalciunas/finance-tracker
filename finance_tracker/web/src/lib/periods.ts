@@ -10,7 +10,8 @@ export function rangeFrom(r: string) {
   if (r === 'ytd') return `${d.getFullYear() - 1}-12-31`
   if (r.endsWith('m')) d.setMonth(d.getMonth() - Number(r.slice(0, -1)))
   else d.setFullYear(d.getFullYear() - Number(r.slice(0, -1)))
-  return d.toISOString().slice(0, 10)
+  // Local day: toISOString is UTC, a day early in the first hours after midnight here.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 /** Daily points up to a year (exact highs and lows), weekly for 3Y, monthly
  *  beyond. Every series ends on today, so a fresh balance shows at once. */

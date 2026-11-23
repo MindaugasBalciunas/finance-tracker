@@ -52,8 +52,15 @@ function SalaryTimeline({ v, setS }: { v: Settings; setS: (s: Settings) => void 
   )
 }
 
-/** Plan → Income & goals: the income base, salary timing and FI inputs. */
-export function PlanSettings() {
+// A rule counts pay in the month it arrives when it says so, or when it has
+// no payday (the old way to say it).
+const inMonth = (r: SalaryRule) => !!r.in_month || r.paid_by_day <= 0
+const ord = (n: number) => (n === 1 || n === 21 ? 'st' : n === 2 || n === 22 ? 'nd' : n === 3 || n === 23 ? 'rd' : 'th')
+
+/** The plan's settings form, split where it is used: Plan → Income holds the
+ *  income base and salary timing, Wealth → Independence the FI inputs. Both
+ *  save the same settings. */
+export function PlanSettings({ section }: { section: 'income' | 'fi' }) {
   const { data, isLoading } = useQuery({ queryKey: ['plan-settings'], queryFn: () => api.get<{ settings: Settings; net_from_gross: number }>('/plan/settings') })
   const [s, setS] = useState<Settings | null>(null)
   const refresh = useRefresh()
@@ -73,7 +80,10 @@ export function PlanSettings() {
   const sorted = [...rules].map((r, i) => ({ ...r, i })).sort((a, b) => a.from.localeCompare(b.from))
   const num = (k: keyof Settings) => (n: number | undefined) => setS({ ...v, [k]: n ?? 0 })
   return (
-    <div className="max-w-xl space-y-4">
+    // Wide screens: income and salary timing side by side, not one narrow
+    // column with half the page empty.
+    <div className="space-y-4">
+      {section === 'income' && <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
       <Card title="Income base">
         <div className="space-y-3">
           <Segmented value={v.income_mode || 'median'} onChange={(m) => setS({ ...v, income_mode: m })}
@@ -89,8 +99,11 @@ export function PlanSettings() {
           {(!v.income_mode || v.income_mode === 'median') && <div className="text-xs text-muted">Median of the last 12 complete months of income.</div>}
         </div>
       </Card>
-      <Card title="Salary timing" action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setRules([...rules, { from: todayISO(), paid_by_day: 10 }])}><Icon name="plus" size={14} />New job</button>}>
-        <div className="mb-3 text-xs text-muted">If your salary for a month arrives early the next month, count it in the month it pays for — otherwise one month looks like you saved nothing and the next like you saved everything. Add a rule when the pay schedule changes (a new job).</div>
+      <Card title="Salary timing" action={<button className="btn-ghost h-8 px-2 text-xs" onClick={() => setRules([...rules, { from: todayISO(), paid_by_day: 10, in_month: true }])}><Icon name="plus" size={14} />New job</button>}>
+        <div className="mb-3 space-y-1 text-xs text-muted">
+          <p>Which month a salary counts in. <b className="text-ink2">Month it arrives</b> keeps every month as the bank shows it: the pay and the saving and investing you do from it land in the same month — best when payday is a few days into the month (the 5th–10th).</p>
+          <p><b className="text-ink2">Month before</b> suits month-end payroll that sometimes lands on the 1st–3rd: without it one month gets two salaries and the next none. Add a rule when the pay schedule changes (a new job).</p>
+        </div>
         <Field label="Paid into" hint="Where salary lands — Cash until payday counts it there. Empty = the account the last salary went to.">
           <AccountSelect value={v.salary_account ?? ''} onChange={(id) => setS({ ...v, salary_account: id })} kinds={SPEND_KINDS} placeholder="Automatic (last salary's account)" />
         </Field>
@@ -102,22 +115,27 @@ export function PlanSettings() {
                   {n === 0 && !r.from ? <div className="input flex items-center text-muted">the beginning</div>
                     : <DateInput value={r.from} onChange={(v) => setRules(rules.map((x, j) => (j === r.i ? { ...x, from: v } : x)))} />}
                 </Field>
-                <Field label="Counts for last month if paid by day">
-                  <NumberInput integer className="input w-24 tnum" value={r.paid_by_day} onChange={(d) => setRules(rules.map((x, j) => (j === r.i ? { ...x, paid_by_day: Math.max(0, Math.min(15, d ?? 0)) } : x)))} />
+                <Field label="Count pay in">
+                  <Segmented value={inMonth(r) ? 'arrives' : 'before'} onChange={(m) => setRules(rules.map((x, j) => (j === r.i ? { ...x, in_month: m === 'arrives', paid_by_day: x.paid_by_day || (m === 'arrives' ? 10 : 3) } : x)))}
+                    options={[{ value: 'arrives', label: 'Month it arrives' }, { value: 'before', label: 'Month before' }]} />
+                </Field>
+                <Field label={inMonth(r) ? 'Payday, by day' : 'If paid by day'}>
+                  <NumberInput integer className="input w-20 tnum" value={r.paid_by_day || undefined} onChange={(d) => setRules(rules.map((x, j) => (j === r.i ? { ...x, paid_by_day: Math.max(inMonth(x) ? 0 : 1, Math.min(15, d ?? 0)) } : x)))} />
                 </Field>
                 {rules.length > 1 && <button className="btn-ghost h-10 w-10 px-0 text-muted hover:text-bad" onClick={() => setRules(rules.filter((_, j) => j !== r.i))} aria-label="Remove rule"><Icon name="trash" size={16} /></button>}
               </div>
               <div className="mt-2 text-xs text-ink2">
-                {r.paid_by_day > 0
-                  ? <>A salary paid on the 1st–{r.paid_by_day}{r.paid_by_day === 1 ? 'st' : r.paid_by_day === 2 ? 'nd' : r.paid_by_day === 3 ? 'rd' : 'th'} counts for the previous month{r.from ? ` (payments from ${shortDate(r.from)})` : ''}.</>
-                  : <>Salary counts in the month it arrives{r.from ? ` (from ${shortDate(r.from)})` : ''}.</>}
+                {!inMonth(r)
+                  ? <>A salary paid on the 1st–{r.paid_by_day}{ord(r.paid_by_day)} counts for the previous month{r.from ? ` (payments from ${shortDate(r.from)})` : ''}.</>
+                  : <>Salary counts in the month it arrives{r.from ? ` (from ${shortDate(r.from)})` : ''}{r.paid_by_day > 0 ? <>; payday is expected by the {r.paid_by_day}{ord(r.paid_by_day)}, for cash until payday</> : '; set the payday to plan cash until it'}.</>}
               </div>
             </div>
           ))}
         </div>
       </Card>
-      <Card title="Financial independence">
-        <div className="grid grid-cols-2 gap-3">
+      </div>}
+      {section === 'fi' && <Card title="Your independence inputs">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Field label="Birth year"><NumberInput value={v.birth_year || undefined} onChange={num('birth_year')} /></Field>
           <Field label="Target age"><NumberInput value={v.target_age || undefined} onChange={num('target_age')} /></Field>
           <Field label="Spending in FI €/month" hint="Empty = last 12 months"><NumberInput value={v.fi_monthly_spend || undefined} onChange={num('fi_monthly_spend')} /></Field>
@@ -126,7 +144,7 @@ export function PlanSettings() {
           <Field label="Emergency fund (months)"><NumberInput value={v.emergency_months || undefined} onChange={num('emergency_months')} /></Field>
         </div>
         <div className="mt-3"><Toggle checked={!v.emergency_exclude_cash} onChange={(on) => setS({ ...v, emergency_exclude_cash: !on })} label="Count the Cash account (notes and coins) in the emergency fund" /></div>
-      </Card>
+      </Card>}
       <button className="btn-primary" onClick={save}>Save</button>
       <div className="text-xs text-muted">Savings rate = (income − spending) ÷ income; mortgage principal counts as saving, interest as spending.</div>
     </div>

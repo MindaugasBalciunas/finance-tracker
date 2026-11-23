@@ -163,6 +163,15 @@ func CashFlowCalendar(d *sql.DB, now time.Time, days int) (*CashCalendar, error)
 	daily := max(0, f.Assumed.Everyday-smallBills) * 10 / 304 // a month is 30.4 days
 	cal := &CashCalendar{Start: f.Cash, Floor: f.Floor, Daily: daily, Days: []CalDay{}, Low: f.Cash, LowDate: today.Format("2006-01-02")}
 	bal := f.Cash
+	// Already under the floor (or below zero) today: say so from today, not
+	// from tomorrow, the first day the calendar lists (€8,956 against a
+	// €9,038 floor read "under your floor from Tue 24 Nov" on the 23rd).
+	if f.Cash < f.Floor {
+		cal.FirstBelow = today.Format("2006-01-02")
+	}
+	if f.Cash < 0 {
+		cal.FirstShort = today.Format("2006-01-02")
+	}
 	for i := 1; i <= days; i++ {
 		day := today.AddDate(0, 0, i)
 		k := day.Format("2006-01-02")

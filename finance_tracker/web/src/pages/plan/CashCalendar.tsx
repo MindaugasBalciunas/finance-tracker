@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { api } from '../../lib/api'
-import { dayLabel, eur, eurk, shortDate } from '../../lib/format'
+import { useCashCalendar } from '../../lib/hooks'
+import { dayLabel, eur, eurk, shortDate, todayISO } from '../../lib/format'
 import type { CashCalendar } from '../../lib/types'
 import { AskCFO, Card, ErrorBox, Loading } from '../../components/ui'
 import { axisProps, TooltipBox } from '../../components/charts'
@@ -14,7 +13,7 @@ const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 /** The next 60 days, day by day: cash in checking, savings and cash after
  *  each day's bills, transfers, income and usual spending. */
 export function CashCalendarCard() {
-  const { data: c, isLoading, error } = useQuery({ queryKey: ['calendar'], queryFn: () => api.get<CashCalendar>('/plan/calendar?days=60') })
+  const { data: c, isLoading, error } = useCashCalendar()
   const [pick, setPick] = useState<string | null>(null)
   const weeks = useMemo(() => {
     if (!c) return []
@@ -37,8 +36,8 @@ export function CashCalendarCard() {
         <div className="min-w-0">
         <div className={clsx('flex items-start gap-2 text-sm font-medium', c.first_short ? 'text-bad' : c.first_below ? 'text-warn' : 'text-good')}>
           <Icon name={c.first_short || c.first_below ? 'alert' : 'check'} size={16} className="mt-0.5 shrink-0" />
-          <span>{c.first_short ? <>Cash runs out on <b>{dayLabel(c.first_short)}</b>.</>
-            : c.first_below ? <>Cash dips under your {eur(c.floor)} emergency floor on <b>{dayLabel(c.first_below)}</b>; lowest {eur(c.low)} on {shortDate(c.low_date)}.</>
+          <span>{c.first_short ? (c.first_short <= todayISO() ? <>Cash is below zero <b>today</b>.</> : <>Cash runs out on <b>{dayLabel(c.first_short)}</b>.</>)
+            : c.first_below ? <>{c.first_below <= todayISO() ? <>Cash is under your {eur(c.floor)} emergency floor <b>today</b> ({eur(c.start)})</> : <>Cash dips under your {eur(c.floor)} emergency floor on <b>{dayLabel(c.first_below)}</b></>}; lowest {eur(c.low)} on {shortDate(c.low_date)}.</>
             : <>Cash stays above your {eur(c.floor)} floor — lowest {eur(c.low)} on {shortDate(c.low_date)}.</>}</span>
         </div>
         <div className="mt-2 h-28">

@@ -7,6 +7,7 @@ import { Icon } from './components/Icon'
 import { Logo, LogoMark } from './components/Logo'
 import { useDemo, usePrefs } from './lib/hooks'
 import type { Overview } from './lib/types'
+import { SITEMAP } from './lib/sitemap'
 import { useExitDemo } from './components/ExitDemo'
 import { NotificationsButton } from './components/Notifications'
 import { QuickActionsButton, useAutoSync } from './components/QuickActions'
@@ -60,6 +61,23 @@ function SideLink({ to, icon, label, color, collapsed = false, badge = 0 }: { to
         ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
         : <span className="ml-auto rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{badge}</span>)}
     </NavLink>
+  )
+}
+
+/** A section's pages, indented under its entry: every view findable from
+ *  the menu, including ones that share a tab (Merchants, Trips, Drift). */
+function SubLinks({ section, color }: { section: string; color: string }) {
+  const pages = SITEMAP[section]
+  if (!pages) return null
+  return (
+    <div className="mb-1 ml-[1.375rem] flex flex-col border-l border-line pl-2">
+      {pages.map((p) => (
+        <NavLink key={p.to} to={p.to} end style={({ isActive }) => (isActive ? { color: `color-mix(in oklab, ${color} 85%, rgb(var(--ink)))` } : undefined)}
+          className={({ isActive }) => clsx('flex h-10 items-center rounded-lg px-2 text-[13px] sm:h-8 transition', isActive ? 'font-semibold' : 'text-ink2 hover:bg-sunken hover:text-ink')}>
+          {p.label}
+        </NavLink>
+      ))}
+    </div>
   )
 }
 
@@ -144,8 +162,12 @@ function Shell() {
             {collapsed ? <LogoMark size={28} /> : <Icon name="menu" />}
           </button>
         </div>
-        <nav className={clsx('flex flex-1 flex-col gap-0.5', collapsed ? 'px-2' : 'px-3')}>
-          {NAV.map((n) => <SideLink key={n.to} to={n.to} icon={n.icon} label={n.label} color={n.color} collapsed={collapsed} badge={n.to === '/ledger' ? inbox : 0} />)}
+        <nav className={clsx('flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto', collapsed ? 'px-2' : 'px-3')}>
+          {NAV.map((n) => <div key={n.to}>
+            <SideLink to={n.to} icon={n.icon} label={n.label} color={n.color} collapsed={collapsed} badge={n.to === '/ledger' ? inbox : 0} />
+            {/* The open section lists its pages under it. */}
+            {!collapsed && n.to !== '/' && (loc.pathname === n.to || loc.pathname.startsWith(n.to + '/')) && <SubLinks section={n.to} color={n.color} />}
+          </div>)}
           <div className="my-2 border-t border-line" />
           <SideLink to="/ai" icon="spark" label="Ask CFO" color="var(--s4)" collapsed={collapsed} />
           <NotificationsButton variant="sidebar" collapsed={collapsed} />
@@ -175,11 +197,13 @@ function Shell() {
               <button className="btn-ghost h-9 w-9 px-0" onClick={() => setDrawer(false)} aria-label="Close menu"><Icon name="x" /></button>
             </div>
             <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3" onClick={() => setDrawer(false)}>
-              {NAV.map((n) => <SideLink key={n.to} to={n.to} icon={n.icon} label={n.label} color={n.color} badge={n.to === '/ledger' ? inbox : 0} />)}
+              {/* The phone menu is the site map: every page under its section. */}
+              {NAV.map((n) => <div key={n.to}>
+                <SideLink to={n.to} icon={n.icon} label={n.label} color={n.color} badge={n.to === '/ledger' ? inbox : 0} />
+                <SubLinks section={n.to} color={n.color} />
+              </div>)}
               <div className="my-2 border-t border-line" />
               <SideLink to="/ai" icon="spark" label="Ask CFO" color="var(--s4)" />
-              <SideLink to="/insights/review" icon="chart" label="Month review" color="var(--s5)" />
-              <SideLink to="/wealth/history" icon="calendar" label="Balance history" color="var(--s7)" />
               <div className="mt-auto" />
               <SideLink to="/settings" icon="settings" label="Settings" color="var(--s-other)" />
             </nav>

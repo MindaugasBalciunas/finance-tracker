@@ -207,3 +207,23 @@ func TestCashFlowCalendarKeepsWhatIsDueOrLate(t *testing.T) {
 		}
 	}
 }
+
+// Already under the emergency floor today: the calendar says today, not
+// tomorrow (its first listed day).
+func TestCashFlowCalendarUnderFloorToday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	s := plan.Settings{IncomeMode: "manual", ManualIncome: E(5000), WithdrawalRate: 4, ExpectedReturn: 5, EmergencyMonths: 3}
+	plan.SaveSettings(d, s)
+	for _, m := range []string{"2026-08", "2026-09", "2026-10"} {
+		Tx(t, d, ledger.Tx{Date: m + "-05", Amount: E(1000), Category: "food.groceries", AccountID: "swed"})
+	}
+	Bal(t, d, "swed", "2026-11-23", 100)
+	c, err := cfo.CashFlowCalendar(d, now, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Floor <= c.Start || c.FirstBelow != "2026-11-23" {
+		t.Errorf("floor %v start %v first below %q", c.Floor, c.Start, c.FirstBelow)
+	}
+}

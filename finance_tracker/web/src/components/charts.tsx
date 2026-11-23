@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react'
 import clsx from 'clsx'
 import { Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import { eur, eurc, eurk } from '../lib/format'
+import { Link } from 'react-router-dom'
 
 // Shared chart chrome: recessive axes and hairline grid in the palette's
 // chart tokens, a tooltip on every chart, HTML legends (identity is never
@@ -171,21 +172,27 @@ export function Donut({ slices, center, sub, height = 200, legend = true, stacke
  *  segment on top, its name and full amount right underneath, so labels line
  *  up with their segment. A column grows with its share but never narrower
  *  than its amount. Debt, when given, gets its own line. */
-export function GroupBar({ parts, debt }: { parts: { id: string; name: string; slot: number | string; v: number }[]; debt?: number }) {
+/** Asset groups as one bar with their totals. With `link`, each group opens
+ *  its page (Home: Investments in one tap — the most hunted-for page). */
+export function GroupBar({ parts, debt, link }: { parts: { id: string; name: string; slot: number | string; v: number }[]; debt?: number; link?: (id: string) => string }) {
   const total = parts.reduce((t, g) => t + g.v, 0)
   if (!total) return null
   return (
     <>
       <div className="flex w-full gap-1">
-        {parts.map((g, i) => (
-          <div key={g.id} className="min-w-0" style={{ flex: `${g.v / total} 1 0%`, minWidth: 'max-content' }}>
+        {parts.map((g, i) => {
+          const body = <>
             <div className={clsx('h-2', i === 0 && 'rounded-l-full', i === parts.length - 1 && 'rounded-r-full')} style={{ background: `var(--s${g.slot})` }} />
             <div className="mt-1.5 flex flex-col pr-1 sm:flex-row sm:items-baseline sm:gap-1.5">
               <span className="whitespace-nowrap text-[11px] text-ink2 sm:text-xs">{g.name}</span>
               <span className="whitespace-nowrap text-xs font-semibold tnum sm:text-sm">{eur(g.v)}</span>
             </div>
-          </div>
-        ))}
+          </>
+          const style = { flex: `${g.v / total} 1 0%`, minWidth: 'max-content' }
+          return link
+            ? <Link key={g.id} to={link(g.id)} className="min-w-0 rounded-md py-1 hover:bg-sunken/50" style={style} aria-label={`${g.name} ${eur(g.v)}`}>{body}</Link>
+            : <div key={g.id} className="min-w-0" style={style}>{body}</div>
+        })}
       </div>
       {!!debt && debt > 0 && (
         <div className="mt-2 flex items-baseline gap-1.5 text-xs sm:text-sm">

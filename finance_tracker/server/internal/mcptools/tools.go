@@ -136,7 +136,8 @@ type budgetArgs struct {
 
 type salaryRule struct {
 	From      string `json:"from" jsonschema:"YYYY-MM-DD the rule applies from; empty = always"`
-	PaidByDay int    `json:"paid_by_day" jsonschema:"salary booked on or before this day counts for the month before; 0 = none"`
+	PaidByDay int    `json:"paid_by_day" jsonschema:"the day salary is paid by; it counts for the month before when booked on or before this day, unless in_month; 0 = unknown"`
+	InMonth   bool   `json:"in_month,omitempty" jsonschema:"salary counts in the month it arrives; paid_by_day then only sets payday"`
 }
 
 type grossChange struct {

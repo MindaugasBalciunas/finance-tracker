@@ -96,7 +96,7 @@ func Tax(d *sql.DB, year int, now time.Time) (*TaxYear, error) {
 				t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Salary within the 20% bracket", Link: ledger.Link("from", from, "to", to, "category", "salary"), Detail: fmt.Sprintf("€%s a year is under €%s.", thousands(annual), thousands(limit))})
 			}
 		} else {
-			t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Gross salary not set", Detail: "Set your gross salary in Plan → Income & goals to estimate the 25% bracket."})
+			t.add(TaxItem{Key: "bracket", Kind: "info", Title: "Gross salary not set", Detail: "Set your gross salary in Plan → Income & salary to estimate the 25% bracket."})
 		}
 	}
 

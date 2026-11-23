@@ -31,21 +31,19 @@ export function OptionalView() {
   const from = `${r.months[0].month}-01`, last = r.months[r.months.length - 2]?.month
   const to = last ? monthEnd(last) : todayISO()
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-      <div className="space-y-4">
+    // Two balanced columns that fill top to bottom in reading order (two
+    // fixed columns left one ~1,300px longer than the other on desktop).
+    <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
         <Headline r={r} />
+        <CuttingCard r={r} />
         <JudgeCard r={r} />
+        <Leaks r={r} />
         <MonthsChart r={r} />
         <WhereItGoes r={r} from={from} to={to} />
-      </div>
-      <div className="space-y-4">
-        <CuttingCard r={r} />
-        <Leaks r={r} />
         <div className="px-1 text-xs text-muted">
           Optional means an expense no fixed line covers that you marked Optional in the <Link to="/ledger" className="text-accent">Ledger</Link> (swipe a row) — or, when you haven't marked it, one under a category not marked essential. Change which categories are essential in{' '}
           <Link to="/settings/categories" className="text-accent">Settings → Categories</Link>. “Last 12 months” is always the twelve complete months, {yearRange(r)}; this month is shown apart. Figures marked ≈ …/yr are estimates of a year at the recent pace.
         </div>
-      </div>
     </div>
   )
 }
@@ -152,15 +150,15 @@ function Leaks({ r }: { r: OptionalReport }) {
       why={`${l.one_offs.count > 0 ? `${l.one_offs.count} optional payment${l.one_offs.count === 1 ? '' : 's'} of €250 or more in the last 12 months` : 'Optional payments of €250 or more'} that no fund or trip covered${l.one_offs.count > 0 && l.one_offs.this_month > 0 ? `, and ${eur(l.one_offs.this_month)} more so far this month` : ''} — worth a second look before the next one.`}>
       <Items items={l.one_offs.items} first={6} markOver />
     </Leak>)
-  return (
-    <div className="space-y-4">
-      <div className="px-1">
-        <div className="text-sm font-semibold">Possible leaks</div>
-        <div className="text-xs text-muted">Patterns that often mean money slipping away rather than buying a better life. Only you can say which is which. One payment can fit several patterns, so the cards overlap — don't add them up.</div>
-      </div>
-      {cards.length ? cards : <Card><Empty title="No leak signals" icon="check">Nothing here looks like money slipping away.</Empty></Card>}
+  // Each card is its own block, so the page's two columns can balance
+  // (as one block, the leaks made the left column ~1,600px longer).
+  return <>
+    <div className="px-1 [break-after:avoid]">
+      <div className="text-sm font-semibold">Possible leaks</div>
+      <div className="text-xs text-muted">Patterns that often mean money slipping away rather than buying a better life. Only you can say which is which. One payment can fit several patterns, so the cards overlap — don't add them up.</div>
     </div>
-  )
+    {cards.length ? cards : <Card><Empty title="No leak signals" icon="check">Nothing here looks like money slipping away.</Empty></Card>}
+  </>
 }
 
 function Leak({ icon, title, figure, figureNote, why, children }: { icon: string; title: string; figure: string; figureNote?: string; why: string; children?: ReactNode }) {

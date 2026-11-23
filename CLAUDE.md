@@ -22,6 +22,8 @@ Then load the matching skill before the work, not after:
 
 Before shipping a non-trivial change, run the `ft-reviewer` agent on the diff.
 
+Reference docs: `docs/design-system.md` (how pages, controls, numbers and charts look and behave), `docs/decisions.md` (why: product and technical decisions), `finance_tracker/CHANGELOG.md` (what shipped).
+
 Hard rules:
 - Push only on the owner's command. Commit locally when work is verified, tell the owner it is ready, then wait; when they say "push", run `git push origin main` yourself and watch CI (`ft-dev:ft-release`). Never push without that command.
 - `make test` must be green before anything is called done.

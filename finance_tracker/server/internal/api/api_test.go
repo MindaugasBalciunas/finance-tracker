@@ -1170,3 +1170,34 @@ func TestStressTestFromThePage(t *testing.T) {
 		t.Fatalf("%d %s", code, raw)
 	}
 }
+
+// Last month on Spending shows the same cards as this month: the pace runs
+// over the whole finished month, and its income use is that month's.
+func TestPaceForAFinishedMonth(t *testing.T) {
+	s, c := newServer(t)
+	last := time.Now().AddDate(0, -1, 0)
+	month := last.Format("2006-01")
+	Tx(t, s.DB, ledger.Tx{Date: month + "-02", Amount: E(40), Category: "food.groceries", AccountID: "swed"})
+	Tx(t, s.DB, ledger.Tx{Date: month + "-27", Amount: E(60), Category: "food.groceries", AccountID: "swed"})
+	var pts []struct {
+		Day     int      `json:"day"`
+		Current *float64 `json:"current"`
+	}
+	c.ok("GET", "/insights/pace?month="+month, nil, &pts)
+	if len(pts) != 31 || pts[26].Current == nil || *pts[26].Current != 100 {
+		t.Fatalf("whole month, day 27 = 100: %+v", pts[26])
+	}
+	var out struct {
+		Month struct {
+			Month string  `json:"month"`
+			Spent float64 `json:"spent"`
+		} `json:"month"`
+	}
+	c.ok("GET", "/insights/pace-out?month="+month, nil, &out)
+	if out.Month.Month != month || out.Month.Spent != 100 {
+		t.Fatalf("income use for %s: %+v", month, out.Month)
+	}
+	if code, _ := c.do("GET", "/insights/pace?month="+time.Now().AddDate(0, 1, 0).Format("2006-01"), nil); code != 400 {
+		t.Errorf("a month ahead: %d", code)
+	}
+}

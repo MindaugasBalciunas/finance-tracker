@@ -233,9 +233,10 @@ type Settings struct {
 	// EmergencyExcludeCash: notes and coins (Cash accounts) don't count
 	// toward the emergency fund — only money in the bank does.
 	EmergencyExcludeCash bool `json:"emergency_exclude_cash,omitempty"`
-	// When salary arrives after the month it pays for. Each rule applies to
-	// salary booked on or after From; one paid on day ≤ PaidByDay counts for
-	// the previous month. A new job gets a new rule from its start date.
+	// Which month salary counts in, and when payday is. Each rule applies to
+	// salary booked on or after From: one paid on day ≤ PaidByDay counts for
+	// the previous month, unless InMonth says it counts in the month it
+	// arrives. A new job gets a new rule from its start date.
 	SalaryRules []SalaryRule `json:"salary_rules"`
 	// Where salary is paid into ("" = the account the last salary went to).
 	SalaryAccount string `json:"salary_account"`
@@ -263,7 +264,23 @@ func (s Settings) GrossFor(month string) money.Cents {
 
 type SalaryRule struct {
 	From      string `json:"from"`        // YYYY-MM-DD; "" = since always
-	PaidByDay int    `json:"paid_by_day"` // 0 = salary counts in the month it arrives
+	PaidByDay int    `json:"paid_by_day"` // the day salary is paid by; 0 = unknown, and it counts in the month it arrives
+	// InMonth: salary counts in the month it arrives even when paid by
+	// PaidByDay, which then only says when payday is (cash until payday, the
+	// calendar). For pay on the 5th–10th: the pay and the saving and
+	// investing done from it land in the same month, as the bank shows them.
+	// Before this, the only way to count pay in its own month was
+	// PaidByDay 0, which also lost the payday — Cash until payday vanished.
+	InMonth bool `json:"in_month,omitempty"`
+}
+
+// Shift is the day up to which a salary paid early in a month counts for
+// the month before (0 = it never does).
+func (r SalaryRule) Shift() int {
+	if r.InMonth {
+		return 0
+	}
+	return r.PaidByDay
 }
 
 // DefaultSalaryRules: month-end payroll booked on the 1st–3rd.
@@ -292,12 +309,13 @@ func FlowDate(t *ledger.Tx, rules []SalaryRule) string {
 	return time.Date(d.Year(), d.Month(), 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 }
 
-// paidBy is the rule in force for a salary paid on date (YYYY-MM-DD).
+// paidBy is how far into a month a salary paid on date (YYYY-MM-DD) still
+// counts for the month before, under the rule in force that day.
 func paidBy(date string, rules []SalaryRule) int {
 	by, from := 0, ""
 	for _, r := range rules {
 		if r.From <= date && r.From >= from {
-			by, from = r.PaidByDay, r.From
+			by, from = r.Shift(), r.From
 		}
 	}
 	return by
@@ -336,12 +354,49 @@ func PaysFor(payMonth string, rules []SalaryRule) string {
 	return payMonth
 }
 
+// PayInMonth: a salary paid in month counts in that month — by the rule in
+// force at the month's end, so a new job's rule that starts mid-month (the
+// "New job" button dates it today) already covers its first pay.
+func PayInMonth(month string, rules []SalaryRule) bool {
+	return paidBy(monthEnd(month), rules) == 0
+}
+
+func monthEnd(month string) string {
+	t, err := time.Parse("2006-01", month)
+	if err != nil {
+		return month + "-28"
+	}
+	return t.AddDate(0, 1, -1).Format("2006-01-02")
+}
+
+// SalaryChangeNote explains a month at a switch between counting pay for
+// the month before and counting it in the month it arrives — the one month
+// that gets no pay or two, so its savings rate and plan result read wrong
+// without a word. "" for any other month.
+func SalaryChangeNote(month string, rules []SalaryRule) string {
+	// Early pay in a month (by the 15th at most) is governed by the rule in
+	// force then: compare this month's with next month's.
+	next := addMonths(month, 1)
+	before, after := paidBy(month+"-15", rules), paidBy(next+"-15", rules)
+	name := next
+	if t, err := time.Parse("2006-01", next); err == nil {
+		name = t.Format("January")
+	}
+	switch {
+	case before > 0 && after == 0:
+		return "Pay schedule changed: from " + name + " pay counts in the month it arrives, so the pay that came early in " + name + " counts there, not here. This month's income and savings rate read low — a one-off, not overspending."
+	case before == 0 && after > 0:
+		return fmt.Sprintf("Pay schedule changed: from %s pay arriving by day %d counts for the month before, so this month gets two pays — income reads high.", name, after)
+	}
+	return ""
+}
+
 // MaxSalaryDays is how far past a period to load so late salary reaches it.
 func MaxSalaryDays(rules []SalaryRule) int {
 	n := 0
 	for _, r := range rules {
-		if r.PaidByDay > n {
-			n = r.PaidByDay
+		if r.Shift() > n {
+			n = r.Shift()
 		}
 	}
 	return n

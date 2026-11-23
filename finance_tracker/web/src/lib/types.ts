@@ -25,7 +25,7 @@ export interface Tx {
 
 export type Need = '' | 'must' | 'optional'
 
-export interface TxList { items: Tx[]; total: number; income: number; expense: number; transfer: number }
+export interface TxList { items: Tx[]; total: number; income: number; refunds?: number; expense: number; transfer: number }
 
 export interface Category { id: string; parent?: string; name: string; kind: Kind; essential: boolean; color?: string; sort: number; archived: boolean }
 
@@ -148,7 +148,7 @@ export interface PlanLine extends Budget {
   history: MonthCell[]; suggestion?: Suggestion
 }
 export interface PlanReport {
-  month: string; months: string[]; income_base: number; income_base_source: string; income_actual: number
+  month: string; months: string[]; income_base: number; income_base_source: string; income_actual: number; salary_note?: string
   lines: PlanLine[]; fixed_planned: number; saving_planned: number; spending_planned: number; fixed_spent: number; fixed_expense?: number; saved_actual: number
   discretionary_spent: number; fund_contributions: number; fund_spent: number; fund_overdrawn?: number; refunds?: number; unreviewed?: number; unreviewed_count?: number; safe_to_spend: number
   unbudgeted: { category: string; spent: number; year_spent: number; history: MonthCell[]; suggestion?: Suggestion }[]
@@ -331,7 +331,7 @@ export type TripDates = { tag: string; start: string; end: string }
 export type Trips = { trips: Trip[]; suggestions: TripSuggestion[]; planned: PlannedTrip[]; dates: TripDates[] | null }
 
 export type GrossChange = { from: string; gross: number }
-export type SalaryRule = { from: string; paid_by_day: number }
+export type SalaryRule = { from: string; paid_by_day: number; in_month?: boolean }
 /** plan.Settings: the income base, salary timing and FI inputs. */
 export type PlanSettings = {
   income_mode: '' | 'median' | 'manual' | 'gross'; manual_income: number; gross_salary: number; gross_changes?: GrossChange[]; monthly_deductions: number
@@ -459,7 +459,7 @@ export type AccountMove = { account_id: string; name: string; group: string; sta
 
 /** /insights/month: one month against its own past (cfo.MonthReview). */
 export type MonthReview = {
-  month: string; complete: boolean; final: boolean; flow: Flow; previous: Flow; six_month_avg: Flow; verdict: string; tone: 'good' | 'neutral' | 'bad'
+  month: string; complete: boolean; final: boolean; flow: Flow; previous: Flow; six_month_avg: Flow; verdict: string; tone: 'good' | 'neutral' | 'bad'; salary_note?: string
   highlights: { tone: string; text: string }[]
   net_worth: { start: number; end: number; change: number; points: { date: string; value: number; liquid: number }[] | null }
   categories: { category: string; spent: number; average: number; delta: number; count: number; top: Tx[] | null }[]

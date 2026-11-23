@@ -34,8 +34,10 @@ export function CashFlow() {
     ...f, label: f.period, spendNeg: -f.spending,
     rate: barRate(f),
   })), [months])
-  const complete = (months ?? []).filter((f) => f.period < thisMonth())
-  const last12 = complete.slice(-12)
+  // The tiles say "12 mo": always the last 12 complete months, whatever span
+  // the chart shows (on YTD they summed Jan–Oct and divided by 12).
+  const { data: year12 } = useCashflow(addMonths(thisMonth(), -12) + '-01', todayISO(), 'month')
+  const last12 = (year12 ?? []).filter((f) => f.period < thisMonth()).slice(-12)
   const sum = (k: keyof Flow) => last12.reduce((a, f) => a + ((f[k] as number) ?? 0), 0)
   const due = sum('expected_salary') // last month's pay may still be on its way (1st–10th)
   const inc = sum('income') + due
@@ -47,7 +49,7 @@ export function CashFlow() {
         <Stat icon="briefcase" color="var(--s6)" label="Income · 12 mo" value={<CountUp value={inc} format={eur} />} sub={due > 0 ? `${eur(inc / 12)}/month · incl. ${eur(due)} still to come` : `${eur(inc / 12)}/month`} />
         <Stat icon="bag" color="var(--s2)" label="Spending · 12 mo" value={<CountUp value={sp} format={eur} />} sub={`${eur(sp / 12)}/month`} />
         <Stat icon="piggy" color="var(--s3)" label="Savings rate" value={<CountUp value={inc ? (inc - sp) / inc : 0} format={pct} />} sub={`${eur((inc - sp) / 12)}/month saved`} tone={inc - sp < 0 ? 'bad' : 'good'} />
-        <Stat icon="trend" color="var(--s7)" label="Invested · 12 mo" value={<CountUp value={sum('invested')} format={eur} />} sub={`incl. ${eur(sum('principal'))} loan principal`} />
+        <Stat icon="trend" color="var(--s7)" label="Invested · 12 mo" value={<CountUp value={sum('invested')} format={eur} />} sub={`net of money taken out · incl. ${eur(sum('principal'))} loan principal`} />
       </div>
       <Card title="Income vs spending" action={<Segmented size="sm" value={span} onChange={setSpan} options={SPANS} />}>
         <div className="h-64">

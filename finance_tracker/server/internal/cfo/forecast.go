@@ -284,8 +284,16 @@ func ForecastFrom(d *sql.DB, now time.Time, horizon int, sc *Scenario) (*Forecas
 		}
 		fm := ForecastMonth{Month: m, Income: in.Income, Fixed: in.Fixed, Saving: in.Saving, Everyday: in.Everyday, OneOffs: in.OneOffs, Dated: dated[m]}
 		if i == 0 {
-			// Income already received this month is in today's cash.
-			fm.Income = max(0, in.Income-cur.IncomeActual)
+			// Income already received this month is in today's cash. The
+			// month's income is the plan's own figure for it unless a what-if
+			// changes the pay: once pay counted in its own month is in, that
+			// is what came (a short first pay left €1,818 "still to come" in
+			// November that was never coming).
+			base := in.Income
+			if sc == nil || !scIncome || (scFrom != "" && m < scFrom) {
+				base = cur.IncomeBase
+			}
+			fm.Income = max(0, base-cur.IncomeActual)
 			fm.Fixed = max(0, in.Fixed-cur.FixedSpent)
 			fm.Saving = max(0, in.Saving-max(0, cur.SavedActual)) // a pension payout is not saving done
 			fm.Everyday = money.FromFloat(in.Everyday.Float() * restShare)

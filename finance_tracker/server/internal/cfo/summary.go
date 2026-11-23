@@ -3,6 +3,7 @@ package cfo
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -151,7 +152,7 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 		return nil, err
 	}
 	cur := reports[now.Format("2006-01")]
-	freePlanned := cur.IncomeBase - cur.FixedPlanned - cur.SavingPlanned - cur.FundContributions
+	freePlanned := cur.IncomePlanned - cur.FixedPlanned - cur.SavingPlanned - cur.FundContributions
 	var track []FindingItem
 	var trackSpent []money.Cents
 	overs := 0
@@ -349,11 +350,18 @@ func BuildSummary(d *sql.DB, now time.Time) (*Summary, error) {
 	if book, err := wealth.LoadBook(d); err == nil {
 		e := insights.ComputeFI(txs, cats, book, settings, now).Emergency
 		if e.MonthlyEssential > 0 {
+			// Compare the money, not the rounded months: €8,956 against a
+			// €9,038 target read "3.0 months — going well". Short rounds down.
+			short := e.Cash < e.Target
+			months := float64(e.Cash) / float64(e.MonthlyEssential)
+			if short {
+				months = math.Floor(months*10) / 10
+			}
 			fd := Finding{Key: "emergency", Amount: e.Cash, Link: "/wealth/fi",
-				Title:  fmt.Sprintf("Cash covers %.1f months of essentials", e.Months),
+				Title:  fmt.Sprintf("Cash covers %.1f months of essentials", months),
 				Detail: fmt.Sprintf("Essentials run %s a month; the target is %.0f months (%s).", eurN(e.MonthlyEssential), e.TargetMonths, eurN(e.Target))}
 			fd.Tone = "good"
-			if e.Months < e.TargetMonths {
+			if short {
 				fd.Tone = "warn"
 				fd.Detail += fmt.Sprintf(" %s more would reach it.", eurN(e.Target-e.Cash))
 			}

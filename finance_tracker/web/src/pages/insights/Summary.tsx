@@ -5,6 +5,7 @@ import { api } from '../../lib/api'
 import { eur, monthLabel } from '../../lib/format'
 import { AskCFO, Card, ErrorBox, hue, Loading } from '../../components/ui'
 import { Icon, IconTile } from '../../components/Icon'
+import { ProgressTiles } from './Progress'
 
 type Item = { label: string; sub?: string; amount: number; tone?: 'bad' | 'good'; link?: string }
 type Finding = { key: string; tone: 'bad' | 'warn' | 'info' | 'good'; title: string; detail: string; amount: number; link?: string; items?: Item[] }
@@ -33,15 +34,26 @@ export function SummaryView() {
   if (error || !data) return <ErrorBox error={error} />
   if (!data.months) return <Card title="Not enough history yet">Insights need at least one complete month of transactions.</Card>
   const act = data.findings.filter((f) => f.tone === 'bad' || f.tone === 'warn').length
+  const fit = data.findings.find((f) => f.key === 'plan_fit')
   return (
     <div className="space-y-4">
       <div className="text-sm text-muted">
         {monthLabel(data.from, true)} – {monthLabel(data.to, true)} · {data.months} complete months
         {act > 0 && <> · <span className="text-warn">{act} {act === 1 ? 'thing' : 'things'} worth acting on</span></>}
       </div>
+      <ProgressTiles />
       <TypicalMonth f={data.flow} />
+      {/* How the plan fits is Plan → Budget's own case (rebalance, with the
+          levers); here it is one line pointing there, not a second copy. */}
+      {fit && (
+        <Link to="/plan" className="card flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-sunken/30">
+          <Icon name="alert" size={16} className={clsx('shrink-0', fit.tone === 'bad' ? 'text-bad' : fit.tone === 'warn' ? 'text-warn' : 'text-good')} />
+          <span className="min-w-0 flex-1">{fit.title}</span>
+          <span className="inline-flex shrink-0 items-center text-xs text-accent">Rebalance on Plan<Icon name="chevronR" size={14} /></span>
+        </Link>
+      )}
       <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
-        {data.findings.map((f) => <FindingCard key={f.key} f={f} />)}
+        {data.findings.filter((f) => f.key !== 'plan_fit').map((f) => <FindingCard key={f.key} f={f} />)}
       </div>
     </div>
   )

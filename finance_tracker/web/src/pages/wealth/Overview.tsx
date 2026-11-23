@@ -307,7 +307,7 @@ function Movement({ from, label }: { from: string; label: string }) {
       <div className="space-y-2">
         {data.filter((m) => Math.abs(m.change) >= 1).slice(0, 10).map((m) => (
           <div key={m.account_id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 text-sm">
-            <span className="truncate">{m.name} <span className="text-xs text-muted tnum">{eurk(m.start)} → {eurk(m.end)}</span></span>
+            <span className="min-w-0">{m.name} <span className="whitespace-nowrap text-xs text-muted tnum">{eurk(m.start)} → {eurk(m.end)}</span></span>
             <span className={clsx('tnum', m.change >= 0 ? 'text-good' : 'text-bad')}>{m.change >= 0 ? '+' : '−'}{eur(Math.abs(m.change))}</span>
             <div className="col-span-2 h-1 rounded-full bg-sunken"><div className={clsx('h-full rounded-full', m.change >= 0 ? 'bg-good' : 'bg-bad')} style={{ width: `${(Math.abs(m.change) / max) * 100}%` }} /></div>
           </div>

@@ -284,3 +284,78 @@ func TestPayOnTheThirtiethIsThisMonthsPayday(t *testing.T) {
 		t.Errorf("payday %q salary %v expected %q", rb.Payday, rb.Salary, rb.Expected)
 	}
 }
+
+// Counting pay in the month it arrives keeps the payday: with in_month the
+// rule's day still says when the next salary is due.
+func TestInMonthSalaryKeepsPayday(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	s := plan.LoadSettings(d)
+	s.SalaryRules = []plan.SalaryRule{{From: "", PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10, InMonth: true}}
+	if err := plan.SaveSettings(d, s); err != nil {
+		t.Fatal(err)
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Amount: E(4125), Category: "salary", AccountID: "swed"})
+	rb, err := cfo.BuildRunbook(d, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Expected != "2026-12-10" {
+		t.Errorf("expected payday %q, want 2026-12-10", rb.Expected)
+	}
+}
+
+// A month already over budget still has days to live until payday: cash is
+// planned with the usual day's spending, not €0.
+func TestOverBudgetMonthPlansUsualDailySpend(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.ManualIncome = "manual", E(1000)
+	st.SalaryRules = []plan.SalaryRule{{PaidByDay: 20, InMonth: true}}
+	if err := plan.SaveSettings(d, st); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []string{"2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"} {
+		for _, day := range []string{"03", "12", "22"} {
+			Tx(t, d, ledger.Tx{Date: m + "-" + day, Amount: E(100), Category: "food.groceries", AccountID: "swed"})
+		}
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-10-02", Amount: E(1500), Category: "food.groceries", AccountID: "swed"}) // already over the €1,000
+	Bal(t, d, "swed", "2026-10-06", 2000)
+	o, err := cfo.BuildOverview(d, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Plan.SafeToSpend >= 0 || o.Plan.TypicalDay <= 0 {
+		t.Fatalf("setup: left %v typical %v", o.Plan.SafeToSpend, o.Plan.TypicalDay)
+	}
+	if o.Cash == nil || o.Cash.Daily != o.Plan.TypicalDay {
+		t.Fatalf("daily %v, want the usual %v", o.Cash.Daily, o.Plan.TypicalDay)
+	}
+}
+
+// Forecast: with pay counted in its own month and this month's pay in, no
+// more income is expected this month.
+func TestForecastExpectsNoMorePayOnceItIsIn(t *testing.T) {
+	d := DB(t)
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	st := plan.LoadSettings(d)
+	st.IncomeMode, st.GrossSalary = "gross", E(10000)
+	st.SalaryRules = []plan.SalaryRule{{PaidByDay: 3}, {From: "2026-11-01", PaidByDay: 10, InMonth: true}}
+	if err := plan.SaveSettings(d, st); err != nil {
+		t.Fatal(err)
+	}
+	Tx(t, d, ledger.Tx{Date: "2026-11-05", Kind: "income", Amount: E(4125), Category: "salary", AccountID: "swed"})
+	Bal(t, d, "swed", "2026-11-23", 3000)
+	f, err := cfo.ForecastFrom(d, now, 3, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Months[0].Income != 0 {
+		t.Errorf("November still expects %v", f.Months[0].Income)
+	}
+	if f.Months[1].Income != plan.LTNetSalary(E(10000), 0) {
+		t.Errorf("December: %v", f.Months[1].Income)
+	}
+}

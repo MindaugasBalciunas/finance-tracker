@@ -43,27 +43,9 @@ export function RecurringView() {
   const sharesMerchant = (r: Recurring) => data.items.filter((x) => x.merchant.toLowerCase() === r.merchant.toLowerCase()).length > 1
   const toReview = (subs?.items ?? []).filter((x) => !x.verdict || x.charged_after_cancel).length
   const bills = data.items.filter((r) => (r.kind ?? 'bill') === 'bill').length
-  return (
-    <div className="space-y-4">
-      {/* What it all costs, then the list itself; the subscription audit and
-          suggestions are to-dos beside it (below it on a phone), and only
-          what still needs a verdict stays open. */}
-      <Card icon="repeat" color="var(--s7)" title="Recurring costs" action={<button className="btn-primary h-9" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>}>
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <div><div className="text-xs text-muted">A month</div><div className="tnum text-xl font-semibold"><CountUp value={data.monthly_total} format={eur} /></div></div>
-          <div><div className="text-xs text-muted">A year</div><div className="tnum text-xl font-semibold">{eur(data.monthly_total * 12)}</div></div>
-          <div><div className="text-xs text-muted">Bills</div><div className="tnum text-xl font-semibold">{bills}</div></div>
-        </div>
-        {(toReview > 0 || suggestions.length > 0) && (
-          <div className="mt-1 flex flex-wrap gap-x-4">
-            {toReview > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('subscriptions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{toReview} subscription{toReview === 1 ? '' : 's'} to review</button>}
-            {suggestions.length > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('looks-recurring')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{suggestions.length} more look{suggestions.length === 1 ? 's' : ''} recurring</button>}
-          </div>
-        )}
-      </Card>
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance, standing orders or anything on a schedule.</Empty> : (['bill', 'transfer', 'income'] as const).map((kind) => {
+  // Bills on the left; transfers and income beside the subscription review,
+  // so the right column isn't one small card beside a long list.
+  const kindCards = (kinds: readonly ('bill' | 'transfer' | 'income')[]) => kinds.map((kind) => {
             const rows = data.items.filter((r) => (r.kind ?? 'bill') === kind)
             if (!rows.length) return null
             return (
@@ -104,7 +86,28 @@ export function RecurringView() {
                 </div>
               </Card>
             )
-          })}
+          })
+  return (
+    <div className="space-y-4">
+      {/* What it all costs, then the list itself; the subscription audit and
+          suggestions are to-dos beside it (below it on a phone), and only
+          what still needs a verdict stays open. */}
+      <Card icon="repeat" color="var(--s7)" title="Recurring costs" action={<button className="btn-primary h-9" onClick={() => setEdit({ r: null })}><Icon name="plus" size={16} />Add</button>}>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div><div className="text-xs text-muted">A month</div><div className="tnum text-xl font-semibold"><CountUp value={data.monthly_total} format={eur} /></div></div>
+          <div><div className="text-xs text-muted">A year</div><div className="tnum text-xl font-semibold">{eur(data.monthly_total * 12)}</div></div>
+          <div><div className="text-xs text-muted">Bills</div><div className="tnum text-xl font-semibold">{bills}</div></div>
+        </div>
+        {(toReview > 0 || suggestions.length > 0) && (
+          <div className="mt-1 flex flex-wrap gap-x-4">
+            {toReview > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('subscriptions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{toReview} subscription{toReview === 1 ? '' : 's'} to review</button>}
+            {suggestions.length > 0 && <button className="btn-ghost -mx-2 h-9 px-2 text-xs text-accent" onClick={() => document.getElementById('looks-recurring')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{suggestions.length} more look{suggestions.length === 1 ? 's' : ''} recurring</button>}
+          </div>
+        )}
+      </Card>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          {!data.items.length ? <Empty title="Nothing recurring yet">Add rent, insurance, standing orders or anything on a schedule.</Empty> : kindCards(['bill'])}
           {data.hidden.length > 0 && (
             <div>
               <button className="btn-ghost h-8 px-2 text-xs" onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
@@ -128,6 +131,7 @@ export function RecurringView() {
         </div>
         <div className="space-y-4">
           <SubscriptionsCard />
+          {data.items.length > 0 && kindCards(['transfer', 'income'])}
         {suggestions.length > 0 && (
           <Card id="looks-recurring" pad={false} icon="spark" color="var(--s4)" title="Looks recurring" action={<span className="text-xs text-muted">from your last 12 months</span>}>
             <div className="divide-y divide-line border-t border-line">

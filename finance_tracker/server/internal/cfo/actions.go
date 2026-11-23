@@ -18,7 +18,7 @@ type Action struct {
 	Kind   string `json:"kind"`  // move | short | planned | inbox | review | check | budgets
 	Text   string `json:"text"`
 	Detail string `json:"detail,omitempty"`
-	Link   string `json:"link,omitempty"` // in-app route; "cash" = the cash card on Home
+	Link   string `json:"link,omitempty"` // in-app route (top-ups open Plan → Cash, where the runbook is)
 	Due    string `json:"due,omitempty"`
 }
 
@@ -70,11 +70,11 @@ func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring
 			if n := len(c.Moves) - 1; n > 0 {
 				detail += fmt.Sprintf(" · then %d more before payday", n)
 			}
-			out = append(out, Action{Level: lvl, Kind: "move", Text: fmt.Sprintf("Move %s from %s to %s", eur(m.Amount), m.FromName, m.ToName), Detail: detail, Link: "cash", Due: m.By})
+			out = append(out, Action{Level: lvl, Kind: "move", Text: fmt.Sprintf("Move %s from %s to %s", eur(m.Amount), m.FromName, m.ToName), Detail: detail, Link: "/plan/cash", Due: m.By})
 		}
 		for _, m := range c.ToSavings {
 			out = append(out, Action{Level: "info", Kind: "idle", Text: fmt.Sprintf("%s in %s could earn in %s", eur(m.Amount), m.FromName, m.ToName),
-				Detail: m.For, Link: "cash"})
+				Detail: m.For, Link: "/plan/cash"})
 		}
 		if c.Short > 0 {
 			detail := "payday " + shortDay(c.Payday) + " · lower a buffer, or spend less"
@@ -83,7 +83,7 @@ func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring
 				detail = fmt.Sprintf("deposit %s of your %s cash, or lower a buffer", eur(c.Short), eur(c.Cash))
 				lvl = "warn"
 			}
-			out = append(out, Action{Level: lvl, Kind: "short", Text: fmt.Sprintf("Savings fall %s short before payday", eur(c.Short)), Detail: detail, Link: "cash"})
+			out = append(out, Action{Level: lvl, Kind: "short", Text: fmt.Sprintf("Savings fall %s short before payday", eur(c.Short)), Detail: detail, Link: "/plan/cash"})
 		}
 	}
 	for _, r := range plannedLate {

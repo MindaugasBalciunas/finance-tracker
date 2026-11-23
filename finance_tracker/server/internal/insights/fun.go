@@ -3,6 +3,7 @@ package insights
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -161,7 +162,19 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			f.Detail = fmt.Sprintf("%s in %s, in %s.", eur(ps[0].total), year(ps[0].first), payments(ps[0].n))
 		}
 		f.Link = win("kind", "income", "category", "salary", "merchant", ps[0].name)
-		for _, p := range ps[:min(6, len(ps))] {
+		// The top six, and always whoever pays you now: a new employer's first
+		// partial pay ranked seventh and the card read as if Vialet were missing.
+		shown := ps[:min(6, len(ps))]
+		latest := ps[0]
+		for _, p := range ps {
+			if p.last > latest.last {
+				latest = p
+			}
+		}
+		if !slices.Contains(shown, latest) {
+			shown = append(shown[:len(shown):len(shown)], latest)
+		}
+		for _, p := range shown {
 			span := year(p.first)
 			if year(p.last) != span {
 				span += "–" + year(p.last)

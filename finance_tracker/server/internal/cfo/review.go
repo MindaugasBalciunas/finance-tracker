@@ -20,14 +20,16 @@ import (
 // MonthReview answers "how did the month go, and is anything in the data
 // stale or waiting on me?" — deterministic, free and instant.
 type MonthReview struct {
-	Month       string           `json:"month"`
-	Complete    bool             `json:"complete"` // the month is over (it can be closed)
-	Final       bool             `json:"final"`    // …and its salary can no longer arrive
-	Flow        insights.Flow    `json:"flow"`
-	Previous    insights.Flow    `json:"previous"`
-	SixMonthAvg insights.Flow    `json:"six_month_avg"`
-	Verdict     string           `json:"verdict"`
-	Tone        string           `json:"tone"` // good | neutral | bad
+	Month       string        `json:"month"`
+	Complete    bool          `json:"complete"` // the month is over (it can be closed)
+	Final       bool          `json:"final"`    // …and its salary can no longer arrive
+	Flow        insights.Flow `json:"flow"`
+	Previous    insights.Flow `json:"previous"`
+	SixMonthAvg insights.Flow `json:"six_month_avg"`
+	Verdict     string        `json:"verdict"`
+	Tone        string        `json:"tone"` // good | neutral | bad
+	// SalaryNote: the pay schedule changed at this month (plan.SalaryChangeNote).
+	SalaryNote  string           `json:"salary_note,omitempty"`
 	Highlights  []Highlight      `json:"highlights"`
 	NetWorth    NetWorthMove     `json:"net_worth"`
 	Categories  []CategoryVsNorm `json:"categories"`
@@ -107,7 +109,7 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	// Over is not final: on 2 November October can be closed, but its pay may
 	// still come by the rule's day and count there, so "you spent €241 more
 	// than you earned" would be premature.
-	r := &MonthReview{Month: month, Complete: to < now.Format("2006-01-02"), Final: plan.SalarySettled(month, salary, now)}
+	r := &MonthReview{Month: month, Complete: to < now.Format("2006-01-02"), Final: plan.SalarySettled(month, salary, now), SalaryNote: plan.SalaryChangeNote(month, salary)}
 	txs, err := ledger.All(d, ledger.Filter{From: sel.AddDate(0, -11, 0).Format("2006-01-02"), To: toPlus})
 	if err != nil {
 		return nil, err

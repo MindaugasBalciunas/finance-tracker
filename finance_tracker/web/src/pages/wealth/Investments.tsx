@@ -206,8 +206,10 @@ export function Investments() {
           read the same in one column, most-used first. */}
       {wide ? (
         <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start gap-4">
-          <div className="space-y-4">{positions}{tradesCard}</div>
-          <div className="space-y-4"><QualityCard />{allocation}<ScenarioCard /><FeesCard />{closed}</div>
+          {/* What you hold and traded on the left (closed positions beside the
+              trades); how it's doing on the right — the columns end together. */}
+          <div className="space-y-4">{positions}{tradesCard}{closed}</div>
+          <div className="space-y-4"><QualityCard />{allocation}<ScenarioCard /><FeesCard /></div>
         </div>
       ) : <>
         {positions}

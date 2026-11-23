@@ -86,6 +86,8 @@ export function Trips() {
   return (
     <div className="space-y-4">
       {/* Trips ahead are saved for on the wish list, funded with everything else. */}
+      {/* Wide screens: what's planned beside what looks like a trip. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
       <Card title="Planned trips" pad={false} action={<button className="btn-ghost h-8 px-2.5 text-xs text-accent" onClick={() => nav('/plan/wishlist?trip=1')}><Icon name="plus" size={14} />Plan a trip</button>}>
         {!data?.planned?.length ? (
           <div className="border-t border-line px-4 py-3 text-sm text-muted">No trip planned. Plan one and save for it on the wish list — what's tagged to it later counts against what you saved.</div>
@@ -108,8 +110,9 @@ export function Trips() {
         )}
       </Card>
       {recentSugg.length > 0 && <Card title="Looks like a trip" pad={false}>{suggestionList(recentSugg)}</Card>}
+      </div>
       {!current.length ? (past.length ? <div className="text-sm text-muted">No trip on the list — past ones are in History below.</div> : <Empty title="No trips yet" icon="plane">Tag travel transactions with trip:name to cost a trip as a whole.</Empty>) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {current.map((t) => (
             <div key={t.tag} className="card p-4">
               <a href={`#/ledger?period=all&tag=${encodeURIComponent(t.tag)}`} className="block hover:opacity-80">

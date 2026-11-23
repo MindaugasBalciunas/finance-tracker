@@ -5,7 +5,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { api } from '../../lib/api'
 import { usePaceOut, usePeriod } from '../../lib/hooks'
 import { catColor, catIcon, useCats } from '../../lib/categories'
-import { eur, eurk, monthLabel, pct, shortDate } from '../../lib/format'
+import { addMonths, eur, eurk, monthLabel, pct, shortDate, thisMonth } from '../../lib/format'
 import { ledgerLink } from '../../lib/links'
 import type { Breakdown, OutPacePoint, PacePoint, Tx } from '../../lib/types'
 import { Card, Loading } from '../../components/ui'
@@ -23,6 +23,7 @@ export function Spending() {
   const [open, setOpen] = useState<string | null>(null)
   const cats = useCats()
   const editor = useTxEditor()
+  const paceMonth = preset === 'last_month' ? addMonths(thisMonth(), -1) : undefined
   const { data, isLoading } = useQuery({ queryKey: ['breakdown', preset], queryFn: () => api.get<Breakdown>('/insights/breakdown', { preset }) })
   if (isLoading || !data) return <Loading />
   const total = data.categories.reduce((a, c) => a + c.total, 0)
@@ -34,11 +35,14 @@ export function Spending() {
       <div className="no-scrollbar overflow-y-hidden -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         {PRESETS.map((p) => <button key={p.value} className={preset === p.value ? 'chip-on' : 'chip'} onClick={() => setPreset(p.value)}>{p.label}</button>)}
       </div>
-      {/* The pace card is always about the month you're in: beside a past period it read as that period's. */}
-      {preset !== 'last_month' && preset !== 'last_year' && (
+      {/* A single month — this one or the last — gets the same month cards:
+          the day-by-day pace against the month before and a typical month,
+          with investing, and where its income went. Longer periods don't:
+          beside them the cards read as that period's. */}
+      {(preset === 'month' || preset === 'last_month') && (
         <>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PaceCard /><OutPaceCard /></div>
-          <IncomeUsedCard />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PaceCard month={paceMonth} /><OutPaceCard month={paceMonth} /></div>
+          <IncomeUsedCard month={paceMonth} />
         </>
       )}
       <div className="text-sm text-muted">{shortDate(data.from)} – {shortDate(data.to)} · <b className="text-ink">{eur(total)}</b> spent, compared with the period before</div>
@@ -113,13 +117,22 @@ export function Spending() {
   )
 }
 
-function PaceCard() {
-  const { data } = useQuery({ queryKey: ['pace'], queryFn: () => api.get<PacePoint[]>('/insights/pace') })
+/** The lines' names: "This month / Last month" now, the month names for a
+ *  finished month (its line against the one before). */
+function paceLabels(month?: string) {
+  return month
+    ? { cur: monthLabel(month), prev: monthLabel(addMonths(month, -1)), title: `${monthLabel(month)} day by day` }
+    : { cur: 'This month', prev: 'Last month', title: 'This month so far' }
+}
+
+function PaceCard({ month }: { month?: string }) {
+  const { data } = useQuery({ queryKey: ['pace', month ?? 'now'], queryFn: () => api.get<PacePoint[]>('/insights/pace', month ? { month } : undefined) })
   if (!data) return null
   const today = data.filter((p) => p.current != null).pop()
   const ahead = today ? today.current! - today.typical : 0
+  const L = paceLabels(month)
   return (
-    <Card title="This month so far" action={today && <span className={clsx('text-sm tnum', ahead > 0 ? 'text-bad' : 'text-good')}>{ahead > 0 ? `${eur(ahead)} ahead of` : `${eur(-ahead)} below`} a typical month</span>}>
+    <Card title={L.title} action={today && <span className={clsx('text-sm tnum', ahead > 0 ? 'text-bad' : 'text-good')}>{ahead > 0 ? `${eur(ahead)} ahead of` : `${eur(-ahead)} below`} a typical month</span>}>
       <div className="h-48">
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
@@ -129,30 +142,30 @@ function PaceCard() {
             <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
               <TooltipBox title={`Day ${label}`} rows={payload.filter((p) => p.value != null).map((p) => ({ color: p.stroke, label: p.name, value: eur(Number(p.value)) }))} />) : null} />
             <Line dataKey="typical" name="Typical (6-month avg)" stroke="var(--s-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="last_month" name="Last month" stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="current" name="This month" stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            <Line dataKey="last_month" name={L.prev} stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="current" name={L.cur} stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2"><Legend items={[{ color: 'var(--s1)', label: 'This month' }, { color: 'var(--s2)', label: 'Last month' }, { color: 'var(--s-other)', label: 'Typical (6-month avg)' }]} /></div>
-      <div className="mt-1 text-xs text-muted">Spending only, net of refunds, against the same day of last month and of a typical month.</div>
+      <div className="mt-2"><Legend items={[{ color: 'var(--s1)', label: L.cur }, { color: 'var(--s2)', label: L.prev }, { color: 'var(--s-other)', label: 'Typical (6-month avg)' }]} /></div>
+      <div className="mt-1 text-xs text-muted">Spending only, net of refunds, against the same day of {month ? 'the month before' : 'last month'} and of a typical month.</div>
     </Card>
   )
 }
 
-const PACE_LINES = [{ key: 'current', color: 'var(--s1)', label: 'This month' }, { key: 'last_month', color: 'var(--s2)', label: 'Last month' }, { key: 'typical', color: 'var(--s-other)', label: 'Typical (6-month avg)' }] as const
-
 /** The pace chart with everything that went out on purpose: spending plus
  *  net investing (investments, pension, loan principal, assets; payouts back
  *  to cash count against it). Same lines as the spending one, so they compare. */
-export function OutPaceCard() {
-  const { data: res } = usePaceOut()
+export function OutPaceCard({ month }: { month?: string }) {
+  const { data: res } = usePaceOut(month)
   if (!res) return null
   const data = res.points
   const today = data.filter((p) => p.current != null).pop()
   const invested = today?.current_invested ?? 0
+  const L = paceLabels(month)
+  const lines = [{ key: 'current', color: 'var(--s1)', label: L.cur }, { key: 'last_month', color: 'var(--s2)', label: L.prev }, { key: 'typical', color: 'var(--s-other)', label: 'Typical (6-month avg)' }] as const
   return (
-    <Card title="This month so far, with investing" action={today && <span className="text-sm tnum text-muted"><b className="text-ink">{eur(today.current! - invested)}</b> spent · <b className="text-ink">{eur(invested)}</b> invested</span>}>
+    <Card title={`${L.title}, with investing`} action={today && <span className="text-sm tnum text-muted"><b className="text-ink">{eur(today.current! - invested)}</b> spent · <b className="text-ink">{eur(invested)}</b> invested</span>}>
       <div className="h-48">
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
@@ -163,18 +176,18 @@ export function OutPaceCard() {
               if (!active || !payload?.length) return null
               const p = payload[0].payload as OutPacePoint
               const inv = { current: p.current_invested, last_month: p.last_month_invested, typical: p.typical_invested }
-              return <TooltipBox title={`Day ${label}`} rows={PACE_LINES.filter((l) => p[l.key] != null).flatMap((l) => [
+              return <TooltipBox title={`Day ${label}`} rows={lines.filter((l) => p[l.key] != null).flatMap((l) => [
                 { color: l.color, label: l.label, value: eur(p[l.key]!), bold: true },
                 { label: <span className="pl-3 text-muted">spent · invested</span>, value: <span className="text-muted">{eur(p[l.key]! - (inv[l.key] ?? 0))} · {eur(inv[l.key] ?? 0)}</span> },
               ])} />
             }} />
             <Line dataKey="typical" name="Typical (6-month avg)" stroke="var(--s-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="last_month" name="Last month" stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="current" name="This month" stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            <Line dataKey="last_month" name={L.prev} stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="current" name={L.cur} stroke="var(--s1)" strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-2"><Legend items={PACE_LINES.map((l) => ({ color: l.color, label: l.label }))} /></div>
+      <div className="mt-2"><Legend items={lines.map((l) => ({ color: l.color, label: l.label }))} /></div>
       <div className="mt-1 text-xs text-muted">Spending plus what went into investments, pension and loan principal. Money taken back out counts against it.</div>
     </Card>
   )
@@ -186,8 +199,8 @@ const INTO_HINT: Record<string, string> = { loan: 'principal', pension: 'pension
 /** How this month's income was used: spent, invested by account, left.
  *  Its own card under the two charts: inside the investing chart it made
  *  that card twice the height of its neighbour on desktop. */
-export function IncomeUsedCard() {
-  const { data } = usePaceOut()
+export function IncomeUsedCard({ month }: { month?: string }) {
+  const { data } = usePaceOut(month)
   if (!data) return null
   const u = data.month
   const income = u.income + u.expected_salary
@@ -223,7 +236,7 @@ export function IncomeUsedCard() {
             const cls = 'flex items-baseline justify-between gap-3 py-1 pl-4 text-sm'
             return x.account_id ? <a key={x.account_id} className={cls} href={'#' + ledgerLink({ account: x.account_id, month: u.month })}>{body}</a> : <div key={x.name} className={cls}>{body}</div>
           })}
-          {u.into.length === 0 && <div className="py-1 pl-4 text-sm text-muted">Nothing put away yet this month</div>}
+          {u.into.length === 0 && <div className="py-1 pl-4 text-sm text-muted">{month ? 'Nothing put away that month' : 'Nothing put away yet this month'}</div>}
           {u.payroll_pension > 0 && <div className="flex items-baseline justify-between gap-3 py-1 pl-4 text-sm text-muted"><span>Pension via payroll · not from your pay</span><span className="tnum">{eur(u.payroll_pension)}</span></div>}
         </div>
         <div className={clsx(row, 'border-t border-line lg:col-start-1')}>

@@ -539,3 +539,18 @@ func TestPensionPillar(t *testing.T) {
 		}
 	}
 }
+
+// Ledger totals agree with Cash flow: a refund is money back on spending,
+// not income.
+func TestListTotalsKeepRefundsOutOfIncome(t *testing.T) {
+	d := DB(t)
+	Tx(t, d, ledger.Tx{Date: "2026-10-09", Kind: "income", Amount: E(3505), Category: "salary", AccountID: "swed"})
+	Tx(t, d, ledger.Tx{Date: "2026-10-14", Kind: "income", Amount: E(184.28), Category: "refunds", AccountID: "swed"})
+	r, err := ledger.List(d, ledger.Filter{Kind: "income"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Income != E(3505) || r.Refunds != E(184.28) || r.Total != 2 {
+		t.Errorf("income %v refunds %v total %d", r.Income, r.Refunds, r.Total)
+	}
+}

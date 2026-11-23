@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -12,15 +12,27 @@ import { axisProps, gridProps, Legend, TooltipBox } from '../../components/chart
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon } from '../../components/Icon'
 import { Review } from './YearReview'
+import { CashFlow } from './CashFlow'
 
 // ── month review ──
 
-export function ReviewTabs() {
-  const [mode, setMode] = useState<'month' | 'year'>('month')
+/** Insights → Review: one month, the whole year, or cash flow month by
+ *  month. Cash flow keeps its own route (/insights/cashflow) for old links. */
+export function ReviewTabs({ mode: start }: { mode?: 'cashflow' }) {
+  const nav = useNavigate()
+  const [sp] = useSearchParams()
+  // Year rides in the URL (?view=year): leaving Cash flow for Year mounts a
+  // fresh Review, which would otherwise open on Month.
+  const [mode, setMode] = useState<'month' | 'year' | 'cashflow'>(start ?? (sp.get('view') === 'year' ? 'year' : 'month'))
+  const pick = (m: typeof mode) => {
+    setMode(m)
+    if (m === 'cashflow') { if (start !== 'cashflow') nav('/insights/cashflow') }
+    else if (start === 'cashflow') nav(m === 'year' ? '/insights/review?view=year' : '/insights/review')
+  }
   return (
     <div className="space-y-4">
-      <Segmented value={mode} onChange={setMode} options={[{ value: 'month', label: 'Month' }, { value: 'year', label: 'Year' }]} />
-      {mode === 'month' ? <MonthReviewView /> : <Review />}
+      <Segmented size="sm" value={mode} onChange={pick} options={[{ value: 'month', label: 'Month' }, { value: 'year', label: 'Year' }, { value: 'cashflow', label: 'Cash flow' }]} />
+      {mode === 'month' ? <MonthReviewView /> : mode === 'year' ? <Review /> : <CashFlow />}
     </div>
   )
 }
@@ -55,6 +67,8 @@ function MonthReviewView() {
       <section className="card p-4" style={hue(r.tone === 'good' ? 'var(--hue-good)' : r.tone === 'bad' ? 'var(--hue-bad)' : undefined)}>
         <div className="section-title">The month in one line</div>
         <h2 className="mt-1 text-lg font-semibold">{r.verdict}</h2>
+        <Link to={`/plan?month=${r.month}`} className="mt-1 inline-flex items-center text-xs text-accent">Against the plan<Icon name="chevronR" size={14} /></Link>
+        {r.salary_note && <p role="note" className="mt-1 flex items-start gap-1.5 text-xs text-warn"><Icon name="alert" size={14} className="mt-0.5 shrink-0" /><span>{r.salary_note}</span></p>}
         {f.income + due > 0 && (
           <div className="mt-3">
             <div className="flex justify-between text-xs text-muted"><span>Savings rate{due > 0 && ', with pay still to come'} <b className="text-ink">{pct(fRate)}</b></span><span>usual {pct(avg.savings_rate)}</span></div>

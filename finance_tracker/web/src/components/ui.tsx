@@ -1,6 +1,7 @@
 import { createContext, type CSSProperties, InputHTMLAttributes, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { Icon } from './Icon'
 import { eur, parseNum, signed } from '../lib/format'
 
@@ -51,7 +52,8 @@ export function Stat({ label, value, sub, tone, onClick, icon, color }: { label:
     <C onClick={onClick} className="card p-3.5 text-left min-w-0" style={hue(c)}>
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide min-w-0" style={{ color: CARD }}>{icon && <Chip name={icon} color={CARD} size={26} />}<span className="line-clamp-2 leading-tight">{label}</span></div>
       <div className={clsx('mt-1.5 text-2xl font-bold tracking-tight truncate', tone === 'good' && 'text-good', tone === 'bad' && 'text-bad', tone === 'warn' && 'text-warn')}>{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-muted truncate">{sub}</div>}
+      {/* A tile is a summary: its line wraps rather than cutting off what it says. */}
+      {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </C>
   )
 }
@@ -272,6 +274,19 @@ export function PageHeader({ title, sub, actions }: { title: ReactNode; sub?: Re
         {sub && <div className="text-sm text-muted truncate">{sub}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </div>
+  )
+}
+
+/** Views that share one tab (Spending → Categories · Merchants · Optional):
+ *  the same small segmented control as Ledger → Bank inbox (To review ·
+ *  Added · Dismissed), so every sub-view row in the app looks alike. Each
+ *  choice is a route, so every view keeps its own link. */
+export function SubNav({ value, options }: { value: string; options: { value: string; label: ReactNode; to: string }[] }) {
+  const nav = useNavigate()
+  return (
+    <div className="mb-4">
+      <Segmented size="sm" value={value} onChange={(v) => nav(options.find((o) => o.value === v)!.to)} options={options} />
     </div>
   )
 }

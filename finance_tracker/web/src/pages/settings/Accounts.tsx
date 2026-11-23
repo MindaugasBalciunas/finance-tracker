@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { useAccounts, useRefresh } from '../../lib/hooks'
 import { GROUPS } from '../../lib/categories'
-import { eurc, shortDate } from '../../lib/format'
+import { daysAgo, eurc, shortDate } from '../../lib/format'
 import type { Account } from '../../lib/types'
 import { Card, Loading, Toggle, useToast } from '../../components/ui'
 import { brandColor } from '../../lib/brand'
@@ -21,7 +21,7 @@ export function AccountsVisibility() {
   const [busy, setBusy] = useState<string | null>(null)
   const { data: usage } = useQuery({ queryKey: ['account-usage'], queryFn: () => api.get<Record<string, { count: number; last: string }>>('/accounts/usage') })
   // Idle: shown, empty, and nothing booked on it for half a year.
-  const halfYear = new Date(Date.now() - 182 * 86400000).toISOString().slice(0, 10)
+  const halfYear = daysAgo(182) // local day (toISOString gives UTC's)
   const idle = (a: Account) => !a.archived && !a.balance && (usage?.[a.id]?.last ?? '') < halfYear
   if (isLoading || !accounts) return <Loading />
   const set = async (a: Account, shown: boolean) => {

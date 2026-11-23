@@ -85,6 +85,13 @@ type Report struct {
 	IncomeBase       money.Cents `json:"income_base"`
 	IncomeBaseSource string      `json:"income_base_source"`
 	IncomeActual     money.Cents `json:"income_actual"`
+	// IncomePlanned is the plan's own monthly income (the setting), before a
+	// finished month or this month's short pay replaces IncomeBase: what a
+	// usual month has, for judging whether the plan itself fits.
+	IncomePlanned money.Cents `json:"income_planned"`
+	// SalaryNote: this month's pay schedule changed (see SalaryChangeNote),
+	// so its income reads unlike other months'. "" = nothing to say.
+	SalaryNote string `json:"salary_note,omitempty"`
 	// Refunds: money back this month; it reduces discretionary spending
 	// (and so adds to safe to spend), never the income.
 	Refunds         money.Cents `json:"refunds"`
@@ -521,6 +528,7 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 	})
 
 	r.IncomeBase, r.IncomeBaseSource = IncomeBase(settings, income, month, nowYM)
+	r.IncomePlanned = r.IncomeBase
 	// A finished month whose pay window has closed (a salary paid by the rule's
 	// day of the next month counts for it) is measured against what actually
 	// came in, so a new salary setting never rewrites the past. Gross mode
@@ -535,6 +543,16 @@ func Compute(budgets []Budget, txs []ledger.Tx, month string, now time.Time, set
 			r.IncomeBase, r.IncomeBaseSource = income[month], "income received that month"
 		}
 	}
+	// This month, when pay counts in the month it arrives and the month's pay
+	// is already in (at least half the plan, as ExpectSalary reads it): no
+	// more is coming, so the month is measured against what came. Otherwise a
+	// short pay — the first, partial one after a job change — left €6,050
+	// "to spend" when €4,125 had arrived, and left to spend overstated the
+	// month by the difference.
+	if month == nowYM && settings.IncomeMode == "gross" && PayInMonth(month, salary) && salaryIn[month]*2 >= r.IncomeBase && salaryIn[month] != r.IncomeBase {
+		r.IncomeBase, r.IncomeBaseSource = salaryIn[month], "salary received this month"
+	}
+	r.SalaryNote = SalaryChangeNote(month, salary)
 	r.SafeToSpend = r.IncomeBase - r.FixedPlanned - r.SavingPlanned - r.FundContributions - (r.DiscretionarySpent - r.FundSpent) - r.FundOverdrawn
 	return r
 }
