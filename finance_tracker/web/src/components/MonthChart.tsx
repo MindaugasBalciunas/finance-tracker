@@ -131,7 +131,8 @@ export function MonthTimeline({ p, big = false }: { p: Overview['plan']; big?: b
         </ResponsiveContainer>
       </div>
       {/* Said under the chart, not on the €0 line, where it ran into the days. */}
-      {shortPay > 0 && (
+      {/* On Home the card's own verdict already says this; Plan's full-width chart says it here. */}
+      {shortPay > 0 && big && (
         <div className="mt-1 text-xs text-ink2">
           This month's pay is <b className="tnum">{eur(shortPay)}</b> short of the plan's usual. Spending is measured against a usual month here;
           the month itself ends <b className={clsx('tnum', p.safe_to_spend < 0 ? 'text-bad' : 'text-good')}>{p.safe_to_spend < 0 ? `${eur(-p.safe_to_spend)} over` : `${eur(p.safe_to_spend)} left`}</b>

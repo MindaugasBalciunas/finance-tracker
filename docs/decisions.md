@@ -4,6 +4,12 @@ Product, design and technical decisions, newest first, each with the reason. Add
 
 ---
 
+## 2026-11-23 · 3.0.1 · The month chart stays on Home
+
+**Decided:** Home's month card keeps the day-by-day chart (same chart as Plan → Budget). On Home its short-pay note is left to the card's headline.
+**Why:** the owner missed it after 3.0.0 moved it to Plan only. Together with the full-size net-worth panel, it is part of what Home is opened for.
+**Rules out:** moving Home's charts elsewhere to "simplify" without asking.
+
 ## 2026-11-23 · 3.0.0 · Home is a one-page review
 
 **Decided:** Home reads top to bottom: the full-size net-worth panel with its chart (the owner's favourite part; a compact version was reverted), a **Today** card (verdict: cash risk first, then the month; then "Needs you": the bell's actions, most urgent first), this month, cash until payday, the last 6 transactions.

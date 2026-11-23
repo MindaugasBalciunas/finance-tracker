@@ -8,7 +8,7 @@ import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, pct, shortDate, todayISO } from '../lib/format'
 import { CountUp, Card, Delta, ErrorBox, hue, Loading, Segmented, Toggle } from '../components/ui'
 import { GroupBar, TooltipBox } from '../components/charts'
-import { typicalShare } from '../components/MonthChart'
+import { MonthTimeline, typicalShare } from '../components/MonthChart'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { PaydayStrip } from './plan/Cash'
@@ -334,6 +334,9 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
         <MonthBar p={p} progress={pace} warn={used > pace + 0.1} />
         <Verdict p={p} />
       </Link>
+      {/* The month day by day, as on Plan: back on Home in 3.0.1 — the owner
+          missed it after 3.0.0 left only the bar and the verdict here. */}
+      <div className="min-w-0 px-4 pb-3"><MonthTimeline p={p} /></div>
       <button type="button" onClick={toggle} aria-expanded={open} className="flex w-full items-center justify-between border-t border-line px-4 py-2 text-left text-xs text-accent hover:bg-sunken/30">
         <span>How {eur(left)} is worked out</span>
         <Icon name="chevronD" size={14} className={clsx('transition', open && 'rotate-180')} />

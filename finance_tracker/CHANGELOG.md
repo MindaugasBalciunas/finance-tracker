@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1 — The month chart is back on Home
+
+- Home's "Left to spend" card shows the month day by day again: spending so far against the plan's pace, where this rhythm ends up, and bills due or paid. 3.0.0 had left it only on Plan.
+- In a short-pay month the card's headline explains the short pay, so the note under the chart shows only on Plan's full-width chart, not three times on Home.
+
 ## 3.0.0 — New layout, salary in the month it arrives
 
 A major version: pages are reorganised by what they're for, and every figure is now checked against the raw data before release. Your data isn't migrated. Going back to 2.87.0 works; there, a salary rule's "month it arrives" choice is ignored, so pay counts for the month before again.

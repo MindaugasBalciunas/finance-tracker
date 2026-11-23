@@ -10,7 +10,7 @@ Each section has one job. A panel lives in one place; other places link to it.
 
 | Section | Job | Tabs |
 |---|---|---|
-| **Home** | a one-page review of today | none: net worth panel (full size, with its chart) · Today (verdict + needs you) · this month · cash until payday · recent |
+| **Home** | a one-page review of today | none: net worth panel (full size, with its chart) · Today (verdict + needs you) · this month (with its day-by-day chart) · cash until payday · recent |
 | **Ledger** | every transaction | Transactions · Bank inbox · Tidy up |
 | **Plan** | this month and what's coming | Budget · Cash · Recurring · Forecast · Goals (Wish list / Trips) · Income & salary |
 | **Wealth** | where the money ends up | Net worth · Investments · Property & loans · Independence · Stress test · Taxes · History |
