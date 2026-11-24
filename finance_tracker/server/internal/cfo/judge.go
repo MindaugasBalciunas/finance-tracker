@@ -2,17 +2,18 @@ package cfo
 
 import (
 	"sort"
-	"strconv"
 
 	"ft/internal/insights"
 	"ft/internal/merchant"
 	"ft/internal/money"
 )
 
-// Judging optional spending: the places the owner keeps going back to and the biggest categories,
-// each with the owner's verdict (worth it / cut / not sure), a suggestion
-// from what the data shows, and — for what the owner said to cut — how it
-// has gone since.
+// Judging optional spending: the habits — places and categories paid in
+// most months — each with the owner's verdict (keep = worth, cut back =
+// cut), and for what the owner said to cut how it has gone since. One-off
+// shops (a laptop at bigbox, DIY runs) and guessed "leak" labels were left
+// out in 3.1.1: there is nothing to keep or cut about a single purchase,
+// and buying late in a month doesn't make something a leak.
 
 type JudgeItem struct {
 	Kind    string      `json:"kind"` // merchant | category
@@ -24,8 +25,6 @@ type JudgeItem struct {
 	Count   int         `json:"count"`  // payments in the twelve months
 	Months  int         `json:"months"` // of the twelve, the months with a payment
 	Verdict string      `json:"verdict,omitempty"`
-	Suggest string      `json:"suggest,omitempty"` // worth | cut, when the data leans one way
-	Why     string      `json:"why,omitempty"`
 }
 
 // FollowUp: a place or category the owner said to cut.
@@ -52,11 +51,10 @@ type Judge struct {
 	Cutting []FollowUp  `json:"cutting"`
 }
 
-// A regular place: three purchases in the twelve months, trips left out. One
-// €258 hotel bill or a tour operator's instalments are not somewhere you
-// keep going back to — nothing to "cut" there; a trip's payments are judged
-// with their category (flights, lodging, the trip itself).
-const regularBuys = 3
+// A habit: paid in at least six of the twelve complete months. Trips are
+// left out of places (a tour operator's instalments aren't a habit); their
+// categories count like any other.
+const habitMonths = 6
 
 func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdict, merName map[string]string, complete []string, thisM string) Judge {
 	j := Judge{Items: []JudgeItem{}, Cutting: []FollowUp{}}
@@ -99,17 +97,9 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 		}
 	}
 
-	small, creep := map[string]bool{}, map[string]bool{}
-	for _, s := range r.Leaks.SmallOften {
-		small[merchant.Key(s.Merchant)] = true
-	}
-	for _, c := range r.Leaks.Creeping {
-		creep[merchant.Key(c.Merchant)] = true
-	}
 	item := func(kind, key, name string) JudgeItem {
 		it := JudgeItem{Kind: kind, Key: key, Name: name}
 		in := match(kind, key)
-		var over, oneOff, fund, trip money.Cents
 		months := map[string]bool{}
 		buys := map[int64]bool{}
 		for _, o := range rows {
@@ -126,82 +116,44 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 			it.Year += o.Amount
 			months[o.month] = true
 			buys[o.purchase()] = true
-			if o.over {
-				over += o.Amount
-			}
-			if o.Amount >= OneOffMin && !o.fund && !hasTrip(o.Tags) {
-				oneOff += o.Amount
-			}
-			if o.fund {
-				fund += o.Amount
-			}
-			if hasTrip(o.Tags) {
-				trip += o.Amount
-			}
 		}
 		it.Usual, it.Count, it.Months = it.Year/12, len(buys), len(months)
-		share := func(v money.Cents) bool { return it.Year > 0 && v*10 >= it.Year*3 } // ≥ 30%
-		most := func(v money.Cents) bool { return it.Year > 0 && v*2 >= it.Year }     // ≥ 50%
-		switch {
-		case kind == "merchant" && small[key]:
-			it.Suggest, it.Why = "cut", "small and often"
-		case kind == "merchant" && creep[key]:
-			it.Suggest, it.Why = "cut", "creeping up"
-		case share(over):
-			it.Suggest, it.Why = "cut", pctOf(over, it.Year)+" of it after the month's money ran out"
-		case most(oneOff):
-			it.Suggest, it.Why = "cut", "mostly big one-offs"
-		case most(fund):
-			it.Suggest, it.Why = "worth", "planned — paid from a fund"
-		case most(trip):
-			it.Suggest, it.Why = "worth", "part of trips"
-		case len(months) >= 8:
-			it.Suggest, it.Why = "worth", "a steady part of your months"
-		}
 		if v, ok := verdicts[kind+":"+key]; ok {
 			it.Verdict = v.Verdict
 		}
 		return it
 	}
 
-	// Regular places, then the biggest categories, then anything judged
-	// that fell out of both lists.
-	type agg struct {
-		year money.Cents
-		buys map[int64]bool
-	}
-	places := map[string]*agg{}
-	for _, o := range rows {
-		k := merchant.Key(o.Merchant)
-		if !o.optional || k == "" || !inYear[o.month] || hasTrip(o.Tags) {
-			continue
-		}
-		if places[k] == nil {
-			places[k] = &agg{buys: map[int64]bool{}}
-		}
-		places[k].year += o.Amount
-		places[k].buys[o.purchase()] = true
-	}
-	var keys []string
-	for k, a := range places {
-		if len(a.buys) >= regularBuys {
-			keys = append(keys, k)
-		}
-	}
-	sort.Slice(keys, func(i, k int) bool {
-		if places[keys[i]].year != places[keys[k]].year {
-			return places[keys[i]].year > places[keys[k]].year
-		}
-		return keys[i] < keys[k]
-	})
+	// Habits: places (trips left out) and categories paid in at least
+	// habitMonths of the twelve, biggest first; then anything judged that
+	// is no longer one, so a verdict stays visible.
 	seen := map[string]bool{}
-	for _, k := range keys[:min(12, len(keys))] {
-		j.Items = append(j.Items, item("merchant", k, merName[k]))
-		seen["merchant:"+k] = true
+	var habits []JudgeItem
+	places := map[string]bool{}
+	for _, o := range rows {
+		if k := merchant.Key(o.Merchant); o.optional && k != "" && inYear[o.month] && !hasTrip(o.Tags) {
+			places[k] = true
+		}
+	}
+	for k := range places {
+		if it := item("merchant", k, merName[k]); it.Months >= habitMonths {
+			habits = append(habits, it)
+		}
 	}
 	for _, c := range r.Categories {
-		j.Items = append(j.Items, item("category", c.Key, c.Key))
-		seen["category:"+c.Key] = true
+		if it := item("category", c.Key, c.Key); it.Months >= habitMonths {
+			habits = append(habits, it)
+		}
+	}
+	sort.Slice(habits, func(i, k int) bool {
+		if habits[i].Year != habits[k].Year {
+			return habits[i].Year > habits[k].Year
+		}
+		return habits[i].Kind+habits[i].Key < habits[k].Kind+habits[k].Key
+	})
+	for _, it := range habits {
+		j.Items = append(j.Items, it)
+		seen[it.Kind+":"+it.Key] = true
 	}
 	var judged []string
 	for k := range verdicts {
@@ -246,11 +198,4 @@ func judge(rows []optRow, r *OptionalReport, verdicts map[string]insights.Verdic
 		j.Cutting = append(j.Cutting, f)
 	}
 	return j
-}
-
-func pctOf(part, whole money.Cents) string {
-	if whole <= 0 {
-		return "0%"
-	}
-	return strconv.FormatInt(int64(part*100/whole), 10) + "%"
 }

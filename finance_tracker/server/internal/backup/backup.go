@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"ft/internal/db"
 )
 
 const Format = "finance-tracker-backup"
@@ -221,9 +223,15 @@ func Restore(d *sql.DB, raw []byte) (map[string]int, error) {
 		tx.Exec(`INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)`, k, v)
 	}
 	// Data changes from migrations newer than the backup (schema 2: pensions
-	// are liquid).
+	// are liquid; 22: mortgage principal).
 	if f.Schema < 2 {
 		if _, err := tx.Exec(`UPDATE accounts SET liquid = 1 WHERE kind = 'pension'`); err != nil {
+			return nil, err
+		}
+	}
+	// Schema 22: the old one-row mortgage payments get their principal part.
+	if f.Schema < 22 {
+		if _, err := tx.Exec(db.MortgagePrincipalFix); err != nil {
 			return nil, err
 		}
 	}

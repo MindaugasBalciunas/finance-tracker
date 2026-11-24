@@ -26,7 +26,7 @@ const report: OptionalReport = {
   judge: {
     worth: 360, cut: 600, unsure: 0, open: 632,
     items: [
-      { kind: 'merchant', key: 'CAFFEINE', name: 'Caffeine', year: 32, usual: 2.67, month: 0, count: 8, months: 1, suggest: 'cut', why: 'small and often' },
+      { kind: 'merchant', key: 'GYM', name: 'Gym+', year: 360, usual: 30, month: 30, count: 12, months: 12 },
       { kind: 'merchant', key: 'BISTRO', name: 'Bistro', year: 600, usual: 50, month: 40, count: 6, months: 6, verdict: 'cut' },
     ],
     cutting: [{ kind: 'merchant', key: 'BISTRO', name: 'Bistro', usual: 100, this_month: 40, last_month: 60, judged_on: '2026-09-02' }],
@@ -59,19 +59,20 @@ describe('Optional spending insights', () => {
     expect(screen.getByText('€10 → €60 a month')).toBeInTheDocument()
   })
 
-  it('lets you judge a place, shows what the data suggests, and follows up a cut', async () => {
+  it('lists your regular optional spending to keep or cut back, and follows up a cut', async () => {
     show(report)
-    expect(await screen.findByText('Worth it or a leak?')).toBeInTheDocument()
-    expect(screen.getByText('Looks like a leak — small and often')).toHaveClass('text-warn')
-    // Bistro is already a cut: its Cut button is on; tapping it clears the verdict.
-    const bistro = screen.getByRole('group', { name: 'Your verdict on Bistro' })
-    const cut = [...bistro.querySelectorAll('button')].find((b) => b.textContent === 'Cut')!
+    expect(await screen.findByText('Your regular optional spending')).toBeInTheDocument()
+    expect(screen.queryByText(/Looks like a leak/)).toBeNull()
+    expect(screen.getByText(/cutting back/).textContent).toContain('€50')
+    // Bistro is already a cut: its Cut back button is on; tapping it clears the verdict.
+    const bistro = screen.getByRole('group', { name: 'Your call on Bistro' })
+    const cut = [...bistro.querySelectorAll('button')].find((b) => b.textContent === 'Cut back')!
     expect(cut).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(cut)
     await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('insights/optional/verdicts') && c.url.includes('key=BISTRO'))).toBe(true))
-    const caffeine = screen.getByRole('group', { name: 'Your verdict on Caffeine' })
-    fireEvent.click([...caffeine.querySelectorAll('button')].find((b) => b.textContent === 'Worth it')!)
-    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ kind: 'merchant', key: 'CAFFEINE', verdict: 'worth' }))
+    const gym = screen.getByRole('group', { name: 'Your call on Gym+' })
+    fireEvent.click([...gym.querySelectorAll('button')].find((b) => b.textContent === 'Keep')!)
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ kind: 'merchant', key: 'GYM', verdict: 'worth' }))
     // Cutting back: Bistro was €100 a month, €60 last month.
     expect(screen.getByText('Cutting back')).toBeInTheDocument()
     expect(screen.getByText('(−40%)')).toHaveClass('text-good')
@@ -86,9 +87,9 @@ describe('Optional spending insights', () => {
     expect(await screen.findByText('€2,400')).toBeInTheDocument()
     expect(screen.getByText('€200 a month')).toBeInTheDocument()
     expect(screen.getByText(/Last 12 months is Jan .* – Dec .*, this month left out/)).toBeInTheDocument()
-    // Bistro: monthly-ish, so a pace; Caffeine: eight payments in one month, so none.
-    expect(screen.getByText('€600 in 12 months · 6 payments · €50 a month on average · €40 this month')).toBeInTheDocument()
-    expect(screen.getByText('€32 in 12 months · 8 payments in 1 month')).toBeInTheDocument()
+    // A habit's month is its year over twelve, beside how many months it was paid in.
+    expect(screen.getByText('€50/mo')).toBeInTheDocument()
+    expect(screen.getByText(/€600 in 12 months · 6 months of 12/).textContent).toContain('€40 this month')
     // After the money ran out: €160 is the six complete months; November stands apart.
     expect(screen.getByText('November 2026 so far')).toBeInTheDocument()
     expect(screen.queryByText('May 2026')).toBeNull()

@@ -31,6 +31,83 @@ func init() {
 //go:embed schema.sql
 var schemaV1 string
 
+// MortgagePrincipalFix (migration 22) puts the mortgage principal back to
+// the loan's start. From Sep 2022 to Apr 2026 each mortgage payment (mostly
+// to Evelina before the divorce) was one "housing.mortgage" expense, so its
+// principal counted as spending, not as wealth built: invested and principal
+// ran about €330–590 a month low. Each payment now keeps the interest and
+// gets a linked split part for the principal: a transfer.debt from Swedbank
+// to the mortgage, that month's drop in the loan balance on the 17th as
+// production had it on 2026-11-24. A redraw of the computed history follows
+// these parts; May 2024, with no payment to split, takes the rest. Two
+// payments in Oct 2023 share that month's drop by amount. 13 Jan 2023's
+// €1,170 "Lizingas" is that month's mortgage payment (owner, 2026-11-24).
+// Imported split parts move no balance, so net worth is unchanged. Unsplit
+// folds a principal back into its payment, which stays filed as interest.
+// Exact ids, dates, amounts and accounts only: a row edited since, or a
+// database without them, is left alone. Restoring a JSON backup from before
+// schema 22 runs it again (backup.Restore).
+const MortgagePrincipalFix = `CREATE TEMP TABLE mortgage_fix(id INTEGER PRIMARY KEY, date TEXT, amount INTEGER, principal INTEGER);
+INSERT INTO mortgage_fix VALUES
+  (52336,'2022-09-19',113200,15350),
+  (52393,'2022-10-14',117000,18410),
+  (52455,'2022-11-17',113000,15303),
+  (52514,'2022-12-14',113000,15354),
+  (52576,'2023-01-13',117000,33746),
+  (52635,'2023-02-15',113200,15674),
+  (52692,'2023-03-11',151200,45812),
+  (52757,'2023-04-14',150000,45013),
+  (52807,'2023-05-12',150000,45161),
+  (52885,'2023-06-14',150000,45310),
+  (52947,'2023-07-10',150000,45459),
+  (53043,'2023-08-11',150000,45609),
+  (53113,'2023-09-14',165000,57635),
+  (53175,'2023-10-13',165000,78854),
+  (53184,'2023-10-16',67000,32020),
+  (53257,'2023-11-14',165000,58190),
+  (53331,'2023-12-15',165000,58381),
+  (50032,'2024-01-15',165000,58574),
+  (50087,'2024-02-14',165000,58766),
+  (50143,'2024-03-11',165000,58960),
+  (50203,'2024-04-10',165000,59154),
+  (50324,'2024-06-09',165000,59469),
+  (50378,'2024-07-08',163000,58081),
+  (50450,'2024-08-13',163000,58272),
+  (50483,'2024-09-08',156000,52922),
+  (50543,'2024-10-08',156000,53096),
+  (50630,'2024-11-08',156000,53271),
+  (50697,'2024-12-06',156000,53446),
+  (50794,'2025-01-08',156000,53622),
+  (50871,'2025-02-07',156000,53799),
+  (50935,'2025-03-07',134400,36873),
+  (50988,'2025-04-08',134462,37044),
+  (51063,'2025-05-08',134462,37166),
+  (51114,'2025-06-06',134462,37288),
+  (51183,'2025-07-07',134462,37411),
+  (51287,'2025-08-08',134400,37485),
+  (51351,'2025-09-05',128400,32857),
+  (51404,'2025-10-06',128400,32966),
+  (51475,'2025-11-07',128400,33074),
+  (51581,'2025-12-08',128400,33184),
+  (42,'2026-01-15',128400,33292),
+  (108,'2026-02-15',128400,33402),
+  (175,'2026-03-16',128788,33819),
+  (265,'2026-04-17',128788,33931);
+INSERT INTO transactions(date,kind,amount,account_id,to_account_id,category,merchant,note,tags,split_of,source,created_at,updated_at)
+SELECT t.date,'transfer',f.principal,t.account_id,'mortgage','transfer.debt',t.merchant,'Mortgage principal',t.tags,t.id,'import',t.created_at,strftime('%Y-%m-%dT%H:%M:%SZ','now')
+FROM transactions t JOIN mortgage_fix f ON f.id=t.id AND f.date=t.date AND f.amount=t.amount
+WHERE t.account_id='swed' AND t.split_of IS NULL AND t.category IN ('housing.mortgage','transfer.debt')
+  AND EXISTS (SELECT 1 FROM accounts WHERE id='mortgage')
+  AND EXISTS (SELECT 1 FROM categories WHERE id='housing.mortgage_interest')
+  AND EXISTS (SELECT 1 FROM categories WHERE id='transfer.debt')
+  AND NOT EXISTS (SELECT 1 FROM transactions p WHERE p.split_of=t.id);
+UPDATE transactions SET kind='expense', to_account_id=NULL, category='housing.mortgage_interest',
+  amount=amount-(SELECT f.principal FROM mortgage_fix f WHERE f.id=transactions.id),
+  updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+WHERE id IN (SELECT f.id FROM mortgage_fix f JOIN transactions t ON t.id=f.id AND t.amount=f.amount)
+  AND EXISTS (SELECT 1 FROM transactions p WHERE p.split_of=transactions.id AND p.category='transfer.debt' AND p.note='Mortgage principal');
+DROP TABLE mortgage_fix;`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []string{
 	schemaV1,
@@ -220,6 +297,8 @@ CREATE TABLE IF NOT EXISTS trip_history (
 	// must or optional. '' = not marked (every existing row), and the
 	// payment then follows its category's essential flag as before.
 	`ALTER TABLE transactions ADD COLUMN need TEXT NOT NULL DEFAULT '' CHECK (need IN ('','must','optional'));`,
+	// 22: mortgage principal back to the loan's start — see MortgagePrincipalFix.
+	MortgagePrincipalFix,
 }
 
 // Open opens (creating if needed) the database at path and brings the schema

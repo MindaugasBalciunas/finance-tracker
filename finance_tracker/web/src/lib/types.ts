@@ -73,7 +73,7 @@ export interface OptTx { id: number; date: string; merchant: string; category: s
 /** `year` is the twelve complete months, `usual` that over 12, `months` how many of them had a payment. */
 export interface OptLine { key: string; month: number; usual: number; year: number; count: number; months: number }
 export interface JudgeItem { kind: 'merchant' | 'category'; key: string; name: string; year: number; usual: number; month: number; count: number; months: number
-  verdict?: 'worth' | 'cut' | 'unsure'; suggest?: 'worth' | 'cut'; why?: string }
+  verdict?: 'worth' | 'cut' | 'unsure' }
 export interface OptionalReport {
   month: string; spent: number; usual: number; free: number; year: number
   months: { month: string; essential: number; optional: number }[]

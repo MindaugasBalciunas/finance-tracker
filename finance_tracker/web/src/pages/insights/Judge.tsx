@@ -28,11 +28,11 @@ export function paceLine(l: { usual: number; count: number; months: number; mont
   if (l.month > 0) parts.push(`${eur(l.month)} this month`)
   return parts.join(' · ')
 }
-type V = 'worth' | 'cut' | 'unsure'
+type V = 'worth' | 'cut'
+// Keep is stored as "worth", cut back as "cut" (the verdicts table's words).
 const VERDICTS: { v: V; label: string; icon: string; on: string }[] = [
-  { v: 'worth', label: 'Worth it', icon: 'check', on: 'bg-good/15 text-good border-good/40' },
-  { v: 'cut', label: 'Cut', icon: 'x', on: 'bg-bad/15 text-bad border-bad/40' },
-  { v: 'unsure', label: 'Not sure', icon: 'dots', on: 'bg-sunken text-ink border-line' },
+  { v: 'worth', label: 'Keep', icon: 'check', on: 'bg-good/15 text-good border-good/40' },
+  { v: 'cut', label: 'Cut back', icon: 'down', on: 'bg-warn/15 text-warn border-warn/40' },
 ]
 
 function useVerdict() {
@@ -47,9 +47,12 @@ function useVerdict() {
   })
 }
 
-/** Worth it or a leak? The owner's verdict on each regular place and big
- *  category, with what the data suggests, and the year's optional spending
- *  added up by verdict. */
+/** Your regular optional spending: the habits — places and categories paid
+ *  in six or more of the last twelve months — with what each costs a month,
+ *  and your call: keep it or cut back. One-off shops (a laptop, DIY runs)
+ *  and guessed "leak" labels were dropped in 3.1.1: there is nothing to keep
+ *  or cut about a single purchase, and buying late in a month doesn't make
+ *  something a leak. */
 export function JudgeCard({ r }: { r: OptionalReport }) {
   const j = r.judge
   const [all, setAll] = useState(false)
@@ -57,24 +60,13 @@ export function JudgeCard({ r }: { r: OptionalReport }) {
   // Biggest first, in a stable order: a row must not jump away when you judge it.
   const items = j.items
   const shown = all ? items : items.slice(0, 8)
-  const total = Math.max(j.worth + j.cut + j.unsure + j.open, 1)
-  const parts = [
-    { k: 'worth', label: 'Worth it', v: j.worth, color: 'rgb(var(--good))' },
-    { k: 'cut', label: 'To cut', v: j.cut, color: 'rgb(var(--bad))' },
-    { k: 'unsure', label: 'Not sure', v: j.unsure, color: 'var(--s-other)' },
-  ]
+  const sum = (v?: V) => items.filter((it) => (v ? it.verdict === v : true)).reduce((a, it) => a + it.usual, 0)
+  const keep = sum('worth'), cut = sum('cut')
   return (
-    <Card pad={false} icon="check" color="var(--s7)" title="Worth it or a leak?">
-      <div className="px-4 pb-3">
-        <div className="text-xs text-muted">Your call on the places you keep going back to (3 or more payments outside trips) and your biggest categories. A payment takes its place's verdict, else its own category's. All optional spending, {yearRange(r)}:</div>
-        <div className="mt-2 flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-line" role="img"
-          aria-label={`Worth it ${eur0(j.worth)}, to cut ${eur0(j.cut)}, not sure ${eur0(j.unsure)}, not judged ${eur0(j.open)}`}>
-          {parts.filter((p) => p.v > 0.005).map((p) => <div key={p.k} className="h-full" style={{ width: `${(p.v / total) * 100}%`, background: p.color }} />)}
-        </div>
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-          {parts.map((p) => <span key={p.k} className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: p.color }} />{p.label} <span className="tnum text-ink2">{eur0(p.v)}</span></span>)}
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border border-axis" />Not judged <span className="tnum text-ink2">{eur0(j.open)}</span></span>
-        </div>
+    <Card pad={false} icon="repeat" color="var(--s7)" title="Your regular optional spending">
+      <div className="px-4 pb-3 text-xs text-muted">
+        Places and categories you paid in 6 or more of the last 12 months ({yearRange(r)}). About <b className="tnum text-ink2">{eur0(sum())}</b> a month in all. Keep it, or cut back?
+        {(keep > 0 || cut > 0) && <div className="mt-1">Keeping <b className="tnum text-good">{eur0(keep)}</b> a month · cutting back <b className="tnum text-warn">{eur0(cut)}</b> a month</div>}
       </div>
       <div className="divide-y divide-line border-t border-line">
         {shown.map((it) => <JudgeRow key={it.kind + it.key} it={it} />)}
@@ -93,22 +85,16 @@ function JudgeRow({ it }: { it: JudgeItem }) {
   const set = useVerdict()
   const name = it.kind === 'category' ? cats.path(it.key) : it.name || it.key
   return (
-    <div className="px-4 py-2.5">
-      <div className="flex items-center gap-3">
-        <span className="grid w-7 shrink-0 place-items-center">
-          {it.kind === 'merchant' ? <MerchantMark merchant={it.name} size={28} /> : <Icon name="tag" size={16} className="text-muted" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm">{name}</span>
-          <span className="block text-xs text-muted">{eur0(it.year)} in 12 months · {paceLine(it)}</span>
-        </span>
-      </div>
-      {!it.verdict && it.suggest && (
-        <div className={clsx('ml-10 mt-1 text-xs', it.suggest === 'cut' ? 'text-warn' : 'text-good')}>
-          {it.suggest === 'cut' ? 'Looks like a leak' : 'Looks worth it'} — {it.why}
-        </div>
-      )}
-      <div className="ml-10 mt-1.5 flex gap-1.5" role="group" aria-label={`Your verdict on ${name}`}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+      <span className="grid w-7 shrink-0 place-items-center">
+        {it.kind === 'merchant' ? <MerchantMark merchant={it.name} size={28} /> : <Icon name="tag" size={16} className="text-muted" />}
+      </span>
+      {/* Phone: the name takes the row and the buttons go under it. */}
+      <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] sm:basis-auto">
+        <span className="block text-sm"><span className="font-medium">{name}</span> <span className="tnum text-ink2">{eur0(it.usual)}/mo</span></span>
+        <span className="block text-xs text-muted">{eur0(it.year)} in 12 months · {plural(it.months, 'month')} of 12{it.month > 0 && <> · {eur(it.month)} this month</>}</span>
+      </span>
+      <span className="ml-10 flex gap-1.5 sm:ml-0" role="group" aria-label={`Your call on ${name}`}>
         {VERDICTS.map((x) => {
           const on = it.verdict === x.v
           return (
@@ -119,7 +105,7 @@ function JudgeRow({ it }: { it: JudgeItem }) {
             </button>
           )
         })}
-      </div>
+      </span>
     </div>
   )
 }

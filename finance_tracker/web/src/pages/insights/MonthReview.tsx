@@ -39,7 +39,9 @@ export function ReviewTabs({ mode: start }: { mode?: 'cashflow' }) {
 
 function MonthReviewView() {
   const [sp] = useSearchParams()
-  const [month, setMonth] = useState(sp.get('month') || addMonths(thisMonth(), -1))
+  // Opens on the month in progress (the owner's choice, 2026-11-24); a link
+  // with ?month= — "your October review is ready" — opens that month.
+  const [month, setMonth] = useState(sp.get('month') || thisMonth())
   const { data: r, isLoading } = useQuery({ queryKey: ['month-review', month], queryFn: () => api.get<MonthReviewData>('/insights/month', { month }) })
   const cats = useCats()
   const editor = useTxEditor()

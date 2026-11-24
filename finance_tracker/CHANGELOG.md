@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.2.0 — Mortgage principal back to 2022, habits to keep or cut
+
+### Your data (runs once when the add-on restarts)
+- **Mortgage principal back to the start (Sep 2022).** Until April 2026 each mortgage payment, mostly paid to Evelina before the divorce, was one "house payment" expense, so the principal counted as spending instead of wealth built. Each of those 44 payments now keeps its interest and gets a linked split part for the principal, from the loan's monthly balance: €18,925 over Sep 2022 – Apr 2026. Net worth and every balance stay the same. Invested and loan principal go up, spending goes down by the same amount (Insights → Summary's "Invested · 12 mo" rises by about €2,000).
+- 13 Jan 2023's €1,170 "Lizingas" payment is now January's mortgage payment, split the same way.
+- A payment you edited since is left alone. Restoring an older backup applies the same split.
+
+### Insights
+- **Review** opens on the current month. Links to a finished month's review still open that month.
+- **Optional spending:** "Worth it or a leak?" is now **Your regular optional spending**: only places and categories you paid in 6 or more of the last 12 months, each with what it costs a month and **Keep** / **Cut back**. One-off shops (bigbox, DIY stores) and guessed "looks like a leak" labels are gone. Earlier "Worth it" and "Cut" choices carry over as Keep and Cut back.
+
 ## 3.1.0 — Home shows what came in and where it went
 
 ### Home

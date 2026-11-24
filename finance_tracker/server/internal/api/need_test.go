@@ -110,15 +110,15 @@ func TestOptionalInsightsRoute(t *testing.T) {
 // and usual month itself; a read token can see them but never set one.
 func TestOptionalVerdictsAreTheOwnersToSet(t *testing.T) {
 	s, c := newServer(t)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 6; i++ { // a habit: six of the twelve months
 		Tx(t, s.DB, ledger.Tx{Date: time.Now().AddDate(0, -1-i, 0).Format("2006-01") + "-10", Amount: E(30), Category: "leisure.going_out", Merchant: "Bar Nr 1", AccountID: "swed"})
 	}
 	key := merchant.Key("Bar Nr 1")
 	c.ok("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "cut", "name": "spoofed"}, nil)
 	var r cfo.OptionalReport
 	c.ok("GET", "/insights/optional", nil, &r)
-	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].Name != "Bar Nr 1" || r.Judge.Cutting[0].Usual != E(10) {
-		t.Fatalf("cutting %+v", r.Judge.Cutting) // 4 × €30 in the twelve months = €10 a month
+	if len(r.Judge.Cutting) != 1 || r.Judge.Cutting[0].Name != "Bar Nr 1" || r.Judge.Cutting[0].Usual != E(15) {
+		t.Fatalf("cutting %+v", r.Judge.Cutting) // 6 × €30 in the twelve months = €15 a month
 	}
 	if code, _ := c.do("PUT", "/insights/optional/verdicts", map[string]string{"kind": "merchant", "key": key, "verdict": "maybe"}); code != 400 {
 		t.Errorf("unknown verdict: %d", code)
@@ -128,7 +128,7 @@ func TestOptionalVerdictsAreTheOwnersToSet(t *testing.T) {
 	}
 	c.ok("DELETE", "/insights/optional/verdicts?kind=merchant&key="+url.QueryEscape(key), nil, nil)
 	c.ok("GET", "/insights/optional", nil, &r)
-	if len(r.Judge.Cutting) != 0 || r.Judge.Open != E(120) {
+	if len(r.Judge.Cutting) != 0 || r.Judge.Open != E(180) {
 		t.Fatalf("after clearing: %+v", r.Judge)
 	}
 

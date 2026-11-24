@@ -198,3 +198,28 @@ func TestOlderBackupRestoresIntoNewerSchema(t *testing.T) {
 		t.Error(period)
 	}
 }
+
+// A JSON backup from before schema 22 still holds the one-row mortgage
+// payments; restoring it on a newer version splits them again, as the
+// migration did.
+func TestOlderBackupGetsTheMortgagePrincipalFix(t *testing.T) {
+	src := DB(t)
+	if _, err := src.Exec(`INSERT INTO transactions(id,date,kind,amount,account_id,category,merchant,note,tags,source,created_at,updated_at)
+		VALUES(265,'2026-04-17','expense',128788,'swed','housing.mortgage','','House payment','','import','2026-07-04T16:31:45Z','2026-07-04T16:31:45Z')`); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := backup.Export(src, false)
+	f.Schema = 21
+	raw, _ := json.Marshal(f)
+	dst := DB(t)
+	if _, err := backup.Restore(dst, raw); err != nil {
+		t.Fatal(err)
+	}
+	var interest, principal int
+	var cat string
+	dst.QueryRow(`SELECT amount, category FROM transactions WHERE id=265`).Scan(&interest, &cat)
+	dst.QueryRow(`SELECT amount FROM transactions WHERE split_of=265 AND to_account_id='mortgage'`).Scan(&principal)
+	if cat != "housing.mortgage_interest" || principal != 33931 || interest != 128788-33931 {
+		t.Fatalf("interest %d (%s), principal %d", interest, cat, principal)
+	}
+}

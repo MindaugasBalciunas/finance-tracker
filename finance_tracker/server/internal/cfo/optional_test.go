@@ -198,10 +198,9 @@ func TestOptionalPaydayAcrossMonthEndAndSplitReceipts(t *testing.T) {
 
 // Judging: the owner said Bistro is a cut (in September, at €100 a month),
 // the gym worth it, and Dating worth it. The page sums the twelve months by
-// verdict, suggests one for what isn't judged — the coffee habit leans
-// "cut", the gym paid every month and the fund-paid flights lean "worth" —
-// and follows the cut up: €40 so far this month, €100 last month.
-func TestOptionalJudgeSumsVerdictsSuggestsAndFollowsUpCuts(t *testing.T) {
+// verdict, lists the habits (paid in 6+ of the 12 months) to keep or cut
+// back, and follows the cut up: €40 so far this month, €100 last month.
+func TestOptionalJudgeSumsVerdictsListsHabitsAndFollowsUpCuts(t *testing.T) {
 	d := DB(t)
 	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
 	plan.SaveSettings(d, plan.Settings{IncomeMode: "manual", ManualIncome: E(1000)})
@@ -258,17 +257,19 @@ func TestOptionalJudgeSumsVerdictsSuggestsAndFollowsUpCuts(t *testing.T) {
 		got[it.Kind+":"+it.Key] = it
 	}
 	mk := func(m string) string { return "merchant:" + merchant.Key(m) }
-	for key, want := range map[string][3]string{
-		mk("Caffeine"):    {"", "cut", "small and often"},
-		mk("Gym+"):        {"worth", "worth", "a steady part of your months"},
-		mk("airBaltic"):   {"", "worth", "planned — paid from a fund"},
-		mk("Bistro"):      {"cut", "", ""},
-		"category:dating": {"worth", "", ""},
-		"category:food":   {"worth", "", ""},
+	// Habits only — paid in six or more of the twelve months — plus what was
+	// judged: the coffee week and three flights are not habits to keep or cut.
+	for key, verdict := range map[string]string{
+		mk("Gym+"): "worth", mk("Bistro"): "cut", "category:health.fitness": "", "category:food.restaurants": "worth",
+		"category:dating": "worth", "category:food": "worth",
 	} {
-		it, ok := got[key]
-		if !ok || it.Verdict != want[0] || it.Suggest != want[1] || it.Why != want[2] {
-			t.Errorf("%s: %+v", key, it)
+		if it, ok := got[key]; !ok || it.Verdict != verdict {
+			t.Errorf("%s: %+v (listed %v)", key, it, ok)
+		}
+	}
+	for _, key := range []string{mk("Caffeine"), mk("airBaltic"), mk("Pizza"), "category:travel.flights", "category:food.coffee"} {
+		if _, ok := got[key]; ok {
+			t.Errorf("%s listed, but it isn't a habit", key)
 		}
 	}
 	if len(j.Cutting) != 1 {
@@ -340,17 +341,18 @@ func TestOptionalFiguresAgreeWithEachOther(t *testing.T) {
 	for _, it := range r.Judge.Items {
 		items[it.Kind+":"+it.Name] = it
 	}
-	big := items["merchant:bigbox"]
-	if big.Year != E(1200) || big.Usual != E(100) || big.Count != 4 || big.Months != 3 {
-		t.Errorf("bigbox: %+v", big)
-	}
-	for _, name := range []string{"Red Sea Hotel", "Novaturas"} {
-		if _, ok := items["merchant:"+name]; ok {
-			t.Errorf("%s is not a place you keep going back to", name)
+	// Nothing here is a habit (paid in 6+ of the 12 months): four bigbox
+	// purchases in three months, one hotel bill, a trip's instalments.
+	for _, key := range []string{"merchant:bigbox", "merchant:Red Sea Hotel", "merchant:Novaturas", "category:travel.trip"} {
+		if it, ok := items[key]; ok {
+			t.Errorf("%s is not a habit to keep or cut: %+v", key, it)
 		}
 	}
-	if it := items["category:travel.trip"]; it.Year != E(1200) || it.Usual != E(100) {
-		t.Errorf("the trip is still judged by its category: %+v", it)
+	// The place lists still carry the figures: bigbox's month is its year over 12.
+	for _, l := range r.Merchants {
+		if l.Key == merchant.Key("bigbox") && (l.Year != E(1200) || l.Usual != E(100) || l.Count != 4 || l.Months != 3) {
+			t.Errorf("bigbox: %+v", l)
+		}
 	}
 	for _, l := range append(r.Categories, r.Merchants...) {
 		if l.Usual != l.Year/12 || (l.Year > 0) != (l.Months > 0) {

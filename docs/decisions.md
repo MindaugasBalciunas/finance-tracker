@@ -4,6 +4,12 @@ Product, design and technical decisions, newest first, each with the reason. Add
 
 ---
 
+## 2026-11-24 · 3.2.0 · Mortgage principal from the balance history; habits, not shops
+
+**Decided:** (1) Old one-row mortgage payments (Sep 2022 – Apr 2026) are split by migration 22: principal = that month's drop in the loan balance (production's history on 2026-11-24), interest = the rest of the payment (the owner's rule, also for payments to Evelina that exceeded the bank's instalment). The fix replays on restoring a pre-22 JSON backup. (2) Insights → Optional judges habits only — paid in 6+ of the last 12 months — as Keep / Cut back; no one-off shops, no guessed "leak" labels. (3) Month review opens on the current month.
+**Why:** the owner asked for the principal back to the loan's start, and found "Worth it or a leak?" meaningless: it graded shops like bigbox (one-off electronics) and called DIY runs leaks because they came late in a month. None of its 20 rows had been answered.
+**Rules out:** inferring "leak" from timing; asking for a verdict on a single purchase.
+
 ## 2026-11-24 · Home: what you see, not what to move
 
 **Decided:** the app is a visualization tool, not the place money is managed — the banks do that. Top-up suggestions are `info` notes, left out of Home's "Needs you" and shown only in the payday card; the "pay yourself first" reminder is a note too. Home gains: an Investments row with today's move in the net-worth panel, saved & invested against the plan and over-budget lines in the month card, the emergency fund under target as a to-do, and "New since you last looked" (rows added since Home was marked seen, `prefs.home_seen`) instead of a fixed six. The "budgets differ from your last 12 months" note shows only in the month's first week.
