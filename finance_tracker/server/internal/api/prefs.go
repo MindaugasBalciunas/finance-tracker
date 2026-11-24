@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // Prefs are view choices that follow the owner across devices (stored on
@@ -20,6 +21,9 @@ type Prefs struct {
 	// Private usage analytics (on by default; read only by the owner's session
 	// and the AI apps / API tokens they connected).
 	UsageOff bool `json:"usage_off"`
+	// When Home's new bank rows were last marked seen (RFC3339); rows added
+	// after it show as "New since you last looked".
+	HomeSeen string `json:"home_seen,omitempty"`
 }
 
 // validPrefs keeps the stored blob small and boring.
@@ -29,6 +33,11 @@ func validPrefs(p Prefs) error {
 	}
 	if len(p.HiddenAccounts) > 200 {
 		return errors.New("too many hidden accounts")
+	}
+	if p.HomeSeen != "" && p.HomeSeen != "now" {
+		if _, err := time.Parse(time.RFC3339, p.HomeSeen); err != nil {
+			return errors.New("invalid home_seen time")
+		}
 	}
 	if len(p.Periods) > 40 {
 		return errors.New("too many periods")

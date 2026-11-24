@@ -60,6 +60,16 @@ func (s *Server) planRoutes() {
 		if err := validPrefs(p); err != nil {
 			return nil, bad(err.Error())
 		}
+		// Stored as created_at is (UTC, whole seconds), so the two compare as
+		// text. "now" takes the server's clock, the one created_at uses — a
+		// phone running fast would otherwise hide rows it never showed — one
+		// second back, so a row from that same second shows again rather than
+		// never.
+		if p.HomeSeen == "now" {
+			p.HomeSeen = time.Now().UTC().Add(-time.Second).Format(time.RFC3339)
+		} else if t, err := time.Parse(time.RFC3339, p.HomeSeen); err == nil {
+			p.HomeSeen = t.UTC().Format(time.RFC3339)
+		}
 		return p, savePrefs(s.DB, p)
 	})
 	s.handle("POST /api/usage", func(w http.ResponseWriter, r *http.Request) (any, error) {

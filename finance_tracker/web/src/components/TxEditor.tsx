@@ -435,7 +435,7 @@ export function TxRow({ t, onClick, selected, onSelect, showDate = false, mark }
       </div>
       <div className="shrink-0 text-right">
         <div className={clsx('tnum text-sm font-semibold', t.kind === 'income' ? 'text-good' : t.kind === 'transfer' ? 'text-ink2' : 'text-ink')}>{sign}{eurc(t.amount).replace('€', '€')}</div>
-        {t.pending ? <div className="text-[11px] font-medium text-warn" title="Reserved by the bank, not booked yet — the amount can still change">pending</div>
+        {t.pending ? <div className="text-[11px] text-muted" title="Reserved by the bank, not booked yet — the amount can still change">pending</div>
           : t.tags.length > 0 && <div className="max-w-[9rem] truncate text-[11px] text-muted">{t.tags.join(' · ')}</div>}
       </div>
     </div>

@@ -1201,3 +1201,40 @@ func TestPaceForAFinishedMonth(t *testing.T) {
 		t.Errorf("a month ahead: %d", code)
 	}
 }
+
+// Home's "New since you last looked": rows added after the time Home was
+// marked seen (stored in prefs as UTC whole seconds, like created_at).
+func TestHomeListsRowsAddedSinceItWasMarkedSeen(t *testing.T) {
+	s, c := newServer(t)
+	c.ok("POST", "/transactions", map[string]any{"date": "2026-11-20", "kind": "expense", "amount": 5, "category": "food.groceries", "account_id": "swed", "merchant": "Old"}, nil)
+	if _, err := s.DB.Exec(`UPDATE transactions SET created_at='2026-11-20T08:00:00Z' WHERE merchant='Old'`); err != nil {
+		t.Fatal(err)
+	}
+	var p map[string]any
+	c.ok("PUT", "/prefs", map[string]any{"home_seen": "2026-11-20T10:00:00.250+02:00"}, &p)
+	if p["home_seen"] != "2026-11-20T08:00:00Z" {
+		t.Fatalf("home_seen stored as %v", p["home_seen"])
+	}
+	c.ok("POST", "/transactions", map[string]any{"date": "2026-11-21", "kind": "expense", "amount": 7, "category": "food.groceries", "account_id": "swed", "merchant": "New"}, nil)
+	var page struct{ Items []ledger.Tx }
+	c.ok("GET", "/transactions?created_after=2026-11-20T08:00:00Z", nil, &page)
+	if len(page.Items) != 1 || page.Items[0].Merchant != "New" {
+		t.Fatalf("new rows %+v", page.Items)
+	}
+	if code, _ := c.do("PUT", "/prefs", map[string]any{"home_seen": "yesterday"}); code != 400 {
+		t.Fatalf("bad time accepted: %d", code)
+	}
+	// An offset is read as the instant it names, not as text.
+	c.ok("GET", "/transactions?created_after=2026-11-20T10:00:00%2B02:00", nil, &page)
+	if len(page.Items) != 1 || page.Items[0].Merchant != "New" {
+		t.Fatalf("offset time: %+v", page.Items)
+	}
+	if code, _ := c.do("GET", "/transactions?created_after=soon", nil); code != 400 {
+		t.Fatalf("bad created_after: %d", code)
+	}
+	// "now" is stamped with the server's clock, the one created_at uses.
+	c.ok("PUT", "/prefs", map[string]any{"home_seen": "now"}, &p)
+	if at, err := time.Parse(time.RFC3339, fmt.Sprint(p["home_seen"])); err != nil || time.Since(at) > time.Minute {
+		t.Fatalf("home_seen now = %v", p["home_seen"])
+	}
+}

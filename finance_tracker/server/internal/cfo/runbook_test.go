@@ -172,7 +172,9 @@ func TestHomeRemindsOfDecisionsAndPayday(t *testing.T) {
 	if a := kinds["worth"]; a.Link != "/plan/wishlist" {
 		t.Errorf("no worth-it question: %+v", o.Actions)
 	}
-	if a := kinds["payday"]; a.Level != "warn" || a.Link != "/plan" {
+	// Still listed a week on, but as a note: money is moved in the banks, and
+	// the owner asked that transfer advice never lead (2026-11-24).
+	if a := kinds["payday"]; a.Level != "info" || a.Link != "/plan" {
 		t.Errorf("payday a week on: %+v", a)
 	}
 }

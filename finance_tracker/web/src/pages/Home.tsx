@@ -1,9 +1,9 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { CashCalendar, Overview } from '../lib/types'
+import type { Action, CashCalendar, Overview } from '../lib/types'
 import { Link } from 'react-router-dom'
 import { Area, AreaChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { useCashCalendar, useNetWorthHistory, useOverview, usePeriod, usePrefs, useWide } from '../lib/hooks'
+import { useCashCalendar, useNetWorthHistory, useNewTx, useOverview, usePeriod, usePortfolio, usePrefs, useWide } from '../lib/hooks'
 import { RANGES, rangeFrom, rangeLabel, rangeStep, SHORT } from '../lib/periods'
 import { eur, eurk, monthLabel, pct, shortDate, todayISO } from '../lib/format'
 import { CountUp, Card, Delta, ErrorBox, hue, Loading, Segmented, Toggle } from '../components/ui'
@@ -12,6 +12,7 @@ import { MonthTimeline, typicalShare } from '../components/MonthChart'
 import { TxRow, useTxEditor } from '../components/TxEditor'
 import { QuickActions } from '../components/QuickActions'
 import { PaydayStrip } from './plan/Cash'
+import { OutPaceCard } from './insights/Spending'
 import { Icon, IconTile } from '../components/Icon'
 import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
 
@@ -22,7 +23,6 @@ import { GROUPS, LIQUID_GROUPS } from '../lib/categories'
  *  needed attention.) */
 export default function Home() {
   const { data: o, isLoading, error } = useOverview()
-  const editor = useTxEditor()
   const { data: cal } = useCashCalendar()
   const wide = useWide()
   if (isLoading) return <Loading />
@@ -33,38 +33,86 @@ export default function Home() {
   const today = <TodayCard o={o} cal={cal} />
   const thisMonth = <LeftToSpend p={o.plan} progress={o.month_progress} month={month} />
   const cash = o.cash ? <PaydayStrip c={o.cash} /> : null
-  const recent = (
-    <Card pad={false} icon="list" color="var(--s2)" title="Recent" action={
-      <div className="flex gap-1">
-        <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
-        <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>
-      </div>}>
-      <div className="divide-y divide-line pb-1">
-        {(o.recent ?? []).slice(0, 6).map((t) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
-      </div>
-      <Link to="/ledger" className="block border-t border-line px-4 py-3 text-center text-sm text-accent">All transactions</Link>
-    </Card>
-  )
+  // Spending plus investing day by day against last month and a typical
+  // month — the same card as Insights → Spending, on Home at the owner's ask.
+  const withInvesting = <OutPaceCard />
+  const recent = <NewOrRecent o={o} />
   return (
     <div className="flex flex-col gap-4">
       <QuickActions inboxOpen={o.inbox_open} />
       {wide ? (
-        // Desktop: where you stand and what was spent on the left; the review
-        // column on the right — what needs you, the month, cash until payday —
-        // so both columns run the page's height (a short right column and a
-        // card squeezed beside the month left large empty areas).
+        // Desktop: where you stand, cash until payday and what was spent on
+        // the left; the review column on the right — what needs you, the
+        // month and its spending with investing — so both columns run the
+        // page's height (a short right column left large empty areas).
         <div className="grid grid-cols-3 items-start gap-4">
-          <div className="col-span-2 space-y-4">{worth}{recent}</div>
-          <div className="space-y-4">{today}{thisMonth}{cash}</div>
+          <div className="col-span-2 space-y-4">{worth}{cash}{recent}</div>
+          <div className="space-y-4">{today}{thisMonth}{withInvesting}</div>
         </div>
       ) : <>
         {worth}
         {today}
         {thisMonth}
+        {withInvesting}
         {cash}
         {recent}
       </>}
     </div>
+  )
+}
+
+/** "Needs you": the bell's actions, most urgent first, then soonest due,
+ *  with bank rows waiting in the inbox if the server didn't list them.
+ *  Top-ups are left to the payday card below: the app shows where money
+ *  stands, the banks move it, so transfer advice stays quiet here. */
+export function needsList(o: Overview): Action[] {
+  const rank = { bad: 0, warn: 1, info: 2 } as Record<string, number>
+  const actions = (o.actions ?? []).filter((a) => a.kind !== 'move').sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3) || (a.due ?? '9').localeCompare(b.due ?? '9'))
+  if (o.inbox_open > 0 && !actions.some((a) => a.kind === 'inbox')) actions.unshift({ level: 'warn', kind: 'inbox', text: `${o.inbox_open} bank ${o.inbox_open === 1 ? 'payment' : 'payments'} to review`, link: '/ledger/inbox' })
+  return actions
+}
+
+/** The cash risk, if any: what can go wrong today comes first. */
+function cashRisk(cal: CashCalendar | undefined, now: string): { tone: 'bad' | 'warn'; text: ReactNode } | null {
+  if (cal?.first_short) return { tone: 'bad', text: <>Cash runs out {cal.first_short <= now ? 'today' : `on ${shortDate(cal.first_short)}`}.</> }
+  if (cal?.first_below && cal.first_below <= now) return { tone: 'warn', text: <>Cash is under your {eur(cal.floor)} emergency floor today ({eur(cal.start)}).</> }
+  return null
+}
+
+/** What was added since you last looked — bank syncs and your own entries —
+ *  so notes, splits and must/optional can be done here instead of in the
+ *  Ledger. "Mark seen" clears it; with nothing new it is the last six rows. */
+export function NewOrRecent({ o }: { o: Overview }) {
+  const editor = useTxEditor()
+  const { prefs, set, ready } = usePrefs()
+  const seen = prefs.home_seen
+  // The first visit starts the clock, so the list begins empty, not with
+  // every row ever added. Tried once: a failing save refetches prefs, which
+  // would otherwise try again forever.
+  const started = useRef(false)
+  useEffect(() => {
+    if (ready && !seen && !started.current) { started.current = true; set({ home_seen: 'now' }) }
+  }, [ready, seen, set])
+  const { data: fresh } = useNewTx(seen)
+  const items = fresh?.items ?? []
+  const isNew = items.length > 0
+  const shown = isNew ? items.slice(0, 15) : (o.recent ?? []).slice(0, 6)
+  const hidden = isNew ? (fresh?.total ?? items.length) - shown.length : 0
+  return (
+    <Card pad={false} icon="list" color="var(--s2)" title={isNew ? `New · ${fresh?.total ?? items.length}` : 'Recent'} action={
+      <div className="flex gap-1">
+        <button className="btn-ghost h-8 px-2.5 text-xs" onClick={editor.scan}><Icon name="camera" size={16} />Scan</button>
+        <button className="btn-primary h-8 px-2.5 text-xs" onClick={() => editor.open()}><Icon name="plus" size={16} />Add</button>
+      </div>}>
+      <div className="divide-y divide-line pb-1">
+        {shown.map((t) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
+      </div>
+      <div className="flex border-t border-line text-sm">
+        {isNew && <button type="button" className="flex-1 px-4 py-3 text-center font-medium text-accent hover:bg-sunken/30" onClick={() => set({ home_seen: 'now' })}>
+          <Icon name="check" size={16} className="mr-1 inline" />Mark seen</button>}
+        <Link to="/ledger" className={clsx('flex-1 px-4 py-3 text-center text-accent hover:bg-sunken/30', isNew && 'border-l border-line')}>{hidden > 0 ? `${hidden} more in the Ledger` : 'All transactions'}</Link>
+      </div>
+    </Card>
   )
 }
 
@@ -158,16 +206,34 @@ function NetWorthHero({ o }: { o: Overview }) {
           <GroupBar parts={assets} debt={liquid ? 0 : o.debt} link={(id) => (id === 'investments' ? '/wealth/investments' : id === 'real_assets' ? '/wealth/ownership' : '/wealth')} />
           <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted">
             <span className="min-w-0">{liquid ? `Liquid total ${eur(assetTotal)} · house and car excluded` : `Assets ${eur(assetTotal)} − debt ${eur(o.debt)} = ${eur(o.net_worth)}`}</span>
-            <span className="flex shrink-0 gap-3">
-              <Link to="/wealth/investments" className="inline-flex items-center gap-0.5 text-accent">Investments<Icon name="chevronR" size={14} /></Link>
-              <Link to="/wealth" className="inline-flex items-center gap-0.5 text-accent">Wealth<Icon name="chevronR" size={14} /></Link>
-            </span>
+            <Link to="/wealth" className="inline-flex shrink-0 items-center gap-0.5 text-accent">Wealth<Icon name="chevronR" size={14} /></Link>
           </div>
         </div>
       )}
+      {(o.by_group.investments ?? 0) > 0 && <InvestmentsRow value={o.by_group.investments} />}
     </section>
   )
   return hero
+}
+
+/** Investments one tap from Home, with today's move: the page most often
+ *  hunted for from here (Home → Wealth → tab), and the one read longest. */
+function InvestmentsRow({ value }: { value: number }) {
+  const { data: pf } = usePortfolio()
+  const day = pf?.day_change_eur ?? 0
+  const base = (pf?.value_eur ?? 0) - day
+  return (
+    <Link to="/wealth/investments" className="flex min-h-[48px] items-center gap-3 border-t border-line px-4 py-2.5 hover:bg-sunken/30 sm:px-6">
+      <IconTile name="trend" color="var(--s1)" size={28} />
+      <span className="min-w-0 flex-1 text-sm">
+        <span className="font-medium">Investments</span> <span className="tnum text-ink2">{eur(value)}</span>
+      </span>
+      {pf && Math.abs(day) >= 0.5 && (
+        <span className="shrink-0 text-xs text-muted">today <Delta value={day} />{base > 0 && <span className="tnum"> ({day > 0 ? '+' : '−'}{pct(Math.abs(day) / base, 1)})</span>}</span>
+      )}
+      <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
+    </Link>
+  )
 }
 
 /** Today: one sentence on where things stand, then what needs you — the
@@ -180,9 +246,7 @@ function TodayCard({ o, cal }: { o: Overview; cal?: CashCalendar }) {
   const day = Number(now.slice(8, 10))
   const dim = p.days?.length || 30
   // The headline: cash risk first (it's what can go wrong today), then the month.
-  const cashLine = cal?.first_short ? { tone: 'bad', text: <>Cash runs out {cal.first_short <= now ? 'today' : `on ${shortDate(cal.first_short)}`}.</> }
-    : cal?.first_below && cal.first_below <= now ? { tone: 'warn', text: <>Cash is under your {eur(cal.floor)} emergency floor today ({eur(cal.start)}).</> }
-    : null
+  const cashLine = cashRisk(cal, now)
   const monthLine = p.safe_to_spend < 0
     ? shortPay > 0
       ? { tone: 'warn', text: <>The month is {eur(-p.safe_to_spend)} over because this month's pay was {eur(shortPay)} short. At your usual pay you'd have {eur(shortPay + p.safe_to_spend)} left.</> }
@@ -191,9 +255,7 @@ function TodayCard({ o, cal }: { o: Overview; cal?: CashCalendar }) {
       ? { tone: 'warn', text: <>{eur(p.safe_to_spend)} left, but heading for {eur(-p.projected_left)} over by month end.</> }
       : { tone: 'good', text: <>On track: {eur(p.safe_to_spend)} left, about {eur(p.per_day_left)} a day.</> }
   const lines = [cashLine, monthLine].filter(Boolean) as { tone: string; text: ReactNode }[]
-  const rank = { bad: 0, warn: 1, info: 2 } as Record<string, number>
-  const actions = [...(o.actions ?? [])].sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3) || (a.due ?? '9').localeCompare(b.due ?? '9'))
-  if (o.inbox_open > 0 && !actions.some((a) => a.kind === 'inbox')) actions.unshift({ level: 'warn', kind: 'inbox', text: `${o.inbox_open} bank ${o.inbox_open === 1 ? 'payment' : 'payments'} to review`, link: '/ledger/inbox' })
+  const actions = needsList(o)
   const tone = (t: string) => (t === 'bad' ? 'text-bad' : t === 'warn' ? 'text-warn' : t === 'good' ? 'text-good' : 'text-ink2')
   return (
     <section className="card">
@@ -207,7 +269,7 @@ function TodayCard({ o, cal }: { o: Overview; cal?: CashCalendar }) {
           ))}
         </div>
       </div>
-      <div className="mt-3 border-t border-line">
+      <div id="needs-you" className="mt-3 scroll-mt-4 border-t border-line">
         <div className="px-4 pt-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Needs you</div>
         {actions.length === 0 ? (
           <div className="flex items-center gap-2 px-4 py-3 text-sm text-good"><Icon name="check" size={16} />Nothing to do today</div>
@@ -332,6 +394,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
           <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
         </div>
         <MonthBar p={p} progress={pace} warn={used > pace + 0.1} />
+        <SavedLine p={p} />
         <Verdict p={p} />
       </Link>
       {/* The month day by day, as on Plan: back on Home in 3.0.1 — the owner
@@ -362,6 +425,22 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   )
 }
 
+/** Pay yourself first, in view: what went to saving, investing and the
+ *  mortgage principal this month against the plan. The bar above counts the
+ *  plan in full from the 1st, so it can't show money moved beyond it. */
+function SavedLine({ p }: { p: Overview['plan'] }) {
+  if (p.saving_planned <= 0 && p.saved_actual <= 0) return null
+  const done = p.saved_actual >= p.saving_planned - 0.5
+  return (
+    <div className={clsx('mt-2 flex items-start gap-1.5 text-xs', done ? 'text-good' : 'text-ink2')}>
+      <Icon name={done ? 'check' : 'piggy'} size={14} className="mt-px shrink-0" />
+      <span>Saved &amp; invested <b className="tnum">{eur(p.saved_actual)}</b>
+        <span className="text-muted"> · plan {eur(p.saving_planned)}{!done && <> · {eur(p.saving_planned - Math.max(p.saved_actual, 0))} still to move</>}{done && p.saved_actual - p.saving_planned >= 1 && <> · {eur(p.saved_actual - p.saving_planned)} more</>}</span>
+      </span>
+    </div>
+  )
+}
+
 /** One honest outlook instead of three numbers: where the month is heading
  *  at your usual rhythm (one-offs included), and the reasons behind it as
  *  rows that add up — biggest first. */
@@ -380,8 +459,13 @@ function Verdict({ p }: { p: Overview['plan'] }) {
     : p.projected_left < 0 ? <>Heading for <b className="tnum">{eur(-p.projected_left)}</b> over by month end</>
     : <>On track — about <b className="tnum">{eur(p.projected_left)}</b> left at month end</>
   const funds = p.funds_over ?? []
+  // Spending lines past their budget; an overdrawn fund has its own row above.
+  const over = (p.over ?? []).filter((l) => l.budgeted > 0 && !funds.some((f) => f.name === l.name))
   const rows: { key: string; label: string; sub: string; value: ReactNode; tone?: string }[] = [
     ...funds.map((f) => ({ key: f.name, label: `${f.name} fund overdrawn`, sub: `held ${eur(f.budgeted)}, paid ${eur(f.spent)}`, value: `−${eur(-f.remaining)}`, tone: 'text-bad' })),
+    // Spending lines past their budget: named once, already in "spent".
+    ...(over.length > 0 ? [{ key: 'over', label: `Over on ${over.length === 1 ? 'one line' : `${over.length} lines`}`,
+      sub: over.map((l) => `${l.name} ${eur(-l.remaining)}`).join(' · '), value: `${eur(over.reduce((a, l) => a - l.remaining, 0))} over`, tone: 'text-warn' }] : []),
     ...((p.unreviewed ?? 0) > 0 ? [{ key: 'unreviewed', label: 'Not reviewed yet', sub: `${p.unreviewed_count} bank ${p.unreviewed_count === 1 ? 'payment' : 'payments'} in the inbox, already counted`, value: `−${eur(p.unreviewed!)}` }] : []),
     ...(left > 0 && rest > 0 ? [{ key: 'rest', label: 'Rest of a usual month', sub: [(p.typical_one_offs ?? 0) > 0 && 'incl. one-offs', p.projected_left < 0 && runOut && `runs out ~${runOut}`].filter(Boolean).join(' · '), value: `−${eur(rest)}` }] : []),
     ...(p.typical_day > 0 && p.avg_day > 0 ? [{ key: 'pace', label: 'Day-to-day pace', sub: `${eur(p.typical_day)}/day usual`,

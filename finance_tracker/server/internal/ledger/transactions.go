@@ -108,9 +108,12 @@ type Filter struct {
 	Query      string // free text over merchant + note
 	Min, Max   money.Cents
 	Source     string
-	Limit      int
-	Offset     int
-	Sort       string // date | amount (desc); prefix '+' for ascending
+	// CreatedAfter: only rows added after this timestamp (RFC3339, as
+	// created_at) — Home's "new since you last looked".
+	CreatedAfter string
+	Limit        int
+	Offset       int
+	Sort         string // date | amount (desc); prefix '+' for ascending
 	// Choices: leave out obligations (Obligation) — what the insights call
 	// spending by choice.
 	Choices bool
@@ -295,6 +298,10 @@ func (f Filter) where() (string, []any) {
 	if f.Source != "" {
 		conds = append(conds, "source = ?")
 		args = append(args, f.Source)
+	}
+	if f.CreatedAfter != "" {
+		conds = append(conds, "created_at > ?")
+		args = append(args, f.CreatedAfter)
 	}
 	if len(conds) == 0 {
 		return "", args

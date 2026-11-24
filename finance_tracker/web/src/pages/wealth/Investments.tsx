@@ -3,8 +3,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
-import type { AnalystData, Holding, PerfPoint, Portfolio, PricePoint, Scenarios, Trade } from '../../lib/types'
-import { usePeriod, useRefresh, useWide } from '../../lib/hooks'
+import type { AnalystData, Holding, PerfPoint, PricePoint, Scenarios, Trade } from '../../lib/types'
+import { usePeriod, usePortfolio, useRefresh, useWide } from '../../lib/hooks'
 import { FeesCard } from './Fees'
 import { eur, eurk, pct, shortDate, todayISO } from '../../lib/format'
 import { RANGES, rangeLabel, rangeTick } from '../../lib/periods'
@@ -19,7 +19,7 @@ import { SuggestInput } from '../../components/pickers'
 // ── investments ─────────────────────────────────────────────────────
 
 export function Investments() {
-  const { data: p, isLoading, error } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio'), staleTime: 300_000 })
+  const { data: p, isLoading, error } = usePortfolio()
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => api.get<Trade[]>('/trades') })
   const { data: sc } = useQuery({ queryKey: ['scenarios'], queryFn: () => api.get<Scenarios>('/portfolio/scenarios'), staleTime: 3_600_000 })
   const [range, setRange] = usePeriod('stocks', '1y', RANGES.map((r) => r.value))
@@ -406,7 +406,7 @@ function QualityCard() {
 function QualitySettings({ data, onClose }: { data: QualityData; onClose: () => void }) {
   const refresh = useRefresh()
   const toast = useToast()
-  const { data: p } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio') })
+  const { data: p } = usePortfolio()
   const tickers: string[] = (p?.holdings ?? []).map((h) => h.ticker)
   const [core, setCore] = useState<string[]>(data.settings.core ?? [])
   const [bench, setBench] = useState(data.settings.benchmark)

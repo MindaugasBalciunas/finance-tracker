@@ -35,11 +35,8 @@ func moreActions(d *sql.DB, now time.Time, cur *plan.Report, em *EmergencyPlan) 
 				}
 			}
 			if left > 0 {
-				lvl := "info"
-				if now.Sub(pd) > 3*24*time.Hour {
-					lvl = "warn"
-				}
-				out = append(out, Action{Level: lvl, Kind: "payday", Text: fmt.Sprintf("Pay yourself first: %s still to move", eur(left)),
+				// A note, like the top-ups: the moving happens in the banks.
+				out = append(out, Action{Level: "info", Kind: "payday", Text: fmt.Sprintf("Pay yourself first: %s still to move", eur(left)),
 					Detail: fmt.Sprintf("%d of %d saving lines moved · see Plan → Budget", moved, saving), Link: "/plan"})
 			}
 		}

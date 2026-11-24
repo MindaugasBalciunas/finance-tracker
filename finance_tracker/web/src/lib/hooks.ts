@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Query } from './api'
 import { byBank } from './brand'
-import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport, PaceOut, CashCalendar } from './types'
+import type { Need, Account, BankConnection, Category, IBKRReport, IBKRStatus, Overview, PlanReport, Rule, Tx, TxList, Budget, InboxRow, Snapshot, Flow, MerchantReport, PaceOut, CashCalendar, Portfolio } from './types'
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api.get<Overview>('/overview') })
 export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories'), staleTime: 300_000 })
@@ -35,7 +35,7 @@ export const useMerchants = () =>
 export const useMerchantInsights = (preset: string) =>
   useQuery({ queryKey: ['merchant-insights', preset], queryFn: () => api.get<MerchantReport>('/insights/merchants', { preset }), placeholderData: (p) => p })
 
-export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[]; history_hidden?: string[]; usage_off?: boolean }
+export interface Prefs { liquid_only: boolean; periods?: Record<string, string>; hidden_accounts?: string[]; history_hidden?: string[]; usage_off?: boolean; home_seen?: string }
 
 /** View choices stored on the server so they follow the owner across devices. */
 /** The next 60 days of cash, day by day — Plan → Cash and Home's payday strip. */
@@ -52,7 +52,21 @@ export function usePrefs() {
     onSuccess: (p) => qc.setQueryData(['prefs'], p),
     onError: () => qc.invalidateQueries({ queryKey: ['prefs'] }),
   })
-  return { prefs: q.data ?? { liquid_only: false }, set: set.mutate }
+  return { prefs: q.data ?? { liquid_only: false }, set: set.mutate, ready: q.isSuccess }
+}
+
+/** Rows added since Home was last marked seen (prefs.home_seen), newest
+ *  first. Off until that time is known. */
+export function useNewTx(seen?: string) {
+  // "now" is what was just sent; wait for the server's stamped time.
+  return useQuery({ queryKey: ['transactions', 'new', seen], enabled: !!seen && seen !== 'now',
+    queryFn: () => api.get<TxList>(`/transactions?created_after=${encodeURIComponent(seen!)}&limit=30`) })
+}
+
+/** Holdings with today's move. Prices come from outside, so it is cached for
+ *  five minutes. */
+export function usePortfolio() {
+  return useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio'), staleTime: 300_000 })
 }
 
 /** A chart's period, remembered on the server per chart key. */

@@ -10,7 +10,7 @@ Each section has one job. A panel lives in one place; other places link to it.
 
 | Section | Job | Tabs |
 |---|---|---|
-| **Home** | a one-page review of today | none: net worth panel (full size, with its chart) · Today (verdict + needs you) · this month (with its day-by-day chart) · cash until payday · recent |
+| **Home** | a one-page review of today | none: net worth panel (full size, with its chart, and an Investments row with today's move) · Today (verdict + needs you) · this month (with its day-by-day chart and saved & invested) · this month so far, with investing (Insights → Spending's chart, at the owner's ask) · cash until payday · new since you last looked (else recent) |
 | **Ledger** | every transaction | Transactions · Bank inbox · Tidy up |
 | **Plan** | this month and what's coming | Budget · Cash · Recurring · Forecast · Goals (Wish list / Trips) · Income & salary |
 | **Wealth** | where the money ends up | Net worth · Investments · Property & loans · Independence · Stress test · Taxes · History |
@@ -19,7 +19,7 @@ Each section has one job. A panel lives in one place; other places link to it.
 - **Before adding a panel**, ask which job it serves. If another section already shows the same figure, link there instead of copying the panel.
 - **The menu is the site map.** `web/src/lib/sitemap.ts` lists every page; the phone menu shows all of them and the desktop sidebar shows the open section's. A new page goes there too. The design-rule test fails if a menu entry has no route.
 - **Old URLs never break.** When a page moves, its old path keeps working: either it is still a route under its new tab, or it gets a `<Navigate replace>`.
-- **Home is a one-page review**, read top to bottom; the net-worth panel keeps its full size and chart. It says *what needs you* before it shows detail. The Today card leads with a verdict (cash risk first, then the month) and the actions due, the same list as the bell. Slow numbers (savings rate, FI, invested) live on Insights → Summary.
+- **Home is a one-page review**, read top to bottom; the net-worth panel keeps its full size and chart. It says *what needs you* before it shows detail. The Today card leads with a verdict (cash risk first, then the month) and the actions due: the bell's list without the top-ups, which stay in the payday card. Slow numbers (savings rate, FI) live on Insights → Summary; this month's saved & invested against the plan is on Home's month card. **The app shows money; the banks move it.** Transfer advice (top-ups, "pay yourself first" still to move) is always an `info` note, kept out of Home's "Needs you" and left to the payday card — never a headline.
 
 ## 2. Page anatomy
 

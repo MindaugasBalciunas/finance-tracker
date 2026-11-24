@@ -22,7 +22,21 @@ func filterFrom(r *http.Request) ledger.Filter {
 	return ledger.Filter{From: q.Get("from"), To: q.Get("to"), Kind: q.Get("kind"), Categories: qlist(r, "category"), Accounts: qlist(r, "account"),
 		Tags: qlist(r, "tag"), TagsAll: q.Get("tags_all") == "1", Merchant: q.Get("merchant"), Query: q.Get("q"), Source: q.Get("source"),
 		Min: parseCents(q.Get("min")), Max: parseCents(q.Get("max")), Sort: q.Get("sort"), Limit: qint(r, "limit", 100), Offset: qint(r, "offset", 0),
-		Choices: q.Get("choices") == "1", Need: need(q.Get("need"))}
+		Choices: q.Get("choices") == "1", Need: need(q.Get("need")), CreatedAfter: createdAfter(q.Get("created_after"))}
+}
+
+// createdAfter puts a timestamp in created_at's form (UTC, whole seconds) so
+// the two compare as text; one that doesn't parse matches nothing (the
+// transactions route answers 400 for it first).
+func createdAfter(v string) string {
+	if v == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return "9999"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // need accepts only the two values the filter knows.
@@ -49,6 +63,11 @@ type txInput struct {
 
 func (s *Server) ledgerRoutes() {
 	s.handle("GET /api/transactions", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if v := r.URL.Query().Get("created_after"); v != "" {
+			if _, err := time.Parse(time.RFC3339, v); err != nil {
+				return nil, bad("created_after must be a time like 2026-11-24T08:00:00Z")
+			}
+		}
 		f := filterFrom(r)
 		// salary=month: a salary counts in the month it pays for, as in cash flow.
 		if r.URL.Query().Get("salary") == "month" {

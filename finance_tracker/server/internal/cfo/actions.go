@@ -2,6 +2,7 @@ package cfo
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 // review, a month review waiting. Most urgent first.
 type Action struct {
 	Level  string `json:"level"` // bad | warn | info
-	Kind   string `json:"kind"`  // move | short | planned | inbox | review | check | budgets
+	Kind   string `json:"kind"`  // move | short | planned | inbox | review | check | budgets | emergency
 	Text   string `json:"text"`
 	Detail string `json:"detail,omitempty"`
 	Link   string `json:"link,omitempty"` // in-app route (top-ups open Plan → Cash, where the runbook is)
@@ -44,6 +45,15 @@ func eur(c money.Cents) string {
 	return "€" + whole
 }
 
+// fmtMonths rounds down, so 2.95 reads 2.9 and never "3 of 3" while short.
+func fmtMonths(m float64) string {
+	v := math.Floor(m*10) / 10
+	if v == math.Trunc(v) {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
+}
+
 func shortDay(date string) string {
 	t, err := time.Parse("2006-01-02", date)
 	if err != nil {
@@ -54,15 +64,13 @@ func shortDay(date string) string {
 
 func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring, now time.Time, extra ...Action) []Action {
 	out := append([]Action{}, extra...)
-	soon := now.AddDate(0, 0, 3).Format("2006-01-02")
 	if c := o.Cash; c != nil {
 		// Only the next top-up; the whole schedule lives in the cash card.
 		if len(c.Moves) > 0 {
+			// Always a note: the app shows where money stands and the banks
+			// move it, so a top-up is advice, never the urgent item.
 			m := c.Moves[0]
 			lvl := "info"
-			if m.By <= soon {
-				lvl = "warn"
-			}
 			detail := "by " + shortDay(m.By)
 			if m.For != "" {
 				detail += " · for " + strings.ToLower(m.For[:1]) + m.For[1:]
@@ -114,7 +122,26 @@ func buildActions(o *Overview, budgetDiffs int, plannedLate []insights.Recurring
 		}
 		out = append(out, Action{Level: c.Level, Kind: "check", Text: c.Text, Link: c.Link})
 	}
-	if budgetDiffs > 0 {
+	// The emergency fund under its target, counting what leaves before
+	// payday: the owner's buffer rule, so a to-do rather than a slow number.
+	// Amber below three quarters of the target, a note above it.
+	if e := o.EmergencyPlan; e != nil && e.Gap > 0 && e.TargetMonths > 0 {
+		// Months is rounded to a tenth for display (2.96 → 3.0); count from the
+		// money, so a fund still short never reads "3 of 3".
+		months := e.Months
+		if e.Monthly > 0 {
+			months = max(0, e.Available.Float()) / e.Monthly.Float()
+		}
+		lvl := "info"
+		if months < e.TargetMonths*0.75 {
+			lvl = "warn"
+		}
+		out = append(out, Action{Level: lvl, Kind: "emergency", Text: fmt.Sprintf("Emergency fund at %s of %s months", fmtMonths(months), fmtMonths(e.TargetMonths)),
+			Detail: fmt.Sprintf("%s short of %s · after what leaves before payday", eur(e.Gap), eur(e.Target)), Link: "/wealth/fi"})
+	}
+	// Budgets against the last 12 months is a planning note: the first week,
+	// when the month is set, not every day.
+	if budgetDiffs > 0 && now.Day() <= 7 {
 		t := fmt.Sprintf("%d budgets differ from your last 12 months", budgetDiffs)
 		if budgetDiffs == 1 {
 			t = "1 budget differs from your last 12 months"

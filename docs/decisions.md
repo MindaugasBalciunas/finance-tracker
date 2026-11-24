@@ -4,6 +4,13 @@ Product, design and technical decisions, newest first, each with the reason. Add
 
 ---
 
+## 2026-11-24 · Home: what you see, not what to move
+
+**Decided:** the app is a visualization tool, not the place money is managed — the banks do that. Top-up suggestions are `info` notes, left out of Home's "Needs you" and shown only in the payday card; the "pay yourself first" reminder is a note too. Home gains: an Investments row with today's move in the net-worth panel, saved & invested against the plan and over-budget lines in the month card, the emergency fund under target as a to-do, and "New since you last looked" (rows added since Home was marked seen, `prefs.home_seen`) instead of a fixed six. The "budgets differ from your last 12 months" note shows only in the month's first week.
+**Why:** the owner, 2026-11-24: transfer suggestions shouldn't be the focus. Usage: Ledger is the most-tapped exit from Home (rows annotated there), Investments the most hunted-for page, and Insights → Summary (where saving moved in 3.0) is barely opened.
+**Rules out:** a "Move €X" strip or headline on Home; Record-a-transfer buttons in "Needs you".
+**Also:** for "how much went out, investing included" Home shows Insights → Spending's "This month so far, with investing" chart (`OutPaceCard`) rather than a text line of its own — the owner preferred the chart. It is the one panel shown in two places, by request, like the month chart in 3.0.1.
+
 ## 2026-11-23 · 3.0.1 · The month chart stays on Home
 
 **Decided:** Home's month card keeps the day-by-day chart (same chart as Plan → Budget). On Home its short-pay note is left to the card's headline.

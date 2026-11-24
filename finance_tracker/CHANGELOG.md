@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.0 — Home shows what came in and where it went
+
+### Home
+- **New since you last looked:** the last card lists every row added since you last tapped **Mark seen** (bank syncs and your own entries), so notes, splits and must/optional can be done from Home. With nothing new it shows the last six rows, as before. The first visit after updating starts the clock, so the list begins empty.
+- **This month so far, with investing** is on Home too (the same chart as Insights → Spending): spending plus investing day by day against last month and a typical month, with what was spent and invested so far. On desktop it sits under the month card, and cash until payday moves to the left column.
+- **Investments** has its own row in the net-worth panel, with today's move, one tap from the Investments page.
+- **This month's card** adds:
+  - **Saved & invested** against the plan, e.g. "€2,727 · plan €1,200 · €1,527 more".
+  - The budget lines that are over, named in one line.
+- **Needs you:**
+  - Lists the emergency fund when it is under its target.
+  - Leaves suggested top-ups to the payday card. Moving money happens in your bank; the app shows where it stands.
+- "Budgets differ from your last 12 months" shows only in the first week of the month.
+- "pending" on bank rows is grey instead of orange, here and in the Ledger.
+
+### Notifications
+- Suggested top-ups and "Pay yourself first" are notes, never amber.
+
 ## 3.0.1 — The month chart is back on Home
 
 - Home's "Left to spend" card shows the month day by day again: spending so far against the plan's pace, where this rhythm ends up, and bills due or paid. 3.0.0 had left it only on Plan.
