@@ -216,20 +216,26 @@ function NetWorthHero({ o }: { o: Overview }) {
   return hero
 }
 
-/** Investments one tap from Home, with today's move: the page most often
- *  hunted for from here (Home → Wealth → tab), and the one read longest. */
+/** Investments one tap from Home, with today's move and the total gain on
+ *  what is held (value − cost, as Investments shows it): the page most
+ *  often hunted for from here (Home → Wealth → tab), and the one read longest. */
 function InvestmentsRow({ value }: { value: number }) {
   const { data: pf } = usePortfolio()
   const day = pf?.day_change_eur ?? 0
   const base = (pf?.value_eur ?? 0) - day
+  const gain = pf?.gain_eur ?? 0
+  const cost = pf?.cost_eur ?? 0
   return (
     <Link to="/wealth/investments" className="flex min-h-[48px] items-center gap-3 border-t border-line px-4 py-2.5 hover:bg-sunken/30 sm:px-6">
       <IconTile name="trend" color="var(--s1)" size={28} />
       <span className="min-w-0 flex-1 text-sm">
         <span className="font-medium">Investments</span> <span className="tnum text-ink2">{eur(value)}</span>
       </span>
-      {pf && Math.abs(day) >= 0.5 && (
-        <span className="shrink-0 text-xs text-muted">today <Delta value={day} />{base > 0 && <span className="tnum"> ({day > 0 ? '+' : '−'}{pct(Math.abs(day) / base, 1)})</span>}</span>
+      {pf && (
+        <span className="flex shrink-0 flex-col items-end gap-0.5 text-xs text-muted">
+          {Math.abs(day) >= 0.5 && <span>today <Delta value={day} />{base > 0 && <span className="tnum"> ({day > 0 ? '+' : '−'}{pct(Math.abs(day) / base, 1)})</span>}</span>}
+          {cost > 0 && <span>total <Delta value={gain} />{<span className="tnum"> ({gain >= 0 ? '+' : '−'}{pct(Math.abs(gain) / cost, 1)})</span>}</span>}
+        </span>
       )}
       <Icon name="chevronR" size={16} className="shrink-0 text-muted" />
     </Link>

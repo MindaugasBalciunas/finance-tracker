@@ -21,6 +21,7 @@ import (
 	"ft/internal/bank"
 	"ft/internal/bank/openbanking"
 	"ft/internal/ibkr"
+	"ft/internal/market"
 	"ft/internal/oauth"
 )
 
@@ -33,6 +34,10 @@ type Server struct {
 	AI      *ai.Assistant
 	Version string
 	mux     *http.ServeMux
+
+	// Daily is where the dip plan gets daily prices (market.Daily unless a
+	// test swaps in a fake, so route tests never reach Yahoo).
+	Daily func(symbol string) (*market.Series, error)
 
 	OAuth     *oauth.Server // connected AI apps (routes_mcp.go)
 	PublicURL string        // the app's public address for them; empty = from the request

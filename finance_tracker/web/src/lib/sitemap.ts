@@ -14,7 +14,8 @@ export const SITEMAP: Record<string, PageLink[]> = {
     { to: '/plan/settings', label: 'Income & salary' },
   ],
   '/wealth': [
-    { to: '/wealth', label: 'Net worth' }, { to: '/wealth/investments', label: 'Investments' }, { to: '/wealth/ownership', label: 'Property & loans' },
+    { to: '/wealth', label: 'Net worth' }, { to: '/wealth/investments', label: 'Investments' }, { to: '/wealth/dips', label: 'Dip plan' }, { to: '/wealth/bets', label: 'Bets dip plan' }, { to: '/wealth/btc', label: 'BTC dip plan' },
+    { to: '/wealth/ownership', label: 'Property & loans' },
     { to: '/wealth/fi', label: 'Independence' }, { to: '/wealth/stress', label: 'Stress test' }, { to: '/wealth/tax', label: 'Taxes' },
     { to: '/wealth/history', label: 'Balance history' },
   ],

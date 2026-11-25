@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ft/internal/decisions"
+	"ft/internal/dip"
 	"ft/internal/insights"
 	"ft/internal/money"
 	"ft/internal/plan"
@@ -39,6 +40,42 @@ func moreActions(d *sql.DB, now time.Time, cur *plan.Report, em *EmergencyPlan) 
 				out = append(out, Action{Level: "info", Kind: "payday", Text: fmt.Sprintf("Pay yourself first: %s still to move", eur(left)),
 					Detail: fmt.Sprintf("%d of %d saving lines moved · see Plan → Budget", moved, saving), Link: "/plan"})
 			}
+		}
+	}
+	// The dip plan: a fund at a rung of the owner's crash plan, its third not
+	// bought yet. A note like the top-ups — the buying happens at the broker.
+	// The reserve is money above the safety net, the funds' first and the
+	// bets' after what is left of it; each note says what that cash covers,
+	// counting what the notes before it already asked for.
+	if dues := dip.DueNow(d); len(dues) > 0 {
+		var free map[string]money.Cents
+		if em != nil && em.Target > 0 {
+			free = map[string]money.Cents{}
+			for _, p := range dip.Plans {
+				free[p] = dip.FreeAfter(d, p, em.Spare)
+			}
+		}
+		for _, x := range dues {
+			link, where := "/wealth/dips", "Investments → Dip plan"
+			switch x.Plan {
+			case dip.Bets:
+				link, where = "/wealth/bets", "Investments → Bets"
+			case dip.Crypto:
+				link, where = "/wealth/btc", "Investments → BTC"
+			}
+			detail := "limit prices on " + where
+			if free != nil {
+				left := max(0, free[x.Plan])
+				if left < x.Amount {
+					detail = fmt.Sprintf("only %s is free above your safety net — buy up to that, never from the emergency fund", eur(left))
+				} else {
+					detail = fmt.Sprintf("from the %s free above your safety net · %s", eur(left), where)
+				}
+				// A later plan's cash already leaves out the earlier plans'
+				// reserve left, so each note only uses up its own plan's cash.
+				free[x.Plan] -= x.Amount
+			}
+			out = append(out, Action{Level: "info", Kind: "dip", Text: x.Text, Detail: detail, Link: link})
 		}
 	}
 	// The decision journal: cooling-off over, or time to say if it was worth it.

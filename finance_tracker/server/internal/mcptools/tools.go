@@ -45,6 +45,10 @@ const model = " Amounts are EUR. Transactions are income | expense | transfer; c
 
 type none struct{}
 
+type dipArgs struct {
+	Plan string `json:"plan,omitempty" jsonschema:"funds (default: the index ETFs), bets (the single-stock bets at Revolut) or crypto (bitcoin, BTC-EUR); same ladder, and each plan's reserve comes after the ones before it in that order"`
+}
+
 type searchArgs struct {
 	From       string   `json:"from,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
 	To         string   `json:"to,omitempty" jsonschema:"YYYY-MM-DD inclusive"`
@@ -660,6 +664,10 @@ func New(call Caller) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_milestones", Description: "Dated milestones at today's pace: emergency fund full, the next two round figures of liquid wealth, each loan paid off on its schedule, financial independence. Projections from the app's own figures — say so."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {
 			return text(call("GET", "/wealth/milestones", nil, nil))
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "get_dip_plan", Description: "The owner's crash plan — for index ETFs (VWCE, VALL, SPYL, SXRV and BCFP by default), or with plan=bets their single stocks at Revolut, or plan=crypto bitcoin (2- and 4-year averages in calendar days): for each fund the price, all-time high and drop from it, 200-day / 2-year / 4-year averages, unfilled price gaps under the price, and the ladder of limit prices — dip (−10% under the 200-day average: nothing extra), then t1, t2, t3 top down by price (2-year average, 4-year average, −44% from the high), each a third of the fund's reserve; a rung backed by an unfilled gap takes the gap's top as its limit. Each rung has a status: order (a limit buy to keep: shares × price), buy (reached in this fall and not bought: put its third in now), bought (a buy in the trades in this fall took it: bought_on, bought_shares, bought_price), hold (plan broken). todo is the fund's one line for today; buy_now is the total to put in now, left the reserve not yet used in this fall, orders the limit buys to keep, monthly the regular amount that never changes, missing the funds whose prices didn't load. Quote these numbers rather than estimating; they are the owner's own rules, not a recommendation."},
+		func(ctx context.Context, r *mcp.CallToolRequest, a dipArgs) (*mcp.CallToolResult, any, error) {
+			return text(call("GET", "/market/dips", vals("brief", "1", "plan", a.Plan), nil))
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_fees", Description: "What investments cost a year: each fund's ongoing charge plus platform fee (owner's figure, or a typical one for well-known ETFs — say which), € a year, 20-year drag at the expected return, and the saving against a 0.2% index fund; funds without a figure are counted as missing."},
 		func(ctx context.Context, r *mcp.CallToolRequest, _ none) (*mcp.CallToolResult, any, error) {

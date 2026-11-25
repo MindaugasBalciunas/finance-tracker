@@ -91,6 +91,7 @@ Planning tools (read-only unless noted), the same in Ask CFO:
 | `get_fi_plan` | Independence in levels — obligations, essentials, full, comfortable — with capital, progress and date each; when saving could stop (coast); projected payouts; what more saving buys |
 | `get_stress_test` | Crisis stress tests over 24 months — fourteen crises in four groups (losing income, markets falling, costs rising, several at once), or your own shock: when cash runs out, what would be sold, whether that runs out too, the net-worth cost and what would help; plus the no-income runway |
 | `get_milestones` | Dated milestones at today's pace: emergency fund, the next round figures of liquid wealth, loans paid off, FI |
+| `get_dip_plan` | The crash plans (`plan` = funds, bets or crypto): price, drop from the high, 200-day / 2-year / 4-year averages, unfilled gaps, each rung's limit price, status (limit order, buy now, bought from your trades) and shares, what to buy now, and the reserve left against the cash above the safety net |
 | `get_fees` | What investments cost a year and over 20 years, against a 0.2% index fund; funds without a fee are listed as missing |
 | `get_subscriptions` | Cancellable regular charges with yearly cost, new ones, free trials, and your keep / cancel-by verdicts |
 | `get_cash_calendar` | Cash day by day for the next weeks with every bill, transfer and salary on its date, and the tightest day |

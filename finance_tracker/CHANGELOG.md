@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.3.0 — Dip plans: when to buy and how much, for ETFs, bets and BTC
+
+### Wealth → Investments → Dip plan (new)
+- **Your written crash plan for VWCE, VALL, SPYL, SXRV and BCFP.** It sits next to Positions under Investments. Each fund gets a ladder of limit prices from 10 years of daily prices, recomputed every day:
+  - **−10% under the 200-day average:** nothing extra; such dips usually mend.
+  - **2-year average:** first third of the fund's reserve.
+  - **4-year average:** second third.
+  - **−44% from the high:** last third.
+  The thirds go top down by price.
+- When an **unfilled gap** (a range the price jumped over and never came back to) sits by an average, the limit goes to the gap's top. On QQQ that gives 602 and 501, the plan's own numbers.
+- **What to do now** answers first:
+  - "Buy €1,000 now" when a rung is reached, with shares at today's price.
+  - Otherwise "Nothing extra to buy" and your **limit orders to keep**: one line per fund, as shares × price = total, coloured green (buy now), amber (within 5%) or plain.
+  - **Copy all** puts the orders on the clipboard.
+- **Bought from your trades, nothing to tick.** A buy of the fund in the current fall, at or under a rung's limit and worth at least half its third, counts as that rung bought. The plan stops asking until the next fall. Trades arrive by the IBKR sync or when you add them.
+- **The reserve is savings above your safety net.** The card shows the cash above the emergency fund's target and caps "Buy now" at it. Its link opens the emergency fund card.
+- **The chart comes first and is bigger:** three years, full width at the top, with the averages, the rungs as dashed lines in their average's colour, and **dots for your own buys**.
+- VALL, SPYL and BCFP are too young for a 4-year average, so they borrow VWCE's, SXR8's and SXRV's history (same index), scaled to their own price. Prices in dollars are converted, so share counts are right.
+- **Plan broken** shows if a fund stays under its 4-year average for over half a year: hold the reserve and rewrite the plan.
+
+### Investments → Bets and → BTC (new)
+- **Bets** puts your single stocks at Revolut on the same ladder: ABIVAX, Intuit, Oklo and Vanda to start, each with its own reserve. A note says the rules were written for index funds.
+- **BTC** puts bitcoin (BTC-EUR) on it too. Its 2- and 4-year averages count calendar days, since bitcoin trades every day.
+- The cash above the safety net goes to the funds first, then the bets, then BTC.
+
+### Home and phone
+- The **Investments** row shows the total gain on what you hold (value against what you paid, e.g. "total −€2,676 (−10.0%)") under today's move.
+- When a rung is reached and not bought, the bell shows it as a note with the amount and how much free cash covers it.
+- The phone gets one notification per rung and fall, without amounts.
+
+### After updating
+- Set each plan's reserve under **Funds & reserve**, **Stocks & reserve** and **Coins & reserve** (they start at €0).
+- Ask CFO and connected AI apps read the plans with **get_dip_plan** (plan = funds, bets or crypto).
+
 ## 3.2.0 — Mortgage principal back to 2022, habits to keep or cut
 
 ### Your data (runs once when the add-on restarts)

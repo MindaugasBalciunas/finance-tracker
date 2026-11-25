@@ -119,6 +119,7 @@ func TestAuthBoundaries(t *testing.T) {
 
 	tokRO := c.with("Authorization", "Bearer "+ro)
 	tokRW := c.with("Authorization", "Bearer "+rw)
+	s.Daily = fakeDaily
 	bad := c.with("Authorization", "Bearer ftk_forged")
 	checks := []struct {
 		name   string
@@ -143,6 +144,9 @@ func TestAuthBoundaries(t *testing.T) {
 		{"rw cannot accept bank rows", tokRW, "POST", "/bank/inbox/commit", map[string]any{"ids": []int{1}}, 403},
 		{"rw cannot change AI settings", tokRW, "PUT", "/ai/settings", map[string]any{"model": "x"}, 403},
 		{"rw cannot restore", tokRW, "POST", "/import/backup?confirm=replace", map[string]any{}, 403},
+		{"ro reads the dip plan", tokRO, "GET", "/market/dips?brief=1", nil, 200},
+		{"ro reads the bets plan", tokRO, "GET", "/market/dips?plan=bets&brief=1", nil, 200},
+		{"rw cannot change the dip plan", tokRW, "PUT", "/market/dips/settings", map[string]any{"funds": []any{}}, 403},
 		// Routes added in 2.1–2.4 stay outside every token's scope.
 		{"ro reads recurring", tokRO, "GET", "/insights/recurring", nil, 200},
 		// IBKR: the live read views only (409 here: not connected), never the connection itself.
@@ -1236,5 +1240,133 @@ func TestHomeListsRowsAddedSinceItWasMarkedSeen(t *testing.T) {
 	c.ok("PUT", "/prefs", map[string]any{"home_seen": "now"}, &p)
 	if at, err := time.Parse(time.RFC3339, fmt.Sprint(p["home_seen"])); err != nil || time.Since(at) > time.Minute {
 		t.Fatalf("home_seen now = %v", p["home_seen"])
+	}
+}
+
+// fakeDaily is five years of a flat €100 market, for any symbol.
+func fakeDaily(string) (*market.Series, error) {
+	bars := make([]market.Bar, 1300)
+	for i := range bars {
+		bars[i] = market.Bar{Date: fmt.Sprintf("2021-%04d", i), High: 100.1, Low: 99.9, Close: 100}
+	}
+	return &market.Series{Currency: "EUR", Bars: bars}, nil
+}
+
+// The page gets each fund with its ladder and chart; the AI tools ask for
+// the brief form, which leaves the chart out.
+func TestDipPlanReadsEachFund(t *testing.T) {
+	s, c := newServer(t)
+	s.Daily = fakeDaily
+	type plan struct {
+		Funds []struct {
+			Symbol string            `json:"symbol"`
+			Levels []json.RawMessage `json:"levels"`
+			Chart  []json.RawMessage `json:"chart"`
+		} `json:"funds"`
+	}
+	var full, brief plan
+	c.ok("GET", "/market/dips", nil, &full)
+	c.ok("GET", "/market/dips?brief=1", nil, &brief)
+	if len(full.Funds) != 5 || full.Funds[0].Symbol != "VWCE.DE" || len(full.Funds[0].Levels) != 4 || len(full.Funds[0].Chart) == 0 {
+		t.Fatalf("%+v", full)
+	}
+	if len(brief.Funds) != 5 || brief.Funds[0].Chart == nil || len(brief.Funds[0].Chart) != 0 {
+		t.Fatalf("%+v", brief)
+	}
+}
+
+// The dip plan's funds are saved from the page; a bad ticker or a negative
+// reserve comes back as a sentence and nothing is saved.
+func TestDipPlanSettingsFromThePage(t *testing.T) {
+	_, c := newServer(t)
+	var got struct {
+		Funds []struct {
+			Symbol  string  `json:"symbol"`
+			Reserve float64 `json:"reserve"`
+		} `json:"funds"`
+	}
+	c.ok("PUT", "/market/dips/settings", map[string]any{"funds": []map[string]any{{"symbol": "vwce.de", "reserve": 3000}}}, &got)
+	if len(got.Funds) != 1 || got.Funds[0].Symbol != "VWCE.DE" || got.Funds[0].Reserve != 3000 {
+		t.Fatalf("%+v", got)
+	}
+	code, raw := c.do("PUT", "/market/dips/settings", map[string]any{"funds": []map[string]any{{"symbol": "VWCE.DE", "reserve": -5}}})
+	if code != 400 || !strings.Contains(string(raw), "negative") {
+		t.Fatalf("%d %s", code, raw)
+	}
+}
+
+// The bets plan starts from the single stocks held at Revolut Stocks —
+// funds and anything on the ETF plan left out — and keeps its own marks.
+func TestDipBetsStartFromRevolutStocks(t *testing.T) {
+	s, c := newServer(t)
+	s.Daily = fakeDaily
+	if _, err := ledger.SaveAccount(s.DB, ledger.Account{ID: "revolut_stocks", Name: "Revolut Stocks", Kind: "brokerage", Liquid: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tr := range []map[string]any{
+		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "OKLO", "shares": 10, "price": 20, "currency": "USD"},
+		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "VWCE", "shares": 1, "price": 150, "currency": "EUR"},
+		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "VALL", "shares": 1, "price": 4, "currency": "EUR"},
+		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "MU", "shares": 1, "price": 90, "currency": "USD"},
+		{"date": "2026-04-01", "account_id": "revolut_stocks", "action": "sell", "ticker": "MU", "shares": 1, "price": 95, "currency": "USD"},
+	} {
+		c.ok("POST", "/trades", tr, nil)
+	}
+	var p struct {
+		Funds []struct{ Symbol string } `json:"funds"`
+	}
+	c.ok("GET", "/market/dips?plan=bets", nil, &p)
+	if len(p.Funds) != 1 || p.Funds[0].Symbol != "OKLO" {
+		t.Fatalf("%+v", p)
+	}
+	if code, _ := c.do("GET", "/market/dips?plan=stamps", nil); code != 400 {
+		t.Fatal("unknown plan accepted")
+	}
+}
+
+// A symbol lives on one plan only: the bets can't take a fund's ticker.
+func TestDipBetsRejectAFundsSymbol(t *testing.T) {
+	_, c := newServer(t)
+	code, raw := c.do("PUT", "/market/dips/settings?plan=bets", map[string]any{"funds": []map[string]any{{"symbol": "VWCE.DE", "reserve": 100}}})
+	if code != 400 || !strings.Contains(string(raw), "already on the funds plan") {
+		t.Fatalf("%d %s", code, raw)
+	}
+	var got struct {
+		Funds []struct{ Symbol string } `json:"funds"`
+	}
+	c.ok("PUT", "/market/dips/settings?plan=bets", map[string]any{"funds": []map[string]any{{"symbol": "OKLO", "reserve": 100}}}, &got)
+	var funds struct {
+		Settings struct {
+			Funds []struct{ Symbol string } `json:"funds"`
+		} `json:"settings"`
+	}
+	c.ok("GET", "/market/dips?brief=1", nil, &funds) // the funds plan is untouched
+	if len(got.Funds) != 1 || len(funds.Settings.Funds) != 5 {
+		t.Fatalf("%+v %+v", got, funds)
+	}
+}
+
+// The bitcoin plan starts with BTC-EUR and lives apart from the others.
+func TestDipCryptoPlan(t *testing.T) {
+	s, c := newServer(t)
+	s.Daily = fakeDaily
+	var p struct {
+		Funds []struct{ Symbol string } `json:"funds"`
+	}
+	c.ok("GET", "/market/dips?plan=crypto", nil, &p)
+	if len(p.Funds) != 1 || p.Funds[0].Symbol != "BTC-EUR" {
+		t.Fatalf("%+v", p)
+	}
+	if code, raw := c.do("PUT", "/market/dips/settings?plan=bets", map[string]any{"funds": []map[string]any{{"symbol": "BTC-EUR"}}}); code != 400 || !strings.Contains(string(raw), "crypto plan") {
+		t.Fatalf("%d %s", code, raw)
+	}
+}
+
+// One ticker, one plan: OKLO.DE can't join a plan while OKLO is a bet.
+func TestDipOneTickerOnePlan(t *testing.T) {
+	_, c := newServer(t)
+	c.ok("PUT", "/market/dips/settings?plan=bets", map[string]any{"funds": []map[string]any{{"symbol": "OKLO"}}}, nil)
+	if code, raw := c.do("PUT", "/market/dips/settings?plan=crypto", map[string]any{"funds": []map[string]any{{"symbol": "OKLO.DE"}}}); code != 400 || !strings.Contains(string(raw), "OKLO is already on the bets plan") {
+		t.Fatalf("%d %s", code, raw)
 	}
 }

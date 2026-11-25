@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"ft/internal/dip"
 	"ft/internal/insights"
 	"ft/internal/ledger"
 	"ft/internal/notify"
@@ -44,6 +45,17 @@ func Alerts(d *sql.DB, now time.Time) ([]Alert, error) {
 				out = append(out, Alert{Key: fmt.Sprintf("move:%s:%s:%s", m.From, m.To, m.By), Title: fmt.Sprintf("Move %s to %s %s", eurS(m.Amount), m.ToName, when),
 					Message: fmt.Sprintf("From %s — %s.", m.FromName, m.For), URL: "/#/?cash=1"})
 			}
+		}
+	}
+
+	// A fund reached a rung of the dip plan: once per fund, rung and fall.
+	// No amounts on the phone (push services relay the text).
+	// One key per rung, so marking one bought doesn't re-send the other.
+	for _, x := range dip.DueNow(d) {
+		for _, rung := range x.Rungs {
+			url := map[string]string{dip.Funds: "/#/wealth/dips", dip.Bets: "/#/wealth/bets", dip.Crypto: "/#/wealth/btc"}[x.Plan]
+			out = append(out, Alert{Key: fmt.Sprintf("dip:%s:%s:%s:%s", x.Plan, x.Symbol, rung, x.Since), Title: fmt.Sprintf("%s reached your dip plan", strings.SplitN(x.Symbol, ".", 2)[0]),
+				Message: "A rung of your crash plan is reached. Open the plan for the amount and price.", URL: url})
 		}
 	}
 

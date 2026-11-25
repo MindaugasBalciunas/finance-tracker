@@ -103,6 +103,12 @@ Every v1 capability, where it lives in v2, and what was deliberately retired. "C
 | Merchants | Logos from a built-in list of merchant sites (server fetch: listed hosts only, public addresses only, images only, cached beside the database), on a white tile (or the logo's own colour); bank fees show their bank, and accounts their bank (never a house or car); shown wherever merchants are listed (Ledger, bank inbox, tidy-up, Recurring bills/income/standing orders and suggestions, yearly bills, Spending, Merchants, subscriptions, price creep, Fun facts rankings, the editor's quick picks); Revolut and McDonald's come from revolut.me / mcdonalds.lv because their main sites refuse automated requests; loan interest shows the bank holding the loan; bank connections and the balance update sheet show their banks; Settings → Logos lists merchants without one and takes your own upload (kept in backups) | `logos/*`, `api/TestAuthBoundaries`, `api/TestLogoServedAsAnImageOnly`, `web/logos.test` |
 | Settings | Same card style as the rest: icons, colour by meaning, two columns on desktop | Firefox sweep |
 
+## Added in v3.3
+
+| Area | Change | Covered by |
+|---|---|---|
+| Wealth | **Investments → Dip plan / Bets / BTC**: a crash-plan ladder per fund (−10% under the 200-day; 2-year, 4-year and −44% rungs, each a third of the reserve; gap tops as limits), recomputed daily from 10 years of prices. "What to do now", limit orders per fund, bought rungs from the trades, reserve capped at cash above the safety net (funds → bets → crypto), buys on the chart, plan broken after half a year under the 4-year average. Young funds borrow a proxy's history; dollar prices are converted; crypto uses calendar-day windows. Bell note and phone alert per rung; `get_dip_plan` (plan = funds, bets, crypto) for Ask CFO and MCP | `dip/*`, `cfo/TestDipRungReachedReachesTheBellAndPhone`, `cfo/TestDipBetLinksToBets`, `market/TestDaily*`, `api/TestDip*`, `cmd/mcp/TestDipPlanTool`, `web/dips.test.ts` |
+
 ## Where v2 is better
 
 - One ledger model (income/expense/transfer, two-level categories, merchant, tags) instead of categories + 135 overlapping labels; mortgage principal counts as invested, refunds reduce spending.

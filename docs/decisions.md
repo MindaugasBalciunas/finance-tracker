@@ -78,3 +78,9 @@ Product, design and technical decisions, newest first, each with the reason. Add
 
 **Decided:** `finance_tracker/CHANGELOG.md`, one entry per release, in user terms, including what to do after updating.
 **Why:** Home Assistant shows it on the add-on's Changelog tab and in the update notice.
+
+## 2026-11-25 · Dip plan: the owner's rules, money above the safety net
+
+**Decided:** Investments → Dip plan turns the owner's written crash plan into limit prices: −10% under the 200-day average buys nothing; the 2-year average, the 4-year average and −44% from the high each release a third of a per-fund reserve, top down by price. A gap beside an average sets the limit at its top. "Buy now" is capped at the cash above the emergency fund's target, never the fund itself. A rung within 3% of the high isn't due, and a "bought" mark lasts until the price is back within 3% of its high. It is a view of Investments, not a tab of its own, and the bell and phone notes are `info`. Bought rungs come from the trades (a buy in the running fall at or under the limit, worth at least half a third), never a "mark bought" button: buying happens at the broker. The same ladder also runs for the single stocks at Revolut ("bets") and bitcoin ("crypto", calendar-day windows), each with its own reserve; the cash above the safety net goes funds → bets → crypto. The page recomputes daily, so there is no monthly check.
+**Why:** the owner kept falling into "buy the dip" guesses. The plan's own QQQ numbers (602 / 501) are the tops of the 8 Apr 2026 and 12 May 2025 gaps, which the gap rule reproduces. The reserve is savings beyond the safety net by the plan's first question ("a cushion first"). The app shows the levels; the broker moves the money ([visualization, not a money mover]).
+

@@ -13,7 +13,7 @@ Each section has one job. A panel lives in one place; other places link to it.
 | **Home** | a one-page review of today | none: net worth panel (full size, with its chart, and an Investments row with today's move) · Today (verdict + needs you) · this month (with its day-by-day chart and saved & invested) · this month so far, with investing (Insights → Spending's chart, at the owner's ask) · cash until payday · new since you last looked (else recent) |
 | **Ledger** | every transaction | Transactions · Bank inbox · Tidy up |
 | **Plan** | this month and what's coming | Budget · Cash · Recurring · Forecast · Goals (Wish list / Trips) · Income & salary |
-| **Wealth** | where the money ends up | Net worth · Investments · Property & loans · Independence · Stress test · Taxes · History |
+| **Wealth** | where the money ends up | Net worth · Investments (Positions / Dip plan / Bets / BTC) · Property & loans · Independence · Stress test · Taxes · History |
 | **Insights** | looking back | Summary · Review (Month / Year / Cash flow) · Spending (Categories / Merchants / Optional) · Habits (Trends / Drift) · Fun facts |
 
 - **Before adding a panel**, ask which job it serves. If another section already shows the same figure, link there instead of copying the panel.

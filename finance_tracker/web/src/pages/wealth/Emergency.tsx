@@ -1,4 +1,6 @@
 import clsx from 'clsx'
+import { useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useOverview } from '../../lib/hooks'
 import { eur, shortDate } from '../../lib/format'
 import { Card } from '../../components/ui'
@@ -18,6 +20,20 @@ export function coverMonths(e: { available: number; monthly_essential: number; m
 export function EmergencyFund() {
   const { data: o } = useOverview()
   const e = o?.emergency_plan
+  // ?focus=emergency (the dip plan's "safety net" link): bring this card into
+  // view and light it up, instead of leaving the owner at the top of Independence.
+  const [sp] = useSearchParams()
+  const focus = sp.get('focus') === 'emergency'
+  const ready = !!e
+  useEffect(() => {
+    if (!focus || !ready) return
+    // The cards above load after this one and push it down: scroll again
+    // once they have had time to arrive.
+    const go = () => document.getElementById('emergency')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    go()
+    const t = [setTimeout(go, 400), setTimeout(go, 1200)]
+    return () => t.forEach(clearTimeout)
+  }, [focus, ready])
   if (!e || e.monthly_essential <= 0) return null
   const short = e.gap > 0
   const scale = Math.max(e.target * 1.5, e.available, 1)
@@ -28,7 +44,7 @@ export function EmergencyFund() {
     ...(e.set_aside > 0 ? [['Set aside for the wish list', -e.set_aside] as [string, number]] : []),
   ]
   return (
-    <Card icon="umbrella" color={short ? 'var(--hue-warn)' : 'var(--hue-good)'} title="Emergency fund"
+    <Card id="emergency" className={clsx(focus && 'ring-2 ring-accent')} icon="umbrella" color={short ? 'var(--hue-warn)' : 'var(--hue-good)'} title="Emergency fund"
       action={<span className={clsx('text-xs font-medium', short ? 'text-warn' : 'text-good')}>{coverMonths(e).toFixed(1)} of {e.target_months} months</span>}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-center">
         <div>

@@ -493,3 +493,27 @@ export type BalancePoint = { account_id: string; date: string; value: number; qu
 
 /** /ai/scan and /ai/assist: a transaction drafted from a receipt photo or a sentence. */
 export type AIScan = { date: string; amount: number; kind: Kind; category: string; merchant: string; note: string; account_id: string; tags: string[] | null; remark: string; currency: string }
+
+/** Which ladder: the index ETFs, the single-stock bets at Revolut, or bitcoin. */
+export type DipPlanName = 'funds' | 'bets' | 'crypto'
+
+/** /market/dips: the crash plan — each ETF against its ladder of limit prices (dip.Plan). */
+export type DipGap = { date: string; low: number; high: number }
+export type DipLevelKey = 'dip' | 't1' | 't2' | 't3'
+export type DipLevelStatus = 'watch' | 'order' | 'buy' | 'bought' | 'hold'
+export type DipLevel = { key: DipLevelKey; label: string; action: string; price: number; basis: number; away: number; reached: boolean; gap?: DipGap; tranche: number; shares: number; exact?: number; status: DipLevelStatus; bought_on?: string; bought_shares?: number; bought_price?: number }
+export type DipTodo = { kind: 'buy' | 'wait' | 'stop' | 'setup' | 'calm'; text: string; amount?: number; shares?: number }
+export type DipPoint = { date: string; close: number; sma200?: number; sma2y?: number; sma4y?: number }
+export type DipFund = {
+  symbol: string; name: string; proxy?: string; currency: string; as_of: string; price: number; high: number; drawdown: number
+  sma200: number; sma2y: number; sma4y: number; zone: 'calm' | DipLevelKey; reserve: number
+  levels: DipLevel[]; gaps: DipGap[]; days_under_4y: number; plan_broken: boolean; chart: DipPoint[]; note?: string; error?: string
+  cycle_start?: string; left: number; todo: DipTodo
+  /** Units of the listing's currency per euro (0 = rate unavailable). */
+  fx: number
+  /** Your own purchases, placed on the chart's nearest point. */
+  buys: { date: string; chart_date: string; price: number; shares: number }[]
+}
+export type DipFundSetting = { symbol: string; name: string; proxy?: string; reserve: number }
+export type DipPlan = { settings: { funds: DipFundSetting[] }; funds: DipFund[]; buy_now: number; reserve: number; left: number; orders: number; monthly: number; missing: number
+  has_net: boolean; safety_net: number; spare: number; afford: number; short: number }

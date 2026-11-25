@@ -95,3 +95,36 @@ func TestInstructionsPromptsAndReconciliation(t *testing.T) {
 		t.Errorf("api calls %v", hits)
 	}
 }
+
+// get_dip_plan reads the ETF plan by default and the bets or bitcoin plan
+// when asked, always in the brief form (no charts) through the read scope.
+func TestDipPlanTool(t *testing.T) {
+	var hits []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.RequestURI())
+		w.Write([]byte(`{"funds":[],"buy_now":0}`))
+	}))
+	defer api.Close()
+	apiURL, apiToken = api.URL+"/api", "ftk_test"
+
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := mcptools.New(call).Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	for _, args := range []map[string]any{{}, {"plan": "bets"}, {"plan": "crypto"}} {
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_dip_plan", Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%v: %v %+v", args, err, res)
+		}
+	}
+	want := []string{"/api/market/dips?brief=1", "/api/market/dips?brief=1&plan=bets", "/api/market/dips?brief=1&plan=crypto"}
+	if strings.Join(hits, " ") != strings.Join(want, " ") {
+		t.Fatalf("api calls %v", hits)
+	}
+}

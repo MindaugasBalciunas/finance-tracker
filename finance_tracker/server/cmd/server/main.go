@@ -16,8 +16,10 @@ import (
 	"ft/internal/boot"
 	"ft/internal/cfo"
 	"ft/internal/db"
+	"ft/internal/dip"
 	"ft/internal/ibkr"
 	"ft/internal/logos"
+	"ft/internal/market"
 )
 
 var version = "dev"
@@ -36,6 +38,7 @@ func main() {
 	go nightly(d, path)
 	go ibkrDaily(d)
 	go alerts(d)
+	go dip.Watch(d, market.Daily) // prices for Home's bell and the dip alerts
 
 	srv := api.New(d, path, version)
 	addr := ":" + envOr("PORT", "8080")
