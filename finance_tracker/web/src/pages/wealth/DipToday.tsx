@@ -50,7 +50,7 @@ export function DipToday({ plan, onSetup }: { plan: DipPlan; onSetup: () => void
               : orders.length === 0
                 ? 'Every third of the reserve is in for this fall. Keep the monthly amount going.'
                 : `Keep ${orders.length === 1 ? 'the limit order' : `these ${orders.length} limit orders`} at your broker; they buy by themselves if prices fall.`}
-        {plan.monthly > 0 && <> Every month, whatever happens: <b className="tnum text-ink">{eur(plan.monthly)}</b> as usual.</>}
+        {plan.monthly > 0 && <> Every month, whatever happens: <b className="tnum text-ink">{eur(plan.monthly)}</b> {plan.monthly_from === 'transfers' ? 'as you usually move to your brokers' : 'as set in Investments'}.</>}
       </p>
 
       {due.length > 0 && (

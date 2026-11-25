@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"ft/internal/ledger"
 	"ft/internal/market"
 	"ft/internal/money"
 	"ft/internal/testutil"
@@ -546,5 +547,35 @@ func TestCryptoTransferIsABuy(t *testing.T) {
 	r := p.Funds[0]
 	if r.Left != money.FromFloat(2000) || len(r.Buys) != 0 && r.Buys[0].Price != 60 {
 		t.Fatalf("left %v buys %+v", r.Left, r.Buys)
+	}
+}
+
+// The usual monthly amount is the median of the last three complete months
+// of new money into the brokers: a double month or a gap doesn't move it,
+// and a move between brokers or money taken back out isn't new money.
+func TestUsualMonthlyIsTheMedianOfNewMoneyIntoBrokers(t *testing.T) {
+	d := testutil.DB(t)
+	if _, err := ledger.SaveAccount(d, ledger.Account{ID: "rev", Name: "Revolut ETF", Kind: "brokerage"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct {
+		date, from, to string
+		cents          int
+	}{
+		{"2026-08-01", "swed", "ibkr", 100000}, {"2026-08-15", "cash", "ibkr", 100000}, // a double month
+		{"2026-09-01", "swed", "ibkr", 100000},
+		{"2026-10-02", "swed", "ibkr", 100000}, {"2026-10-07", "rev", "ibkr", 50000}, // between brokers
+		{"2026-11-03", "swed", "ibkr", 100000}, // this month: not complete
+	} {
+		if _, err := d.Exec(`INSERT INTO transactions(date,kind,amount,account_id,to_account_id,category,created_at,updated_at) VALUES(?,'transfer',?,?,?,'transfer.invest','x','x')`, r.date, r.cents, r.from, r.to); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
+	if got := UsualMonthly(d, now); got != money.FromFloat(1000) {
+		t.Fatalf("usual %v", got)
+	}
+	if got := UsualMonthly(d, now.AddDate(1, 0, 0)); got != 0 {
+		t.Fatalf("a year later, with nothing moved: %v", got)
 	}
 }

@@ -256,6 +256,9 @@ type Plan struct {
 	Left     money.Cents `json:"left"`
 	Orders   int         `json:"orders"` // limit buys to keep at the broker
 	Monthly  money.Cents `json:"monthly"`
+	// MonthlyFrom says where Monthly comes from: "settings" (Investments'
+	// "Invested each month") or "transfers" (UsualMonthly).
+	MonthlyFrom string `json:"monthly_from,omitempty"`
 	// Missing counts funds whose prices didn't load: their reserve is left
 	// out of Reserve and Left rather than shown as untouched.
 	Missing int `json:"missing"`

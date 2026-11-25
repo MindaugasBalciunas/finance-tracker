@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.1 — Your buys show on Bets; the dip plan shows your monthly investing
+
+### Wealth → Investments → Dip plan
+- "What to do now" shows the monthly amount that goes on whatever the market does: "Every month, whatever happens: €1,000". It comes from Investments' **Invested each month**. When that is empty, it uses what you usually move into your brokers: the median of the last three complete months, counting only new money. Moves between brokers don't count.
+- **Bets showed none of your buys** until its stock list was saved: no dots on the chart, and a rung you had bought still said "buy". Your trades now count from the first visit.
+- **Your buys are easier to see:** a larger solid dot ringed in the price colour. Hovering that week shows what you bought, e.g. "You bought 19 Feb · 97 × US$6.000".
+- Dollar prices on the chart's axis no longer get cut off.
+
 ## 3.3.0 — Dip plans: when to buy and how much, for ETFs, bets and BTC
 
 ### Wealth → Investments → Dip plan (new)

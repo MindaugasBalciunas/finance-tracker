@@ -1304,7 +1304,7 @@ func TestDipBetsStartFromRevolutStocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tr := range []map[string]any{
-		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "OKLO", "shares": 10, "price": 20, "currency": "USD"},
+		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "OKLO", "shares": 10, "price": 20, "currency": "EUR"}, // the fake prices are in EUR
 		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "VWCE", "shares": 1, "price": 150, "currency": "EUR"},
 		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "VALL", "shares": 1, "price": 4, "currency": "EUR"},
 		{"date": "2026-03-01", "account_id": "revolut_stocks", "action": "buy", "ticker": "MU", "shares": 1, "price": 90, "currency": "USD"},
@@ -1318,6 +1318,16 @@ func TestDipBetsStartFromRevolutStocks(t *testing.T) {
 	c.ok("GET", "/market/dips?plan=bets", nil, &p)
 	if len(p.Funds) != 1 || p.Funds[0].Symbol != "OKLO" {
 		t.Fatalf("%+v", p)
+	}
+	// unsaved, the defaults still carry the trades: OKLO's buy is on its chart
+	var withBuys struct {
+		Funds []struct {
+			Buys []struct{ Price float64 } `json:"buys"`
+		} `json:"funds"`
+	}
+	c.ok("GET", "/market/dips?plan=bets", nil, &withBuys)
+	if len(withBuys.Funds[0].Buys) != 1 || withBuys.Funds[0].Buys[0].Price != 20 {
+		t.Fatalf("buys %+v", withBuys)
 	}
 	if code, _ := c.do("GET", "/market/dips?plan=stamps", nil); code != 400 {
 		t.Fatal("unknown plan accepted")

@@ -245,8 +245,8 @@ function PriceChart({ f }: { f: DipFund }) {
           <ComposedChart data={f.chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="date" {...axisProps} ticks={yearTicks(f.chart.map((p) => p.date))} tickFormatter={(d: string) => d.slice(0, 4)} />
-            <YAxis {...axisProps} width={56} domain={[Math.max(0, lo - pad), hi + pad]} tickFormatter={fmt} />
-            <Tooltip content={<ChartTip currency={f.currency} />} />
+            <YAxis {...axisProps} width={f.currency === "EUR" ? 60 : 72} domain={[Math.max(0, lo - pad), hi + pad]} tickFormatter={fmt} />
+            <Tooltip content={<ChartTip currency={f.currency} buys={f.buys} />} />
             {rungs.map((l) => (
               <ReferenceLine key={l.key} y={l.price} stroke={rungColor(l)} strokeWidth={closeness(l) === 'far' ? 1 : 2} strokeOpacity={closeness(l) === 'far' ? 0.7 : 1} strokeDasharray="4 4"
                 label={{ value: l.key === 't1' ? '1' : l.key === 't2' ? '2' : l.key === 't3' ? '3' : '−10%', position: 'insideLeft', fill: rungColor(l), fontSize: 10, fontWeight: 600 }} />
@@ -257,7 +257,7 @@ function PriceChart({ f }: { f: DipFund }) {
             <Line dataKey="close" stroke={SERIES.close} dot={false} strokeWidth={2} isAnimationActive={false} />
             {/* Your own buys, from the trades: a ringed dot at the price paid. */}
             {f.buys.map((b, i) => (
-              <ReferenceDot key={i} x={b.chart_date} y={b.price} r={5} fill="var(--chart-surface)" stroke={SERIES.close} strokeWidth={2.5} ifOverflow="extendDomain" />
+              <ReferenceDot key={i} x={b.chart_date} y={b.price} r={7} fill={BUY_FILL} stroke={SERIES.close} strokeWidth={3} ifOverflow="extendDomain" />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
@@ -265,7 +265,7 @@ function PriceChart({ f }: { f: DipFund }) {
       <Legend items={[{ color: SERIES.close, label: 'Price' }, { color: SERIES.sma200, label: '200-day' }, { color: SERIES.sma2y, label: '2-year' }, { color: SERIES.sma4y, label: '4-year' }, { color: SERIES.deep, label: '−44% from high' }]} />
       {f.buys.length > 0 && (
         <p className="mt-1 flex items-center gap-1.5 text-xs text-ink2">
-          <span className="inline-block h-3 w-3 rounded-full border-[2.5px] bg-surface" style={{ borderColor: SERIES.close }} aria-hidden />
+          <span className="inline-block h-3.5 w-3.5 rounded-full border-[3px]" style={{ borderColor: SERIES.close, background: BUY_FILL }} aria-hidden />
           Your buys: {f.buys.length === 1 ? '1 purchase' : `${f.buys.length} purchases`}, {units(f.buys.reduce((a, b) => a + b.shares, 0))} {f.symbol.startsWith('BTC') ? 'BTC' : 'shares'} at an average of {px(f.buys.reduce((a, b) => a + b.price * b.shares, 0) / Math.max(1e-9, f.buys.reduce((a, b) => a + b.shares, 0)), f.currency)}
         </p>
       )}
@@ -274,15 +274,22 @@ function PriceChart({ f }: { f: DipFund }) {
   )
 }
 
-function ChartTip({ active, payload, currency }: { active?: boolean; payload?: { payload?: DipPoint }[]; currency: string }) {
+/** The buy dot: solid in the text colour (white in dark mode, black in
+ *  light), ringed in the price line's blue, so it stands out on the line. */
+const BUY_FILL = 'rgb(var(--ink))'
+
+function ChartTip({ active, payload, currency, buys }: { active?: boolean; payload?: { payload?: DipPoint }[]; currency: string; buys: DipFund['buys'] }) {
   const p = payload?.[0]?.payload
   if (!active || !p) return null
+  // The buys sitting on this point of the chart (it shows one point a week).
+  const here = buys.filter((b) => b.chart_date === p.date)
   return (
     <TooltipBox title={shortDate(p.date)} rows={[
       { color: SERIES.close, label: 'Price', value: px(p.close, currency), bold: true },
       { color: SERIES.sma200, label: '200-day', value: px(p.sma200 || undefined, currency) },
       { color: SERIES.sma2y, label: '2-year', value: px(p.sma2y || undefined, currency) },
       { color: SERIES.sma4y, label: '4-year', value: px(p.sma4y || undefined, currency) },
+      ...here.map((b) => ({ color: SERIES.close, label: `You bought ${shortDate(b.date)}`, value: `${units(b.shares)} × ${px(b.price, currency)}`, bold: true })),
     ]} />
   )
 }

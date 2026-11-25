@@ -516,4 +516,6 @@ export type DipFund = {
 }
 export type DipFundSetting = { symbol: string; name: string; proxy?: string; reserve: number }
 export type DipPlan = { settings: { funds: DipFundSetting[] }; funds: DipFund[]; buy_now: number; reserve: number; left: number; orders: number; monthly: number; missing: number
+  /** settings = Investments' "Invested each month"; transfers = the usual monthly move into the brokers. */
+  monthly_from?: 'settings' | 'transfers'
   has_net: boolean; safety_net: number; spare: number; afford: number; short: number }

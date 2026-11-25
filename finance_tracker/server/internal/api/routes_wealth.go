@@ -302,7 +302,12 @@ func (s *Server) wealthRoutes() {
 		}
 		st := dip.LoadPlan(s.DB, plan)
 		if plan == dip.Bets && !st.Saved {
-			st = s.betsDefaults()
+			// The defaults come from the holdings, but the trades are still
+			// the plan's: without them an unsaved bets plan had no buy dots
+			// and couldn't see a rung bought.
+			def := s.betsDefaults()
+			def.Trades = st.Trades
+			st = def
 		}
 		p := dip.Build(st, s.daily())
 		if o, err := cfo.BuildOverview(s.DB, time.Now(), 0); err == nil && o.EmergencyPlan != nil && o.EmergencyPlan.Target > 0 {
@@ -312,7 +317,13 @@ func (s *Server) wealthRoutes() {
 			p.Cash(o.EmergencyPlan.Target, dip.FreeAfter(s.DB, plan, o.EmergencyPlan.Spare))
 		}
 		if plan == dip.Funds {
-			p.Monthly = money.FromFloat(wealth.LoadInvestSettings(s.DB, wealth.Portfolio{}).Monthly)
+			p.Monthly, p.MonthlyFrom = money.FromFloat(wealth.LoadInvestSettings(s.DB, wealth.Portfolio{}).Monthly), "settings"
+			if p.Monthly <= 0 { // not set: what usually goes to the brokers
+				p.Monthly, p.MonthlyFrom = dip.UsualMonthly(s.DB, time.Now()), "transfers"
+			}
+			if p.Monthly <= 0 {
+				p.MonthlyFrom = ""
+			}
 		}
 		if r.URL.Query().Get("brief") == "1" { // the AI tools don't need the chart
 			for i := range p.Funds {
