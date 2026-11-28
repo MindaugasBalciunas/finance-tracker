@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.0 — The dip chart zooms to 3M, 6M, 1Y or 3Y; short periods show which months each employer paid
+
+### Wealth → Investments → Dip plan
+- **3M · 6M · 1Y · 3Y on the price chart.** Three years at one price a week made today's dip hard to see. The chart now opens on 1Y, and its prices are daily for the last year.
+- In 3M–1Y the scale fits the price and its 200-day average, so a fall like November's is clear. Rungs within 5% of the price stay on the chart; deeper ones and the lower averages run off the bottom, and 3Y shows everything. Your buys sit on the day you bought.
+- The app remembers the range you picked.
+
+### Insights → Fun facts
+- **Who paid you the most:** over two years or less it shows a dot for each month an employer paid, e.g. Nexos.ai Aug–Oct, Vialet Nov. Longer periods keep the year blocks.
+- Long shop names in the ranked cards are shortened with "…" again; tap a row for the full list.
+
 ## 3.4.0 — Biggest expenses show your one-offs; alimony and the mortgage are totalled under them
 
 ### Insights → Review (Month and Year) and Spending

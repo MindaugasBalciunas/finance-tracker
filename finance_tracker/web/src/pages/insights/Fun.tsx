@@ -3,14 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { api } from '../../lib/api'
-import { shortDate } from '../../lib/format'
+import { addMonths, monthLabel, shortDate } from '../../lib/format'
 import { usePeriod } from '../../lib/hooks'
 import { PeriodPicker, pickerRange } from '../../components/PeriodPicker'
 import { AskCFO, hue, Loading, useCountUp } from '../../components/ui'
 import { Icon } from '../../components/Icon'
 import { MerchantMark } from '../../components/MerchantLogo'
 
-type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; link?: string }
+type Item = { label: string; value: string; sub?: string; n?: number; from?: string; to?: string; top?: boolean; years?: number[]; months?: string[]; link?: string }
 export type Fact = { key: string; icon: string; title: string; value: string; detail?: string; items?: Item[] | null; link?: string }
 /** A "did you know?" line and the transactions behind it. */
 export type FunLine = { text: string; link?: string }
@@ -154,11 +154,75 @@ function runs(years: number[]): [number, number][] {
   return out
 }
 
+// Every month from a to b (YYYY-MM), inclusive.
+function monthRange(a: string, b: string): string[] {
+  const out: string[] = []
+  for (let m = a; m <= b && out.length < 240; m = addMonths(m, 1)) out.push(m)
+  return out
+}
+
+/** Short periods (two years or less): one dot per month an employer paid, on
+ *  a month axis — a year block read as a full year's pay when Nexos.ai had
+ *  paid four times. Longer histories keep the year blocks. */
+export function EmployerMonths({ f, color }: { f: Fact; color: string }) {
+  const items = f.items ?? []
+  const all = items.flatMap((i) => i.months ?? []).sort()
+  const months = monthRange(all[0], all[all.length - 1])
+  const n = months.length
+  const at = (k: number) => `${((k + 0.5) / n) * 100}%`
+  const step = n > 12 ? 3 : n > 6 ? 2 : 1
+  const label = (m: string, k: number) => (k === 0 || m.endsWith('-01') ? monthLabel(m) : monthLabel(m).split(' ')[0])
+  // Ticks on calendar months (Jan/Apr/Jul/Oct when every third), so January
+  // and the year change always show; the first and last stay inside the card.
+  const onCal = (m: string) => (Number(m.slice(5, 7)) - 1) % step === 0
+  const firstCal = months.findIndex((m, k) => k > 0 && onCal(m))
+  // The first month gets a label only when the next tick is a full step away.
+  const ticked = (m: string, k: number) => (k === 0 ? firstCal === -1 || firstCal >= step : onCal(m))
+  const align = (k: number) => ((k + 0.5) / n < 0.1 ? '' : (k + 0.5) / n > 0.9 ? '-translate-x-full' : '-translate-x-1/2')
+  return (
+    <Shell f={f} color={color}>
+      <div className="mt-3">
+        <div className="relative h-4 text-[10px] text-muted tnum">
+          {months.map((m, k) => (ticked(m, k) ? <span key={m} className={clsx('absolute whitespace-nowrap', align(k))} style={{ left: (k + 0.5) / n < 0.1 ? 0 : at(k) }}>{label(m, k)}</span> : null))}
+        </div>
+        <div className="space-y-2.5">
+          {items.map((it, i) => {
+            const paid = new Set(it.months ?? [])
+            const ms = it.months ?? []
+            const span = ms.length ? (ms[0] === ms[ms.length - 1] ? monthLabel(ms[0]) : `${ms[0].slice(0, 4) === ms[ms.length - 1].slice(0, 4) ? monthLabel(ms[0]).split(' ')[0] : monthLabel(ms[0])}–${monthLabel(ms[ms.length - 1])}`) : ''
+            return (
+              <Linked key={it.label} to={it.link} className="rounded-md">
+                <div className="flex items-baseline gap-2 text-xs">
+                  <span className="min-w-0 truncate font-medium">{it.label}</span>
+                  <span className="shrink-0 text-muted tnum">{span}</span>
+                  <span className="ml-auto shrink-0 font-semibold tnum">{it.value}</span>
+                  {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
+                </div>
+                <div className="relative mt-1 h-3">
+                  <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line" />
+                  {months.map((m, k) => paid.has(m) && (
+                    <span key={m} data-month={m} title={`${it.label}: ${monthLabel(m, true)}`} className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                      style={{ left: at(k), background: S[i % S.length] }} />
+                  ))}
+                </div>
+              </Linked>
+            )
+          })}
+        </div>
+        <div className="mt-2 text-[11px] text-muted">Each dot is a month the employer paid you · ranked by total paid</div>
+      </div>
+    </Shell>
+  )
+}
+
 function FactCard({ f, color }: { f: Fact; color: string }) {
   const items = f.items ?? []
   const max = Math.max(...items.map((i) => i.n ?? 0), 1)
   switch (f.key) {
     case 'employers': {
+      // Two years or less: months, not year blocks.
+      const paidMonths = items.flatMap((i) => i.months ?? []).sort()
+      if (paidMonths.length && monthRange(paidMonths[0], paidMonths[paidMonths.length - 1]).length <= 24) return <EmployerMonths f={f} color={color} />
       // A timeline: each bar runs from an employer's first payment year to
       // its last, against a year axis with a line per year.
       const years = items.flatMap((i) => [Number(i.from), Number(i.to)]).filter(Boolean)
@@ -207,18 +271,21 @@ function FactCard({ f, color }: { f: Fact; color: string }) {
     case 'dating':
       return (
         <Shell f={f} color={color}>
-          <div className="mt-3 space-y-1.5">
+          {/* A ranked list: a long shop name may cut, the full row is one tap away. */}
+          <div className="mt-3 space-y-1.5" role="list">
             {items.map((it) => (
-              <Linked key={it.label} to={it.link} className="relative overflow-hidden rounded-lg px-2.5 py-1.5 text-sm">
-                <div className="absolute inset-y-0 left-0 rounded-lg" style={{ width: `${((it.n ?? 0) / max) * 100}%`, background: `color-mix(in oklab, ${color} 22%, transparent)` }} />
-                <div className="relative flex items-baseline gap-2">
-                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate">{f.key === 'trips' ? <Icon name="plane" size={12} className="shrink-0 text-muted" />
-                    : f.key !== 'dating' && <MerchantMark merchant={it.label} size={20} fallback={<Icon name="bag" size={12} className="mx-1 shrink-0 text-muted" />} />}<span className="truncate">{it.label}</span></span>
-                  <span className="text-xs text-muted">{it.sub}</span>
-                  <span className="font-semibold tnum">{it.value}</span>
-                  {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
-                </div>
-              </Linked>
+              <div key={it.label} role="listitem">
+                <Linked to={it.link} className="relative overflow-hidden rounded-lg px-2.5 py-1.5 text-sm">
+                  <div className="absolute inset-y-0 left-0 rounded-lg" style={{ width: `${((it.n ?? 0) / max) * 100}%`, background: `color-mix(in oklab, ${color} 22%, transparent)` }} />
+                  <div className="relative flex items-baseline gap-2">
+                    <span className="flex min-w-0 flex-1 items-center gap-2 truncate">{f.key === 'trips' ? <Icon name="plane" size={12} className="shrink-0 text-muted" />
+                      : f.key !== 'dating' && <MerchantMark merchant={it.label} size={20} fallback={<Icon name="bag" size={12} className="mx-1 shrink-0 text-muted" />} />}<span className="truncate">{it.label}</span></span>
+                    <span className="text-xs text-muted">{it.sub}</span>
+                    <span className="font-semibold tnum">{it.value}</span>
+                    {it.link && <Icon name="chevronR" size={12} className="shrink-0 self-center text-muted" />}
+                  </div>
+                </Linked>
+              </div>
             ))}
           </div>
         </Shell>

@@ -140,7 +140,9 @@ type Report struct {
 	// quoted in dollars: a €1,000 third at $50 is ~23 shares, not 20.
 	FX float64 `json:"fx"`
 	// Buys are the owner's own purchases of this fund (from the trades),
-	// for the chart's dots. ChartDate is the chart point the dot sits on.
+	// for the chart's dots. ChartDate is the full chart's point the dot sits
+	// on; the web places dots on its own window (3M–3Y) from Date, so this is
+	// for other readers of the API.
 	Buys []Buy `json:"buys"`
 }
 
@@ -368,16 +370,23 @@ func tick(p float64) float64 {
 	return math.Floor(p*per+1e-6) / per // dividing keeps 3.812, not 3.8120000000000003
 }
 
-// chart samples the last three years weekly (every fifth trading day) and
-// always keeps the latest day.
+// chart samples three years: every day of the last year, so the 3-month and
+// 6-month views show the dip day by day, and weekly (every fifth trading day)
+// before that. It always keeps the latest day. The web thins the daily year
+// back to weekly for the three-year view.
 func chart(src []market.Bar, sma func(win, i int) float64, k float64, yr int) []Point {
 	days2y, days4y := 2*yr, 4*yr
 	n := len(src)
 	from := max(0, n-3*yr)
 	out := []Point{}
-	for i := n - 1; i >= from; i -= 5 {
+	for i := n - 1; i >= from; {
 		b := src[i]
 		out = append(out, Point{Date: b.Date, Close: round3(b.Close * k), SMA200: round3(sma(days200, i) * k), SMA2y: round3(sma(days2y, i) * k), SMA4y: round3(sma(days4y, i) * k)})
+		if i > n-1-yr {
+			i--
+		} else {
+			i -= 5
+		}
 	}
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]

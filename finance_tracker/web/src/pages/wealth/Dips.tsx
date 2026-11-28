@@ -4,8 +4,9 @@ import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
-import { eur, pct, shortDate } from '../../lib/format'
-import { amount, PLAN_WORDS, awayText, closeness, nextRung, orderCost, px, rungColor, SERIES, TONE, yearTicks, ZONE } from '../../lib/dips'
+import { eur, monthLabel, pct, shortDate } from '../../lib/format'
+import { usePeriod } from '../../lib/hooks'
+import { amount, CHART_RANGES, chartWindow, monthTicks, placeBuys, PLAN_WORDS, awayText, closeness, nextRung, orderCost, px, rungColor, SERIES, TONE, yearTicks, ZONE, type ChartRange } from '../../lib/dips'
 import type { DipPlanName, DipFund, DipFundSetting, DipLevel, DipPlan, DipPoint } from '../../lib/types'
 import { DipToday, PlanCtx, SAFETY_NET } from './DipToday'
 import { Card, Empty, ErrorBox, Field, Loading, NumberInput, Segmented, Sheet, useToast } from '../../components/ui'
@@ -149,7 +150,7 @@ function FundTop({ f, funds, onPick }: { f: DipFund; funds: DipFund[]; onPick: (
       {funds.length > 1 && (
         <Segmented size="sm" value={f.symbol} onChange={onPick} options={funds.map((x) => ({ value: x.symbol, label: x.symbol.split(/[.-]/)[0] }))} />
       )}
-      {f.error ? <ErrorBox error={new Error(f.error)} /> : <PriceChart f={f} />}
+      {f.error ? <ErrorBox error={new Error(f.error)} /> : f.chart.length ? <PriceChart f={f} /> : <Empty title="No price history yet" />}
     </div>
   )
 }
@@ -230,23 +231,42 @@ function Rung({ l, f }: { l: DipLevel; f: DipFund }) {
   )
 }
 
-/** Price against the three averages, with the money rungs as dashed lines. */
+const RANGE_WORDS: Record<ChartRange, string> = { '3m': 'three months', '6m': 'six months', '1y': 'a year', '3y': 'three years' }
+
+/** Price against the three averages, with the money rungs as dashed lines.
+ *  3M–1Y zoom in on today's dip, day by day: the scale fits the price and the
+ *  200-day average (a 4-year average far below flattened a 3-month dip), so
+ *  a lower average or rung runs off the bottom. 3Y shows everything. */
 function PriceChart({ f }: { f: DipFund }) {
-  const rungs = f.levels
-  const lo = Math.min(...f.chart.map((p) => p.close), ...rungs.map((l) => l.price))
-  const hi = Math.max(...f.chart.map((p) => p.close))
+  const [range, setRange] = usePeriod('dip-chart', '1y', CHART_RANGES.map((r) => r.value)) as [ChartRange, (v: string) => void]
+  const data = chartWindow(f.chart, range)
+  const buys = placeBuys(f.buys, data)
+  const long = range === '3y'
+  const seen = data.flatMap((p) => (long ? [p.close, p.sma200, p.sma2y, p.sma4y] : [p.close, p.sma200])).filter((v): v is number => !!v && v > 0)
+  const top = Math.max(...seen)
+  const floor = Math.min(...seen)
+  // Short windows keep a rung on the scale only when it is near the price.
+  const rungs = long ? f.levels : f.levels.filter((l) => l.price >= floor * 0.95)
+  const hidden = f.levels.filter((l) => !rungs.includes(l))
+  const lo = Math.min(floor, ...rungs.map((l) => l.price), ...buys.map((b) => b.price))
+  // A rung above the price (the 2-year average in a long fall) stays on the scale.
+  const hi = Math.max(top, ...rungs.map((l) => l.price), ...buys.map((b) => b.price))
   const pad = (hi - lo) * 0.05
   // whole units for big prices; a €4 fund keeps its decimals (else €2, €2)
   const fmt = (v: number) => (hi >= 100 ? px(v, f.currency).replace(/\.\d+$/, '') : px(v, f.currency))
+  const dates = data.map((p) => p.date)
+  const ticks = long ? yearTicks(dates) : monthTicks(dates, range === '1y' ? 2 : 1)
+  const tick = (d: string) => (long ? d.slice(0, 4) : d.slice(5, 7) === '01' ? monthLabel(d.slice(0, 7)) : monthLabel(d.slice(0, 7)).split(' ')[0])
   return (
-    <Card title={`${f.name || f.symbol} · three years against the averages`} icon="trend">
+    <Card title={`${f.name || f.symbol} · ${RANGE_WORDS[range]} against the averages`} icon="trend"
+      action={<Segmented size="sm" value={range} onChange={setRange} options={CHART_RANGES.map((r) => ({ value: r.value, label: r.label }))} />}>
       <div className="h-80 lg:h-[28rem]">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={f.chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+          <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid {...gridProps} />
-            <XAxis dataKey="date" {...axisProps} ticks={yearTicks(f.chart.map((p) => p.date))} tickFormatter={(d: string) => d.slice(0, 4)} />
-            <YAxis {...axisProps} width={f.currency === "EUR" ? 60 : 72} domain={[Math.max(0, lo - pad), hi + pad]} tickFormatter={fmt} />
-            <Tooltip content={<ChartTip currency={f.currency} buys={f.buys} />} />
+            <XAxis dataKey="date" {...axisProps} ticks={ticks} tickFormatter={tick} />
+            <YAxis {...axisProps} width={f.currency === "EUR" ? 60 : 72} domain={[Math.max(0, lo - pad), hi + pad]} tickFormatter={fmt} allowDataOverflow={!long} />
+            <Tooltip content={<ChartTip currency={f.currency} buys={buys} />} />
             {rungs.map((l) => (
               <ReferenceLine key={l.key} y={l.price} stroke={rungColor(l)} strokeWidth={closeness(l) === 'far' ? 1 : 2} strokeOpacity={closeness(l) === 'far' ? 0.7 : 1} strokeDasharray="4 4"
                 label={{ value: l.key === 't1' ? '1' : l.key === 't2' ? '2' : l.key === 't3' ? '3' : '−10%', position: 'insideLeft', fill: rungColor(l), fontSize: 10, fontWeight: 600 }} />
@@ -256,8 +276,8 @@ function PriceChart({ f }: { f: DipFund }) {
             <Line dataKey="sma200" stroke={SERIES.sma200} dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls />
             <Line dataKey="close" stroke={SERIES.close} dot={false} strokeWidth={2} isAnimationActive={false} />
             {/* Your own buys, from the trades: a ringed dot at the price paid. */}
-            {f.buys.map((b, i) => (
-              <ReferenceDot key={i} x={b.chart_date} y={b.price} r={7} fill={BUY_FILL} stroke={SERIES.close} strokeWidth={3} ifOverflow="extendDomain" />
+            {buys.map((b, i) => (
+              <ReferenceDot key={i} x={b.at} y={b.price} r={7} fill={BUY_FILL} stroke={SERIES.close} strokeWidth={3} ifOverflow="extendDomain" />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
@@ -269,7 +289,7 @@ function PriceChart({ f }: { f: DipFund }) {
           Your buys: {f.buys.length === 1 ? '1 purchase' : `${f.buys.length} purchases`}, {units(f.buys.reduce((a, b) => a + b.shares, 0))} {f.symbol.startsWith('BTC') ? 'BTC' : 'shares'} at an average of {px(f.buys.reduce((a, b) => a + b.price * b.shares, 0) / Math.max(1e-9, f.buys.reduce((a, b) => a + b.shares, 0)), f.currency)}
         </p>
       )}
-      <p className="mt-1 text-xs text-muted">Dashed lines are the limit prices, in their average’s colour: rungs 1–3 and the −10% line. Bolder once within 5%.</p>
+      <p className="mt-1 text-xs text-muted">Dashed lines are the limit prices, in their average’s colour: rungs 1–3 and the −10% line. Bolder once within 5%.{!long && ` This view fits the price and the 200-day average; ${hidden.length === 1 ? 'one rung and ' : hidden.length > 1 ? `${hidden.length} rungs and ` : ''}anything lower runs off the bottom — 3Y shows it all.`}</p>
     </Card>
   )
 }
@@ -278,11 +298,11 @@ function PriceChart({ f }: { f: DipFund }) {
  *  light), ringed in the price line's blue, so it stands out on the line. */
 const BUY_FILL = 'rgb(var(--ink))'
 
-function ChartTip({ active, payload, currency, buys }: { active?: boolean; payload?: { payload?: DipPoint }[]; currency: string; buys: DipFund['buys'] }) {
+function ChartTip({ active, payload, currency, buys }: { active?: boolean; payload?: { payload?: DipPoint }[]; currency: string; buys: (DipFund['buys'][number] & { at: string })[] }) {
   const p = payload?.[0]?.payload
   if (!active || !p) return null
-  // The buys sitting on this point of the chart (it shows one point a week).
-  const here = buys.filter((b) => b.chart_date === p.date)
+  // The buys sitting on this point (a day in 3M–1Y, a week in 3Y).
+  const here = buys.filter((b) => b.at === p.date)
   return (
     <TooltipBox title={shortDate(p.date)} rows={[
       { color: SERIES.close, label: 'Price', value: px(p.close, currency), bold: true },

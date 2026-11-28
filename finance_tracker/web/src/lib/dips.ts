@@ -111,3 +111,52 @@ export function rungColor(l: Pick<DipLevel, 'label'>): string {
   if (l.label.includes('4-year')) return SERIES.sma4y
   return SERIES.deep
 }
+
+/** The chart's time windows. The server sends three years: daily for the last
+ *  year, weekly before it. */
+export const CHART_RANGES = [{ value: '3m', label: '3M' }, { value: '6m', label: '6M' }, { value: '1y', label: '1Y' }, { value: '3y', label: '3Y' }] as const
+export type ChartRange = (typeof CHART_RANGES)[number]['value']
+const RANGE_MONTHS: Record<ChartRange, number> = { '3m': 3, '6m': 6, '1y': 12, '3y': 36 }
+
+// The same day n months before (YYYY-MM-DD), clamped to the month's end.
+function monthsBefore(d: string, n: number): string {
+  const [y, m, day] = d.split('-').map(Number)
+  const t = new Date(y, m - 1 - n, 1)
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`
+}
+
+/** The points a window shows. Short windows keep every day; three years thin
+ *  the daily last year back to weekly (every fifth point, counted from today),
+ *  so the line is as even as before. */
+export function chartWindow<P extends { date: string }>(points: P[], range: ChartRange): P[] {
+  if (!points.length) return points
+  const last = points[points.length - 1].date
+  const from = monthsBefore(last, RANGE_MONTHS[range])
+  const shown = points.filter((p) => p.date >= from)
+  if (range !== '3y') return shown
+  const yearAgo = monthsBefore(last, 12)
+  const daily = shown.filter((p) => p.date >= yearAgo)
+  const older = shown.filter((p) => p.date < yearAgo)
+  return [...older, ...daily.filter((_, i) => (daily.length - 1 - i) % 5 === 0)]
+}
+
+/** Each buy on the first shown point at or after its day; buys before the
+ *  window are left off. */
+export function placeBuys<B extends { date: string }>(buys: B[], points: { date: string }[]): (B & { at: string })[] {
+  if (!points.length) return []
+  const out: (B & { at: string })[] = []
+  for (const b of buys) {
+    if (b.date < points[0].date) continue
+    const at = points.find((p) => p.date >= b.date)?.date ?? points[points.length - 1].date
+    out.push({ ...b, at })
+  }
+  return out
+}
+
+/** One tick per month (the first day of each month on the chart), every
+ *  second month over a year so 390px stays readable. */
+export function monthTicks(dates: string[], step = 1): string[] {
+  const firsts = dates.filter((d, i) => i > 0 && d.slice(0, 7) !== dates[i - 1].slice(0, 7))
+  return firsts.filter((d) => (Number(d.slice(5, 7)) - 1) % step === 0)
+}

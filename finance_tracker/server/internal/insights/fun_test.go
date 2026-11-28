@@ -108,6 +108,10 @@ func TestFunFactsInAPeriod(t *testing.T) {
 	if f := by["employers"]; f.Value != "New Co" || len(f.Items) != 1 {
 		t.Errorf("employers in September %+v", f)
 	}
+	// A short period draws a dot per month paid, so each employer says which.
+	if m := by["employers"].Items[0].Months; len(m) != 1 || m[0] != "2026-09" {
+		t.Errorf("months paid in September %v", m)
+	}
 	if f := by["visits"]; f.Value != "Lidl" || len(f.Items) != 1 {
 		t.Errorf("visits in September %+v", f)
 	}

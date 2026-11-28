@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { awayText, closeness, rungColor, SERIES, nextRung, orderCost, orderLine, ordersByFund, px, standingOrders, yearTicks } from '../lib/dips'
+import { awayText, chartWindow, closeness, monthTicks, placeBuys, rungColor, SERIES, nextRung, orderCost, orderLine, ordersByFund, px, standingOrders, yearTicks } from '../lib/dips'
 import type { DipFund, DipLevel } from '../lib/types'
 
 const lv = (key: DipLevel['key'], price: number, reached: boolean, tranche = 1000): DipLevel =>
@@ -59,5 +59,41 @@ describe('dip plan', () => {
     expect(rungColor({ label: '4-year average' })).toBe(SERIES.sma4y)
     expect(rungColor({ label: '−10% under the 200-day average' })).toBe(SERIES.sma200)
     expect(rungColor({ label: '−44% from the high' })).toBe(SERIES.deep)
+  })
+})
+
+// Three years at one point a week hid today's dip; the chart now zooms.
+describe('dip chart windows', () => {
+  // Weekly for two years, then daily for the last year (as the server sends).
+  const days: string[] = []
+  const iso = (t: Date) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}` // local day, never UTC
+  for (let t = new Date(2023, 10, 26); t < new Date(2025, 10, 28); t.setDate(t.getDate() + 7)) days.push(iso(t))
+  for (let t = new Date(2025, 10, 28); t <= new Date(2026, 10, 27); t.setDate(t.getDate() + 1)) days.push(iso(t))
+  const pts = days.map((date) => ({ date }))
+
+  it('3M keeps every day of the last three months', () => {
+    const w = chartWindow(pts, '3m')
+    expect(w[0].date).toBe('2026-08-27')
+    expect(w[w.length - 1].date).toBe('2026-11-27')
+    expect(w.length).toBe(93)
+  })
+
+  it('3Y thins the daily year back to weekly and keeps today', () => {
+    const w = chartWindow(pts, '3y')
+    expect(w[w.length - 1].date).toBe('2026-11-27')
+    const lastYear = w.filter((p) => p.date >= '2025-11-27')
+    expect(lastYear.length).toBeLessThan(80)
+    expect(w[0].date >= '2023-11-27' && w[0].date <= '2023-12-04').toBe(true) // three years back, to the week
+  })
+
+  it('puts each buy on the first shown day at or after it, and drops older ones', () => {
+    const w = chartWindow(pts, '3m')
+    const placed = placeBuys([{ date: '2026-03-04', price: 1 }, { date: '2026-10-05', price: 2 }], w)
+    expect(placed).toEqual([{ date: '2026-10-05', price: 2, at: '2026-10-05' }])
+  })
+
+  it('ticks the first day of each month, every second month over a year', () => {
+    expect(monthTicks(['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02', '2026-10-01'])).toEqual(['2026-09-01', '2026-10-01'])
+    expect(monthTicks(['2026-08-31', '2026-09-01', '2026-10-01', '2026-11-02'], 2)).toEqual(['2026-09-01', '2026-11-02'])
   })
 })

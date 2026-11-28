@@ -36,7 +36,10 @@ type FactItem struct {
 	To    string  `json:"to,omitempty"`
 	Top   bool    `json:"top,omitempty"`   // the highlighted one
 	Years []int   `json:"years,omitempty"` // employers: each year they actually paid (gaps stay gaps)
-	Link  string  `json:"link,omitempty"`  // the transactions behind this row
+	// Months: employers, each month (YYYY-MM, as cash flow dates the pay) they
+	// paid — a short period draws one dot per month instead of a year block.
+	Months []string `json:"months,omitempty"`
+	Link   string   `json:"link,omitempty"` // the transactions behind this row
 }
 
 // obligation: money that isn't a choice (alimony, the mortgage, family
@@ -109,6 +112,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		first, last string
 		n           int
 		years       map[int]bool
+		months      map[string]bool
 	}
 	payers := map[string]*payer{}
 	var firstPay *ledger.Tx
@@ -135,12 +139,13 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 		fd := plan.FlowDate(t, salary)
 		p := payers[k]
 		if p == nil {
-			p = &payer{name: t.Merchant, first: fd, last: fd, years: map[int]bool{}}
+			p = &payer{name: t.Merchant, first: fd, last: fd, years: map[int]bool{}, months: map[string]bool{}}
 			payers[k] = p
 		}
 		if y, err := strconv.Atoi(fd[:4]); err == nil {
 			p.years[y] = true
 		}
+		p.months[fd[:7]] = true
 		p.total += t.Amount
 		p.n++
 		if fd < p.first {
@@ -184,7 +189,12 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 				ys = append(ys, y)
 			}
 			sort.Ints(ys)
-			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last), Years: ys,
+			ms := make([]string, 0, len(p.months))
+			for m := range p.months {
+				ms = append(ms, m)
+			}
+			sort.Strings(ms)
+			f.Items = append(f.Items, FactItem{Label: p.name, Value: eur(p.total), Sub: span, N: p.total.Float(), From: year(p.first), To: year(p.last), Years: ys, Months: ms,
 				Link: win("kind", "income", "category", "salary", "merchant", p.name)})
 		}
 		out = append(out, f)

@@ -579,3 +579,27 @@ func TestUsualMonthlyIsTheMedianOfNewMoneyIntoBrokers(t *testing.T) {
 		t.Fatalf("a year later, with nothing moved: %v", got)
 	}
 }
+
+// The chart is daily for the last year, so the 3-month and 6-month views show
+// a dip day by day, and weekly before that; the latest day is always on it.
+func TestChartIsDailyForTheLastYearAndWeeklyBefore(t *testing.T) {
+	bars := make([]market.Bar, 1000)
+	for i := range bars {
+		bars[i] = market.Bar{Date: time.Date(2022, 1, 3, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i).Format("2006-01-02"), Close: 100}
+	}
+	sma := func(win, i int) float64 { return 100 }
+	pts := chart(bars, sma, 1, 252)
+	if pts[len(pts)-1].Date != bars[999].Date {
+		t.Fatalf("latest day missing: %s", pts[len(pts)-1].Date)
+	}
+	daily := pts[len(pts)-252:]
+	for i, p := range daily {
+		if p.Date != bars[1000-252+i].Date {
+			t.Fatalf("last year not daily at %d: %s", i, p.Date)
+		}
+	}
+	// Before the last year: every fifth trading day, back to three years.
+	if gap := len(pts) - 252; gap < 95 || gap > 103 {
+		t.Errorf("%d weekly points before the last year", gap)
+	}
+}
