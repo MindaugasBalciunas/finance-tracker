@@ -29,17 +29,18 @@ type MonthReview struct {
 	Verdict     string        `json:"verdict"`
 	Tone        string        `json:"tone"` // good | neutral | bad
 	// SalaryNote: the pay schedule changed at this month (plan.SalaryChangeNote).
-	SalaryNote  string           `json:"salary_note,omitempty"`
-	Highlights  []Highlight      `json:"highlights"`
-	NetWorth    NetWorthMove     `json:"net_worth"`
-	Categories  []CategoryVsNorm `json:"categories"`
-	TopExpenses []ledger.Tx      `json:"top_expenses"`
-	TopIncome   []ledger.Tx      `json:"top_income"`
-	Daily       []DaySpend       `json:"daily"`
-	Trend       []insights.Flow  `json:"trend"` // twelve months ending with this one
-	Budget      *BudgetBrief     `json:"budget,omitempty"`
-	OwedToYou   money.Cents      `json:"owed_to_you"`
-	Checks      []Check          `json:"checks"`
+	SalaryNote  string                     `json:"salary_note,omitempty"`
+	Highlights  []Highlight                `json:"highlights"`
+	NetWorth    NetWorthMove               `json:"net_worth"`
+	Categories  []CategoryVsNorm           `json:"categories"`
+	TopExpenses []ledger.Tx                `json:"top_expenses"` // choices only: fixed commitments are in Commitments
+	Commitments []insights.CommitmentTotal `json:"commitments"`
+	TopIncome   []ledger.Tx                `json:"top_income"`
+	Daily       []DaySpend                 `json:"daily"`
+	Trend       []insights.Flow            `json:"trend"` // twelve months ending with this one
+	Budget      *BudgetBrief               `json:"budget,omitempty"`
+	OwedToYou   money.Cents                `json:"owed_to_you"`
+	Checks      []Check                    `json:"checks"`
 	lateSalary  money.Cents
 	salaryUntil string // the month is over but its salary may still arrive until this day
 	salaryDue   string // the last day this month's pay can still come
@@ -217,7 +218,15 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 		ds := t.Format("2006-01-02")
 		r.Daily = append(r.Daily, DaySpend{Date: ds, Spent: daily[ds], In: moneyIn[ds]})
 	}
-	r.TopExpenses = insights.TopExpenses(monthTx, from, to, 8)
+	// Alimony and the mortgage would lead every month's list: they are
+	// totalled beside it instead (people over the whole history, as the
+	// Ledger's "choices" filter has it).
+	people, err := ledger.ObligationPayees(d)
+	if err != nil {
+		return nil, err
+	}
+	r.TopExpenses = insights.TopExpenses(insights.Choices(monthTx, people), from, to, 8)
+	r.Commitments = insights.Commitments(monthTx, people, from, to)
 	// Money in follows cash flow's dating, so the list matches the income
 	// total: a salary paid on 1 October is September's, one on 2 November
 	// is October's.
@@ -288,6 +297,9 @@ func BuildMonthReview(d *sql.DB, month string, now time.Time) (*MonthReview, err
 	}
 	if r.TopExpenses == nil {
 		r.TopExpenses = []ledger.Tx{}
+	}
+	if r.Commitments == nil {
+		r.Commitments = []insights.CommitmentTotal{}
 	}
 	if r.TopIncome == nil {
 		r.TopIncome = []ledger.Tx{}

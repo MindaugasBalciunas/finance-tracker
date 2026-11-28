@@ -458,7 +458,7 @@ func FunFacts(txs []ledger.Tx, cats map[string]ledger.Category, now time.Time, f
 			}
 		}
 		f := Fact{Key: "years", Icon: "chart", Title: "The biggest spending year", Value: hi, Link: choices(hi+"-01-01", hi+"-12-31"),
-			Detail: fmt.Sprintf("%s, against %s in %s — choices only, obligations left out.", eur(yearly[hi]), eur(yearly[ys[0]]), ys[0])}
+			Detail: fmt.Sprintf("%s, against %s in %s — choices only, fixed commitments left out.", eur(yearly[hi]), eur(yearly[ys[0]]), ys[0])}
 		for _, y := range ys {
 			f.Items = append(f.Items, FactItem{Label: y, Value: eur(yearly[y]), N: yearly[y].Float(), Top: y == hi, Link: choices(y+"-01-01", y+"-12-31")})
 		}

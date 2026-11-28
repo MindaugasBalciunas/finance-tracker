@@ -101,7 +101,8 @@ export function useDemo() {
 export interface TxFilter {
   from?: string; to?: string; kind?: string; category?: string[]; account?: string[]; tag?: string[]; tags_all?: boolean
   merchant?: string; q?: string; min?: string; max?: string; sort?: string; limit?: number; offset?: number
-  choices?: string // '1': obligations left out
+  choices?: string // '1': fixed commitments left out
+  commitments?: string // '1': only the fixed commitments
   need?: string // 'essential' | 'optional': the Free money card's split
   salary?: string // 'month': a salary counts in the month it pays for
 }

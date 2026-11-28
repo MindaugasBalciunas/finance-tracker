@@ -146,7 +146,7 @@ function LeftOver({ p, month, setMonth, onFund, room }: { p: WishPlan; month: st
   const rows = [
     { label: 'Income', v: f.income, cls: 'text-ink' },
     { label: 'Paid yourself first', sub: 'investing, pensions, mortgage principal', v: -f.invested, cls: 'text-ink2' },
-    { label: 'Obligations & spending', v: -f.spending, cls: 'text-ink2' },
+    { label: 'Commitments & spending', v: -f.spending, cls: 'text-ink2' },
   ]
   const max = Math.max(1, ...p.history.map((h) => Math.abs(h.left_over)))
   return (
@@ -291,7 +291,7 @@ function FundSheet({ p, onClose, room, months }: { p: WishPlan; onClose: () => v
       <button className="btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn-primary" disabled={over || total <= 0 || save.isPending} onClick={() => save.mutate()}>Put {eur(total)} in goals</button>
     </>}>
-      <p className="text-sm text-ink2">{eur(p.funding.available)} left after paying yourself first and every obligation. Top of the list first — change any amount.</p>
+      <p className="text-sm text-ink2">{eur(p.funding.available)} left after paying yourself first and every fixed commitment. Top of the list first — change any amount.</p>
       <div className="mt-3 space-y-2">
         {active.map((g) => (
           <div key={g.id} className="grid grid-cols-[1fr_7rem] items-center gap-3">

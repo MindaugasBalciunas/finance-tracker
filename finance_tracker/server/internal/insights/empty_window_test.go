@@ -25,4 +25,7 @@ func TestEmptyWindowListsAreNotNil(t *testing.T) {
 	if insights.TagTotals(txs, from, to) == nil {
 		t.Error("TagTotals is nil")
 	}
+	if insights.Commitments(txs, nil, from, to) == nil {
+		t.Error("Commitments is nil")
+	}
 }

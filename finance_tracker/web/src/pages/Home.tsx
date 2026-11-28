@@ -336,7 +336,7 @@ function MonthBar({ p, progress, warn }: { p: Overview['plan']; progress: number
         <div className="absolute -top-1 h-[18px] w-0.5 rounded bg-ink/70" style={{ left: `${tick * 100}%` }} title="where spending would be today at your typical month's pace" />
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1" title="Fixed obligations, saving and fund set-asides — striped while still to pay">
+        <span className="inline-flex items-center gap-1" title="Fixed commitments, saving and fund set-asides — striped while still to pay">
           <span className="h-2 w-2.5 rounded-sm" style={hatch('var(--s-other)')} />Committed <span className="tnum text-ink2">{eur(p.fixed_planned + p.saving_planned + p.fund_set_aside)}</span>
         </span>
         {(p.fund_overdrawn ?? 0) > 0.005 && <Swatch color="rgb(var(--bad))" label="Beyond funds" v={p.fund_overdrawn!} />}
@@ -378,7 +378,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
   const due = fixed.filter((f) => f.spent < f.budgeted).sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9'))
   const rows: { label: string; value: number; sub?: string; sign: '' | '−' | '=' }[] = [
     { label: 'Income this month', value: p.income_base, sub: p.income_actual < p.income_base ? `${eur(p.income_actual)} received so far` : 'received', sign: '' },
-    { label: 'Fixed obligations', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid${due.length ? ` · ${due.map((f) => `${f.name}${f.due ? ` ${shortDate(f.due)}` : ''}`).join(', ')} still to pay` : ''}`, sign: '−' },
+    { label: 'Fixed commitments', value: p.fixed_planned, sub: `${eur(p.fixed_spent)} paid${due.length ? ` · ${due.map((f) => `${f.name}${f.due ? ` ${shortDate(f.due)}` : ''}`).join(', ')} still to pay` : ''}`, sign: '−' },
     { label: 'Saving & investing', value: p.saving_planned, sub: `${eur(p.saved_actual)} done`, sign: '−' },
     ...(p.fund_set_aside > 0 ? [{ label: 'Set aside in funds', value: p.fund_set_aside, sub: 'trips, car and other lumpy costs', sign: '−' as const }] : []),
     ...((p.fund_overdrawn ?? 0) > 0.005 ? [{ label: 'Paid beyond funds', value: p.fund_overdrawn!, sub: (p.funds_over ?? []).map((f) => f.name).join(', ') || 'more than a fund held', sign: '−' as const }] : []),
@@ -424,7 +424,7 @@ function LeftToSpend({ p, progress, month }: { p: Overview['plan']; progress: nu
             <span className="flex-1">Left to spend</span>
             <span className={clsx('tnum', left < 0 ? 'text-bad' : 'text-good')}>{eur(left)}</span>
           </div>
-          <div className="pt-1 text-xs text-muted">Obligations and savings count in full from the 1st, paid or not, so what is left is yours to spend.</div>
+          <div className="pt-1 text-xs text-muted">Fixed commitments and savings count in full from the 1st, paid or not, so what is left is yours to spend.</div>
         </div>
       )}
     </section>

@@ -336,7 +336,7 @@ func buildStress(base *Forecast, sb stressBook, horizon int, custom *Shock) *Str
 		r.Custom = &c
 	}
 	r.Notes = []string{
-		"Starts from the cash forecast: the plan's income, obligations and saving, usual everyday spending and the bills already dated.",
+		"Starts from the cash forecast: the plan's income, fixed commitments and saving, usual everyday spending and the bills already dated.",
 		"Market drops don't recover within the period and investment returns are left out on both sides. A drop counts as lost on paper — back if prices recover — until something is sold after it; then that part is lost for good.",
 		fmt.Sprintf("When cash would go below zero, investing stops first; only then are reserves sold: investments, then crypto, then the III pillar with about %.0f%% tax withheld. The II pillar, property and the car are never sold. Tax on investment gains is not counted.", pillar3Tax*100),
 	}

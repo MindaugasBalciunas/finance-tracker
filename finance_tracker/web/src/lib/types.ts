@@ -432,7 +432,9 @@ export type IncomeUse = { month: string; income: number; expected_salary: number
 /** /insights/pace-out */
 export type PaceOut = { points: OutPacePoint[]; month: IncomeUse }
 /** /insights/breakdown: where the money went over a window. */
-export type Breakdown = { from: string; to: string; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; tags: NamedCount[] }
+/** Fixed commitments in a window, by category: alimony, family support, the mortgage, finance costs and the people paid them — kept out of the biggest-expense and top-merchant lists (insights.CommitmentTotal). */
+export type CommitmentTotal = { category: string; total: number; count: number }
+export type Breakdown = { from: string; to: string; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; commitments: CommitmentTotal[]; tags: NamedCount[] }
 
 /** /usage/summary: which pages get used, and the ones you had to hunt for. */
 export type UsageSummary = {
@@ -463,7 +465,7 @@ export type MonthReview = {
   highlights: { tone: string; text: string }[]
   net_worth: { start: number; end: number; change: number; points: { date: string; value: number; liquid: number }[] | null }
   categories: { category: string; spent: number; average: number; delta: number; count: number; top: Tx[] | null }[]
-  top_expenses: Tx[]; top_income: Tx[]; daily: { date: string; spent: number; in: number }[]; trend: Flow[]
+  top_expenses: Tx[]; commitments: CommitmentTotal[]; top_income: Tx[]; daily: { date: string; spent: number; in: number }[]; trend: Flow[]
   budget?: { over: LineBrief[] | null; within_count: number; lines: LineBrief[] | null; safe_to_spend: number }
   owed_to_you: number; checks: { level: 'warn' | 'info'; text: string; link: string }[]
 }
@@ -485,7 +487,7 @@ export type LoanView = {
 }
 /** /insights/review: a calendar year against the one before. */
 export type YearReview = {
-  year: string; flow: Flow; previous: Flow; months: Flow[] | null; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]
+  year: string; flow: Flow; previous: Flow; months: Flow[] | null; categories: CategoryStat[]; merchants: NamedCount[]; largest: Tx[]; commitments: CommitmentTotal[]
   net_worth_start: number; net_worth_end: number; years: Flow[] | null
 }
 /** /balances?account=: one account's recorded values. */

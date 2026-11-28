@@ -126,9 +126,13 @@ func (s *Server) insightRoutes() {
 		if err != nil {
 			return nil, err
 		}
+		// Top merchants and the largest expenses are choices; alimony, the
+		// mortgage and the people paid them are totalled as commitments.
+		people := insights.CommitmentPeople(txs)
+		choices := insights.Choices(txs, people)
 		return map[string]any{"from": from, "to": to, "categories": insights.Breakdown(txs, from, to),
-			"merchants": insights.MerchantTotals(txs, from, to, 25), "largest": insights.TopExpenses(txs, from, to, 15),
-			"tags": insights.TagTotals(txs, from, to)}, nil
+			"merchants": insights.MerchantTotals(choices, from, to, 25), "largest": insights.TopExpenses(choices, from, to, 15),
+			"commitments": insights.Commitments(txs, people, from, to), "tags": insights.TagTotals(txs, from, to)}, nil
 	})
 	// Who was paid: merchants ranked over a window, with trends and the
 	// regulars that stopped. Under /api/insights, so read tokens see it like

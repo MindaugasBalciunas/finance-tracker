@@ -147,7 +147,7 @@ export function ForecastView() {
         <Card icon="list" color="var(--s1)" title="Assumed every month">
           <div className="space-y-1.5 text-sm">
             {[['Income', b.assumed.gross ? `net of ${eur(b.assumed.gross)} gross` : 'the plan\'s income base', b.assumed.income, ''],
-              ['Fixed obligations', 'alimony, loan', -b.assumed.fixed, ''],
+              ['Fixed commitments', 'alimony, loan', -b.assumed.fixed, ''],
               ['Saving & investing', 'leaves cash for investments', -b.assumed.saving, ''],
               ['Everyday spending', 'a usual month, payments under €250', -b.assumed.everyday, ''],
               ['One-offs', 'average of the past year, beyond dated ones', -b.assumed.one_offs, '']].map(([l, sub, v]) => (

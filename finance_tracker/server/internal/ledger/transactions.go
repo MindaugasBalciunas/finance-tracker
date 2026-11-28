@@ -117,6 +117,9 @@ type Filter struct {
 	// Choices: leave out obligations (Obligation) — what the insights call
 	// spending by choice.
 	Choices bool
+	// Commitments: only the fixed commitments — the expenses Choices leaves
+	// out — so a "Fixed commitments" total opens exactly its own rows.
+	Commitments bool
 	// Salary: dates count a salary in the month it pays for under these
 	// rules (paid by day N of the next month), as cash flow does.
 	Salary []SalaryWindow
@@ -220,6 +223,9 @@ func (f Filter) where() (string, []any) {
 	}
 	if f.Choices {
 		conds = append(conds, choicesSQL)
+	}
+	if f.Commitments {
+		conds = append(conds, "kind = 'expense' AND NOT ("+choicesSQL+")")
 	}
 	if f.Kind != "" {
 		conds = append(conds, "kind = ?")

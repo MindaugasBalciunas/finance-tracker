@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.4.0 — Biggest expenses show your one-offs; alimony and the mortgage are totalled under them
+
+### Insights → Review (Month and Year) and Spending
+- **Biggest expenses list what you chose to spend.** Alimony used to take 8 of the year's 10 places, and mortgage interest another. Now the list shows the one-offs, such as the €1,113.50 family-reunion dinner or the €920 trip.
+- **A "Fixed commitments, not listed" line sits under the list:** e.g. "Mortgage interest €8,694 · Alimony €7,000 · Divorce €717 · other €168". Tap a total to open exactly those payments in the Ledger.
+- **Top merchants on Spending** no longer start with the people you pay commitments to, such as an ex-partner or the mortgage bank.
+- Fixed commitments are the same ones fun facts and habits already left out: alimony, family support, the mortgage, finance costs, and anything else paid to those people. Categories and totals are unchanged.
+
+### Everywhere
+- "Obligations" are now called **Fixed commitments** (Plan, Home, Summary, Forecast, FI, Ledger filters).
+- New Ledger filter: **fixed commitments only**.
+
 ## 3.3.1 — Your buys show on Bets; the dip plan shows your monthly investing
 
 ### Wealth → Investments → Dip plan

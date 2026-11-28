@@ -13,6 +13,7 @@ import { axisProps, Donut, foldSlices, gridProps, Legend, ShareBar, TooltipBox }
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon, IconTile } from '../../components/Icon'
 import { MerchantMark } from '../../components/MerchantLogo'
+import { CommitmentsLine } from '../../components/CommitmentsLine'
 
 // ── spending ────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ export function Spending() {
             <div className="divide-y divide-line border-t border-line">
               {data.largest.slice(0, 8).map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
             </div>
+            <CommitmentsLine items={data.commitments} from={data.from} to={data.to} />
           </Card>
         </div>
       </div>

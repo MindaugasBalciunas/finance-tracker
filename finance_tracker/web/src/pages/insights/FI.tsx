@@ -41,7 +41,7 @@ export function FI() {
   // aren't drawn, so name them instead.
   const top = Math.max(0, ...series.map((p) => p.monthly))
   const topInvested = Math.max(0, ...series.map((p) => p.investable))
-  const offScale = [[f.obligations, 'obligations'], [f.essentials, 'essentials'], [f.spending, 'your spending']]
+  const offScale = [[f.obligations, 'fixed commitments'], [f.essentials, 'essentials'], [f.spending, 'your spending']]
     .filter(([v]) => (v as number) > top).map(([v, n]) => `${n} ${eur(v as number)}/mo`)
   const spanPicker = <Segmented size="sm" value={span} onChange={setSpan} options={FI_SPANS} />
   return (
@@ -89,7 +89,7 @@ export function FI() {
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-muted">Each level is the invested money whose {f.withdrawal_rate}% a year covers it forever — obligations from your plan's fixed lines, essentials from essential categories, independence from {f.spend_source}.</p>
+        <p className="mt-3 text-xs text-muted">Each level is the invested money whose {f.withdrawal_rate}% a year covers it forever — fixed commitments from your plan's fixed lines, essentials from essential categories, independence from {f.spend_source}.</p>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
@@ -141,7 +141,7 @@ export function FI() {
                 <TooltipBox title={title(payload[0].payload as FIPoint)} rows={[
                   { color: 'var(--s4)', label: 'Safe payout', value: `${eur(payload[0].payload.monthly)}/mo`, bold: true },
                   { label: 'Invested', value: eur(payload[0].payload.investable) }]} />) : null} />
-              {f.obligations > 0 && <ReferenceLine y={f.obligations} stroke="var(--hue-fixed)" strokeDasharray="4 3" label={{ value: 'obligations', fill: 'var(--chart-text)', fontSize: 10, position: 'insideTopLeft' }} />}
+              {f.obligations > 0 && <ReferenceLine y={f.obligations} stroke="var(--hue-fixed)" strokeDasharray="4 3" label={{ value: 'commitments', fill: 'var(--chart-text)', fontSize: 10, position: 'insideTopLeft' }} />}
               {f.essentials > 0 && <ReferenceLine y={f.essentials} stroke="var(--s1)" strokeDasharray="4 3" label={{ value: 'essentials', fill: 'var(--chart-text)', fontSize: 10, position: 'insideTopLeft' }} />}
               <ReferenceLine y={f.spending} stroke="rgb(var(--good))" label={{ value: 'your spending', fill: 'var(--chart-text)', fontSize: 10, position: 'insideTopLeft' }} />
               <Line dataKey="monthly" stroke="var(--s4)" strokeWidth={2.5} dot={false} isAnimationActive={false} />

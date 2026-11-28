@@ -20,7 +20,7 @@ func TestMonthReviewEmptyMonthHasLists(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(r)
-	for _, k := range []string{"highlights", "categories", "top_expenses", "top_income", "daily", "trend", "checks"} {
+	for _, k := range []string{"highlights", "categories", "top_expenses", "commitments", "top_income", "daily", "trend", "checks"} {
 		if strings.Contains(string(b), `"`+k+`":null`) {
 			t.Errorf("%s is null: %s", k, b)
 		}

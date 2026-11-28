@@ -81,7 +81,7 @@ describe('a finished month in the plan', () => {
     const r = { month: '2026-10', income_actual: 7884.92, fixed_spent: 2361.66, fixed_expense: 1922.71, saved_actual: 508.44, discretionary_spent: 2077.87 } as any
     render(<IncomeUsed r={r} />)
     expect(document.body).toHaveTextContent('Of the €7,885 that came in, you spent €4,001 (51%) and had €3,376 left over.')
-    expect(screen.getByText('Obligations').nextSibling).toHaveTextContent('€1,923')
+    expect(screen.getByText('Fixed commitments').nextSibling).toHaveTextContent('€1,923')
     expect(screen.getByRole('img').getAttribute('aria-label')).toContain('left over €3,376')
   })
 })

@@ -9,6 +9,7 @@ import type { Flow, Tx, YearReview as YearReviewData } from '../../lib/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { CountUp, Card, Loading, Stat } from '../../components/ui'
 import { Icon } from '../../components/Icon'
+import { CommitmentsLine } from '../../components/CommitmentsLine'
 import { incomeCategories, ledgerLink } from '../../lib/links'
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
@@ -70,6 +71,7 @@ export function Review() {
           <div className="divide-y divide-line border-t border-line">
             {r.largest.map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}
           </div>
+          <CommitmentsLine items={r.commitments} from={`${year}-01-01`} to={`${year}-12-31`} />
         </Card>
       </div>
     </div>

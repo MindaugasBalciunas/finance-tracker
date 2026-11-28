@@ -22,7 +22,7 @@ func filterFrom(r *http.Request) ledger.Filter {
 	return ledger.Filter{From: q.Get("from"), To: q.Get("to"), Kind: q.Get("kind"), Categories: qlist(r, "category"), Accounts: qlist(r, "account"),
 		Tags: qlist(r, "tag"), TagsAll: q.Get("tags_all") == "1", Merchant: q.Get("merchant"), Query: q.Get("q"), Source: q.Get("source"),
 		Min: parseCents(q.Get("min")), Max: parseCents(q.Get("max")), Sort: q.Get("sort"), Limit: qint(r, "limit", 100), Offset: qint(r, "offset", 0),
-		Choices: q.Get("choices") == "1", Need: need(q.Get("need")), CreatedAfter: createdAfter(q.Get("created_after"))}
+		Choices: q.Get("choices") == "1", Commitments: q.Get("commitments") == "1", Need: need(q.Get("need")), CreatedAfter: createdAfter(q.Get("created_after"))}
 }
 
 // createdAfter puts a timestamp in created_at's form (UTC, whole seconds) so

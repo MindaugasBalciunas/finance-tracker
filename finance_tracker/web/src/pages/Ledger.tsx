@@ -56,7 +56,7 @@ function Transactions() {
     return {
       ...r, q: sp.get('q') || undefined, kind: sp.get('kind') || undefined, category: sp.getAll('category'), account: sp.getAll('account'),
       tag: sp.getAll('tag'), merchant: sp.get('merchant') || undefined, sort: sp.get('sort') || undefined, limit,
-      choices: sp.get('choices') || undefined, salary: sp.get('salary') || undefined, need: needParam(sp.get('need')),
+      choices: sp.get('choices') || undefined, commitments: sp.get('commitments') || undefined, salary: sp.get('salary') || undefined, need: needParam(sp.get('need')),
       min: sp.get('min') || undefined, max: sp.get('max') || undefined,
     }
   }, [sp, period, limit])
@@ -107,7 +107,8 @@ function Transactions() {
     ...(filter.account ?? []).map((a) => ({ k: 'account', v: a, label: a })),
     ...(filter.tag ?? []).map((t) => ({ k: 'tag', v: t, label: '#' + t })),
     ...(filter.merchant ? [{ k: 'merchant', label: filter.merchant }] : []),
-    ...(filter.choices ? [{ k: 'choices', label: 'obligations left out' }] : []),
+    ...(filter.choices ? [{ k: 'choices', label: 'fixed commitments left out' }] : []),
+    ...(filter.commitments ? [{ k: 'commitments', label: 'fixed commitments only' }] : []),
     ...(filter.need ? [{ k: 'need', label: filter.need === 'optional' ? 'optional spending' : 'essential spending' }] : []),
     ...(filter.salary ? [{ k: 'salary', label: 'salary in the month it pays for' }] : []),
     ...(filter.min ? [{ k: 'min', label: `from ${eurc(Number(filter.min))}` }] : []),
@@ -160,7 +161,7 @@ function Transactions() {
           {/* What these rows add up to — every expense, obligations included; Home's
               "spent" is only the day-to-day part of it. */}
           <div className="card px-2 py-2" style={hue('var(--hue-income)')}><div className="text-muted">Income</div><div className="tnum text-sm font-semibold text-good">{eur(data.income)}</div></div>
-          <div className="card px-2 py-2" style={hue('var(--hue-spending)')} title="Every expense in these rows, obligations and one-offs included — Home's 'spent' counts day-to-day spending only"><div className="text-muted">All spending</div><div className="tnum text-sm font-semibold">{eur(data.expense)}</div>{(data.refunds ?? 0) > 0.005 && <div className="tnum text-[11px] text-good">{eur(data.refunds!)} refunded</div>}</div>
+          <div className="card px-2 py-2" style={hue('var(--hue-spending)')} title="Every expense in these rows, fixed commitments and one-offs included — Home's 'spent' counts day-to-day spending only"><div className="text-muted">All spending</div><div className="tnum text-sm font-semibold">{eur(data.expense)}</div>{(data.refunds ?? 0) > 0.005 && <div className="tnum text-[11px] text-good">{eur(data.refunds!)} refunded</div>}</div>
           <div className="card px-2 py-2" style={hue('var(--hue-invest)')} title="Transfers between your accounts, investing and loan principal"><div className="text-muted">Transfers</div><div className="tnum text-sm font-semibold text-ink2">{eur(data.transfer)}</div></div>
         </div>
       )}

@@ -206,7 +206,7 @@ function TripDatesRow({ tag, dates, guess }: { tag: string; dates?: { start: str
             <label><span className="label">First day</span><DateInput value={start} onChange={(v) => setStart(v)} /></label>
             <label><span className="label">Last day</span><DateInput value={end} min={start} onChange={(v) => setEnd(v)} /></label>
           </div>
-          <p className="mt-3 text-sm text-muted">New and bank-synced expenses dated inside get <b>{tag}</b> automatically — bills, obligations and transfers aside. Flights and hotels booked earlier are suggested, not added.</p>
+          <p className="mt-3 text-sm text-muted">New and bank-synced expenses dated inside get <b>{tag}</b> automatically — bills, fixed commitments and transfers aside. Flights and hotels booked earlier are suggested, not added.</p>
         </Sheet>
       )}
       {sweep && <TripSweep tag={tag} onClose={() => setSweep(false)} />}

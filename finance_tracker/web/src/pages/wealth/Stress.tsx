@@ -285,7 +285,7 @@ const MAIN: Field[] = [
 const MORE: Field[] = [
   { key: 'benefit', label: 'Still coming in', unit: '€/mo', hint: 'benefit, sick pay' },
   { key: 'everyday_pct', label: 'Everyday spending', unit: '%' },
-  { key: 'fixed_pct', label: 'Bills and obligations', unit: '%' },
+  { key: 'fixed_pct', label: 'Bills and fixed commitments', unit: '%' },
   { key: 'rate_pp', label: 'Euribor', unit: 'points', hint: '2 = +2 points' },
   { key: 'crypto_pct', label: 'Crypto', unit: '%' },
   { key: 'pension_pct', label: 'Pension funds', unit: '%' },

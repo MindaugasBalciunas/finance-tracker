@@ -351,16 +351,17 @@ Keep it short — tables over prose.
 
 // Review is a year in review.
 type Review struct {
-	Year          string                  `json:"year"`
-	Flow          insights.Flow           `json:"flow"`
-	Previous      insights.Flow           `json:"previous"`
-	Months        []insights.Flow         `json:"months"`
-	Categories    []insights.CategoryStat `json:"categories"`
-	Merchants     []insights.NamedCount   `json:"merchants"`
-	Largest       []ledger.Tx             `json:"largest"`
-	NetWorthStart money.Cents             `json:"net_worth_start"`
-	NetWorthEnd   money.Cents             `json:"net_worth_end"`
-	Years         []insights.Flow         `json:"years"` // every year, for the long view
+	Year          string                     `json:"year"`
+	Flow          insights.Flow              `json:"flow"`
+	Previous      insights.Flow              `json:"previous"`
+	Months        []insights.Flow            `json:"months"`
+	Categories    []insights.CategoryStat    `json:"categories"`
+	Merchants     []insights.NamedCount      `json:"merchants"`
+	Largest       []ledger.Tx                `json:"largest"`     // choices only
+	Commitments   []insights.CommitmentTotal `json:"commitments"` // fixed commitments, beside Largest
+	NetWorthStart money.Cents                `json:"net_worth_start"`
+	NetWorthEnd   money.Cents                `json:"net_worth_end"`
+	Years         []insights.Flow            `json:"years"` // every year, for the long view
 }
 
 func (s *Server) yearReview(year string) (*Review, error) {
@@ -392,8 +393,11 @@ func (s *Server) yearReview(year string) (*Review, error) {
 	}
 	rv.Months = insights.CashFlow(yearTx, cats, "month", salary)
 	rv.Categories = insights.Breakdown(txs, from, to)
-	rv.Merchants = insights.MerchantTotals(txs, from, to, 15)
-	rv.Largest = insights.TopExpenses(txs, from, to, 10)
+	people := insights.CommitmentPeople(txs)
+	choices := insights.Choices(txs, people)
+	rv.Merchants = insights.MerchantTotals(choices, from, to, 15)
+	rv.Largest = insights.TopExpenses(choices, from, to, 10)
+	rv.Commitments = insights.Commitments(txs, people, from, to)
 	book, err := wealth.LoadBook(s.DB)
 	if err != nil {
 		return nil, err

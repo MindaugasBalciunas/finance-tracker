@@ -11,7 +11,8 @@ export type LedgerQuery = {
   to?: string
   month?: string // YYYY-MM, instead of from/to
   year?: string // YYYY, instead of from/to
-  choices?: boolean // leave obligations out (mortgage, alimony…), as "spending by choice" does
+  choices?: boolean // leave fixed commitments out (mortgage, alimony…), as "spending by choice" does
+  commitments?: boolean // only the fixed commitments: the rows behind a "Fixed commitments" total
   need?: 'essential' | 'optional' // free-spending expenses by their category's essential flag, fixed lines left out
   salaryMonth?: boolean // a salary paid early next month counts for the month it pays for
   min?: number // € inclusive
@@ -36,6 +37,7 @@ export function ledgerLink(q: LedgerQuery): string {
   const from = q.month ? `${q.month}-01` : q.year ? `${q.year}-01-01` : q.from
   const to = q.month ? monthEnd(q.month) : q.year ? `${q.year}-12-31` : q.to
   if (q.choices) p.set('choices', '1')
+  if (q.commitments) p.set('commitments', '1')
   if (q.need) p.set('need', q.need)
   if (q.salaryMonth) p.set('salary', 'month')
   if (q.min != null) p.set('min', String(q.min))

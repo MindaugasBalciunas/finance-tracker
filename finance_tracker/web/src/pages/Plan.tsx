@@ -91,7 +91,7 @@ function Month() {
       onApply={(l, fund) => applySuggestion.mutate({ line: l, amount: l.suggestion!.amount, fund })} onApplyAll={(ls) => applyAll.mutate(ls)} />
   )
   const groups: { kind: string; title: string; hint: string }[] = [
-    { kind: 'fixed', title: 'Fixed obligations', hint: 'Committed every month — never counted against spending budgets' },
+    { kind: 'fixed', title: 'Fixed commitments', hint: 'Committed every month — never counted against spending budgets' },
     { kind: 'saving', title: 'Saving & investing', hint: 'Transfers into investments, pension and debt principal' },
     { kind: 'spending', title: 'Spending', hint: 'Day-to-day choices' },
   ]
@@ -499,7 +499,7 @@ export function IncomeUsed({ r, brief = false }: { r: PlanReport; brief?: boolea
   if (income <= 0) return <div className="mt-4 text-sm text-muted">No income recorded for {monthLabel(r.month, true)}.</div>
   const obligations = r.fixed_expense ?? r.fixed_spent
   const parts = [
-    { label: 'Obligations', value: obligations, color: 'var(--hue-fixed)' },
+    { label: 'Fixed commitments', value: obligations, color: 'var(--hue-fixed)' },
     { label: 'Saved & invested', value: Math.max(0, r.saved_actual), color: 'var(--hue-saving)' },
     { label: 'Spending', value: r.discretionary_spent, color: 'var(--hue-spending)' },
   ]

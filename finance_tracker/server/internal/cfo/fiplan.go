@@ -159,7 +159,7 @@ func BuildFIPlan(d *sql.DB, now time.Time) (*FIPlan, error) {
 		monthly    money.Cents
 		why        string
 	}{
-		{"obligations", "Obligations covered", p.Obligations, "the mortgage, alimony and other fixed lines in your plan"},
+		{"obligations", "Fixed commitments covered", p.Obligations, "the mortgage, alimony and other fixed lines in your plan"},
 		{"essentials", "Essentials covered", p.Essentials, "food, housing, transport, health — the essential categories"},
 		{"lifestyle", "Financial independence", p.Spending, fi.SpendSource},
 		{"comfortable", "Comfortable independence", money.FromFloat(p.Spending.Float() * 1.25), "your spending with a 25% cushion for a fuller life"},

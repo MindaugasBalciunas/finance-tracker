@@ -11,6 +11,8 @@ import { Card, CountUp, Delta, hue, Loading, Meter, Segmented, Stat } from '../.
 import { axisProps, gridProps, Legend, TooltipBox } from '../../components/charts'
 import { TxRow, useTxEditor } from '../../components/TxEditor'
 import { Icon } from '../../components/Icon'
+import { CommitmentsLine } from '../../components/CommitmentsLine'
+import { monthEnd } from '../../lib/links'
 import { Review } from './YearReview'
 import { CashFlow } from './CashFlow'
 
@@ -129,7 +131,7 @@ function MonthReviewView() {
         </Card>
       </div>
       <div className="columns-1 gap-4 lg:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
-        <Card pad={false} title="Biggest expenses"><div className="divide-y divide-line border-t border-line">{r.top_expenses.map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}</div></Card>
+        <Card pad={false} title="Biggest expenses"><div className="divide-y divide-line border-t border-line">{r.top_expenses.map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}</div><CommitmentsLine items={r.commitments} from={`${r.month}-01`} to={monthEnd(r.month)} /></Card>
         <Card pad={false} title="Money in"><div className="divide-y divide-line border-t border-line">{(r.top_income ?? []).map((t: Tx) => <TxRow key={t.id} t={t} showDate onClick={() => editor.open(t)} />)}</div></Card>
       </div>
       <Card title="Twelve months">

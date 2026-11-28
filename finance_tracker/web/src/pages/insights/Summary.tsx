@@ -63,7 +63,7 @@ export function SummaryView() {
  *  and what was left to save — the parts add up to the income. */
 function TypicalMonth({ f }: { f: Summary['flow'] }) {
   const parts = [
-    { key: 'fixed', label: 'Fixed obligations', sub: 'alimony, mortgage interest', v: f.fixed, color: 'var(--s-other)' },
+    { key: 'fixed', label: 'Fixed commitments', sub: 'alimony, mortgage interest', v: f.fixed, color: 'var(--s-other)' },
     { key: 'everyday', label: 'Everyday spending', sub: 'food, home, kids, transport…', v: f.everyday, color: 'var(--s1)' },
     { key: 'one_offs', label: 'One-offs of €250+', sub: 'trips, electronics, repairs', v: f.one_offs, color: 'var(--s2)' },
     { key: 'saved', label: f.saved >= 0 ? 'Left to save' : 'Spent beyond income', sub: 'income − spending', v: f.saved, color: f.saved >= 0 ? 'var(--s3)' : 'rgb(var(--bad))' },
